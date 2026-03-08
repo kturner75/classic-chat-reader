@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,9 @@ public class TtsService {
 
     @Value("${tts.cache-dir}")
     private String cacheDir;
+
+    @Value("${tts.openai.timeout-seconds:45}")
+    private int timeoutSeconds;
 
     @Value("${tts.cache-only:false}")
     private boolean cacheOnly;
@@ -120,7 +124,7 @@ public class TtsService {
             .bodyValue(requestBody)
             .retrieve()
             .bodyToMono(byte[].class)
-            .block();
+            .block(Duration.ofSeconds(timeoutSeconds));
 
         // Cache the result
         if (audio != null && audio.length > 0) {
@@ -185,7 +189,7 @@ public class TtsService {
             .bodyValue(requestBody)
             .retrieve()
             .bodyToMono(byte[].class)
-            .block();
+            .block(Duration.ofSeconds(timeoutSeconds));
 
         // Cache
         if (audio != null && audio.length > 0) {
