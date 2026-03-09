@@ -251,11 +251,13 @@ public class PreGenerationService {
         // This ensures they get processed even if they're less than 5 minutes old
         int illustrationsRequeued = illustrationService.forceQueuePendingForBook(bookId);
         int portraitsRequeued = characterService.forceQueuePendingPortraitsForBook(bookId);
+        int failedPortraitsRequeued = characterService.retryFailedPortraitsForBook(bookId);
         int analysesRequeued = characterService.forceQueuePendingAnalysesForBook(bookId);
         int recapsRequeued = includeRecaps ? chapterRecapService.forceQueuePendingForBook(bookId) : 0;
-        if (illustrationsRequeued > 0 || portraitsRequeued > 0 || analysesRequeued > 0 || recapsRequeued > 0) {
-            log.info("Re-queued {} illustrations, {} portraits, {} analyses, and {} recaps from previous pending state",
-                    illustrationsRequeued, portraitsRequeued, analysesRequeued, recapsRequeued);
+        if (illustrationsRequeued > 0 || portraitsRequeued > 0 || failedPortraitsRequeued > 0
+                || analysesRequeued > 0 || recapsRequeued > 0) {
+            log.info("Re-queued {} illustrations, {} pending portraits, {} failed portraits, {} analyses, and {} recaps from previous state",
+                    illustrationsRequeued, portraitsRequeued, failedPortraitsRequeued, analysesRequeued, recapsRequeued);
         }
 
         // Step 4: Wait for all generation to complete

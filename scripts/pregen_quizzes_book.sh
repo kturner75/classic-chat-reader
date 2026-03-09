@@ -38,6 +38,24 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+parse_retry_after_seconds() {
+  local header_file="$1"
+  local body_file="$2"
+  local retry_after=""
+  retry_after="$(awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {gsub("\r","",$2); print $2; exit}' "${header_file}" 2>/dev/null || true)"
+  if [[ -n "${retry_after}" && "${retry_after}" =~ ^[0-9]+$ ]]; then
+    echo "${retry_after}"
+    return
+  fi
+  local body_retry=""
+  body_retry="$(jq -r '.windowSeconds // empty' "${body_file}" 2>/dev/null || true)"
+  if [[ -n "${body_retry}" && "${body_retry}" =~ ^[0-9]+$ ]]; then
+    echo "${body_retry}"
+    return
+  fi
+  echo 60
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --book-id)
@@ -113,32 +131,44 @@ echo "  Max wait (minutes): ${effective_max_wait_minutes}"
 queued=0
 already_ready=0
 for chapter_id in "${CHAPTER_IDS[@]}"; do
-  status_code="$(curl --silent --output /tmp/pregen_quiz_resp.$$ --write-out '%{http_code}' \
-    -X POST "${API_BASE_URL}/api/quizzes/chapter/${chapter_id}/generate")"
-  case "$status_code" in
-    202)
-      queued=$((queued + 1))
-      ;;
-    403)
-      rm -f /tmp/pregen_quiz_resp.$$
-      fail "Quiz generation unavailable (HTTP 403). Check quiz/reasoning feature flags."
-      ;;
-    404)
-      rm -f /tmp/pregen_quiz_resp.$$
-      fail "Chapter not found while queueing quiz: ${chapter_id}"
-      ;;
-    409)
-      rm -f /tmp/pregen_quiz_resp.$$
-      fail "Quiz generation blocked in cache-only mode (HTTP 409)."
-      ;;
-    *)
-      response_body="$(cat /tmp/pregen_quiz_resp.$$ 2>/dev/null || true)"
-      rm -f /tmp/pregen_quiz_resp.$$
-      fail "Unexpected generate response for chapter ${chapter_id}: HTTP ${status_code} ${response_body}"
-      ;;
-  esac
+  while true; do
+    header_file="/tmp/pregen_quiz_headers.$$"
+    body_file="/tmp/pregen_quiz_resp.$$"
+    status_code="$(curl --silent --output "${body_file}" --dump-header "${header_file}" --write-out '%{http_code}' \
+      -X POST "${API_BASE_URL}/api/quizzes/chapter/${chapter_id}/generate")"
+    case "$status_code" in
+      202)
+        queued=$((queued + 1))
+        rm -f "${header_file}" "${body_file}"
+        break
+        ;;
+      403)
+        rm -f "${header_file}" "${body_file}"
+        fail "Quiz generation unavailable (HTTP 403). Check quiz/reasoning feature flags."
+        ;;
+      404)
+        rm -f "${header_file}" "${body_file}"
+        fail "Chapter not found while queueing quiz: ${chapter_id}"
+        ;;
+      409)
+        rm -f "${header_file}" "${body_file}"
+        fail "Quiz generation blocked in cache-only mode (HTTP 409)."
+        ;;
+      429)
+        retry_after="$(parse_retry_after_seconds "${header_file}" "${body_file}")"
+        echo "Quiz queue rate-limited for chapter ${chapter_id}; sleeping ${retry_after}s before retry..."
+        rm -f "${header_file}" "${body_file}"
+        sleep "${retry_after}"
+        ;;
+      *)
+        response_body="$(cat "${body_file}" 2>/dev/null || true)"
+        rm -f "${header_file}" "${body_file}"
+        fail "Unexpected generate response for chapter ${chapter_id}: HTTP ${status_code} ${response_body}"
+        ;;
+    esac
+  done
 done
-rm -f /tmp/pregen_quiz_resp.$$
+rm -f /tmp/pregen_quiz_headers.$$ /tmp/pregen_quiz_resp.$$
 
 echo "Queued generation requests: ${queued}"
 

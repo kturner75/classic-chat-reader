@@ -818,6 +818,35 @@ public class CharacterService {
     }
 
     /**
+     * Reset failed portraits back to PENDING and re-queue them.
+     * Used by pre-generation to retry prior portrait failures.
+     */
+    @Transactional
+    public int retryFailedPortraitsForBook(String bookId) {
+        if (cacheOnly) {
+            log.info("Skipping failed portrait retry in cache-only mode for book {}", bookId);
+            return 0;
+        }
+        List<CharacterEntity> failedCharacters = characterRepository.findByBookIdAndStatus(bookId, CharacterStatus.FAILED);
+        int queued = 0;
+        for (CharacterEntity character : failedCharacters) {
+            character.setStatus(CharacterStatus.PENDING);
+            character.setRetryCount(0);
+            character.setNextRetryAt(null);
+            character.setErrorMessage(null);
+            clearCharacterLease(character);
+            characterRepository.save(character);
+            if (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank()) {
+                if (requestQueue.offer(new PortraitRequest(character.getId()))) {
+                    queued++;
+                }
+            }
+        }
+        log.info("Reset {} failed portraits and queued {} for book {}", failedCharacters.size(), queued, bookId);
+        return queued;
+    }
+
+    /**
      * Force re-queue all pending character analyses for a specific book.
      * Used by pre-generation to ensure all analyses get processed.
      */

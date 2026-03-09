@@ -115,6 +115,7 @@ class PreGenerationServiceTest {
         PreGenerationService.PreGenResult result = preGenerationService.preGenerateForBook(bookId);
 
         verify(chapterRecapService, times(2)).requestChapterRecap(org.mockito.ArgumentMatchers.anyString());
+        verify(characterService).retryFailedPortraitsForBook(bookId);
         assertTrue(result.success());
         assertEquals(2, result.chaptersProcessed());
         assertEquals(0, result.recapsCompleted());
@@ -156,6 +157,7 @@ class PreGenerationServiceTest {
 
         verify(chapterRecapService, never()).requestChapterRecap(org.mockito.ArgumentMatchers.anyString());
         verify(chapterRecapService, never()).forceQueuePendingForBook(bookId);
+        verify(characterService).retryFailedPortraitsForBook(bookId);
         assertTrue(result.success());
         assertEquals(2, result.chaptersProcessed());
         assertEquals(0, result.recapsCompleted());

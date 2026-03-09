@@ -1,5 +1,6 @@
 package org.example.reader.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.reader.service.llm.LlmOptions;
@@ -76,7 +77,57 @@ public class CharacterExtractionService {
                     .reduce((a, b) -> a + "\n" + b)
                     .orElse("(none yet)");
 
-        String prompt = String.format("""
+        String prompt = buildExtractionPrompt(
+                bookTitle,
+                author,
+                chapterTitle,
+                chapterContent,
+                existingCharactersList
+        );
+
+        try {
+            String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.3));
+            JsonNode charactersArray = parseCharactersArray(generatedText, chapterTitle);
+
+            Set<String> normalizedExisting = existingCharacterNames.stream()
+                    .map(this::normalizeName)
+                    .filter(normalized -> !normalized.isBlank())
+                    .collect(Collectors.toSet());
+
+            List<ExtractedCharacter> characters = new ArrayList<>();
+            for (JsonNode charNode : charactersArray) {
+                String name = charNode.get("name").asText();
+                String description = charNode.has("description")
+                        ? charNode.get("description").asText()
+                        : "A character in the story";
+                int paragraphIndex = charNode.has("approximateParagraphIndex")
+                        ? charNode.get("approximateParagraphIndex").asInt(0)
+                        : 0;
+
+                // Skip if name matches existing character (case-insensitive)
+                String normalizedName = normalizeName(name);
+                boolean isDuplicate = normalizedName.isBlank() || normalizedExisting.contains(normalizedName);
+                if (!isDuplicate && !name.isBlank()) {
+                    characters.add(new ExtractedCharacter(name, description, paragraphIndex));
+                }
+            }
+
+            log.info("Extracted {} new characters from chapter '{}'", characters.size(), chapterTitle);
+            return characters;
+
+        } catch (Exception e) {
+            log.error("Failed to extract characters from chapter '{}'", chapterTitle, e);
+            throw new IllegalStateException("Character extraction failed for chapter '" + chapterTitle + "'", e);
+        }
+    }
+
+    private String buildExtractionPrompt(
+            String bookTitle,
+            String author,
+            String chapterTitle,
+            String chapterContent,
+            String existingCharactersList) {
+        return String.format("""
             Analyze this chapter and identify any NEW characters that are introduced.
             A character is someone who:
             - Has a clear, specific name (no generic roles like "the maid" or "a stranger")
@@ -120,43 +171,41 @@ public class CharacterExtractionService {
                 existingCharactersList,
                 truncateText(chapterContent, 3000),
                 maxCharactersPerChapter);
+    }
 
+    private JsonNode parseCharactersArray(String generatedText, String chapterTitle) throws JsonProcessingException {
+        String json = extractJsonArray(generatedText);
         try {
-            String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.3));
-
-            String json = extractJsonArray(generatedText);
-            JsonNode charactersArray = objectMapper.readTree(json);
-
-            Set<String> normalizedExisting = existingCharacterNames.stream()
-                    .map(this::normalizeName)
-                    .filter(normalized -> !normalized.isBlank())
-                    .collect(Collectors.toSet());
-
-            List<ExtractedCharacter> characters = new ArrayList<>();
-            for (JsonNode charNode : charactersArray) {
-                String name = charNode.get("name").asText();
-                String description = charNode.has("description")
-                        ? charNode.get("description").asText()
-                        : "A character in the story";
-                int paragraphIndex = charNode.has("approximateParagraphIndex")
-                        ? charNode.get("approximateParagraphIndex").asInt(0)
-                        : 0;
-
-                // Skip if name matches existing character (case-insensitive)
-                String normalizedName = normalizeName(name);
-                boolean isDuplicate = normalizedName.isBlank() || normalizedExisting.contains(normalizedName);
-                if (!isDuplicate && !name.isBlank()) {
-                    characters.add(new ExtractedCharacter(name, description, paragraphIndex));
-                }
+            return objectMapper.readTree(json);
+        } catch (JsonProcessingException firstFailure) {
+            log.warn("Character extraction returned invalid JSON for chapter '{}'; attempting repair", chapterTitle);
+            String repairedText = reasoningProvider.generate(buildRepairPrompt(generatedText), LlmOptions.withTemperature(0.0));
+            String repairedJson = extractJsonArray(repairedText);
+            try {
+                return objectMapper.readTree(repairedJson);
+            } catch (JsonProcessingException repairFailure) {
+                repairFailure.addSuppressed(firstFailure);
+                throw repairFailure;
             }
-
-            log.info("Extracted {} new characters from chapter '{}'", characters.size(), chapterTitle);
-            return characters;
-
-        } catch (Exception e) {
-            log.error("Failed to extract characters from chapter '{}'", chapterTitle, e);
-            return List.of();
         }
+    }
+
+    private String buildRepairPrompt(String malformedResponse) {
+        return """
+                Convert the following malformed model output into a valid JSON array.
+                Return ONLY valid JSON.
+                Preserve the intended fields:
+                - name
+                - description
+                - approximateParagraphIndex
+
+                If the content cannot be repaired confidently, return [].
+
+                Malformed output:
+                ---
+                """ + truncateText(malformedResponse, 2500) + """
+                ---
+                """;
     }
 
     private String truncateText(String text, int maxLength) {
