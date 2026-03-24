@@ -148,6 +148,7 @@ Operational notes:
 - Ensure `pdr_migrator` owns existing objects in `public` before running new migrations.
 - Grant `pdr_app` CRUD on tables and sequence usage/select/update.
 - Set default privileges from `pdr_migrator` so future tables/sequences are automatically usable by `pdr_app`.
+- In production, set either `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` or `DB_MIGRATOR_USER` / `DB_MIGRATOR_PASSWORD` so Flyway does not fall back to the runtime app role.
 
 ## Local Env File
 
@@ -166,3 +167,25 @@ Notes:
 - `.env.local` is already ignored by git via `.env.*`.
 - Use simple `KEY=value` lines. Do not prefix with `export`.
 - Start the app with the `local-dev` profile so the PostgreSQL local-dev settings are active.
+
+## Production Auth Env
+
+For production deployments using Google sign-in and a dedicated Flyway role, set:
+
+```properties
+DATABASE_URL=jdbc:postgresql://...
+DATABASE_USERNAME=pdr_app
+DATABASE_PASSWORD=CHANGE_ME_APP
+DB_MIGRATOR_USER=pdr_migrator
+DB_MIGRATOR_PASSWORD=CHANGE_ME_MIGRATOR
+
+ACCOUNT_AUTH_GOOGLE_ENABLED=true
+ACCOUNT_AUTH_GOOGLE_CLIENT_ID=your-google-client-id
+ACCOUNT_AUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+ACCOUNT_AUTH_GOOGLE_REDIRECT_URI=https://your-domain.example/api/account/google/callback
+```
+
+Notes:
+- `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` also work if you prefer canonical Spring env names.
+- The Flyway role must own tables it alters, including existing auth tables such as `users`.
+- The Google redirect URI must exactly match the URI configured on the Google OAuth client.

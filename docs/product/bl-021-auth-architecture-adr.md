@@ -1,6 +1,6 @@
 # BL-021 Auth Architecture and Security ADR
 
-Last updated: 2026-02-18
+Last updated: 2026-03-23
 Status: Approved
 
 ## Context
@@ -16,17 +16,22 @@ Status: Approved
 - New reader account endpoints will live under `/api/account/*` and use separate cookies/session storage.
 - This avoids mixing operational auth concerns with end-user reader identity.
 
-### 2. Launch account auth with email/password only
-- v1 supports:
+### 2. Launch account auth with local credentials first, then add Google OAuth on the same session model
+- Initial v1 supports:
 - `POST /api/account/register`
 - `POST /api/account/login`
 - `POST /api/account/logout`
 - `GET /api/account/status`
-- OAuth and magic-link are explicitly deferred until v1 account migration and reliability are stable.
+- Follow-on support adds:
+- `POST /api/account/google/start`
+- `GET /api/account/google/callback`
+- Google sign-in is additive, not a separate account system: provider identities resolve to the same app-level user/session model used by email/password sign-in.
+- Magic-link remains deferred until account migration and reliability needs justify it.
 - Anonymous reading remains supported.
 
 ### 3. Use durable DB-backed sessions for accounts
 - Add `users` and `user_sessions` tables.
+- Add provider/credential tables (`user_local_credentials`, `user_auth_identities`) so core user identity is not coupled to password storage.
 - Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in non-local/public deployments.
 - Store only hashed session tokens in DB (never raw token values).
 - Session TTL: 30 days rolling inactivity window; logout invalidates session immediately.
@@ -69,7 +74,7 @@ Status: Approved
 - Migration operation must be idempotent so retries do not duplicate or corrupt state.
 
 ## Non-Goals (v1)
-- Social login providers (Google/Apple/etc.).
+- Additional social login providers beyond Google (for example Apple).
 - Multi-tenant organization admin features.
 - Full account management UI (password reset email flows) beyond minimal operator-supported recovery.
 

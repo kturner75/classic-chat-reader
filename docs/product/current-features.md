@@ -47,12 +47,15 @@ This inventory reflects implemented behavior in backend controllers/services and
   - `POST /api/account/logout`
   - `GET /api/account/status`
   - `POST /api/account/claim-sync`
+  - `POST /api/account/google/start`
+  - `GET /api/account/google/callback`
 - Reader account rollout is configurable by feature flags:
   - `account.auth.rollout.mode=disabled|internal|optional|required`
   - `account.auth.rollout.allowed-emails` (allow-list for `internal` mode)
-- Account status payload includes rollout metadata (`rolloutMode`, `accountRequired`) for staged client behavior.
+- Account status payload includes rollout metadata (`rolloutMode`, `accountRequired`) and provider availability (`googleAuthEnabled`) for staged client behavior.
 - Reader account UI is available in both library and reader flows, with one-time claim/sync to migrate anonymous/local state into the signed-in account.
 - Reader-scoped API behavior resolves identity by authenticated account `userId` when present and falls back to anonymous reader cookie identity when not authenticated.
+- Account identity supports both local credentials and provider-backed identities, with Google sign-in issuing the same durable reader account session cookie used by email/password auth.
 - User-scoped ownership is implemented for reader data paths used by annotations/bookmarks/progress/quiz attempts/trophies.
 
 ## Landing Personalization (BL-018)
