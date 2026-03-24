@@ -6,12 +6,15 @@ import org.example.reader.service.AccountAuthRateLimiter;
 import org.example.reader.service.AccountAuthService;
 import org.example.reader.service.AccountClaimSyncService;
 import org.example.reader.service.AccountMetricsService;
+import org.example.reader.service.GoogleAccountOAuthService;
 import org.example.reader.service.ReaderProfileService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.net.URI;
 
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AccountController.class)
@@ -49,6 +53,9 @@ class AccountControllerTest {
     @MockitoBean
     private AccountAuthAuditService accountAuthAuditService;
 
+    @MockitoBean
+    private GoogleAccountOAuthService googleAccountOAuthService;
+
     @Test
     void status_returnsUnauthenticatedWhenNoSession() throws Exception {
         when(accountAuthService.status(any()))
@@ -59,11 +66,13 @@ class AccountControllerTest {
                         null,
                         null
                 ));
+        when(googleAccountOAuthService.isAvailable()).thenReturn(true);
 
         mockMvc.perform(get("/api/account/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountAuthEnabled", is(true)))
-                .andExpect(jsonPath("$.authenticated", is(false)));
+                .andExpect(jsonPath("$.authenticated", is(false)))
+                .andExpect(jsonPath("$.googleAuthEnabled", is(true)));
     }
 
     @Test
@@ -203,6 +212,39 @@ class AccountControllerTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Retry-After", "30"))
                 .andExpect(jsonPath("$.message", is("Too many failed sign-in attempts. Please try again later.")));
+    }
+
+    @Test
+    void googleStart_redirectsToProvider() throws Exception {
+        when(googleAccountOAuthService.beginAuthorization(eq("/books/1"), any()))
+                .thenReturn(new GoogleAccountOAuthService.AuthorizationStartResult(
+                        URI.create("https://accounts.google.com/o/oauth2/v2/auth?state=abc"),
+                        true
+                ));
+
+        mockMvc.perform(get("/api/account/google/start").param("returnTo", "/books/1"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("https://accounts.google.com/o/oauth2/v2/auth?state=abc"));
+
+        verify(accountAuthAuditService).record(eq("google_start"), eq("redirected"), any(), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void googleCallback_failureRedirectsBackToApp() throws Exception {
+        when(googleAccountOAuthService.completeAuthorization(eq(null), eq(null), eq("access_denied"), any(), any()))
+                .thenReturn(new GoogleAccountOAuthService.AuthorizationCallbackResult(
+                        URI.create("/?account_notice=google_cancelled"),
+                        false,
+                        "cancelled",
+                        null,
+                        null
+                ));
+
+        mockMvc.perform(get("/api/account/google/callback").param("error", "access_denied"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/?account_notice=google_cancelled"));
+
+        verify(accountAuthAuditService).record(eq("google_callback"), eq("failure"), any(), isNull(), isNull(), isNull(), eq("cancelled"));
     }
 
     @Test

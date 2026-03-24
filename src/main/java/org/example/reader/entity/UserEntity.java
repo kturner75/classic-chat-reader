@@ -22,15 +22,6 @@ public class UserEntity {
     @Column(nullable = false, length = 320, unique = true)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
-    private String passwordHash;
-
-    @Column(name = "failed_login_attempts", nullable = false)
-    private int failedLoginAttempts;
-
-    @Column(name = "login_locked_until")
-    private LocalDateTime loginLockedUntil;
-
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -63,30 +54,6 @@ public class UserEntity {
 
     public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
-    }
-
-    public int getFailedLoginAttempts() {
-        return failedLoginAttempts;
-    }
-
-    public void setFailedLoginAttempts(int failedLoginAttempts) {
-        this.failedLoginAttempts = failedLoginAttempts;
-    }
-
-    public LocalDateTime getLoginLockedUntil() {
-        return loginLockedUntil;
-    }
-
-    public void setLoginLockedUntil(LocalDateTime loginLockedUntil) {
-        this.loginLockedUntil = loginLockedUntil;
     }
 
     public LocalDateTime getCreatedAt() {

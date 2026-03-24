@@ -148,3 +148,21 @@ Operational notes:
 - Ensure `pdr_migrator` owns existing objects in `public` before running new migrations.
 - Grant `pdr_app` CRUD on tables and sequence usage/select/update.
 - Set default privileges from `pdr_migrator` so future tables/sequences are automatically usable by `pdr_app`.
+
+## Local Env File
+
+For local development, the app reads an optional `.env.local` file from the repo root.
+
+Example:
+
+```properties
+ACCOUNT_AUTH_GOOGLE_ENABLED=true
+ACCOUNT_AUTH_GOOGLE_CLIENT_ID=your-google-client-id
+ACCOUNT_AUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+ACCOUNT_AUTH_GOOGLE_REDIRECT_URI=http://localhost:8080/api/account/google/callback
+```
+
+Notes:
+- `.env.local` is already ignored by git via `.env.*`.
+- Use simple `KEY=value` lines. Do not prefix with `export`.
+- Start the app with the `local-dev` profile so the PostgreSQL local-dev settings are active.

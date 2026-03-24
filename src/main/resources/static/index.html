@@ -729,12 +729,21 @@
         <div id="account-modal-backdrop" class="auth-modal-backdrop"></div>
         <div class="auth-modal-card">
             <div class="auth-modal-header">
-                <h3>Reader Account</h3>
+                <h3 id="account-modal-title">Sign In</h3>
                 <button id="account-modal-close" class="auth-modal-close" title="Close (Esc)">&times;</button>
             </div>
-            <p class="auth-modal-help">Sign in or register to sync progress and keep data across devices.</p>
+            <p id="account-modal-help" class="auth-modal-help">Sign in with Google or use email and password to sync progress across devices.</p>
             <p id="account-modal-status" class="auth-modal-status"></p>
             <p id="account-modal-email" class="auth-modal-help hidden"></p>
+            <button id="account-google-signin" class="chapter-recap-btn chapter-recap-btn-secondary auth-provider-btn hidden" type="button">
+                <span class="auth-provider-google-mark" aria-hidden="true">
+                    <span class="auth-provider-google-letter">G</span>
+                </span>
+                <span id="account-google-signin-label">Sign in with Google</span>
+            </button>
+            <div id="account-auth-divider" class="auth-modal-divider hidden">
+                <span>or use email</span>
+            </div>
             <label for="account-email" class="auth-modal-label">Email</label>
             <input id="account-email" class="auth-modal-input" type="email" autocomplete="email" />
             <label for="account-password" class="auth-modal-label">Password</label>

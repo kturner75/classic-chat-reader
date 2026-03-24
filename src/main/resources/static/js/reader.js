@@ -124,6 +124,7 @@
         authAuthenticated: false,
         authPromptShown: false,
         accountAuthEnabled: false,
+        accountGoogleAuthEnabled: false,
         accountAuthenticated: false,
         accountEmail: null,
         accountRolloutMode: 'optional',
@@ -383,8 +384,13 @@
         accountModal: document.getElementById('account-modal'),
         accountModalBackdrop: document.getElementById('account-modal-backdrop'),
         accountModalClose: document.getElementById('account-modal-close'),
+        accountModalTitle: document.getElementById('account-modal-title'),
+        accountModalHelp: document.getElementById('account-modal-help'),
         accountModalStatus: document.getElementById('account-modal-status'),
         accountModalEmail: document.getElementById('account-modal-email'),
+        accountGoogleSignIn: document.getElementById('account-google-signin'),
+        accountGoogleSignInLabel: document.getElementById('account-google-signin-label'),
+        accountAuthDivider: document.getElementById('account-auth-divider'),
         accountEmail: document.getElementById('account-email'),
         accountPassword: document.getElementById('account-password'),
         accountSignIn: document.getElementById('account-signin'),
@@ -1306,8 +1312,8 @@
             elements.mobileMenuAccount.classList.toggle('hidden', !showAccount);
             if (showAccount) {
                 elements.mobileMenuAccount.textContent = state.accountAuthenticated
-                    ? 'Reader Account (Signed In)'
-                    : 'Reader Account (Sign In)';
+                    ? 'Account (Signed In)'
+                    : 'Sign In';
             }
         }
 
@@ -1530,7 +1536,7 @@
 
     function updateAccountUi() {
         const showAccount = state.accountAuthEnabled;
-        const accountLabel = state.accountAuthenticated ? 'Account' : 'Reader Account';
+        const accountLabel = state.accountAuthenticated ? 'Account' : 'Sign In';
 
         if (elements.accountToggle) {
             elements.accountToggle.classList.toggle('hidden', !showAccount);
@@ -1544,7 +1550,7 @@
             elements.accountToggleLibrary.classList.toggle('hidden', !showAccount);
             elements.accountToggleLibrary.textContent = state.accountAuthenticated
                 ? `Account: ${state.accountEmail || 'Signed In'}`
-                : 'Reader Account';
+                : 'Sign In';
         }
         if (elements.accountLibraryStatus) {
             const requiredSignIn = showAccount && state.accountRequired && !state.accountAuthenticated;
@@ -1562,12 +1568,79 @@
         updateMobileHeaderMenuState();
     }
 
+    function accountNoticeConfig(code) {
+        switch (code) {
+            case 'google_signed_in':
+                return { tone: 'success', message: 'Signed in with Google.', toast: true };
+            case 'google_unavailable':
+                return { tone: 'error', message: 'Google sign-in is not configured right now.' };
+            case 'google_cancelled':
+                return { tone: 'error', message: 'Google sign-in was cancelled.' };
+            case 'google_provider_error':
+                return { tone: 'error', message: 'Google sign-in failed before your account could be verified.' };
+            case 'google_state_mismatch':
+                return { tone: 'error', message: 'Google sign-in could not be verified. Please try again.' };
+            case 'google_code_missing':
+                return { tone: 'error', message: 'Google sign-in did not return an authorization code.' };
+            case 'google_token_exchange_failed':
+                return { tone: 'error', message: 'Google sign-in could not be completed right now.' };
+            case 'google_id_token_invalid':
+                return { tone: 'error', message: 'Google sign-in returned an invalid identity token.' };
+            case 'google_email_unverified':
+                return { tone: 'error', message: 'Google sign-in requires a verified Google email address.' };
+            case 'google_rollout_restricted':
+                return { tone: 'error', message: 'This account is not in the current reader-account rollout.' };
+            case 'google_signin_failed':
+                return { tone: 'error', message: 'Google sign-in could not be completed.' };
+            default:
+                return null;
+        }
+    }
+
+    function consumeAccountNotice() {
+        const url = new URL(window.location.href);
+        const notice = url.searchParams.get('account_notice');
+        if (!notice) {
+            return;
+        }
+
+        url.searchParams.delete('account_notice');
+        window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+
+        const config = accountNoticeConfig(notice);
+        if (!config) {
+            return;
+        }
+
+        if (config.toast) {
+            showAppToast({
+                title: 'Reader account',
+                message: config.message,
+                autoDismissMs: 3200
+            });
+            return;
+        }
+
+        openAccountModal(config.message);
+        setAccountStatusMessage(config.message, config.tone);
+    }
+
     function openAccountModal(message = '') {
         if (!elements.accountModal) return;
         closeMobileHeaderMenu();
         elements.accountModal.classList.remove('hidden');
 
         const authenticated = state.accountAuthenticated;
+        if (elements.accountModalTitle) {
+            elements.accountModalTitle.textContent = authenticated ? 'Reader Account' : 'Sign In';
+        }
+        if (elements.accountModalHelp) {
+            elements.accountModalHelp.textContent = authenticated
+                ? 'Your reader account is active in this browser.'
+                : (state.accountGoogleAuthEnabled
+                    ? 'Use Google for the quickest sign-in, or use email and password below.'
+                    : 'Use email and password to sign in and sync progress across devices.');
+        }
         if (elements.accountModalEmail) {
             elements.accountModalEmail.classList.toggle('hidden', !authenticated);
             elements.accountModalEmail.textContent = authenticated
@@ -1576,6 +1649,18 @@
         }
         if (elements.accountSignOut) {
             elements.accountSignOut.classList.toggle('hidden', !authenticated);
+        }
+        if (elements.accountGoogleSignIn) {
+            const showGoogle = !authenticated && state.accountGoogleAuthEnabled;
+            elements.accountGoogleSignIn.classList.toggle('hidden', !showGoogle);
+            elements.accountGoogleSignIn.disabled = false;
+            if (elements.accountGoogleSignInLabel) {
+                elements.accountGoogleSignInLabel.textContent = 'Sign in with Google';
+            }
+        }
+        if (elements.accountAuthDivider) {
+            const showDivider = !authenticated && state.accountGoogleAuthEnabled;
+            elements.accountAuthDivider.classList.toggle('hidden', !showDivider);
         }
         if (elements.accountSignIn) {
             elements.accountSignIn.classList.toggle('hidden', authenticated);
@@ -1595,7 +1680,11 @@
             elements.accountPassword.disabled = authenticated;
             elements.accountPassword.value = '';
             if (!authenticated) {
-                elements.accountPassword.focus();
+                if (state.accountGoogleAuthEnabled && elements.accountGoogleSignIn && !elements.accountGoogleSignIn.classList.contains('hidden')) {
+                    elements.accountGoogleSignIn.focus();
+                } else {
+                    elements.accountEmail?.focus();
+                }
             }
         }
 
@@ -1769,6 +1858,7 @@
             }
             const status = await response.json();
             state.accountAuthEnabled = status.accountAuthEnabled === true;
+            state.accountGoogleAuthEnabled = status.googleAuthEnabled === true;
             state.accountAuthenticated = status.authenticated === true;
             state.accountEmail = typeof status.email === 'string' ? status.email : null;
             state.accountRolloutMode = typeof status.rolloutMode === 'string'
@@ -1787,6 +1877,21 @@
         } catch (error) {
             console.debug('Account status check failed:', error);
         }
+    }
+
+    function startGoogleAccountAuth() {
+        if (!state.accountGoogleAuthEnabled) {
+            setAccountStatusMessage('Google sign-in is not available right now.', 'error');
+            return;
+        }
+        if (elements.accountGoogleSignIn) {
+            elements.accountGoogleSignIn.disabled = true;
+        }
+        if (elements.accountGoogleSignInLabel) {
+            elements.accountGoogleSignInLabel.textContent = 'Redirecting...';
+        }
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.assign(`/api/account/google/start?returnTo=${encodeURIComponent(returnTo)}`);
     }
 
     async function submitAccountAuth(mode) {
@@ -2145,6 +2250,7 @@
         await loadClassroomContext();
         await loadLibrary();
         await accountCheckStatus();
+        consumeAccountNotice();
         await authCheckStatus();
         await speedReadingCheckAvailability();
         applyLayoutCapabilities();
@@ -8133,6 +8239,9 @@
         }
         if (elements.accountSignIn) {
             elements.accountSignIn.addEventListener('click', submitAccountLogin);
+        }
+        if (elements.accountGoogleSignIn) {
+            elements.accountGoogleSignIn.addEventListener('click', startGoogleAccountAuth);
         }
         if (elements.accountRegister) {
             elements.accountRegister.addEventListener('click', submitAccountRegister);

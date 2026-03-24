@@ -1,8 +1,12 @@
 package org.example.reader.service;
 
 import jakarta.servlet.http.Cookie;
+import org.example.reader.entity.UserAuthIdentityEntity;
 import org.example.reader.entity.UserEntity;
+import org.example.reader.entity.UserLocalCredentialEntity;
 import org.example.reader.entity.UserSessionEntity;
+import org.example.reader.repository.UserAuthIdentityRepository;
+import org.example.reader.repository.UserLocalCredentialRepository;
 import org.example.reader.repository.UserRepository;
 import org.example.reader.repository.UserSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,8 +27,8 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -38,6 +42,12 @@ class AccountAuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserLocalCredentialRepository userLocalCredentialRepository;
+
+    @Mock
+    private UserAuthIdentityRepository userAuthIdentityRepository;
+
+    @Mock
     private UserSessionRepository userSessionRepository;
 
     private AccountAuthService accountAuthService;
@@ -46,6 +56,8 @@ class AccountAuthServiceTest {
     void setUp() {
         accountAuthService = new AccountAuthService(
                 userRepository,
+                userLocalCredentialRepository,
+                userAuthIdentityRepository,
                 userSessionRepository,
                 true,
                 "optional",
@@ -59,7 +71,7 @@ class AccountAuthServiceTest {
     }
 
     @Test
-    void register_validCredentials_createsUserAndSessionCookie() {
+    void register_validCredentials_createsUserCredentialsAndSessionCookie() {
         AtomicReference<UserSessionEntity> storedSession = new AtomicReference<>();
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
@@ -67,6 +79,7 @@ class AccountAuthServiceTest {
             user.setId("user-1");
             return user;
         });
+        when(userLocalCredentialRepository.save(any(UserLocalCredentialEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(userSessionRepository.save(any(UserSessionEntity.class))).thenAnswer(invocation -> {
             UserSessionEntity session = invocation.getArgument(0);
             storedSession.set(session);
@@ -87,7 +100,10 @@ class AccountAuthServiceTest {
         ArgumentCaptor<UserEntity> userCaptor = ArgumentCaptor.forClass(UserEntity.class);
         verify(userRepository).save(userCaptor.capture());
         assertEquals("reader@example.com", userCaptor.getValue().getEmail());
-        assertTrue(BCrypt.checkpw("password123", userCaptor.getValue().getPasswordHash()));
+
+        ArgumentCaptor<UserLocalCredentialEntity> credentialCaptor = ArgumentCaptor.forClass(UserLocalCredentialEntity.class);
+        verify(userLocalCredentialRepository).save(credentialCaptor.capture());
+        assertTrue(BCrypt.checkpw("password123", credentialCaptor.getValue().getPasswordHash()));
 
         assertNotNull(storedSession.get());
         String setCookie = response.getHeader("Set-Cookie");
@@ -104,6 +120,7 @@ class AccountAuthServiceTest {
             user.setId("user-1");
             return user;
         });
+        when(userLocalCredentialRepository.save(any(UserLocalCredentialEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(userSessionRepository.save(any(UserSessionEntity.class))).thenAnswer(invocation -> {
             UserSessionEntity session = invocation.getArgument(0);
             storedSession.set(session);
@@ -148,13 +165,37 @@ class AccountAuthServiceTest {
     }
 
     @Test
+    void login_googleOnlyAccount_returnsInvalidCredentials() {
+        UserEntity user = new UserEntity();
+        user.setId("user-1");
+        user.setEmail("reader@example.com");
+        when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(user));
+        when(userLocalCredentialRepository.findByUserId("user-1")).thenReturn(Optional.empty());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccountAuthService.AuthResult result = accountAuthService.login(
+                "reader@example.com",
+                "password123",
+                response
+        );
+
+        assertEquals(AccountAuthService.ResultStatus.INVALID_CREDENTIALS, result.status());
+    }
+
+    @Test
     void login_repeatedInvalidCredentials_triggersLockoutWithRetryAfter() {
         UserEntity user = new UserEntity();
         user.setId("user-1");
         user.setEmail("reader@example.com");
-        user.setPasswordHash(BCrypt.hashpw("password123", BCrypt.gensalt(10)));
+
+        UserLocalCredentialEntity credential = new UserLocalCredentialEntity();
+        credential.setUser(user);
+        credential.setUserId("user-1");
+        credential.setPasswordHash(BCrypt.hashpw("password123", BCrypt.gensalt(10)));
+
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(user));
-        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userLocalCredentialRepository.findByUserId("user-1")).thenReturn(Optional.of(credential));
+        when(userLocalCredentialRepository.save(any(UserLocalCredentialEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         for (int i = 0; i < 4; i++) {
@@ -181,13 +222,18 @@ class AccountAuthServiceTest {
         UserEntity user = new UserEntity();
         user.setId("user-1");
         user.setEmail("reader@example.com");
-        user.setPasswordHash(BCrypt.hashpw("password123", BCrypt.gensalt(10)));
-        user.setFailedLoginAttempts(6);
-        user.setLoginLockedUntil(LocalDateTime.now().minusSeconds(5));
+
+        UserLocalCredentialEntity credential = new UserLocalCredentialEntity();
+        credential.setUser(user);
+        credential.setUserId("user-1");
+        credential.setPasswordHash(BCrypt.hashpw("password123", BCrypt.gensalt(10)));
+        credential.setFailedLoginAttempts(6);
+        credential.setLoginLockedUntil(LocalDateTime.now().minusSeconds(5));
 
         AtomicReference<UserSessionEntity> storedSession = new AtomicReference<>();
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(user));
-        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userLocalCredentialRepository.findByUserId("user-1")).thenReturn(Optional.of(credential));
+        when(userLocalCredentialRepository.save(any(UserLocalCredentialEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(userSessionRepository.save(any(UserSessionEntity.class))).thenAnswer(invocation -> {
             UserSessionEntity session = invocation.getArgument(0);
             storedSession.set(session);
@@ -202,9 +248,43 @@ class AccountAuthServiceTest {
         );
 
         assertEquals(AccountAuthService.ResultStatus.SUCCESS, result.status());
-        assertEquals(0, user.getFailedLoginAttempts());
-        assertNull(user.getLoginLockedUntil());
+        assertEquals(0, credential.getFailedLoginAttempts());
+        assertNull(credential.getLoginLockedUntil());
         assertNotNull(storedSession.get());
+    }
+
+    @Test
+    void signInWithExternalIdentity_existingEmail_linksIdentityAndCreatesSession() {
+        UserEntity user = new UserEntity();
+        user.setId("user-1");
+        user.setEmail("reader@example.com");
+
+        AtomicReference<UserSessionEntity> storedSession = new AtomicReference<>();
+        when(userAuthIdentityRepository.findByProviderAndProviderSubject("google", "google-subject"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(user));
+        when(userAuthIdentityRepository.save(any(UserAuthIdentityEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userSessionRepository.save(any(UserSessionEntity.class))).thenAnswer(invocation -> {
+            UserSessionEntity session = invocation.getArgument(0);
+            storedSession.set(session);
+            return session;
+        });
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccountAuthService.AuthResult result = accountAuthService.signInWithExternalIdentity(
+                new AccountAuthService.ExternalIdentity("google", "google-subject", "reader@example.com", true),
+                response
+        );
+
+        assertEquals(AccountAuthService.ResultStatus.SUCCESS, result.status());
+        assertEquals("reader@example.com", result.email());
+        assertNotNull(storedSession.get());
+
+        ArgumentCaptor<UserAuthIdentityEntity> identityCaptor = ArgumentCaptor.forClass(UserAuthIdentityEntity.class);
+        verify(userAuthIdentityRepository).save(identityCaptor.capture());
+        assertEquals("google", identityCaptor.getValue().getProvider());
+        assertEquals("google-subject", identityCaptor.getValue().getProviderSubject());
+        assertEquals("reader@example.com", identityCaptor.getValue().getEmail());
     }
 
     @Test
@@ -224,6 +304,8 @@ class AccountAuthServiceTest {
     void register_internalRollout_rejectsEmailNotInAllowList() {
         AccountAuthService internalRolloutService = new AccountAuthService(
                 userRepository,
+                userLocalCredentialRepository,
+                userAuthIdentityRepository,
                 userSessionRepository,
                 true,
                 "internal",
@@ -253,10 +335,13 @@ class AccountAuthServiceTest {
             user.setId("user-1");
             return user;
         });
+        when(userLocalCredentialRepository.save(any(UserLocalCredentialEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(userSessionRepository.save(any(UserSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         AccountAuthService internalRolloutService = new AccountAuthService(
                 userRepository,
+                userLocalCredentialRepository,
+                userAuthIdentityRepository,
                 userSessionRepository,
                 true,
                 "internal",

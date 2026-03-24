@@ -106,6 +106,12 @@
       <artifactId>spring-security-crypto</artifactId>
     </dependency>
 
+    <!-- JWT verification for federated account auth -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-oauth2-jose</artifactId>
+    </dependency>
+
     <!-- Netty native DNS resolver for macOS (prevents startup warning) -->
     <dependency>
       <groupId>io.netty</groupId>
