@@ -233,6 +233,7 @@ class BookImportServiceTest {
         ParsedChapter chapter = new ParsedChapter("Chapter 1", List.of("Paragraph one", "Paragraph two"));
         ParsedBook parsedBook = new ParsedBook(List.of(chapter));
         when(contentParser.parse(anyString())).thenReturn(parsedBook);
+        when(curatedCatalogService.isCuratedGutenbergId(1234)).thenReturn(false);
 
         ArgumentCaptor<BookEntity> bookCaptor = ArgumentCaptor.forClass(BookEntity.class);
         Book savedBook = new Book("book-id", "Test Book", "Test Author", "", null, List.of(), false, false, false);
@@ -245,6 +246,30 @@ class BookImportServiceTest {
         assertEquals("Successfully imported", result.message());
         assertEquals(1, result.chapterCount());
         assertEquals(2, result.paragraphCount());
+        assertFalse(bookCaptor.getValue().getTtsEnabled());
+        assertFalse(bookCaptor.getValue().getIllustrationEnabled());
+        assertFalse(bookCaptor.getValue().getCharacterEnabled());
+    }
+
+    @Test
+    void importBookEnablesFeaturesForCuratedGutenbergTitles() {
+        GutendexBook gutendexBook = createGutendexBook(844, "The Importance of Being Earnest", "Oscar Wilde");
+        when(bookStorageService.existsBySource("gutenberg", "844")).thenReturn(false);
+        when(gutendexClient.getBook(844)).thenReturn(Optional.of(gutendexBook));
+        when(gutendexClient.fetchContent(anyString())).thenReturn("<html><body><p>Content</p></body></html>");
+
+        ParsedChapter chapter = new ParsedChapter("Chapter 1", List.of("Paragraph one", "Paragraph two"));
+        ParsedBook parsedBook = new ParsedBook(List.of(chapter));
+        when(contentParser.parse(anyString())).thenReturn(parsedBook);
+        when(curatedCatalogService.isCuratedGutenbergId(844)).thenReturn(true);
+
+        ArgumentCaptor<BookEntity> bookCaptor = ArgumentCaptor.forClass(BookEntity.class);
+        Book savedBook = new Book("book-id", "The Importance of Being Earnest", "Oscar Wilde", "", null, List.of(), true, true, true);
+        when(bookStorageService.saveBook(bookCaptor.capture())).thenReturn(savedBook);
+
+        ImportResult result = bookImportService.importBook(844);
+
+        assertTrue(result.success());
         assertTrue(bookCaptor.getValue().getTtsEnabled());
         assertTrue(bookCaptor.getValue().getIllustrationEnabled());
         assertTrue(bookCaptor.getValue().getCharacterEnabled());

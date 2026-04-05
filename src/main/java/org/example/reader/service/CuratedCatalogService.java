@@ -104,6 +104,10 @@ public class CuratedCatalogService {
         return CURATED_BOOKS;
     }
 
+    public boolean isCuratedGutenbergId(int gutenbergId) {
+        return CURATED_BOOKS.stream().anyMatch(book -> book.gutenbergId() == gutenbergId);
+    }
+
     public List<CuratedCatalogBook> search(String query) {
         String normalized = normalize(query);
         if (normalized.isEmpty()) {

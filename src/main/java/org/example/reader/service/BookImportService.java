@@ -231,10 +231,12 @@ public class BookImportService {
         BookEntity bookEntity = new BookEntity(book.title(), book.getPrimaryAuthor(), SOURCE_GUTENBERG);
         bookEntity.setSourceId(sourceId);
         bookEntity.setDescription(createDescription(book));
-        // Imported Gutenberg books should expose the supported reader features immediately.
-        bookEntity.setTtsEnabled(true);
-        bookEntity.setIllustrationEnabled(true);
-        bookEntity.setCharacterEnabled(true);
+        if (curatedCatalogService.isCuratedGutenbergId(gutenbergId)) {
+            // Curated imports should expose the supported reader features immediately.
+            bookEntity.setTtsEnabled(true);
+            bookEntity.setIllustrationEnabled(true);
+            bookEntity.setCharacterEnabled(true);
+        }
 
         int totalParagraphs = 0;
         int chapterIndex = 0;
