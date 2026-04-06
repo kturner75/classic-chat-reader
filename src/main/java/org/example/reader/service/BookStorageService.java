@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class BookStorageService {
@@ -157,14 +158,24 @@ public class BookStorageService {
 
     @Transactional(readOnly = true)
     public Optional<String> getMlaCitation(String bookId) {
+        return getMlaCitation(bookId, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> getMlaCitation(String bookId,
+                                           String siteBaseUrl,
+                                           String chapterId,
+                                           Integer paragraphIndex) {
         return bookRepository.findById(bookId)
                 .map(book -> mlaCitationFormatter.format(new MlaCitationFormatter.Metadata(
                         book.getAuthor(),
                         book.getTitle(),
                         null,
                         null,
-                        toSourceUrl(book),
-                        null
+                        toSourceTitle(book),
+                        "ClassicChatReader",
+                        toReaderUrl(siteBaseUrl, bookId, chapterId, paragraphIndex),
+                        java.time.LocalDate.now()
                 )));
     }
 
@@ -237,20 +248,32 @@ public class BookStorageService {
         );
     }
 
-    private String toSourceUrl(BookEntity book) {
-        if (book == null) {
+    private String toReaderUrl(String siteBaseUrl, String bookId, String chapterId, Integer paragraphIndex) {
+        if (siteBaseUrl == null || siteBaseUrl.isBlank()) {
             return "";
         }
-        String sourceId = book.getSourceId() == null ? "" : book.getSourceId().trim();
-        if (sourceId.isBlank()) {
+
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(siteBaseUrl)
+                .replaceQuery(null)
+                .fragment(null)
+                .queryParam("book", bookId);
+        if (chapterId != null && !chapterId.isBlank()) {
+            builder.queryParam("chapter", chapterId);
+        }
+        if (paragraphIndex != null && paragraphIndex >= 0) {
+            builder.queryParam("paragraph", paragraphIndex + 1);
+        }
+        return builder.build().toUriString();
+    }
+
+    private String toSourceTitle(BookEntity book) {
+        if (book == null || book.getSource() == null) {
             return "";
         }
-        if (sourceId.startsWith("http://") || sourceId.startsWith("https://")) {
-            return sourceId;
-        }
-        if ("gutenberg".equalsIgnoreCase(book.getSource())) {
-            return "https://www.gutenberg.org/ebooks/" + sourceId;
-        }
-        return "";
+        return switch (book.getSource().trim().toLowerCase()) {
+            case "gutenberg" -> "Project Gutenberg";
+            case "standardebooks" -> "Standard Ebooks";
+            default -> "";
+        };
     }
 }

@@ -7,7 +7,7 @@
         localBooks: [],        // Books imported locally
         currentBook: null,
         currentBookMlaCitation: '',
-        currentBookCitationBookId: null,
+        currentBookCitationKey: null,
         currentBookCitationPromise: null,
         currentChapterIndex: 0,
         chapterLoadRequestId: 0,
@@ -810,8 +810,32 @@
         }
     }
 
-    async function requestMlaCitationForBook(bookId) {
-        const response = await fetch(`/api/library/${bookId}/citation/mla`, { cache: 'no-store' });
+    function getCurrentCitationContext() {
+        const bookId = state.currentBook?.id;
+        const chapter = state.chapters[state.currentChapterIndex] || null;
+        const chapterId = chapter?.id || null;
+        const paragraphIndex = Number.isInteger(state.currentParagraphIndex) ? state.currentParagraphIndex : null;
+        const citationKey = (bookId && chapterId && Number.isInteger(paragraphIndex))
+            ? `${bookId}:${chapterId}:${paragraphIndex}`
+            : (bookId || null);
+        return {
+            bookId,
+            chapterId,
+            paragraphIndex,
+            citationKey
+        };
+    }
+
+    async function requestMlaCitationForBook(bookId, chapterId, paragraphIndex) {
+        const params = new URLSearchParams();
+        if (chapterId) {
+            params.set('chapterId', chapterId);
+        }
+        if (Number.isInteger(paragraphIndex)) {
+            params.set('paragraphIndex', String(paragraphIndex));
+        }
+        const query = params.toString();
+        const response = await fetch(`/api/library/${bookId}/citation/mla${query ? `?${query}` : ''}`, { cache: 'no-store' });
         if (!response.ok) {
             const payload = await readErrorPayload(response);
             const message = firstMessageFromPayload(payload)
@@ -827,29 +851,29 @@
     }
 
     async function ensureCurrentBookMlaCitation({ force = false } = {}) {
-        const bookId = state.currentBook?.id;
+        const { bookId, chapterId, paragraphIndex, citationKey } = getCurrentCitationContext();
         if (!bookId) {
             return '';
         }
 
-        const hasCachedCitation = state.currentBookCitationBookId === bookId
+        const hasCachedCitation = state.currentBookCitationKey === citationKey
             && typeof state.currentBookMlaCitation === 'string'
             && state.currentBookMlaCitation.trim().length > 0;
         if (!force && hasCachedCitation) {
             return state.currentBookMlaCitation.trim();
         }
 
-        const hasPendingRequest = state.currentBookCitationBookId === bookId
+        const hasPendingRequest = state.currentBookCitationKey === citationKey
             && state.currentBookCitationPromise;
         if (!force && hasPendingRequest) {
             return state.currentBookCitationPromise;
         }
 
-        state.currentBookCitationBookId = bookId;
+        state.currentBookCitationKey = citationKey;
         let requestPromise = null;
         requestPromise = (async () => {
-            const citation = await requestMlaCitationForBook(bookId);
-            if (state.currentBook?.id === bookId) {
+            const citation = await requestMlaCitationForBook(bookId, chapterId, paragraphIndex);
+            if (state.currentBook?.id === bookId && state.currentBookCitationKey === citationKey) {
                 state.currentBookMlaCitation = citation;
             }
             return citation;
@@ -867,7 +891,9 @@
             return;
         }
 
-        const citation = typeof state.currentBookMlaCitation === 'string'
+        const { citationKey } = getCurrentCitationContext();
+        const citation = state.currentBookCitationKey === citationKey
+            && typeof state.currentBookMlaCitation === 'string'
             ? state.currentBookMlaCitation.trim()
             : '';
         if (!citation) {
@@ -1225,9 +1251,13 @@
     }
 
     function updateCitationUi() {
+        const { citationKey } = getCurrentCitationContext();
+        const hasCurrentCitation = citationKey
+            && state.currentBookCitationKey === citationKey
+            && !!state.currentBookMlaCitation;
         const citationAvailable = isCitationActionAvailable();
         if (citationAvailable
-            && !state.currentBookMlaCitation
+            && !hasCurrentCitation
             && !state.currentBookCitationPromise) {
             void ensureCurrentBookMlaCitation();
         }
@@ -3656,7 +3686,7 @@
         state.bookmarks = [];
         state.noteModalParagraphIndex = null;
         state.currentBookMlaCitation = '';
-        state.currentBookCitationBookId = book.id;
+        state.currentBookCitationKey = null;
         state.currentBookCitationPromise = null;
         state.searchChapterFilter = '';
         state.searchLastQuery = '';
@@ -5443,7 +5473,7 @@
         state.bookmarks = [];
         state.noteModalParagraphIndex = null;
         state.currentBookMlaCitation = '';
-        state.currentBookCitationBookId = null;
+        state.currentBookCitationKey = null;
         state.currentBookCitationPromise = null;
         updateRecapOptOutControl();
         elements.readerView.classList.add('hidden');

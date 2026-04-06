@@ -1,7 +1,6 @@
 package org.example.reader.service;
 
 import java.time.LocalDate;
-import java.time.Month;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -17,6 +16,8 @@ public class MlaCitationFormatter {
             String title,
             String publisher,
             Integer publicationYear,
+            String sourceTitle,
+            String containerTitle,
             String url,
             LocalDate accessedDate
     ) {}
@@ -40,6 +41,16 @@ public class MlaCitationFormatter {
         String publication = joinNonBlank(", ", clean(metadata.publisher()), formatYear(metadata.publicationYear()));
         if (!publication.isBlank()) {
             segments.add(withTerminalPeriod(publication));
+        }
+
+        String sourceTitle = clean(metadata.sourceTitle());
+        if (!sourceTitle.isBlank()) {
+            segments.add(withTerminalPeriod(sourceTitle));
+        }
+
+        String containerTitle = clean(metadata.containerTitle());
+        if (!containerTitle.isBlank()) {
+            segments.add(withTerminalPeriod(containerTitle));
         }
 
         String url = clean(metadata.url());
@@ -134,23 +145,7 @@ public class MlaCitationFormatter {
     }
 
     private String formatAccessDate(LocalDate date) {
-        return date.getDayOfMonth() + " " + formatMonth(date.getMonth()) + " " + date.getYear();
-    }
-
-    private String formatMonth(Month month) {
-        return switch (month) {
-            case JANUARY -> "Jan.";
-            case FEBRUARY -> "Feb.";
-            case MARCH -> "Mar.";
-            case APRIL -> "Apr.";
-            case MAY -> "May";
-            case JUNE -> "June";
-            case JULY -> "July";
-            case AUGUST -> "Aug.";
-            case SEPTEMBER -> "Sept.";
-            case OCTOBER -> "Oct.";
-            case NOVEMBER -> "Nov.";
-            case DECEMBER -> "Dec.";
-        };
+        return date.getDayOfMonth() + " " + date.getMonth().name().charAt(0)
+                + date.getMonth().name().substring(1).toLowerCase() + " " + date.getYear();
     }
 }
