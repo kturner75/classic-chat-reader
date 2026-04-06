@@ -17,6 +17,8 @@ class MlaCitationFormatterTest {
                 "Pride and Prejudice",
                 "T. Egerton",
                 1813,
+                null,
+                null,
                 "https://www.gutenberg.org/ebooks/1342",
                 LocalDate.of(2026, 2, 26)
         );
@@ -24,7 +26,7 @@ class MlaCitationFormatterTest {
         String citation = formatter.format(metadata);
 
         assertEquals(
-                "Austen, Jane. Pride and Prejudice. T. Egerton, 1813. https://www.gutenberg.org/ebooks/1342. Accessed 26 Feb. 2026.",
+                "Austen, Jane. Pride and Prejudice. T. Egerton, 1813. https://www.gutenberg.org/ebooks/1342. Accessed 26 February 2026.",
                 citation
         );
     }
@@ -34,6 +36,8 @@ class MlaCitationFormatterTest {
         MlaCitationFormatter.Metadata metadata = new MlaCitationFormatter.Metadata(
                 "",
                 "Frankenstein",
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -53,6 +57,8 @@ class MlaCitationFormatterTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
         );
 
@@ -66,6 +72,8 @@ class MlaCitationFormatterTest {
         MlaCitationFormatter.Metadata metadata = new MlaCitationFormatter.Metadata(
                 "Martin Luther King Jr",
                 "Why We Can't Wait",
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -85,11 +93,34 @@ class MlaCitationFormatterTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
         );
 
         String citation = formatter.format(metadata);
 
         assertEquals("Austen, Jane. Emma.", citation);
+    }
+
+    @Test
+    void format_withContainerLocationAndAccessedDate_includesWebsiteCitationSegments() {
+        MlaCitationFormatter.Metadata metadata = new MlaCitationFormatter.Metadata(
+                "Jane Austen",
+                "Pride and Prejudice",
+                null,
+                null,
+                "Project Gutenberg",
+                "ClassicChatReader",
+                "https://example.com/?book=book-1&chapter=ch-1&paragraph=4",
+                LocalDate.of(2026, 4, 5)
+        );
+
+        String citation = formatter.format(metadata);
+
+        assertEquals(
+                "Austen, Jane. Pride and Prejudice. Project Gutenberg. ClassicChatReader. https://example.com/?book=book-1&chapter=ch-1&paragraph=4. Accessed 5 April 2026.",
+                citation
+        );
     }
 }

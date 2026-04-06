@@ -19,6 +19,9 @@ import java.util.Optional;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -102,7 +105,7 @@ class LibraryControllerTest {
 
     @Test
     void getMlaCitation_existingBook_returnsCitation() throws Exception {
-        when(bookStorageService.getMlaCitation("book-1"))
+        when(bookStorageService.getMlaCitation(eq("book-1"), anyString(), isNull(), isNull()))
                 .thenReturn(Optional.of("Austen, Jane. Pride and Prejudice."));
 
         mockMvc.perform(get("/api/library/book-1/citation/mla"))
@@ -112,10 +115,22 @@ class LibraryControllerTest {
 
     @Test
     void getMlaCitation_missingBook_returns404() throws Exception {
-        when(bookStorageService.getMlaCitation("missing-book")).thenReturn(Optional.empty());
+        when(bookStorageService.getMlaCitation(eq("missing-book"), anyString(), isNull(), isNull())).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/library/missing-book/citation/mla"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMlaCitation_withParagraphContext_passesLocatorToService() throws Exception {
+        when(bookStorageService.getMlaCitation(eq("book-1"), anyString(), eq("ch-1"), eq(3)))
+                .thenReturn(Optional.of("Austen, Jane. Pride and Prejudice. Public Domain Reader."));
+
+        mockMvc.perform(get("/api/library/book-1/citation/mla")
+                        .param("chapterId", "ch-1")
+                        .param("paragraphIndex", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.citation", is("Austen, Jane. Pride and Prejudice. Public Domain Reader.")));
     }
 
     @Test

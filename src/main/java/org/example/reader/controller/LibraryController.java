@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.util.List;
 
@@ -51,8 +53,18 @@ public class LibraryController {
     }
 
     @GetMapping("/{bookId}/citation/mla")
-    public ResponseEntity<CitationResponse> getMlaCitation(@PathVariable String bookId) {
-        return bookStorageService.getMlaCitation(bookId)
+    public ResponseEntity<CitationResponse> getMlaCitation(@PathVariable String bookId,
+                                                           @RequestParam(required = false) String chapterId,
+                                                           @RequestParam(required = false) Integer paragraphIndex,
+                                                           HttpServletRequest request) {
+        String siteBaseUrl = ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath(request.getContextPath() == null || request.getContextPath().isBlank()
+                        ? "/"
+                        : request.getContextPath() + "/")
+                .replaceQuery(null)
+                .build()
+                .toUriString();
+        return bookStorageService.getMlaCitation(bookId, siteBaseUrl, chapterId, paragraphIndex)
                 .map(citation -> ResponseEntity.ok(new CitationResponse(citation)))
                 .orElse(ResponseEntity.notFound().build());
     }
