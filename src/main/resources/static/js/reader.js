@@ -59,6 +59,7 @@
         illustrationRetryHandler: null,
         illustrationSettings: null,  // { style, promptPrefix, reasoning }
         illustrationPolling: null,   // polling interval ID
+        currentIllustrationChapterId: null,
         allowPromptEditing: false,   // whether prompt editing is enabled
         // Modal/overlay state
         ttsWasPlayingBeforeModal: false,  // track TTS state when modal opens
@@ -2917,6 +2918,29 @@
                 lastReadAt: normalized.lastReadAt || now
             };
         });
+    }
+
+    function getBookResumePosition(book) {
+        if (!book?.id) {
+            return { chapterIndex: 0, pageIndex: 0 };
+        }
+        const store = readBookActivityStore();
+        const normalized = normalizeBookActivity(book, store[book.id]);
+        const hasMeaningfulProgress = normalized.progressRatio > 0
+            || normalized.maxProgressRatio > 0
+            || !!normalized.lastReadAt;
+        if (!hasMeaningfulProgress) {
+            return { chapterIndex: 0, pageIndex: 0 };
+        }
+        return {
+            chapterIndex: normalized.lastChapterIndex,
+            pageIndex: normalized.lastPage
+        };
+    }
+
+    async function selectBookWithResume(book) {
+        const resume = getBookResumePosition(book);
+        await selectBook(book, resume.chapterIndex, resume.pageIndex);
     }
 
     function persistCurrentBookActivity() {
@@ -6658,6 +6682,12 @@
         const chapter = state.chapters[state.currentChapterIndex];
         if (!chapter) return;
 
+        if (state.currentIllustrationChapterId === chapter.id
+            && elements.illustrationImage?.src
+            && !elements.illustrationImage.classList.contains('hidden')) {
+            return;
+        }
+
         // Show skeleton placeholder
         showIllustrationSkeleton();
 
@@ -6781,10 +6811,16 @@
         }, 2000);
     }
 
-    function displayIllustration(chapterId) {
+    function displayIllustration(chapterId, options = {}) {
         hideIllustrationSkeleton();
         clearIllustrationError();
-        elements.illustrationImage.src = `/api/illustrations/chapter/${chapterId}?t=${Date.now()}`;
+        const imageUrl = options.forceRefresh
+            ? `/api/illustrations/chapter/${chapterId}?t=${Date.now()}`
+            : `/api/illustrations/chapter/${chapterId}`;
+        if (elements.illustrationImage.src !== new URL(imageUrl, window.location.href).href) {
+            elements.illustrationImage.src = imageUrl;
+        }
+        state.currentIllustrationChapterId = chapterId;
         elements.illustrationImage.classList.remove('hidden');
 
         // Make image clickable if prompt editing is enabled
@@ -6808,6 +6844,7 @@
     function showIllustrationError(message = 'Illustration unavailable', onRetry = null) {
         hideIllustrationSkeleton();
         elements.illustrationImage.classList.add('hidden');
+        state.currentIllustrationChapterId = null;
         setIllustrationError(message, onRetry);
     }
 
@@ -7024,7 +7061,7 @@
         if (!chapterId) return;
 
         // Update the main illustration display
-        displayIllustration(chapterId);
+        displayIllustration(chapterId, { forceRefresh: true });
 
         // Close the modal
         closePromptModal();
@@ -7860,7 +7897,7 @@
                 }
 
                 hideImportingOverlay();
-                await selectBook(book);
+                await selectBookWithResume(book);
             } else {
                 hideImportingOverlay();
                 const mapped = mapImportError({
@@ -7943,7 +7980,7 @@
                 const achievementBookId = achievementItem.dataset.achievementBookId;
                 const achievementBook = state.localBooks.find(b => b.id === achievementBookId);
                 if (achievementBook) {
-                await selectBook(achievementBook);
+                    await selectBookWithResume(achievementBook);
                 }
                 return;
             }
@@ -7964,7 +8001,7 @@
             const bookId = bookItem.dataset.bookId;
             const book = state.localBooks.find(b => b.id === bookId);
             if (book) {
-                await selectBook(book);
+                await selectBookWithResume(book);
             }
         });
         if (elements.achievementsViewAll) {
@@ -7986,7 +8023,7 @@
                 const achievementBook = state.localBooks.find(b => b.id === achievementBookId);
                 if (achievementBook) {
                     closeAchievementsModal();
-                    await selectBook(achievementBook);
+                    await selectBookWithResume(achievementBook);
                 }
             });
         }
@@ -7996,20 +8033,8 @@
             const bookItem = e.target.closest('.book-item');
             if (bookItem && bookItem.dataset.gutenbergId) {
                 const gutenbergId = parseInt(bookItem.dataset.gutenbergId);
-                const catalogBook = state.catalogBooks.find(b => b.gutenbergId === gutenbergId);
-
-                if (catalogBook && catalogBook.alreadyImported) {
-                    // Find local book by matching - need to fetch by source
-                    const localBook = state.localBooks.find(b =>
-                        b.title === catalogBook.title && b.author === catalogBook.author
-                    );
-                    if (localBook) {
-                        await selectBook(localBook);
-                        return;
-                    }
-                }
-
-                // Import the book first
+                // Resolve through the import endpoint even for imported catalog entries.
+                // Title/author matching is ambiguous when sample books or alternate metadata exist.
                 await importAndOpenBook(gutenbergId);
             }
         });
