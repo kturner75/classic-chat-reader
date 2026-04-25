@@ -1,5 +1,5 @@
 {
-  "name": "public-domain-reader-e2e",
+  "name": "classic-chat-reader-e2e",
   "private": true,
   "version": "1.0.0",
   "description": "Playwright tests for reader frontend retry flows",

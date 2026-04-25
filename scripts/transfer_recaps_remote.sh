@@ -63,7 +63,7 @@ Options:
   --remote-db-password <pass>      Remote DB password (default: empty).
   --remote-import-path <path>      Remote JSON path (single feature), or base path for --feature all.
   --remote-runner <auto|maven|jar> Remote runner strategy (default: ${REMOTE_RUNNER}).
-  --remote-jar-path <path>         Remote jar for runner=jar (default: <remote-project-dir>/target/public-domain-reader-1.0-SNAPSHOT.jar).
+  --remote-jar-path <path>         Remote jar for runner=jar (default: <remote-project-dir>/target/classic-chat-reader-1.0-SNAPSHOT.jar).
   --remote-java-bin <bin>          Java binary for runner=jar (default: ${REMOTE_JAVA_BIN}).
 
   --on-conflict <skip|overwrite>   Import policy (default: ${ON_CONFLICT}).
@@ -77,15 +77,15 @@ Options:
 
 Examples:
   scripts/transfer_recaps_remote.sh --book-source-id 1342 --remote reader-prod \\
-    --remote-project-dir /opt/public-domain-reader --remote-db-url "jdbc:h2:file:/opt/public-domain-reader/data/library;DB_CLOSE_DELAY=-1"
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1"
 
   scripts/transfer_recaps_remote.sh --all-cached --remote reader-prod \\
-    --remote-project-dir /opt/public-domain-reader --remote-db-url "jdbc:h2:file:/opt/public-domain-reader/data/library;DB_CLOSE_DELAY=-1" \\
-    --apply-import --remote-stop-cmd "sudo systemctl stop public-domain-reader" \\
-    --remote-start-cmd "sudo systemctl start public-domain-reader"
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \\
+    --apply-import --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \\
+    --remote-start-cmd "sudo systemctl start classic-chat-reader"
 
   scripts/transfer_recaps_remote.sh --book-source-id 1342 --feature all --remote reader-prod \\
-    --remote-project-dir /opt/public-domain-reader --remote-db-url "jdbc:h2:file:/opt/public-domain-reader/data/library;DB_CLOSE_DELAY=-1" \\
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \\
     --apply-import
 EOF
 }
@@ -108,7 +108,7 @@ run_local_cache_transfer() {
   (
     cd "$ROOT_DIR"
     "$MAVEN_BIN" -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
-      -Dexec.mainClass=org.example.reader.cli.CacheTransferRunner \
+      -Dexec.mainClass=com.classicchatreader.cli.CacheTransferRunner \
       -Dexec.args="$exec_args"
   )
 }
@@ -130,7 +130,7 @@ else
 fi
 cd "$project_dir"
 "$maven_bin" -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
-  -Dexec.mainClass=org.example.reader.cli.CacheTransferRunner \
+  -Dexec.mainClass=com.classicchatreader.cli.CacheTransferRunner \
   "-Dexec.args=$exec_args"
 EOF
   else
@@ -150,7 +150,7 @@ cd "$project_dir"
 # shellcheck disable=SC2206
 args=( $exec_args )
 "$java_bin" \
-  -Dloader.main=org.example.reader.cli.CacheTransferRunner \
+  -Dloader.main=com.classicchatreader.cli.CacheTransferRunner \
   -cp "$jar_path" \
   org.springframework.boot.loader.launch.PropertiesLauncher \
   "${args[@]}"
@@ -194,7 +194,7 @@ resolve_remote_jar_path() {
   local candidate="$REMOTE_JAR_PATH"
   local home_candidate=""
   if [[ -n "$REMOTE_HOME_DIR" ]]; then
-    home_candidate="${REMOTE_HOME_DIR}/public-domain-reader-1.0-SNAPSHOT.jar"
+    home_candidate="${REMOTE_HOME_DIR}/classic-chat-reader-1.0-SNAPSHOT.jar"
   fi
 
   if [[ -n "$candidate" ]] && remote_has_file "$candidate"; then
@@ -397,7 +397,7 @@ for ssh_option in "${SSH_OPTIONS[@]-}"; do
 done
 
 if [[ -z "$REMOTE_JAR_PATH" ]]; then
-  REMOTE_JAR_PATH="${REMOTE_PROJECT_DIR}/target/public-domain-reader-1.0-SNAPSHOT.jar"
+  REMOTE_JAR_PATH="${REMOTE_PROJECT_DIR}/target/classic-chat-reader-1.0-SNAPSHOT.jar"
 fi
 
 REMOTE_HOME_DIR="$(get_remote_home_dir)"
@@ -417,7 +417,7 @@ fi
 build_remote_import_path() {
   local current_feature="$1"
   if [[ -z "$REMOTE_IMPORT_PATH" ]]; then
-    echo "/tmp/public-domain-reader-${current_feature}-transfer.json"
+    echo "/tmp/classic-chat-reader-${current_feature}-transfer.json"
     return
   fi
   if [[ "${#FEATURES_TO_TRANSFER[@]}" -eq 1 ]]; then

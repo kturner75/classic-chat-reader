@@ -19,7 +19,7 @@ This runbook covers:
   - SSH access to target host.
   - Remote host has either:
     - Maven (`mvn`) in PATH, or
-    - Java + deployed app jar (`public-domain-reader-1.0-SNAPSHOT.jar`).
+    - Java + deployed app jar (`classic-chat-reader-1.0-SNAPSHOT.jar`).
 
 ## Production Safety Flags
 
@@ -76,7 +76,7 @@ scripts/pregen_quizzes_top20.sh --api-base-url http://localhost:8080
 Run directly against server app (recommended when your goal is server-side cache):
 
 ```bash
-ssh pdr 'cd /opt/public-domain-reader && ./scripts/pregen_quizzes_top20.sh --api-base-url http://localhost:8080'
+ssh pdr 'cd /opt/classic-chat-reader && ./scripts/pregen_quizzes_top20.sh --api-base-url http://localhost:8080'
 ```
 
 ## 4) Sync Assets To Spaces/CDN
@@ -99,11 +99,11 @@ scripts/transfer_recaps_remote.sh \
   --feature all \
   --all-cached \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 Single-feature examples:
@@ -115,11 +115,11 @@ scripts/transfer_recaps_remote.sh \
   --feature recaps \
   --all-cached \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 Quizzes:
@@ -129,11 +129,11 @@ scripts/transfer_recaps_remote.sh \
   --feature quizzes \
   --all-cached \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 Illustrations:
@@ -143,11 +143,11 @@ scripts/transfer_recaps_remote.sh \
   --feature illustrations \
   --all-cached \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 Portraits:
@@ -157,11 +157,11 @@ scripts/transfer_recaps_remote.sh \
   --feature portraits \
   --all-cached \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 ## 5b) Simplified Book Promotion (Single Command)
@@ -170,10 +170,10 @@ scripts/transfer_recaps_remote.sh \
 scripts/publish_book_remote.sh \
   --gutenberg-id 1342 \
   --remote pdr \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/public-domain-reader/library;DB_CLOSE_DELAY=-1" \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 What this runs by default:

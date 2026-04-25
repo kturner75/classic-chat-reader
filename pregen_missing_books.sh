@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-cd /Users/kevinturner/IdeaProjects/public-domain-reader
+cd /Users/kevinturner/IdeaProjects/classic-chat-reader
 
 NEW_GUTENBERG_IDS=(
   45 23 829 69087 3268 67098 12 203 583 696 289 4276

@@ -52,7 +52,7 @@ For each catalog candidate:
 ## Determinism + Coverage
 - Ranking is deterministic for the same input set.
 - Frontend tests cover cold-start, author affinity, genre affinity, and tie-break stability in:
-- `/Users/kevinturner/IdeaProjects/public-domain-reader/src/test/frontend/library-discover.test.cjs`
+- `/Users/kevinturner/IdeaProjects/classic-chat-reader/src/test/frontend/library-discover.test.cjs`
 - Backend tests cover import payload metadata mapping (`subjects/bookshelves`) in:
-- `/Users/kevinturner/IdeaProjects/public-domain-reader/src/test/java/org/example/reader/service/BookImportServiceTest.java`
-- `/Users/kevinturner/IdeaProjects/public-domain-reader/src/test/java/org/example/reader/controller/ImportControllerTest.java`
+- `/Users/kevinturner/IdeaProjects/classic-chat-reader/src/test/java/com/classicchatreader/service/BookImportServiceTest.java`
+- `/Users/kevinturner/IdeaProjects/classic-chat-reader/src/test/java/com/classicchatreader/controller/ImportControllerTest.java`

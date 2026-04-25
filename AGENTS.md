@@ -1,9 +1,9 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/main/java/org/example/reader`: Spring Boot backend (controllers, services, repositories, entities, models).
+- `src/main/java/com/classicchatreader`: Spring Boot backend (controllers, services, repositories, entities, models).
 - `src/main/resources`: App config (`application.properties`) and static frontend assets under `static/` (HTML/CSS/JS).
-- `src/test/java/org/example/reader`: JUnit/Spring Boot tests for controllers, services, and parsers.
+- `src/test/java/com/classicchatreader`: JUnit/Spring Boot tests for controllers, services, and parsers.
 - `data/`: Local book or ingest data (keep large assets out of git if possible).
 - `target/`: Maven build output (generated; do not edit).
 
@@ -17,7 +17,7 @@
 
 ## Coding Style & Naming Conventions
 - Java follows standard conventions: 4-space indentation, braces on the same line, and `UpperCamelCase` class names.
-- Packages are lowercase (e.g., `org.example.reader.service`).
+- Packages are lowercase (e.g., `com.classicchatreader.service`).
 - Keep controllers thin, push business logic into `service` classes, and use `repository` for persistence access.
 - Frontend files live in `src/main/resources/static` and should remain framework-free (vanilla HTML/CSS/JS).
 

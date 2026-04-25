@@ -174,7 +174,7 @@ run_cache_transfer() {
   local command="$1"
   shift
   "${MAVEN_BIN}" -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
-    -Dexec.mainClass=org.example.reader.cli.CacheTransferRunner \
+    -Dexec.mainClass=com.classicchatreader.cli.CacheTransferRunner \
     -Dexec.args="${command} $*"
 }
 

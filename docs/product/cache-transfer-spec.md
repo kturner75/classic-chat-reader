@@ -33,7 +33,7 @@ If a source system has a book without `sourceId`, that book is skipped and repor
 
 ## CLI Surface
 
-Runner class: `org.example.reader.cli.CacheTransferRunner`
+Runner class: `com.classicchatreader.cli.CacheTransferRunner`
 
 Implementation status (2026-02-14):
 - v1 recap + quiz + illustration + portrait metadata transfer is implemented and validated in local + remote flows.

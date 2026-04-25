@@ -22,7 +22,7 @@ This guide explains how to enable and use the classroom-aware landing behavior a
 
 ## Enable Classroom Demo Mode
 
-In `/Users/kevinturner/IdeaProjects/public-domain-reader/src/main/resources/application.properties`:
+In `/Users/kevinturner/IdeaProjects/classic-chat-reader/src/main/resources/application.properties`:
 
 ```properties
 # Classroom Demo Context (BL-018.6)

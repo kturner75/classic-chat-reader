@@ -7,8 +7,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MAVEN_BIN="${MAVEN_BIN:-mvn}"
 SSH_TARGET="${SSH_TARGET:-pdr}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/kevin}"
-JAR_PATH="${JAR_PATH:-${ROOT_DIR}/target/public-domain-reader-1.0-SNAPSHOT.jar}"
-REMOTE_JAR_PATH="${REMOTE_JAR_PATH:-~/public-domain-reader-1.0-SNAPSHOT.jar}"
+JAR_PATH="${JAR_PATH:-${ROOT_DIR}/target/classic-chat-reader-1.0-SNAPSHOT.jar}"
+REMOTE_JAR_PATH="${REMOTE_JAR_PATH:-~/classic-chat-reader-1.0-SNAPSHOT.jar}"
 REMOTE_DEPLOY_CMD="${REMOTE_DEPLOY_CMD:-/root/deploy_noninteractive.sh}"
 
 SKIP_BUILD=false
@@ -22,7 +22,7 @@ Usage:
 
 Default flow:
   1) Build JAR with: mvn clean package
-  2) Upload JAR with: scp -i ~/.ssh/kevin target/public-domain-reader-1.0-SNAPSHOT.jar pdr:~/
+  2) Upload JAR with: scp -i ~/.ssh/kevin target/classic-chat-reader-1.0-SNAPSHOT.jar pdr:~/
   3) Run remote deploy script: ssh pdr /root/deploy.sh
 
 Options:

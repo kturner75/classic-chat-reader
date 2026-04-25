@@ -73,11 +73,11 @@ scripts/transfer_recaps_remote.sh \
   --feature recaps \
   --book-source-id 1342 \
   --remote ubuntu@reader-host \
-  --remote-project-dir /opt/public-domain-reader \
-  --remote-db-url "jdbc:h2:file:/opt/public-domain-reader/data/library;DB_CLOSE_DELAY=-1" \
+  --remote-project-dir /opt/classic-chat-reader \
+  --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \
   --apply-import \
-  --remote-stop-cmd "sudo systemctl stop public-domain-reader" \
-  --remote-start-cmd "sudo systemctl start public-domain-reader"
+  --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
+  --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```
 
 Deploy helper example:
@@ -118,8 +118,8 @@ Notes:
 Notes:
 - Tests run against a local static server (`node e2e/static-server.js`) and mock all `/api/*` traffic in Playwright.
 - Current coverage includes retry UX for recap overlay load errors, recap chat send failures, and character chat send failures (`e2e/retry-flows.spec.js`).
-- CI runs this suite via GitHub Actions workflow `/Users/kevinturner/IdeaProjects/public-domain-reader/.github/workflows/playwright-e2e.yml`.
-- Backend CI test coverage runs via `/Users/kevinturner/IdeaProjects/public-domain-reader/.github/workflows/maven-test.yml` (`mvn test` on Java 21).
+- CI runs this suite via GitHub Actions workflow `/Users/kevinturner/IdeaProjects/classic-chat-reader/.github/workflows/playwright-e2e.yml`.
+- Backend CI test coverage runs via `/Users/kevinturner/IdeaProjects/classic-chat-reader/.github/workflows/maven-test.yml` (`mvn test` on Java 21).
 
 ## PostgreSQL Roles (Flyway + Runtime)
 

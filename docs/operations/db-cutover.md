@@ -44,15 +44,15 @@ Use this when bootstrapping an existing H2 dataset into a new production DB.
 1. Run a dry-run first:
 ```bash
 mvn -q -DskipTests exec:java \
-  -Dexec.mainClass=org.example.reader.cli.DbMigrationRunner \
-  -Dexec.args="--source-url jdbc:h2:file:./data/library --source-user sa --target-url jdbc:postgresql://localhost:5432/public_domain_reader --target-user pdr_app"
+  -Dexec.mainClass=com.classicchatreader.cli.DbMigrationRunner \
+  -Dexec.args="--source-url jdbc:h2:file:./data/library --source-user sa --target-url jdbc:postgresql://localhost:5432/classic_chat_reader --target-user pdr_app"
 ```
 
 2. Apply the copy after validating dry-run counts:
 ```bash
 mvn -q -DskipTests exec:java \
-  -Dexec.mainClass=org.example.reader.cli.DbMigrationRunner \
-  -Dexec.args="--apply --source-url jdbc:h2:file:./data/library --source-user sa --target-url jdbc:postgresql://localhost:5432/public_domain_reader --target-user pdr_app --target-password your-password"
+  -Dexec.mainClass=com.classicchatreader.cli.DbMigrationRunner \
+  -Dexec.args="--apply --source-url jdbc:h2:file:./data/library --source-user sa --target-url jdbc:postgresql://localhost:5432/classic_chat_reader --target-user pdr_app --target-password your-password"
 ```
 
 3. If re-running against a previously populated target, include `--truncate-target` with `--apply`.
