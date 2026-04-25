@@ -253,6 +253,109 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
 
+### BL-030 - Registered User Home and Account Landing
+- Type: Feature
+- Priority: P1
+- Effort: L
+- Status: Discovery
+- Problem: Signed-in readers gain persistence today, but they do not yet get a clearly better home experience than anonymous readers.
+- Scope Buckets:
+- Signed-in landing page information architecture.
+- Cross-device reading continuity (`Continue Reading`, `In Progress`, `My List`, recent activity).
+- Registered-only modules for trophies, recent chats, and challenge progress.
+- Discovery Questions:
+- Should the signed-in landing replace the current generic library landing or layer on top of it?
+- Which modules deserve top billing for signed-in readers: continue reading, favorites, challenges, trophies, or chats?
+- How much of the landing should be account-backed versus device-local fallback?
+- Current Direction (2026-04-06):
+- Use account presence to make the home screen feel meaningfully more personal on return visits.
+- Start with modules backed by existing signals before adding heavier recommendation or social systems.
+- Favor fast resume actions over dashboard density.
+- Exit Criteria for Discovery:
+- Approved signed-in landing layout with priority ordering for modules.
+- Decision on which modules are account-only versus available to anonymous users.
+- Acceptance Criteria:
+- Signed-in readers see a dedicated landing/home experience with `Continue Reading`, `In Progress`, `My List`, and recent trophy/activity context.
+- Landing modules are stable across devices for account-backed data paths.
+- Signed-in home creates at least one clear, immediate value proposition for registration beyond raw persistence.
+
+### BL-031 - Reading Challenges and Streaks
+- Type: Feature
+- Priority: P2
+- Effort: L
+- Status: Discovery
+- Problem: The product has progress tracking and trophies, but lacks ongoing goals that create return habits for registered readers.
+- Scope Buckets:
+- Challenge taxonomy (streaks, completion, exploration, comprehension).
+- Progress event model and persistence for account-backed challenge state.
+- Landing/reader UI for active challenges and progress.
+- Discovery Questions:
+- Which challenge types should launch first: daily reading streaks, chapter counts, book counts, author diversity, quiz completion?
+- Should challenges be private-only at launch or eventually shareable?
+- How should challenges handle long books, missed days, and partial progress resets?
+- Current Direction (2026-04-06):
+- Start with deterministic private challenges tied to existing activity signals.
+- Avoid over-weighting only book completion; balance consistency, completion, and exploration goals.
+- Make challenge progress visible from the signed-in landing and light-touch in the reader.
+- Exit Criteria for Discovery:
+- v1 challenge catalog with explicit unlock/progress rules.
+- Clear rules for streak resets, grace windows, and monthly challenge boundaries.
+- Acceptance Criteria:
+- Registered readers can see active challenge progress and completed challenges.
+- At least one streak-based challenge and one non-streak challenge are supported.
+- Challenge progress updates without requiring manual user management.
+
+### BL-032 - Character Chat Hub and Full-Page Conversations
+- Type: Feature
+- Priority: P2
+- Effort: L
+- Status: Discovery
+- Problem: Character chat exists today, but it is still a book-adjacent interaction rather than a first-class destination for signed-in readers.
+- Scope Buckets:
+- Signed-in chat hub listing recent and resumable character conversations.
+- Dedicated full-page chat experience beyond modal/in-reader entry points.
+- Conversation context, resume affordances, and spoiler boundary communication.
+- Discovery Questions:
+- Should chat history be organized by character, by book, or both?
+- What new capabilities belong in full-page chat v1: pinned chats, suggested prompts, conversation search, richer history?
+- Should full-page chat remain strictly character-scoped or expand later into broader book discussion threads?
+- Current Direction (2026-04-06):
+- First make chat re-entry easy for registered users before expanding the conversation feature set.
+- Treat a chat hub as the bridge between account value and a fuller conversational reading experience.
+- Keep spoiler guardrails explicit and tied to reading progress.
+- Exit Criteria for Discovery:
+- Approved chat hub IA and full-page chat entry flow.
+- Decision on v1 history model and spoiler-context UX.
+- Acceptance Criteria:
+- Signed-in readers can view recent character chats and resume them from a dedicated landing or chat hub surface.
+- Full-page chat supports longer-form sessions without depending on the in-reader modal flow.
+- Existing character progress guardrails continue to apply.
+
+### BL-033 - Favorite Characters
+- Type: Feature
+- Priority: P2
+- Effort: M
+- Status: Discovery
+- Problem: Readers can revisit character details and chats, but cannot explicitly curate the characters they care about most.
+- Scope Buckets:
+- Favorite/save model for characters.
+- Landing and character-browser surfaces for favorites.
+- Personalization hooks for recommendations, resume-chat, and future notifications.
+- Discovery Questions:
+- Should favorites be book-scoped, globally account-scoped, or both?
+- What is the minimum useful action set: save/unsave only, or save plus notes/tags?
+- How should favorite characters influence landing recommendations and chat resurfacing?
+- Current Direction (2026-04-06):
+- Start with a lightweight account-backed save/unsave model.
+- Use favorite characters primarily to improve landing personalization and chat re-entry rather than as an isolated collection feature.
+- Exit Criteria for Discovery:
+- Data model decision for character favorites and scope.
+- Agreed initial surfaces where favorites appear.
+- Acceptance Criteria:
+- Registered readers can favorite and unfavorite characters.
+- Favorite characters appear in at least one signed-in landing surface and one in-reader/character-browser surface.
+- Favorite-character state persists across devices for signed-in users.
+
 ## P0
 
 ### BL-001 - Secure and rate-limit generation/chat endpoints

@@ -2315,6 +2315,51 @@
 
         updateAnnotationControls();
         updateFavoriteUi();
+        await openBookFromUrlIfPresent();
+    }
+
+    function readInitialReaderRoute() {
+        const url = new URL(window.location.href);
+        const bookId = (url.searchParams.get('book') || '').trim();
+        const chapterId = (url.searchParams.get('chapter') || '').trim();
+        const paragraphRaw = (url.searchParams.get('paragraph') || '').trim();
+        const parsedParagraph = Number.parseInt(paragraphRaw, 10);
+        const paragraphIndex = Number.isInteger(parsedParagraph) && parsedParagraph > 0
+            ? parsedParagraph - 1
+            : 0;
+
+        if (!bookId) {
+            return null;
+        }
+
+        return {
+            bookId,
+            chapterId,
+            paragraphIndex
+        };
+    }
+
+    async function openBookFromUrlIfPresent() {
+        const route = readInitialReaderRoute();
+        if (!route) {
+            return false;
+        }
+
+        const book = (state.localBooks || []).find(item => item && item.id === route.bookId);
+        if (!book) {
+            return false;
+        }
+
+        let chapterIndex = 0;
+        if (route.chapterId) {
+            const matchedChapterIndex = (book.chapters || []).findIndex(chapter => chapter && chapter.id === route.chapterId);
+            if (matchedChapterIndex >= 0) {
+                chapterIndex = matchedChapterIndex;
+            }
+        }
+
+        await selectBook(book, chapterIndex, 0, route.paragraphIndex);
+        return true;
     }
 
     function setLibrarySearchBusy(busy, statusMessage = '') {
