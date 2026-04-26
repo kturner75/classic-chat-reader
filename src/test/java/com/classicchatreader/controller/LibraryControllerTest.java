@@ -5,12 +5,15 @@ import com.classicchatreader.model.BookmarkedParagraph;
 import com.classicchatreader.model.ChapterContent;
 import com.classicchatreader.model.ParagraphAnnotation;
 import com.classicchatreader.model.Paragraph;
+import com.classicchatreader.service.BookCoverService;
 import com.classicchatreader.service.BookStorageService;
+import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.ParagraphAnnotationService;
 import com.classicchatreader.service.ReaderIdentityService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,10 +25,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -37,6 +43,12 @@ class LibraryControllerTest {
 
     @MockitoBean
     private BookStorageService bookStorageService;
+
+    @MockitoBean
+    private BookCoverService bookCoverService;
+
+    @MockitoBean
+    private CdnAssetService cdnAssetService;
 
     @MockitoBean
     private ParagraphAnnotationService paragraphAnnotationService;
@@ -101,6 +113,66 @@ class LibraryControllerTest {
 
         mockMvc.perform(get("/api/library/unknown-book"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void retryBookCover_withPrompt_queuesRetry() throws Exception {
+        Book book = new Book("book-1", "Pride and Prejudice", "Jane Austen", null, null, List.of(), false, false, false);
+        when(bookStorageService.getBook("book-1")).thenReturn(Optional.of(book));
+        when(bookCoverService.retryCover("book-1", "ornate regency ballroom, no text")).thenReturn(true);
+        when(bookCoverService.getCoverStatus("book-1")).thenReturn(Optional.of(new BookCoverService.CoverStatus(
+                "book-1",
+                com.classicchatreader.entity.IllustrationStatus.PENDING,
+                "books/gutenberg/1342/covers/cover.png",
+                "ornate regency ballroom, no text",
+                "ornate regency ballroom, no text",
+                "prompt_override",
+                null,
+                null
+        )));
+
+        mockMvc.perform(post("/api/library/book-1/cover/retry")
+                        .contentType("application/json")
+                        .content("{\"prompt\":\"ornate regency ballroom, no text\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status", is("PENDING")))
+                .andExpect(jsonPath("$.hasImage", is(true)))
+                .andExpect(jsonPath("$.coverUrl", is("/api/library/book-1/cover")))
+                .andExpect(jsonPath("$.promptOverride", is("ornate regency ballroom, no text")));
+
+        verify(bookCoverService).retryCover("book-1", "ornate regency ballroom, no text");
+    }
+
+    @Test
+    void uploadBookCover_savesManualPng() throws Exception {
+        Book book = new Book("book-1", "Pride and Prejudice", "Jane Austen", null, null, List.of(), false, false, false);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "cover.png", "image/png", png);
+        when(bookStorageService.getBook("book-1")).thenReturn(Optional.of(book));
+        when(bookCoverService.saveManualCover("book-1", png)).thenReturn(true);
+        when(bookCoverService.getCoverStatus("book-1")).thenReturn(Optional.of(new BookCoverService.CoverStatus(
+                "book-1",
+                com.classicchatreader.entity.IllustrationStatus.COMPLETED,
+                "books/gutenberg/1342/covers/cover.png",
+                null,
+                null,
+                "manual_upload",
+                null,
+                null
+        )));
+
+        mockMvc.perform(multipart("/api/library/book-1/cover")
+                        .file(file)
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("COMPLETED")))
+                .andExpect(jsonPath("$.ready", is(true)))
+                .andExpect(jsonPath("$.coverSource", is("manual_upload")));
+
+        verify(bookCoverService).saveManualCover("book-1", png);
     }
 
     @Test

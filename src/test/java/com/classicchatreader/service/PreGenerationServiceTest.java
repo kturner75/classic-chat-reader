@@ -7,6 +7,7 @@ import com.classicchatreader.entity.ChapterRecapStatus;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.entity.IllustrationStatus;
 import com.classicchatreader.repository.BookRepository;
+import com.classicchatreader.repository.BookCoverRepository;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.ChapterAnalysisRepository;
 import com.classicchatreader.repository.ChapterRecapRepository;
@@ -39,6 +40,8 @@ class PreGenerationServiceTest {
     @Mock
     private BookRepository bookRepository;
     @Mock
+    private BookCoverRepository bookCoverRepository;
+    @Mock
     private ChapterRepository chapterRepository;
     @Mock
     private ChapterAnalysisRepository chapterAnalysisRepository;
@@ -50,6 +53,8 @@ class PreGenerationServiceTest {
     private CharacterRepository characterRepository;
     @Mock
     private IllustrationService illustrationService;
+    @Mock
+    private BookCoverService bookCoverService;
     @Mock
     private CharacterService characterService;
     @Mock
@@ -65,12 +70,14 @@ class PreGenerationServiceTest {
                 bookImportService,
                 bookStorageService,
                 bookRepository,
+                bookCoverRepository,
                 chapterRepository,
                 chapterAnalysisRepository,
                 chapterRecapRepository,
                 illustrationRepository,
                 characterRepository,
                 illustrationService,
+                bookCoverService,
                 characterService,
                 characterPrefetchService,
                 chapterRecapService

@@ -80,16 +80,22 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
                 result = switch (mode) {
                     case "recaps" -> preGenerationService.preGenerateRecapsByGutenbergId(book.gutenbergId());
                     case "images" -> preGenerationService.preGenerateImagesByGutenbergId(book.gutenbergId());
+                    case "covers" -> preGenerationService.preGenerateCoversByGutenbergId(book.gutenbergId());
                     default -> preGenerationService.preGenerateByGutenbergId(book.gutenbergId());
                 };
                 results.add(result);
 
                 log.info("Result for '{}': {}", book.title(), result.message());
                 log.info("  - Chapters: {}", result.chaptersProcessed());
-                if ("images".equals(mode)) {
+                if ("covers".equals(mode)) {
+                    log.info("  - New covers: {}", result.newCovers());
+                } else if ("images".equals(mode)) {
+                    log.info("  - New covers: {}", result.newCovers());
                     log.info("  - New illustrations: {}", result.newIllustrations());
                     log.info("  - New portraits: {}", result.newPortraits());
                 } else {
+                    log.info("  - Covers: {} completed, {} failed",
+                            result.coversCompleted(), result.coversFailed());
                     log.info("  - Illustrations: {} completed, {} failed",
                             result.illustrationsCompleted(), result.illustrationsFailed());
                     log.info("  - Portraits: {} completed, {} failed",
@@ -106,10 +112,10 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
 
             // Cooldown between books (skip after last book)
             if (bookNumber < booksToProcess.size() && cooldownMinutes > 0) {
-                if ("recaps".equals(mode)) {
+                if ("recaps".equals(mode) || "covers".equals(mode)) {
                     continue;
                 }
-                int totalImages = result.newIllustrations() + result.newPortraits();
+                int totalImages = result.newCovers() + result.newIllustrations() + result.newPortraits();
                 if (totalImages < cooldownSkipUnderImages) {
                     log.info("");
                     log.info("Skipping cooldown ({} new images < threshold {} for '{}')",
@@ -138,20 +144,28 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
         int totalIllustrations = 0;
         int totalPortraits = 0;
         int totalRecaps = 0;
+        int totalCovers = 0;
         int totalNewIllustrations = 0;
         int totalNewPortraits = 0;
+        int totalNewCovers = 0;
 
         for (int i = 0; i < results.size(); i++) {
             PreGenResult result = results.get(i);
             CuratedCatalogBook book = booksToProcess.get(i);
             String status = result.success() ? "OK" : "FAILED";
-            if ("images".equals(mode)) {
-                log.info("[{}] {} - {} new illustrations, {} new portraits",
+            if ("covers".equals(mode)) {
+                log.info("[{}] {} - {} new covers",
                         status, book.title(),
+                        result.newCovers());
+            } else if ("images".equals(mode)) {
+                log.info("[{}] {} - {} new covers, {} new illustrations, {} new portraits",
+                        status, book.title(),
+                        result.newCovers(),
                         result.newIllustrations(), result.newPortraits());
             } else {
-                log.info("[{}] {} - {} illustrations, {} portraits",
+                log.info("[{}] {} - {} covers, {} illustrations, {} portraits",
                         status, book.title(),
+                        result.coversCompleted(),
                         result.illustrationsCompleted(), result.portraitsCompleted());
                 log.info("      {} recaps", result.recapsCompleted());
             }
@@ -161,19 +175,25 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
             } else {
                 failed++;
             }
+            totalCovers += result.coversCompleted();
             totalIllustrations += result.illustrationsCompleted();
             totalPortraits += result.portraitsCompleted();
             totalRecaps += result.recapsCompleted();
+            totalNewCovers += result.newCovers();
             totalNewIllustrations += result.newIllustrations();
             totalNewPortraits += result.newPortraits();
         }
 
         log.info("----------------------------------------");
         log.info("Books: {} successful, {} failed", successful, failed);
-        if ("images".equals(mode)) {
+        if ("covers".equals(mode)) {
+            log.info("Total new covers generated: {}", totalNewCovers);
+        } else if ("images".equals(mode)) {
+            log.info("Total new covers generated: {}", totalNewCovers);
             log.info("Total new illustrations generated: {}", totalNewIllustrations);
             log.info("Total new portraits generated: {}", totalNewPortraits);
         } else {
+            log.info("Total covers generated: {}", totalCovers);
             log.info("Total illustrations generated: {}", totalIllustrations);
             log.info("Total portraits generated: {}", totalPortraits);
             log.info("Total recaps generated: {}", totalRecaps);
@@ -196,6 +216,9 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
         }
         if (normalized.equals("images")) {
             return "images";
+        }
+        if (normalized.equals("covers")) {
+            return "covers";
         }
         return "full";
     }

@@ -192,12 +192,17 @@ class BookImportServiceTest {
         );
         when(curatedCatalogService.search("austen")).thenReturn(List.of(curated));
         when(bookStorageService.existsBySource("gutenberg", "1342")).thenReturn(true);
+        when(bookStorageService.findBySource("gutenberg", "1342")).thenReturn(Optional.of(
+                new Book("book-1342", "Pride and Prejudice", "Jane Austen", "", "/api/library/book-1342/cover", List.of(), true, true, true)
+        ));
 
         List<SearchResult> results = bookImportService.searchGutenberg("austen");
 
         assertEquals(1, results.size());
         assertEquals(1342, results.get(0).gutenbergId());
         assertTrue(results.get(0).alreadyImported());
+        assertEquals("book-1342", results.get(0).localBookId());
+        assertEquals("/api/library/book-1342/cover", results.get(0).coverUrl());
         verify(gutendexClient, never()).searchBooks(anyString());
     }
 

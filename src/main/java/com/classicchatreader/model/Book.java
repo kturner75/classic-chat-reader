@@ -11,7 +11,21 @@ public record Book(
     List<Chapter> chapters,
     boolean ttsEnabled,
     boolean illustrationEnabled,
-    boolean characterEnabled
+    boolean characterEnabled,
+    boolean curated
 ) {
+    public Book(
+            String id,
+            String title,
+            String author,
+            String description,
+            String coverUrl,
+            List<Chapter> chapters,
+            boolean ttsEnabled,
+            boolean illustrationEnabled,
+            boolean characterEnabled) {
+        this(id, title, author, description, coverUrl, chapters, ttsEnabled, illustrationEnabled, characterEnabled, false);
+    }
+
     public record Chapter(String id, String title) {}
 }

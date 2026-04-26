@@ -60,11 +60,21 @@ public class ComfyUIService {
   @Value("${character.portrait.cache-dir:./data/character-portraits}")
   private String portraitCacheDir;
 
+  @Value("${book-cover.width:768}")
+  private int bookCoverWidth;
+
+  @Value("${book-cover.height:1024}")
+  private int bookCoverHeight;
+
+  @Value("${book-cover.cache-dir:./data/book-covers}")
+  private String bookCoverCacheDir;
+
   private WebClient webClient;
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final Random random = new Random();
   private final ConcurrentMap<String, String> illustrationCacheKeys = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, String> portraitCacheKeys = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, String> bookCoverCacheKeys = new ConcurrentHashMap<>();
 
   @PostConstruct
   public void init() throws IOException {
@@ -87,6 +97,12 @@ public class ComfyUIService {
     if (!Files.exists(portraitCachePath)) {
       Files.createDirectories(portraitCachePath);
       log.info("Created portrait cache directory: {}", portraitCacheDir);
+    }
+
+    Path bookCoverCachePath = Paths.get(bookCoverCacheDir);
+    if (!Files.exists(bookCoverCachePath)) {
+      Files.createDirectories(bookCoverCachePath);
+      log.info("Created book cover cache directory: {}", bookCoverCacheDir);
     }
 
     log.info("ComfyUI service initialized with endpoint: {}", comfyuiBaseUrl);
@@ -479,6 +495,213 @@ public class ComfyUIService {
       log.error("Failed to delete portrait file: {}", filename, e);
     }
     return false;
+  }
+
+  // ===== Book Cover Methods =====
+
+  public String submitBookCoverWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
+    ObjectNode workflow = buildBookCoverWorkflow(positivePrompt, outputFilename);
+
+    ObjectNode requestBody = objectMapper.createObjectNode();
+    requestBody.set("prompt", workflow);
+
+    String response = webClient.post()
+        .uri("/prompt")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(objectMapper.writeValueAsString(requestBody))
+        .retrieve()
+        .bodyToMono(String.class)
+        .block(Duration.ofSeconds(10));
+
+    JsonNode responseNode = objectMapper.readTree(response);
+    String promptId = responseNode.get("prompt_id").asText();
+    if (cacheKey != null && !cacheKey.isBlank()) {
+      bookCoverCacheKeys.put(promptId, cacheKey);
+    }
+    log.info("Submitted book cover workflow to ComfyUI, prompt_id: {}", promptId);
+    return promptId;
+  }
+
+  public IllustrationResult pollForBookCoverCompletion(String promptId) throws Exception {
+    long startTime = System.currentTimeMillis();
+    long pollInterval = 2000;
+    String cacheKey = bookCoverCacheKeys.remove(promptId);
+
+    while (System.currentTimeMillis() - startTime < workflowTimeout) {
+      String response = webClient.get()
+          .uri("/history/{promptId}", promptId)
+          .retrieve()
+          .bodyToMono(String.class)
+          .block(Duration.ofSeconds(5));
+
+      JsonNode historyNode = objectMapper.readTree(response);
+      JsonNode promptHistory = historyNode.get(promptId);
+
+      if (promptHistory != null && !promptHistory.isNull()) {
+        JsonNode status = promptHistory.get("status");
+        if (status != null && status.has("status_str") && "error".equals(status.get("status_str").asText())) {
+          String errorMsg = "ComfyUI workflow error";
+          if (status.has("messages")) {
+            errorMsg = status.get("messages").toString();
+          }
+          return new IllustrationResult(false, null, errorMsg);
+        }
+
+        JsonNode outputs = promptHistory.get("outputs");
+        if (outputs != null && outputs.size() > 0) {
+          for (JsonNode nodeOutput : outputs) {
+            if (nodeOutput.has("images")) {
+              JsonNode images = nodeOutput.get("images");
+              if (images.isArray() && images.size() > 0) {
+                JsonNode imageInfo = images.get(0);
+                String filename = imageInfo.get("filename").asText();
+                String subfolder = imageInfo.has("subfolder") ? imageInfo.get("subfolder").asText() : "";
+
+                String cachedPath = downloadBookCoverImage(filename, subfolder, cacheKey, promptId);
+                return new IllustrationResult(true, cachedPath, null);
+              }
+            }
+          }
+        }
+      }
+
+      Thread.sleep(pollInterval);
+    }
+
+    throw new TimeoutException("Book cover workflow timed out after " + workflowTimeout + "ms");
+  }
+
+  private String downloadBookCoverImage(String filename, String subfolder, String cacheKey, String promptId) throws Exception {
+    String uri = "/view?filename=" + filename;
+    if (subfolder != null && !subfolder.isEmpty()) {
+      uri += "&subfolder=" + subfolder;
+    }
+
+    byte[] imageData = webClient.get()
+        .uri(uri)
+        .retrieve()
+        .bodyToMono(byte[].class)
+        .block(Duration.ofSeconds(30));
+
+    String cachedFilename = resolveCacheFilename(cacheKey, promptId);
+    Path cachedPath = Paths.get(bookCoverCacheDir, cachedFilename);
+    Files.createDirectories(cachedPath.getParent());
+    Files.write(cachedPath, imageData);
+
+    log.info("Downloaded and cached book cover: {}", cachedPath);
+    return cachedFilename;
+  }
+
+  public byte[] getBookCoverImage(String filename) {
+    try {
+      Path imagePath = safeResolve(bookCoverCacheDir, filename);
+      if (Files.exists(imagePath)) {
+        return Files.readAllBytes(imagePath);
+      }
+    } catch (IOException e) {
+      log.error("Failed to read cached book cover: {}", filename, e);
+    }
+    return null;
+  }
+
+  public String saveBookCoverImage(String cacheKey, byte[] imageData) throws IOException {
+    if (imageData == null || imageData.length == 0) {
+      throw new IOException("Book cover image is empty");
+    }
+    String cachedFilename = resolveCacheFilename(cacheKey, "manual-" + System.currentTimeMillis());
+    Path cachedPath = safeResolve(bookCoverCacheDir, cachedFilename);
+    Files.createDirectories(cachedPath.getParent());
+    Files.write(cachedPath, imageData);
+    log.info("Saved manual book cover: {}", cachedPath);
+    return cachedFilename;
+  }
+
+  private ObjectNode buildBookCoverWorkflow(String positivePrompt, String outputFilename) {
+    ObjectNode workflow = objectMapper.createObjectNode();
+
+    ObjectNode node4 = objectMapper.createObjectNode();
+    node4.put("class_type", "CheckpointLoaderSimple");
+    ObjectNode node4Inputs = objectMapper.createObjectNode();
+    node4Inputs.put("ckpt_name", checkpoint);
+    node4.set("inputs", node4Inputs);
+    workflow.set("4", node4);
+
+    ObjectNode node5 = objectMapper.createObjectNode();
+    node5.put("class_type", "EmptyLatentImage");
+    ObjectNode node5Inputs = objectMapper.createObjectNode();
+    node5Inputs.put("width", bookCoverWidth);
+    node5Inputs.put("height", bookCoverHeight);
+    node5Inputs.put("batch_size", 1);
+    node5.set("inputs", node5Inputs);
+    workflow.set("5", node5);
+
+    ObjectNode node6 = objectMapper.createObjectNode();
+    node6.put("class_type", "CLIPTextEncode");
+    ObjectNode node6Inputs = objectMapper.createObjectNode();
+    node6Inputs.put("text", positivePrompt);
+    ArrayNode clipLink6 = objectMapper.createArrayNode();
+    clipLink6.add("4").add(1);
+    node6Inputs.set("clip", clipLink6);
+    node6.set("inputs", node6Inputs);
+    workflow.set("6", node6);
+
+    ObjectNode node7 = objectMapper.createObjectNode();
+    node7.put("class_type", "CLIPTextEncode");
+    ObjectNode node7Inputs = objectMapper.createObjectNode();
+    node7Inputs.put("text", "text, letters, words, typography, title, author name, watermark, signature, logo, blurry, bad quality, low resolution, cropped");
+    ArrayNode clipLink7 = objectMapper.createArrayNode();
+    clipLink7.add("4").add(1);
+    node7Inputs.set("clip", clipLink7);
+    node7.set("inputs", node7Inputs);
+    workflow.set("7", node7);
+
+    ObjectNode node3 = objectMapper.createObjectNode();
+    node3.put("class_type", "KSampler");
+    ObjectNode node3Inputs = objectMapper.createObjectNode();
+    node3Inputs.put("seed", random.nextLong() & Long.MAX_VALUE);
+    node3Inputs.put("steps", samplerSteps);
+    node3Inputs.put("cfg", cfgScale);
+    node3Inputs.put("sampler_name", "euler");
+    node3Inputs.put("scheduler", "normal");
+    node3Inputs.put("denoise", 1.0);
+    ArrayNode modelLink = objectMapper.createArrayNode();
+    modelLink.add("4").add(0);
+    node3Inputs.set("model", modelLink);
+    ArrayNode positiveLink = objectMapper.createArrayNode();
+    positiveLink.add("6").add(0);
+    node3Inputs.set("positive", positiveLink);
+    ArrayNode negativeLink = objectMapper.createArrayNode();
+    negativeLink.add("7").add(0);
+    node3Inputs.set("negative", negativeLink);
+    ArrayNode latentLink = objectMapper.createArrayNode();
+    latentLink.add("5").add(0);
+    node3Inputs.set("latent_image", latentLink);
+    node3.set("inputs", node3Inputs);
+    workflow.set("3", node3);
+
+    ObjectNode node8 = objectMapper.createObjectNode();
+    node8.put("class_type", "VAEDecode");
+    ObjectNode node8Inputs = objectMapper.createObjectNode();
+    ArrayNode samplesLink = objectMapper.createArrayNode();
+    samplesLink.add("3").add(0);
+    node8Inputs.set("samples", samplesLink);
+    ArrayNode vaeLink = objectMapper.createArrayNode();
+    vaeLink.add("4").add(2);
+    node8Inputs.set("vae", vaeLink);
+    node8.set("inputs", node8Inputs);
+    workflow.set("8", node8);
+
+    ObjectNode node9 = objectMapper.createObjectNode();
+    node9.put("class_type", "SaveImage");
+    ObjectNode node9Inputs = objectMapper.createObjectNode();
+    node9Inputs.put("filename_prefix", outputFilename);
+    ArrayNode imagesLink = objectMapper.createArrayNode();
+    imagesLink.add("8").add(0);
+    node9Inputs.set("images", imagesLink);
+    node9.set("inputs", node9Inputs);
+    workflow.set("9", node9);
+
+    return workflow;
   }
 
   /**
