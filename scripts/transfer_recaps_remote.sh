@@ -14,6 +14,7 @@ REMOTE_JAVA_BIN="${REMOTE_JAVA_BIN:-java}"
 LOCAL_DB_URL=""
 LOCAL_DB_USER="${LOCAL_DB_USER:-sa}"
 LOCAL_DB_PASSWORD="${LOCAL_DB_PASSWORD:-}"
+LOCAL_ENV_FILE="${LOCAL_ENV_FILE:-${ROOT_DIR}/.env.local}"
 
 REMOTE_TARGET=""
 REMOTE_PROJECT_DIR=""
@@ -22,6 +23,7 @@ REMOTE_DB_USER="${REMOTE_DB_USER:-sa}"
 REMOTE_DB_PASSWORD="${REMOTE_DB_PASSWORD:-}"
 REMOTE_IMPORT_PATH="${REMOTE_IMPORT_PATH:-}"
 REMOTE_JAR_PATH=""
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-}"
 REMOTE_HOME_DIR=""
 ON_CONFLICT="${ON_CONFLICT:-skip}"
 APPLY_IMPORT=false
@@ -50,7 +52,7 @@ Required:
   --remote-db-url <jdbc-url>       Remote DB URL for import.
 
 Options:
-  --feature <recaps|quizzes|illustrations|portraits|all>
+  --feature <recaps|quizzes|illustrations|portraits|covers|all>
                                   Transfer feature set (default: ${FEATURE}).
   --export-path <path>             Local transfer JSON path (single-feature only).
   --export-dir <path>              Used when --export-path is omitted (default: ${EXPORT_DIR}).
@@ -58,6 +60,7 @@ Options:
   --local-db-url <jdbc-url>        Local DB URL for export.
   --local-db-user <user>           Local DB user (default: ${LOCAL_DB_USER}).
   --local-db-password <pass>       Local DB password (default: empty).
+  --local-env-file <path>          Source local env vars before export (default: ${LOCAL_ENV_FILE}).
 
   --remote-db-user <user>          Remote DB user (default: ${REMOTE_DB_USER}).
   --remote-db-password <pass>      Remote DB password (default: empty).
@@ -65,6 +68,7 @@ Options:
   --remote-runner <auto|maven|jar> Remote runner strategy (default: ${REMOTE_RUNNER}).
   --remote-jar-path <path>         Remote jar for runner=jar (default: <remote-project-dir>/target/classic-chat-reader-1.0-SNAPSHOT.jar).
   --remote-java-bin <bin>          Java binary for runner=jar (default: ${REMOTE_JAVA_BIN}).
+  --remote-env-file <path>         Source env vars before remote import (for SPRING_DATASOURCE_*).
 
   --on-conflict <skip|overwrite>   Import policy (default: ${ON_CONFLICT}).
   --apply-import                   Apply remote DB writes (default: dry-run only).
@@ -107,6 +111,12 @@ run_local_cache_transfer() {
   local exec_args="$1"
   (
     cd "$ROOT_DIR"
+    if [[ -n "$LOCAL_ENV_FILE" && -f "$LOCAL_ENV_FILE" ]]; then
+      set -a
+      # shellcheck source=/dev/null
+      source "$LOCAL_ENV_FILE"
+      set +a
+    fi
     "$MAVEN_BIN" -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
       -Dexec.mainClass=com.classicchatreader.cli.CacheTransferRunner \
       -Dexec.args="$exec_args"
@@ -118,15 +128,22 @@ run_remote_cache_transfer() {
   local exec_args_b64
   exec_args_b64="$(base64_encode_compact "$exec_args")"
   if [[ "$REMOTE_RUNNER" == "maven" ]]; then
-    "${SSH_CMD[@]}" "$REMOTE_TARGET" bash -s -- "$REMOTE_PROJECT_DIR" "$MAVEN_BIN" "$exec_args_b64" <<'EOF'
+    "${SSH_CMD[@]}" "$REMOTE_TARGET" bash -s -- "$REMOTE_PROJECT_DIR" "$MAVEN_BIN" "$REMOTE_ENV_FILE" "$exec_args_b64" <<'EOF'
 set -euo pipefail
 project_dir="$1"
 maven_bin="$2"
-exec_args_b64="$3"
+env_file="$3"
+exec_args_b64="$4"
 if exec_args="$(printf '%s' "$exec_args_b64" | base64 --decode 2>/dev/null)"; then
   :
 else
   exec_args="$(printf '%s' "$exec_args_b64" | base64 -d)"
+fi
+if [[ -n "$env_file" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$env_file"
+  set +a
 fi
 cd "$project_dir"
 "$maven_bin" -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
@@ -134,16 +151,23 @@ cd "$project_dir"
   "-Dexec.args=$exec_args"
 EOF
   else
-    "${SSH_CMD[@]}" "$REMOTE_TARGET" bash -s -- "$REMOTE_PROJECT_DIR" "$REMOTE_JAVA_BIN" "$REMOTE_JAR_PATH" "$exec_args_b64" <<'EOF'
+    "${SSH_CMD[@]}" "$REMOTE_TARGET" bash -s -- "$REMOTE_PROJECT_DIR" "$REMOTE_JAVA_BIN" "$REMOTE_JAR_PATH" "$REMOTE_ENV_FILE" "$exec_args_b64" <<'EOF'
 set -euo pipefail
 project_dir="$1"
 java_bin="$2"
 jar_path="$3"
-exec_args_b64="$4"
+env_file="$4"
+exec_args_b64="$5"
 if exec_args="$(printf '%s' "$exec_args_b64" | base64 --decode 2>/dev/null)"; then
   :
 else
   exec_args="$(printf '%s' "$exec_args_b64" | base64 -d)"
+fi
+if [[ -n "$env_file" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$env_file"
+  set +a
 fi
 cd "$project_dir"
 # Parse the transfer CLI arg string into argv without eval.
@@ -294,6 +318,11 @@ while [[ $# -gt 0 ]]; do
       REMOTE_JAR_PATH="$2"
       shift 2
       ;;
+    --remote-env-file)
+      [[ $# -ge 2 ]] || fail "--remote-env-file requires a value"
+      REMOTE_ENV_FILE="$2"
+      shift 2
+      ;;
     --remote-java-bin)
       [[ $# -ge 2 ]] || fail "--remote-java-bin requires a value"
       REMOTE_JAVA_BIN="$2"
@@ -343,6 +372,11 @@ while [[ $# -gt 0 ]]; do
       LOCAL_DB_PASSWORD="$2"
       shift 2
       ;;
+    --local-env-file)
+      [[ $# -ge 2 ]] || fail "--local-env-file requires a value"
+      LOCAL_ENV_FILE="$2"
+      shift 2
+      ;;
     --export-path)
       [[ $# -ge 2 ]] || fail "--export-path requires a value"
       EXPORT_PATH="$2"
@@ -370,10 +404,10 @@ done
 
 [[ -n "$REMOTE_TARGET" ]] || fail "--remote is required"
 [[ -n "$REMOTE_PROJECT_DIR" ]] || fail "--remote-project-dir is required"
-[[ -n "$REMOTE_DB_URL" ]] || fail "--remote-db-url is required"
+[[ -n "$REMOTE_DB_URL" || -n "$REMOTE_ENV_FILE" ]] || fail "--remote-db-url is required unless --remote-env-file is set"
 [[ "$ON_CONFLICT" == "skip" || "$ON_CONFLICT" == "overwrite" ]] || fail "--on-conflict must be skip or overwrite"
 [[ "$REMOTE_RUNNER" == "auto" || "$REMOTE_RUNNER" == "maven" || "$REMOTE_RUNNER" == "jar" ]] || fail "--remote-runner must be one of: auto, maven, jar"
-[[ "$FEATURE" == "recaps" || "$FEATURE" == "quizzes" || "$FEATURE" == "illustrations" || "$FEATURE" == "portraits" || "$FEATURE" == "all" ]] || fail "--feature must be recaps, quizzes, illustrations, portraits, or all"
+[[ "$FEATURE" == "recaps" || "$FEATURE" == "quizzes" || "$FEATURE" == "illustrations" || "$FEATURE" == "portraits" || "$FEATURE" == "covers" || "$FEATURE" == "all" ]] || fail "--feature must be recaps, quizzes, illustrations, portraits, covers, or all"
 
 if [[ "$ALL_CACHED" == "true" && -n "$SOURCE_IDS" ]]; then
   fail "--all-cached and --book-source-id are mutually exclusive"
@@ -405,7 +439,7 @@ ensure_remote_runner
 
 declare -a FEATURES_TO_TRANSFER=()
 if [[ "$FEATURE" == "all" ]]; then
-  FEATURES_TO_TRANSFER=(recaps quizzes illustrations portraits)
+  FEATURES_TO_TRANSFER=(recaps quizzes illustrations portraits covers)
 else
   FEATURES_TO_TRANSFER=("$FEATURE")
 fi
@@ -467,8 +501,11 @@ for current_feature in "${FEATURES_TO_TRANSFER[@]}"; do
 
   echo "Step 3/4: Remote import dry-run (${current_feature})"
   echo "  Remote runner: ${REMOTE_RUNNER}"
-  import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER} --db-password ${REMOTE_DB_PASSWORD}"
-  if [[ -z "$REMOTE_DB_PASSWORD" ]]; then
+  import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT}"
+  if [[ -n "$REMOTE_DB_URL" ]]; then
+    import_args="${import_args} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER} --db-password ${REMOTE_DB_PASSWORD}"
+  fi
+  if [[ -n "$REMOTE_DB_URL" && -z "$REMOTE_DB_PASSWORD" ]]; then
     import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER}"
   fi
   run_remote_cache_transfer "$import_args"
@@ -496,8 +533,11 @@ if [[ "$APPLY_IMPORT" == "true" ]]; then
   for i in "${!FEATURES_TO_TRANSFER[@]}"; do
     current_feature="${FEATURES_TO_TRANSFER[$i]}"
     current_remote_path="${REMOTE_PATHS[$i]}"
-    import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER} --db-password ${REMOTE_DB_PASSWORD}"
-    if [[ -z "$REMOTE_DB_PASSWORD" ]]; then
+    import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT}"
+    if [[ -n "$REMOTE_DB_URL" ]]; then
+      import_args="${import_args} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER} --db-password ${REMOTE_DB_PASSWORD}"
+    fi
+    if [[ -n "$REMOTE_DB_URL" && -z "$REMOTE_DB_PASSWORD" ]]; then
       import_args="import --feature ${current_feature} --input ${current_remote_path} --on-conflict ${ON_CONFLICT} --db-url ${REMOTE_DB_URL} --db-user ${REMOTE_DB_USER}"
     fi
     run_remote_cache_transfer "${import_args} --apply"

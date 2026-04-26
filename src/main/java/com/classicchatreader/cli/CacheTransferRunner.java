@@ -57,6 +57,7 @@ public class CacheTransferRunner {
     private static final String FEATURE_QUIZZES = "quizzes";
     private static final String FEATURE_ILLUSTRATIONS = "illustrations";
     private static final String FEATURE_PORTRAITS = "portraits";
+    private static final String FEATURE_COVERS = "covers";
     private static final String FORMAT_VERSION = "1.0";
 
     private static final Set<String> GLOBAL_OPTIONS = Set.of(
@@ -115,7 +116,7 @@ public class CacheTransferRunner {
         String featureRaw = parsed.optionValue(FEATURE_FLAG).orElse(FEATURE_RECAPS).trim().toLowerCase();
         Optional<TransferFeature> feature = TransferFeature.fromValue(featureRaw);
         if (feature.isEmpty()) {
-            err.println("Unsupported feature: " + featureRaw + " (supported: recaps, quizzes, illustrations, portraits).");
+            err.println("Unsupported feature: " + featureRaw + " (supported: recaps, quizzes, illustrations, portraits, covers).");
             return 1;
         }
 
@@ -129,6 +130,7 @@ public class CacheTransferRunner {
                     case QUIZZES -> exportQuizzes(connection, options, out, err);
                     case ILLUSTRATIONS -> exportIllustrations(connection, options, out, err);
                     case PORTRAITS -> exportPortraits(connection, options, out, err);
+                    case COVERS -> exportCovers(connection, options, out, err);
                 };
                 printSummary("export", feature.get(), summary, options.apply(), out);
                 return summary.validationErrors() > 0 ? 1 : 0;
@@ -144,6 +146,7 @@ public class CacheTransferRunner {
                 case QUIZZES -> importQuizzes(connection, options, out, err);
                 case ILLUSTRATIONS -> importIllustrations(connection, options, out, err);
                 case PORTRAITS -> importPortraits(connection, options, out, err);
+                case COVERS -> importCovers(connection, options, out, err);
             };
 
             if (options.apply()) {
@@ -164,24 +167,36 @@ public class CacheTransferRunner {
 
     private static DbConfig resolveDbConfig(ParsedArgs parsed) {
         Properties properties = loadProperties();
-        String dbUrl = parsed.optionValue(DB_URL_FLAG)
-                .orElseGet(() -> firstNonBlank(
-                        System.getenv("SPRING_DATASOURCE_URL"),
-                        System.getenv("DATABASE_URL"),
-                        properties.getProperty("spring.datasource.url"),
-                        "jdbc:h2:file:./data/library"));
-        String dbUser = parsed.optionValue(DB_USER_FLAG)
-                .orElseGet(() -> firstNonBlank(
-                        System.getenv("SPRING_DATASOURCE_USERNAME"),
-                        System.getenv("DATABASE_USERNAME"),
-                        properties.getProperty("spring.datasource.username"),
-                        "sa"));
-        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG)
-                .orElseGet(() -> firstNonBlank(
-                        System.getenv("SPRING_DATASOURCE_PASSWORD"),
-                        System.getenv("DATABASE_PASSWORD"),
-                        properties.getProperty("spring.datasource.password"),
-                        ""));
+        Optional<String> explicitDbUrl = parsed.optionValue(DB_URL_FLAG);
+        String dbUrl = explicitDbUrl.orElseGet(() -> firstNonBlank(
+                System.getenv("PDR_DATABASE_URL"),
+                System.getenv("SPRING_DATASOURCE_URL"),
+                System.getenv("DATABASE_URL"),
+                properties.getProperty("spring.datasource.url"),
+                "jdbc:h2:file:./data/library"));
+
+        String dbUser = parsed.optionValue(DB_USER_FLAG).orElseGet(() -> {
+            if (explicitDbUrl.isPresent()) {
+                return firstNonBlank(properties.getProperty("spring.datasource.username"), "sa");
+            }
+            return firstNonBlank(
+                    System.getenv("PDR_DATABASE_USERNAME"),
+                    System.getenv("SPRING_DATASOURCE_USERNAME"),
+                    System.getenv("DATABASE_USERNAME"),
+                    properties.getProperty("spring.datasource.username"),
+                    "sa");
+        });
+        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG).orElseGet(() -> {
+            if (explicitDbUrl.isPresent()) {
+                return firstNonBlank(properties.getProperty("spring.datasource.password"), "");
+            }
+            return firstNonBlank(
+                    System.getenv("PDR_DATABASE_PASSWORD"),
+                    System.getenv("SPRING_DATASOURCE_PASSWORD"),
+                    System.getenv("DATABASE_PASSWORD"),
+                    properties.getProperty("spring.datasource.password"),
+                    "");
+        });
         return new DbConfig(normalizeDbUrl(dbUrl), dbUser, dbPassword);
     }
 
@@ -670,6 +685,109 @@ public class CacheTransferRunner {
         return summary;
     }
 
+    static Summary exportCovers(Connection connection, ExportOptions options, PrintStream out, PrintStream err)
+            throws SQLException, IOException {
+        Summary summary = new Summary();
+
+        Map<String, List<BookRow>> booksByRequestedSourceId = options.sourceIds().isEmpty()
+                ? Map.of()
+                : findBooksBySourceId(connection, options.sourceIds());
+        if (!options.sourceIds().isEmpty()) {
+            summary.booksScanned = options.sourceIds().size();
+            for (String requestedSourceId : options.sourceIds()) {
+                if (booksByRequestedSourceId.getOrDefault(requestedSourceId, List.of()).isEmpty()) {
+                    summary.booksMissing++;
+                    out.println("Book missing for sourceId=" + requestedSourceId);
+                }
+            }
+            int matched = booksByRequestedSourceId.values().stream().mapToInt(List::size).sum();
+            summary.booksMatched = matched;
+        }
+
+        List<CoverExportRow> coverRows = queryCompletedCoverRows(connection);
+        Set<String> scannedBooksAllCached = new HashSet<>();
+        Set<String> missingBookIds = new HashSet<>();
+        Set<String> allowedBookIds = new HashSet<>();
+        if (!options.sourceIds().isEmpty()) {
+            for (List<BookRow> rows : booksByRequestedSourceId.values()) {
+                for (BookRow row : rows) {
+                    allowedBookIds.add(row.id());
+                }
+            }
+        }
+
+        Map<String, TransferBookBuilder> builders = new LinkedHashMap<>();
+
+        for (CoverExportRow row : coverRows) {
+            if (!options.sourceIds().isEmpty() && !allowedBookIds.contains(row.bookId())) {
+                continue;
+            }
+
+            if (options.allCached()) {
+                scannedBooksAllCached.add(row.bookId());
+            }
+
+            if (isBlank(row.source()) || isBlank(row.sourceId())) {
+                if (missingBookIds.add(row.bookId())) {
+                    summary.booksMissing++;
+                    out.println("Skipping book with missing source/sourceId: bookId=" + row.bookId());
+                }
+                continue;
+            }
+
+            String key = row.source() + "\u0000" + row.sourceId();
+            TransferBookBuilder builder = builders.computeIfAbsent(
+                    key,
+                    ignored -> new TransferBookBuilder(row.source(), row.sourceId(), row.title(), row.author())
+            );
+            builder.covers().add(new TransferCover(
+                    ChapterStatus.COMPLETED.value(),
+                    row.imageFilename(),
+                    row.generatedPrompt(),
+                    row.promptOverride(),
+                    row.coverSource(),
+                    formatDateTime(row.createdAt()),
+                    formatDateTime(row.completedAt())
+            ));
+            summary.coversExported++;
+        }
+
+        if (options.allCached()) {
+            summary.booksScanned = scannedBooksAllCached.size();
+            summary.booksMatched = scannedBooksAllCached.size() - missingBookIds.size();
+        }
+
+        List<TransferBook> books = builders.values().stream()
+                .map(TransferBookBuilder::build)
+                .sorted(Comparator.comparing(TransferBook::source).thenComparing(TransferBook::sourceId))
+                .toList();
+
+        TransferBundle bundle = new TransferBundle(
+                FORMAT_VERSION,
+                DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+                List.of(FEATURE_COVERS),
+                books
+        );
+
+        if (!options.apply()) {
+            out.println("Dry-run: export file not written (use --apply to write JSON).");
+            return summary;
+        }
+
+        Path outputPath = options.outputPath();
+        if (outputPath == null) {
+            summary.validationErrors++;
+            err.println("Missing output path.");
+            return summary;
+        }
+        if (outputPath.getParent() != null) {
+            Files.createDirectories(outputPath.getParent());
+        }
+        OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValue(outputPath.toFile(), bundle);
+        out.println("Wrote cover transfer JSON: " + outputPath.toAbsolutePath());
+        return summary;
+    }
+
     static Summary importRecaps(Connection connection, ImportOptions options, PrintStream out, PrintStream err)
             throws IOException, SQLException {
         Summary summary = new Summary();
@@ -978,6 +1096,73 @@ public class CacheTransferRunner {
         return summary;
     }
 
+    static Summary importCovers(Connection connection, ImportOptions options, PrintStream out, PrintStream err)
+            throws IOException, SQLException {
+        Summary summary = new Summary();
+
+        if (!Files.exists(options.inputPath())) {
+            summary.validationErrors++;
+            err.println("Input file does not exist: " + options.inputPath().toAbsolutePath());
+            return summary;
+        }
+
+        TransferBundle bundle;
+        try {
+            bundle = OBJECT_MAPPER.readValue(options.inputPath().toFile(), TransferBundle.class);
+        } catch (Exception e) {
+            summary.validationErrors++;
+            err.println("Invalid JSON: " + e.getMessage());
+            return summary;
+        }
+
+        List<String> validationErrors = validateBundle(bundle, TransferFeature.COVERS);
+        summary.validationErrors += validationErrors.size();
+        if (!validationErrors.isEmpty()) {
+            for (String validationError : validationErrors) {
+                err.println("Validation error: " + validationError);
+            }
+            return summary;
+        }
+
+        for (TransferBook book : nullSafeList(bundle.books())) {
+            summary.booksScanned++;
+            Optional<String> localBookId = findBookId(connection, book.source(), book.sourceId());
+            if (localBookId.isEmpty()) {
+                summary.booksMissing++;
+                out.println("Book not found locally: " + book.source() + "/" + book.sourceId());
+                continue;
+            }
+
+            summary.booksMatched++;
+            for (TransferCover cover : nullSafeList(book.covers())) {
+                Optional<String> existingCoverId = findCoverIdByBook(connection, localBookId.get());
+                if (existingCoverId.isPresent() && options.onConflict() == OnConflict.SKIP) {
+                    summary.coversSkippedConflicts++;
+                    continue;
+                }
+
+                LocalDateTime createdAt = parseDateTime(cover.createdAt());
+                if (createdAt == null) {
+                    createdAt = LocalDateTime.now(ZoneOffset.UTC);
+                }
+                LocalDateTime completedAt = parseDateTime(cover.completedAt());
+                if (options.apply()) {
+                    if (existingCoverId.isPresent()) {
+                        updateCover(connection, existingCoverId.get(), cover, createdAt, completedAt);
+                    } else {
+                        insertCover(connection, localBookId.get(), cover, createdAt, completedAt);
+                    }
+                }
+                summary.coversImported++;
+            }
+        }
+
+        if (!options.apply()) {
+            out.println("Dry-run: no database writes applied (use --apply to persist changes).");
+        }
+        return summary;
+    }
+
     private static List<String> validateBundle(TransferBundle bundle, TransferFeature feature) {
         List<String> errors = new ArrayList<>();
         if (bundle == null) {
@@ -1114,6 +1299,29 @@ public class CacheTransferRunner {
                         }
                         if (!isBlank(portrait.completedAt()) && parseDateTimeSafe(portrait.completedAt()) == null) {
                             errors.add(portraitPrefix + ".completedAt is not a valid timestamp.");
+                        }
+                    }
+                }
+                case COVERS -> {
+                    for (int j = 0; j < nullSafeList(book.covers()).size(); j++) {
+                        TransferCover cover = nullSafeList(book.covers()).get(j);
+                        String coverPrefix = bookPrefix + ".covers[" + j + "]";
+                        if (cover == null) {
+                            errors.add(coverPrefix + " must not be null.");
+                            continue;
+                        }
+                        if (isBlank(cover.imageFilename())) {
+                            errors.add(coverPrefix + ".imageFilename is required.");
+                        }
+                        String status = cover.status();
+                        if (!isBlank(status) && !ChapterStatus.COMPLETED.value().equalsIgnoreCase(status.trim())) {
+                            errors.add(coverPrefix + ".status must be COMPLETED.");
+                        }
+                        if (!isBlank(cover.createdAt()) && parseDateTimeSafe(cover.createdAt()) == null) {
+                            errors.add(coverPrefix + ".createdAt is not a valid timestamp.");
+                        }
+                        if (!isBlank(cover.completedAt()) && parseDateTimeSafe(cover.completedAt()) == null) {
+                            errors.add(coverPrefix + ".completedAt is not a valid timestamp.");
                         }
                     }
                 }
@@ -1263,6 +1471,40 @@ public class CacheTransferRunner {
         return rows;
     }
 
+    private static List<CoverExportRow> queryCompletedCoverRows(Connection connection) throws SQLException {
+        String sql = """
+                select b.id as book_id, b.source, b.source_id, b.title, b.author,
+                       bc.image_filename, bc.generated_prompt, bc.prompt_override, bc.cover_source,
+                       bc.created_at, bc.completed_at
+                from book_covers bc
+                join books b on bc.book_id = b.id
+                where bc.status = 'COMPLETED'
+                  and bc.image_filename is not null
+                  and trim(bc.image_filename) <> ''
+                order by b.source, b.source_id
+                """;
+        List<CoverExportRow> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet rs = statement.executeQuery()) {
+            while (rs.next()) {
+                rows.add(new CoverExportRow(
+                        rs.getString("book_id"),
+                        rs.getString("source"),
+                        rs.getString("source_id"),
+                        rs.getString("title"),
+                        rs.getString("author"),
+                        rs.getString("image_filename"),
+                        rs.getString("generated_prompt"),
+                        rs.getString("prompt_override"),
+                        rs.getString("cover_source"),
+                        rs.getObject("created_at", LocalDateTime.class),
+                        rs.getObject("completed_at", LocalDateTime.class)
+                ));
+            }
+        }
+        return rows;
+    }
+
     private static Map<String, List<BookRow>> findBooksBySourceId(Connection connection, Set<String> sourceIds)
             throws SQLException {
         if (sourceIds.isEmpty()) {
@@ -1364,6 +1606,19 @@ public class CacheTransferRunner {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, bookId);
             statement.setString(2, name);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.ofNullable(rs.getString(1));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> findCoverIdByBook(Connection connection, String bookId) throws SQLException {
+        String sql = "select id from book_covers where book_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, bookId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
                     return Optional.ofNullable(rs.getString(1));
@@ -1579,6 +1834,59 @@ public class CacheTransferRunner {
         }
     }
 
+    private static void insertCover(Connection connection, String bookId, TransferCover cover,
+                                    LocalDateTime createdAt, LocalDateTime completedAt) throws SQLException {
+        String sql = """
+                insert into book_covers (
+                    id, book_id, status, image_filename, generated_prompt, prompt_override, cover_source,
+                    created_at, completed_at, retry_count
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, UUID.randomUUID().toString());
+            statement.setString(2, bookId);
+            statement.setString(3, ChapterStatus.COMPLETED.value());
+            statement.setString(4, cover.imageFilename().trim());
+            statement.setString(5, blankToNull(cover.generatedPrompt()));
+            statement.setString(6, blankToNull(cover.promptOverride()));
+            statement.setString(7, blankToNull(cover.coverSource()));
+            statement.setTimestamp(8, Timestamp.valueOf(createdAt));
+            if (completedAt == null) {
+                statement.setTimestamp(9, null);
+            } else {
+                statement.setTimestamp(9, Timestamp.valueOf(completedAt));
+            }
+            statement.setInt(10, 0);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void updateCover(Connection connection, String coverId, TransferCover cover,
+                                    LocalDateTime createdAt, LocalDateTime completedAt) throws SQLException {
+        String sql = """
+                update book_covers
+                set status = ?, image_filename = ?, generated_prompt = ?, prompt_override = ?,
+                    cover_source = ?, created_at = ?, completed_at = ?, error_message = null,
+                    lease_expires_at = null, lease_owner = null, next_retry_at = null, retry_count = 0
+                where id = ?
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, ChapterStatus.COMPLETED.value());
+            statement.setString(2, cover.imageFilename().trim());
+            statement.setString(3, blankToNull(cover.generatedPrompt()));
+            statement.setString(4, blankToNull(cover.promptOverride()));
+            statement.setString(5, blankToNull(cover.coverSource()));
+            statement.setTimestamp(6, Timestamp.valueOf(createdAt));
+            if (completedAt == null) {
+                statement.setTimestamp(7, null);
+            } else {
+                statement.setTimestamp(7, Timestamp.valueOf(completedAt));
+            }
+            statement.setString(8, coverId);
+            statement.executeUpdate();
+        }
+    }
+
     private static String resolveCharacterType(String rawType) {
         if (isBlank(rawType)) {
             return "SECONDARY";
@@ -1668,13 +1976,20 @@ public class CacheTransferRunner {
                 out.println("Illustrations imported: " + summary.illustrationsImported());
             }
             out.println("Illustrations skipped (conflict): " + summary.illustrationsSkippedConflicts());
-        } else {
+        } else if (feature == TransferFeature.PORTRAITS) {
             if (COMMAND_EXPORT.equals(command)) {
                 out.println("Portraits exported: " + summary.portraitsExported());
             } else {
                 out.println("Portraits imported: " + summary.portraitsImported());
             }
             out.println("Portraits skipped (conflict): " + summary.portraitsSkippedConflicts());
+        } else {
+            if (COMMAND_EXPORT.equals(command)) {
+                out.println("Covers exported: " + summary.coversExported());
+            } else {
+                out.println("Covers imported: " + summary.coversImported());
+            }
+            out.println("Covers skipped (conflict): " + summary.coversSkippedConflicts());
         }
         out.println("Chapters missing: " + summary.chaptersMissing());
         out.println("Validation errors: " + summary.validationErrors());
@@ -1682,12 +1997,12 @@ public class CacheTransferRunner {
 
     private static void printUsage(PrintStream out) {
         out.println("Usage:");
-        out.println("  CacheTransferRunner export --feature recaps|quizzes|illustrations|portraits (--all-cached | --book-source-id <id>[,<id>...]) [--output <path>] [--apply]");
-        out.println("  CacheTransferRunner import --feature recaps|quizzes|illustrations|portraits --input <path> [--on-conflict skip|overwrite] [--apply]");
+        out.println("  CacheTransferRunner export --feature recaps|quizzes|illustrations|portraits|covers (--all-cached | --book-source-id <id>[,<id>...]) [--output <path>] [--apply]");
+        out.println("  CacheTransferRunner import --feature recaps|quizzes|illustrations|portraits|covers --input <path> [--on-conflict skip|overwrite] [--apply]");
         out.println("");
         out.println("Notes:");
         out.println("  --apply is required to write changes. Without --apply, commands run in dry-run mode.");
-        out.println("  Supported features: recaps, quizzes, illustrations, portraits.");
+        out.println("  Supported features: recaps, quizzes, illustrations, portraits, covers.");
     }
 
     private static Set<String> parseCsvSet(String raw) {
@@ -1831,7 +2146,8 @@ public class CacheTransferRunner {
         RECAPS(FEATURE_RECAPS),
         QUIZZES(FEATURE_QUIZZES),
         ILLUSTRATIONS(FEATURE_ILLUSTRATIONS),
-        PORTRAITS(FEATURE_PORTRAITS);
+        PORTRAITS(FEATURE_PORTRAITS),
+        COVERS(FEATURE_COVERS);
 
         private final String value;
 
@@ -1872,6 +2188,9 @@ public class CacheTransferRunner {
         private int portraitsExported;
         private int portraitsImported;
         private int portraitsSkippedConflicts;
+        private int coversExported;
+        private int coversImported;
+        private int coversSkippedConflicts;
         private int chaptersMissing;
         private int validationErrors;
 
@@ -1933,6 +2252,18 @@ public class CacheTransferRunner {
 
         int portraitsSkippedConflicts() {
             return portraitsSkippedConflicts;
+        }
+
+        int coversExported() {
+            return coversExported;
+        }
+
+        int coversImported() {
+            return coversImported;
+        }
+
+        int coversSkippedConflicts() {
+            return coversSkippedConflicts;
         }
 
         int chaptersMissing() {
@@ -2008,6 +2339,21 @@ public class CacheTransferRunner {
     ) {
     }
 
+    record CoverExportRow(
+            String bookId,
+            String source,
+            String sourceId,
+            String title,
+            String author,
+            String imageFilename,
+            String generatedPrompt,
+            String promptOverride,
+            String coverSource,
+            LocalDateTime createdAt,
+            LocalDateTime completedAt
+    ) {
+    }
+
     static class TransferBookBuilder {
         private final String source;
         private final String sourceId;
@@ -2017,6 +2363,7 @@ public class CacheTransferRunner {
         private final List<TransferQuiz> quizzes = new ArrayList<>();
         private final List<TransferIllustration> illustrations = new ArrayList<>();
         private final List<TransferPortrait> portraits = new ArrayList<>();
+        private final List<TransferCover> covers = new ArrayList<>();
 
         TransferBookBuilder(String source, String sourceId, String title, String author) {
             this.source = source;
@@ -2041,8 +2388,12 @@ public class CacheTransferRunner {
             return portraits;
         }
 
+        List<TransferCover> covers() {
+            return covers;
+        }
+
         TransferBook build() {
-            return new TransferBook(source, sourceId, title, author, recaps, quizzes, illustrations, portraits);
+            return new TransferBook(source, sourceId, title, author, recaps, quizzes, illustrations, portraits, covers);
         }
     }
 
@@ -2064,7 +2415,8 @@ public class CacheTransferRunner {
             List<TransferRecap> recaps,
             List<TransferQuiz> quizzes,
             List<TransferIllustration> illustrations,
-            List<TransferPortrait> portraits
+            List<TransferPortrait> portraits,
+            List<TransferCover> covers
     ) {
     }
 
@@ -2112,6 +2464,18 @@ public class CacheTransferRunner {
             String status,
             String portraitFilename,
             String portraitPrompt,
+            String createdAt,
+            String completedAt
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record TransferCover(
+            String status,
+            String imageFilename,
+            String generatedPrompt,
+            String promptOverride,
+            String coverSource,
             String createdAt,
             String completedAt
     ) {

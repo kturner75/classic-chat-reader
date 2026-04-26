@@ -137,6 +137,33 @@ class CacheTransferRunnerTest {
     }
 
     @Test
+    void exportApplyAllCached_writesCoverBundleJson() throws Exception {
+        String dbUrl = "jdbc:h2:mem:cache_transfer_export_covers;DB_CLOSE_DELAY=-1";
+        createSchema(dbUrl);
+        seedExportData(dbUrl);
+
+        Path output = tempDir.resolve("covers-export.json");
+        RunResult result = runCli(new String[]{
+                "export",
+                "--feature", "covers",
+                "--all-cached",
+                "--apply",
+                "--output", output.toString(),
+                "--db-url", dbUrl
+        });
+
+        assertEquals(0, result.exitCode());
+        assertTrue(Files.exists(output));
+
+        JsonNode root = OBJECT_MAPPER.readTree(output.toFile());
+        assertEquals("covers", root.get("features").get(0).asText());
+        assertEquals(1, root.get("books").size());
+        assertEquals(1, root.get("books").get(0).get("covers").size());
+        assertEquals("books/gutenberg/1342/covers/cover.png",
+                root.get("books").get(0).get("covers").get(0).get("imageFilename").asText());
+    }
+
+    @Test
     void exportApplyBookSourceIds_supportsMultiBookExport() throws Exception {
         String dbUrl = "jdbc:h2:mem:cache_transfer_export_multi;DB_CLOSE_DELAY=-1";
         createSchema(dbUrl);
@@ -390,6 +417,63 @@ class CacheTransferRunnerTest {
     }
 
     @Test
+    void importApplyCovers_skipAndOverwriteConflictPoliciesBehaveAsExpected() throws Exception {
+        String dbUrl = "jdbc:h2:mem:cache_transfer_import_covers;DB_CLOSE_DELAY=-1";
+        createSchema(dbUrl);
+        seedImportData(dbUrl);
+
+        Path input = tempDir.resolve("import-covers.json");
+        Files.writeString(input, """
+                {
+                  "formatVersion": "1.0",
+                  "exportedAt": "2026-02-11T21:30:00Z",
+                  "features": ["covers"],
+                  "books": [
+                    {
+                      "source": "gutenberg",
+                      "sourceId": "1342",
+                      "title": "Pride and Prejudice",
+                      "author": "Jane Austen",
+                      "covers": [
+                        {
+                          "status": "COMPLETED",
+                          "imageFilename": "books/gutenberg/1342/covers/cover-new.png",
+                          "generatedPrompt": "new cover prompt",
+                          "promptOverride": "manual prompt",
+                          "coverSource": "prompt_override",
+                          "createdAt": "2026-02-11T18:00:00Z",
+                          "completedAt": "2026-02-11T18:09:25Z"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+        RunResult skipResult = runCli(new String[]{
+                "import",
+                "--feature", "covers",
+                "--input", input.toString(),
+                "--apply",
+                "--on-conflict", "skip",
+                "--db-url", dbUrl
+        });
+        assertEquals(0, skipResult.exitCode());
+        assertEquals("books/gutenberg/1342/covers/cover-old.png", readCoverFilename(dbUrl, "cover-1"));
+
+        RunResult overwriteResult = runCli(new String[]{
+                "import",
+                "--feature", "covers",
+                "--input", input.toString(),
+                "--apply",
+                "--on-conflict", "overwrite",
+                "--db-url", dbUrl
+        });
+        assertEquals(0, overwriteResult.exitCode());
+        assertEquals("books/gutenberg/1342/covers/cover-new.png", readCoverFilename(dbUrl, "cover-1"));
+    }
+
+    @Test
     void importDryRun_doesNotMutateDatabase() throws Exception {
         String dbUrl = "jdbc:h2:mem:cache_transfer_import_dry_run;DB_CLOSE_DELAY=-1";
         createSchema(dbUrl);
@@ -542,6 +626,24 @@ class CacheTransferRunnerTest {
                         constraint uk_characters_book_name unique (book_id, name)
                     )
                     """);
+            statement.execute("""
+                    create table book_covers (
+                        id varchar(64) primary key,
+                        book_id varchar(64) not null unique,
+                        completed_at timestamp,
+                        created_at timestamp not null,
+                        error_message varchar(1000),
+                        generated_prompt varchar(2000),
+                        image_filename varchar(255),
+                        lease_expires_at timestamp,
+                        lease_owner varchar(120),
+                        next_retry_at timestamp,
+                        retry_count int not null default 0,
+                        status varchar(64) not null,
+                        prompt_override varchar(2000),
+                        cover_source varchar(64)
+                    )
+                    """);
         }
     }
 
@@ -595,6 +697,15 @@ class CacheTransferRunnerTest {
                         'COMPLETED', 'PRIMARY', TIMESTAMP '2026-02-11 18:00:00', TIMESTAMP '2026-02-11 18:09:25', 0
                     )
                     """);
+            statement.execute("""
+                    insert into book_covers (
+                        id, book_id, status, image_filename, generated_prompt, created_at, completed_at, retry_count, cover_source
+                    )
+                    values (
+                        'cover-1', 'book-1', 'COMPLETED', 'books/gutenberg/1342/covers/cover.png', 'cover prompt',
+                        TIMESTAMP '2026-02-11 18:00:00', TIMESTAMP '2026-02-11 18:09:25', 0, 'generated'
+                    )
+                    """);
         }
     }
 
@@ -645,6 +756,15 @@ class CacheTransferRunnerTest {
                         'COMPLETED', 'SECONDARY', TIMESTAMP '2026-02-11 18:00:00', TIMESTAMP '2026-02-11 18:09:25', 0
                     )
                     """);
+            statement.execute("""
+                    insert into book_covers (
+                        id, book_id, status, image_filename, generated_prompt, created_at, completed_at, retry_count, cover_source
+                    )
+                    values (
+                        'cover-1', 'book-1', 'COMPLETED', 'books/gutenberg/1342/covers/cover-old.png', 'old cover prompt',
+                        TIMESTAMP '2026-02-11 18:00:00', TIMESTAMP '2026-02-11 18:09:25', 0, 'generated'
+                    )
+                    """);
         }
     }
 
@@ -689,6 +809,17 @@ class CacheTransferRunnerTest {
                 return rs.getString(1);
             }
             throw new IllegalStateException("Character not found: " + characterId);
+        }
+    }
+
+    private static String readCoverFilename(String dbUrl, String coverId) throws Exception {
+        try (Connection connection = DriverManager.getConnection(dbUrl, "sa", "");
+             Statement statement = connection.createStatement();
+             var rs = statement.executeQuery("select image_filename from book_covers where id = '" + coverId + "'")) {
+            if (rs.next()) {
+                return rs.getString(1);
+            }
+            throw new IllegalStateException("Cover not found: " + coverId);
         }
     }
 

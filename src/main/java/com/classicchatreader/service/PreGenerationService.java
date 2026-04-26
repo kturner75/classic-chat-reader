@@ -62,6 +62,9 @@ public class PreGenerationService {
     @Value("${pregen.image-cooldown-minutes:3}")
     private int imageCooldownMinutes;
 
+    @Value("${pregen.covers.force-regenerate:false}")
+    private boolean forceRegenerateCovers;
+
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
@@ -276,13 +279,19 @@ public class PreGenerationService {
             return PreGenResult.failure("Book not found: " + bookId);
         }
         int preCoversTotal = coverCompletedOrFailed(bookId);
+        if (forceRegenerateCovers) {
+            log.info("Force-regenerating book cover for '{}' by {}", book.getTitle(), book.getAuthor());
+            bookCoverService.retryCoverWithFreshGeneratedPrompt(bookId);
+        }
         BookCoverService.CoverGenerationResult coverResult = bookCoverService.generateCoverAndWait(
                 bookId,
                 Duration.ofMinutes(Math.max(1, maxWaitMinutes))
         );
         int coversCompleted = coverCompleted(bookId);
         int coversFailed = coverFailed(bookId);
-        int newCovers = Math.max(0, coverCompletedOrFailed(bookId) - preCoversTotal);
+        int newCovers = forceRegenerateCovers && coverResult.success()
+                ? 1
+                : Math.max(0, coverCompletedOrFailed(bookId) - preCoversTotal);
         boolean success = coverResult.success() && coversFailed == 0;
         String message = success
                 ? (newCovers > 0 ? "Generated 1 new book cover" : "No new book cover required")

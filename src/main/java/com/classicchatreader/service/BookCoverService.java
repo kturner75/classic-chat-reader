@@ -36,6 +36,7 @@ public class BookCoverService {
     private final BookRepository bookRepository;
     private final IllustrationService illustrationService;
     private final ComfyUIService comfyUIService;
+    private final BookCoverImageGeneratorService bookCoverImageGeneratorService;
     private final AssetKeyService assetKeyService;
 
     private final BlockingQueue<CoverRequest> generationQueue = new LinkedBlockingQueue<>();
@@ -66,11 +67,13 @@ public class BookCoverService {
             BookRepository bookRepository,
             IllustrationService illustrationService,
             ComfyUIService comfyUIService,
+            BookCoverImageGeneratorService bookCoverImageGeneratorService,
             AssetKeyService assetKeyService) {
         this.bookCoverRepository = bookCoverRepository;
         this.bookRepository = bookRepository;
         this.illustrationService = illustrationService;
         this.comfyUIService = comfyUIService;
+        this.bookCoverImageGeneratorService = bookCoverImageGeneratorService;
         this.assetKeyService = assetKeyService;
     }
 
@@ -181,6 +184,15 @@ public class BookCoverService {
 
     @Transactional
     public boolean retryCover(String bookId, String promptOverride) {
+        return retryCover(bookId, promptOverride, false);
+    }
+
+    @Transactional
+    public boolean retryCoverWithFreshGeneratedPrompt(String bookId) {
+        return retryCover(bookId, null, true);
+    }
+
+    private boolean retryCover(String bookId, String promptOverride, boolean clearGeneratedPrompt) {
         if (cacheOnly) {
             log.info("Skipping book cover retry in cache-only mode for book {}", bookId);
             return false;
@@ -207,7 +219,10 @@ public class BookCoverService {
             cover.setCoverSource("prompt_override");
         } else {
             cover.setPromptOverride(null);
-            cover.setCoverSource("generated");
+            if (clearGeneratedPrompt) {
+                cover.setGeneratedPrompt(null);
+            }
+            cover.setCoverSource(null);
         }
         bookCoverRepository.save(cover);
         enqueueAfterCommit(bookId);
@@ -345,14 +360,9 @@ public class BookCoverService {
             self.updateCoverPrompt(bookId, prompt);
 
             String cacheKey = assetKeyService.buildBookCoverKey(book);
-            String promptId = comfyUIService.submitBookCoverWorkflow(prompt, "cover_" + bookId, cacheKey);
-            ComfyUIService.IllustrationResult result = comfyUIService.pollForBookCoverCompletion(promptId);
-            if (result.success()) {
-                self.updateCoverStatus(bookId, IllustrationStatus.COMPLETED, cacheKey, null);
-                log.info("Book cover completed for book: {}", bookId);
-                return;
-            }
-            self.handleGenerationFailure(bookId, result.errorMessage(), true);
+            String filename = bookCoverImageGeneratorService.generateBookCover(prompt, "cover_" + bookId, cacheKey);
+            self.updateCoverStatus(bookId, IllustrationStatus.COMPLETED, filename, null);
+            log.info("Book cover completed for book: {} via {}", bookId, bookCoverImageGeneratorService.getProviderName());
         } catch (Exception e) {
             log.error("Failed to generate book cover for book: {}", bookId, e);
             self.handleGenerationFailure(bookId, e.getMessage(), true);
@@ -381,7 +391,7 @@ public class BookCoverService {
             description = description.substring(0, 500);
         }
         return String.format(
-                "%s text-free illustrated book cover artwork for %s by %s. Symbolic central composition, rich color palette, vintage literary edition, atmospheric and readable as a cover image, no title text, no author text, no words, no letters, no typography. Setting: %s. Themes: %s",
+                "%s text-free illustrated book cover artwork for %s by %s. One bold central subject, simple silhouette, strong contrast, rich color palette, painterly literary illustration, limited fine detail, readable at small thumbnail size. No title text, no author text, no words, no letters, no typography, no logos. Avoid tiny decorative borders, printed paper texture, dense background detail, and generic unrelated portraits. Setting: %s. Themes: %s",
                 prefix,
                 book.getTitle(),
                 book.getAuthor(),
@@ -409,7 +419,7 @@ public class BookCoverService {
             cover.setErrorMessage(null);
             if (cover.getCoverSource() == null || cover.getCoverSource().isBlank()) {
                 cover.setCoverSource(cover.getPromptOverride() == null || cover.getPromptOverride().isBlank()
-                        ? "generated"
+                        ? bookCoverImageGeneratorService.getProviderName()
                         : "prompt_override");
             }
         }

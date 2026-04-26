@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+ENV_FILE="${SPACES_ENV_FILE:-${ROOT_DIR}/.env.spaces}"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${ENV_FILE}"
+  set +a
+fi
+
 DATA_DIR="${DATA_DIR:-${ROOT_DIR}/data}"
 SYNC_DIRECTION="${SYNC_DIRECTION:-up}" # up or down
 SPACES_PREFIX="${SPACES_PREFIX:-assets}"
@@ -26,12 +34,17 @@ SYNC_ARGS=(
   --endpoint-url "${SPACES_ENDPOINT}"
   --exclude "*"
   --include "audio/**"
+  --include "book-covers/**"
   --include "character-portraits/**"
   --include "illustrations/**"
 )
 
 if [[ "${SYNC_DELETE:-false}" == "true" ]]; then
   SYNC_ARGS+=(--delete)
+fi
+
+if [[ "${SYNC_DRYRUN:-false}" == "true" ]]; then
+  SYNC_ARGS+=(--dryrun)
 fi
 
 if [[ -n "${SPACES_ACL:-}" ]]; then

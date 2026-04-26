@@ -15,7 +15,7 @@ QUIZ_PREGEN=true
 QUIZ_POLL_INTERVAL_SECONDS="${QUIZ_POLL_INTERVAL_SECONDS:-5}"
 QUIZ_MAX_WAIT_MINUTES="${QUIZ_MAX_WAIT_MINUTES:-0}"
 SKIP_DB_TRANSFER=false
-TRANSFER_FEATURE="${TRANSFER_FEATURE:-all}" # recaps|quizzes|illustrations|portraits|all
+TRANSFER_FEATURE="${TRANSFER_FEATURE:-all}" # recaps|quizzes|illustrations|portraits|covers|all
 ON_CONFLICT="${ON_CONFLICT:-skip}"
 APPLY_IMPORT=true
 
@@ -56,7 +56,7 @@ Options:
   --quiz-max-wait-minutes <n>      Max wait for quiz pregen (0 = auto timeout, default: ${QUIZ_MAX_WAIT_MINUTES}).
 
   --skip-db-transfer               Skip remote DB transfer.
-  --transfer-feature <f>           recaps|quizzes|illustrations|portraits|all (default: ${TRANSFER_FEATURE}).
+  --transfer-feature <f>           recaps|quizzes|illustrations|portraits|covers|all (default: ${TRANSFER_FEATURE}).
   --on-conflict <skip|overwrite>   Import conflict mode (default: ${ON_CONFLICT}).
   --transfer-dry-run               Run remote transfer dry-run only (default is apply).
 
@@ -225,7 +225,7 @@ done
 [[ -n "$GUTENBERG_ID" ]] || fail "--gutenberg-id is required"
 [[ "$SYNC_DIRECTION" == "up" || "$SYNC_DIRECTION" == "down" ]] || fail "--sync-direction must be up or down"
 [[ "$ON_CONFLICT" == "skip" || "$ON_CONFLICT" == "overwrite" ]] || fail "--on-conflict must be skip or overwrite"
-[[ "$TRANSFER_FEATURE" == "recaps" || "$TRANSFER_FEATURE" == "quizzes" || "$TRANSFER_FEATURE" == "illustrations" || "$TRANSFER_FEATURE" == "portraits" || "$TRANSFER_FEATURE" == "all" ]] || fail "--transfer-feature must be recaps, quizzes, illustrations, portraits, or all"
+[[ "$TRANSFER_FEATURE" == "recaps" || "$TRANSFER_FEATURE" == "quizzes" || "$TRANSFER_FEATURE" == "illustrations" || "$TRANSFER_FEATURE" == "portraits" || "$TRANSFER_FEATURE" == "covers" || "$TRANSFER_FEATURE" == "all" ]] || fail "--transfer-feature must be recaps, quizzes, illustrations, portraits, covers, or all"
 [[ "$QUIZ_POLL_INTERVAL_SECONDS" =~ ^[0-9]+$ ]] || fail "--quiz-poll-interval-seconds must be an integer"
 [[ "$QUIZ_MAX_WAIT_MINUTES" =~ ^[0-9]+$ ]] || fail "--quiz-max-wait-minutes must be an integer"
 (( QUIZ_POLL_INTERVAL_SECONDS > 0 )) || fail "--quiz-poll-interval-seconds must be > 0"
