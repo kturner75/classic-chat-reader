@@ -20,6 +20,7 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("DELETE", "/api/pregen/jobs/job-1"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/illustrations/chapter/ch-1/request"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/quizzes/chapter/ch-1/generate"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/library/book-1/cover/retry"));
     }
 
     @Test
@@ -31,6 +32,7 @@ class SensitiveApiRequestMatcherTest {
     @Test
     void classify_marksAdminEndpoints() {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PATCH", "/api/library/book-1/features"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/library/book-1/cover"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library/book-1"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library"));
     }

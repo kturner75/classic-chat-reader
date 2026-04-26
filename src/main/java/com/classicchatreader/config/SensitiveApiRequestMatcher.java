@@ -20,6 +20,8 @@ public final class SensitiveApiRequestMatcher {
 
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
+    private static final Pattern PREGEN_BOOK_COVERS_PATH = Pattern.compile("^/api/pregen/book/[^/]+/covers$");
+    private static final Pattern PREGEN_GUTENBERG_COVERS_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+/covers$");
     private static final Pattern PREGEN_JOB_BOOK_PATH = Pattern.compile("^/api/pregen/jobs/book/[^/]+$");
     private static final Pattern PREGEN_JOB_GUTENBERG_PATH = Pattern.compile("^/api/pregen/jobs/gutenberg/\\d+$");
     private static final Pattern PREGEN_JOB_STATUS_PATH = Pattern.compile("^/api/pregen/jobs/[^/]+$");
@@ -31,6 +33,9 @@ public final class SensitiveApiRequestMatcher {
 
     private static final Pattern QUIZ_GENERATE_PATH = Pattern.compile("^/api/quizzes/chapter/[^/]+/generate$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
+    private static final Pattern LIBRARY_COVER_REQUEST_PATH = Pattern.compile("^/api/library/[^/]+/cover/request$");
+    private static final Pattern LIBRARY_COVER_RETRY_PATH = Pattern.compile("^/api/library/[^/]+/cover/retry$");
+    private static final Pattern LIBRARY_COVER_PATH = Pattern.compile("^/api/library/[^/]+/cover$");
     private static final Pattern LIBRARY_DELETE_BOOK_PATH = Pattern.compile("^/api/library/[^/]+$");
 
     private SensitiveApiRequestMatcher() {
@@ -58,12 +63,16 @@ public final class SensitiveApiRequestMatcher {
                     || CHARACTER_BOOK_PREFETCH_PATH.matcher(path).matches()
                     || PREGEN_BOOK_PATH.matcher(path).matches()
                     || PREGEN_GUTENBERG_PATH.matcher(path).matches()
+                    || PREGEN_BOOK_COVERS_PATH.matcher(path).matches()
+                    || PREGEN_GUTENBERG_COVERS_PATH.matcher(path).matches()
                     || PREGEN_JOB_BOOK_PATH.matcher(path).matches()
                     || PREGEN_JOB_GUTENBERG_PATH.matcher(path).matches()
                     || PREGEN_JOB_CANCEL_PATH.matcher(path).matches()
                     || RECAP_GENERATE_PATH.matcher(path).matches()
                     || RECAP_REQUEUE_PATH.matcher(path).matches()
-                    || QUIZ_GENERATE_PATH.matcher(path).matches()) {
+                    || QUIZ_GENERATE_PATH.matcher(path).matches()
+                    || LIBRARY_COVER_REQUEST_PATH.matcher(path).matches()
+                    || LIBRARY_COVER_RETRY_PATH.matcher(path).matches()) {
                 return EndpointType.GENERATION;
             }
 
@@ -80,6 +89,10 @@ public final class SensitiveApiRequestMatcher {
         }
 
         if ("PATCH".equals(method) && LIBRARY_FEATURES_PATH.matcher(path).matches()) {
+            return EndpointType.ADMIN;
+        }
+
+        if ("PUT".equals(method) && LIBRARY_COVER_PATH.matcher(path).matches()) {
             return EndpointType.ADMIN;
         }
 

@@ -60,8 +60,21 @@ public class BookImportService {
         int downloadCount,
         List<String> subjects,
         List<String> bookshelves,
-        boolean alreadyImported
-    ) {}
+        boolean alreadyImported,
+        String localBookId,
+        String coverUrl
+    ) {
+        public SearchResult(
+                int gutenbergId,
+                String title,
+                String author,
+                int downloadCount,
+                List<String> subjects,
+                List<String> bookshelves,
+                boolean alreadyImported) {
+            this(gutenbergId, title, author, downloadCount, subjects, bookshelves, alreadyImported, null, null);
+        }
+    }
 
     public record ImportResult(
         boolean success,
@@ -119,10 +132,11 @@ public class BookImportService {
     }
 
     private SearchResult toSearchResult(CuratedCatalogBook book) {
-        boolean imported = bookStorageService.existsBySource(
-                SOURCE_GUTENBERG,
-                String.valueOf(book.gutenbergId())
-        );
+        String sourceId = String.valueOf(book.gutenbergId());
+        boolean imported = bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId);
+        Optional<Book> localBook = imported
+                ? bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId)
+                : Optional.empty();
 
         return new SearchResult(
                 book.gutenbergId(),
@@ -131,7 +145,9 @@ public class BookImportService {
                 book.downloadCount(),
                 sanitizeMetadataList(book.subjects()),
                 sanitizeMetadataList(book.bookshelves()),
-                imported
+                imported,
+                localBook.map(Book::id).orElse(null),
+                localBook.map(Book::coverUrl).orElse(null)
         );
     }
 
@@ -148,10 +164,11 @@ public class BookImportService {
             if (!book.languages().contains("en")) continue;
             if (book.getHtmlUrl() == null) continue;
 
-            boolean imported = bookStorageService.existsBySource(
-                SOURCE_GUTENBERG,
-                String.valueOf(book.id())
-            );
+            String sourceId = String.valueOf(book.id());
+            boolean imported = bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId);
+            Optional<Book> localBook = imported
+                    ? bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId)
+                    : Optional.empty();
 
             SearchResult result = new SearchResult(
                 book.id(),
@@ -160,7 +177,9 @@ public class BookImportService {
                 book.downloadCount(),
                 sanitizeMetadataList(book.subjects()),
                 sanitizeMetadataList(book.bookshelves()),
-                imported
+                imported,
+                localBook.map(Book::id).orElse(null),
+                localBook.map(Book::coverUrl).orElse(null)
             );
 
             // Normalize title for deduplication (lowercase, trim)

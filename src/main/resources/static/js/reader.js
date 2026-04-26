@@ -2510,9 +2510,10 @@
         clearLibrarySearchError();
         try {
             // Load local books and discover catalog in parallel.
-            const [localResponse, catalogResponse] = await Promise.all([
+            const [localResponse, catalogResponse, featuresResponse] = await Promise.all([
                 fetch('/api/library'),
-                fetch('/api/import/popular')
+                fetch('/api/import/popular'),
+                fetch('/api/features')
             ]);
 
             if (!localResponse.ok) {
@@ -2521,15 +2522,24 @@
             if (!catalogResponse.ok) {
                 throw new Error(`Popular catalog request failed with status ${catalogResponse.status}`);
             }
+            if (!featuresResponse.ok) {
+                throw new Error(`Features request failed with status ${featuresResponse.status}`);
+            }
 
-            const [localBooks, popularCatalog] = await Promise.all([
+            const [localBooks, popularCatalog, features] = await Promise.all([
                 localResponse.json(),
-                catalogResponse.json()
+                catalogResponse.json(),
+                featuresResponse.json()
             ]);
             if (requestId !== libraryLoadRequestId) {
                 return;
             }
 
+            state.catalogMode = typeof features.catalogMode === 'string'
+                ? features.catalogMode.toLowerCase()
+                : null;
+            state.catalogCuratedOnly = features.catalogCuratedOnly === true
+                || state.catalogMode === 'curated';
             state.localBooks = localBooks;
             syncFavoriteBooksWithLocalBooks();
             syncBookActivityWithLocalBooks();
@@ -3043,7 +3053,10 @@
 
     function getLocalBookEntries() {
         const store = readBookActivityStore();
-        return state.localBooks.map(book => ({
+        const visibleBooks = state.catalogCuratedOnly
+            ? state.localBooks.filter(book => book && book.curated === true)
+            : state.localBooks;
+        return visibleBooks.map(book => ({
             book,
             activity: normalizeBookActivity(book, store[book.id]),
             favorite: isBookFavorite(book.id),
@@ -3203,6 +3216,38 @@
         return activeAt ? `Active ${activeAt}` : 'No recent activity';
     }
 
+    function hashString(value) {
+        const text = String(value || '');
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash);
+    }
+
+    function renderBookCover(book, className = '') {
+        const title = book?.title || 'Untitled Book';
+        const author = normalizeAuthorName(book?.author);
+        const coverUrl = typeof book?.coverUrl === 'string' ? book.coverUrl.trim() : '';
+        const palette = hashString(`${title}|${author}`) % 8;
+        const safeClassName = className ? ` ${className}` : '';
+        if (coverUrl) {
+            return `
+                <div class="book-cover${safeClassName} has-image" data-cover-palette="${palette}">
+                    <img src="${escapeHtml(coverUrl)}" alt="" loading="lazy" decoding="async" />
+                </div>
+            `;
+        }
+        return `
+            <div class="book-cover${safeClassName}" data-cover-palette="${palette}" aria-hidden="true">
+                <div class="book-cover-ornament"></div>
+                <div class="book-cover-title">${escapeHtml(title)}</div>
+                <div class="book-cover-author">${escapeHtml(author)}</div>
+            </div>
+        `;
+    }
+
     function renderLocalBookItem(entry, options = {}) {
         const bookId = escapeHtml(entry.book.id);
         const title = escapeHtml(entry.book.title || 'Untitled Book');
@@ -3221,26 +3266,29 @@
                 tabindex="0"
                 aria-label="Open ${title}"
             >
-                <div class="book-item-title-row">
-                    <div class="book-item-title">${title}${badge}</div>
-                    <button
-                        class="book-item-favorite-btn${favoriteClass}"
-                        type="button"
-                        data-favorite-toggle="true"
-                        data-book-id="${bookId}"
-                        aria-pressed="${entry.favorite ? 'true' : 'false'}"
-                        title="${escapeHtml(favoriteTitle)}"
-                    >
-                        ${favoriteLabel}
-                    </button>
+                ${renderBookCover(entry.book)}
+                <div class="book-item-body">
+                    <div class="book-item-title-row">
+                        <div class="book-item-title">${title}${badge}</div>
+                        <button
+                            class="book-item-favorite-btn${favoriteClass}"
+                            type="button"
+                            data-favorite-toggle="true"
+                            data-book-id="${bookId}"
+                            aria-pressed="${entry.favorite ? 'true' : 'false'}"
+                            title="${escapeHtml(favoriteTitle)}"
+                        >
+                            ${favoriteLabel}
+                        </button>
+                    </div>
+                    <div class="book-item-author">${author}</div>
+                    <div class="book-item-progress">
+                        <span class="book-progress-chip book-progress-chip-status status-${progress.statusClass}">${progress.statusLabel}</span>
+                        <span class="book-progress-chip">${progress.chapterLabel}</span>
+                        <span class="book-progress-chip">${progress.percentLabel}</span>
+                    </div>
+                    <div class="book-item-meta">${meta}</div>
                 </div>
-                <div class="book-item-author">${author}</div>
-                <div class="book-item-progress">
-                    <span class="book-progress-chip book-progress-chip-status status-${progress.statusClass}">${progress.statusLabel}</span>
-                    <span class="book-progress-chip">${progress.chapterLabel}</span>
-                    <span class="book-progress-chip">${progress.percentLabel}</span>
-                </div>
-                <div class="book-item-meta">${meta}</div>
             </div>
         `;
     }
@@ -3262,9 +3310,12 @@
                 tabindex="0"
                 aria-label="Open ${title}"
             >
-                <div class="book-item-title">${title}${importedBadge}</div>
-                <div class="book-item-author">${author}</div>
-                ${reason}
+                ${renderBookCover(book)}
+                <div class="book-item-body">
+                    <div class="book-item-title">${title}${importedBadge}</div>
+                    <div class="book-item-author">${author}</div>
+                    ${reason}
+                </div>
             </div>
         `;
     }
@@ -7915,10 +7966,14 @@
                 const catalogBook = state.catalogBooks.find(b => b.gutenbergId === gutenbergId);
                 if (catalogBook) {
                     catalogBook.alreadyImported = true;
+                    catalogBook.localBookId = book.id;
+                    catalogBook.coverUrl = book.coverUrl;
                 }
                 const popularBook = state.popularCatalogBooks.find(b => b.gutenbergId === gutenbergId);
                 if (popularBook) {
                     popularBook.alreadyImported = true;
+                    popularBook.localBookId = book.id;
+                    popularBook.coverUrl = book.coverUrl;
                 }
 
                 hideImportingOverlay();

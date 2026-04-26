@@ -7,6 +7,7 @@ import com.classicchatreader.model.Book;
 import com.classicchatreader.model.ChapterContent;
 import com.classicchatreader.model.Paragraph;
 import com.classicchatreader.repository.BookRepository;
+import com.classicchatreader.repository.BookCoverRepository;
 import com.classicchatreader.repository.ChapterAnalysisRepository;
 import com.classicchatreader.repository.ChapterQuizRepository;
 import com.classicchatreader.repository.ChapterRecapRepository;
@@ -26,6 +27,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class BookStorageService {
 
     private final BookRepository bookRepository;
+    private final BookCoverRepository bookCoverRepository;
     private final ChapterRepository chapterRepository;
     private final ChapterAnalysisRepository chapterAnalysisRepository;
     private final ChapterRecapRepository chapterRecapRepository;
@@ -36,8 +38,10 @@ public class BookStorageService {
     private final QuizTrophyRepository quizTrophyRepository;
     private final SearchService searchService;
     private final MlaCitationFormatter mlaCitationFormatter;
+    private final CuratedCatalogService curatedCatalogService;
 
     public BookStorageService(BookRepository bookRepository,
+                              BookCoverRepository bookCoverRepository,
                               ChapterRepository chapterRepository,
                               ChapterAnalysisRepository chapterAnalysisRepository,
                               ChapterRecapRepository chapterRecapRepository,
@@ -47,8 +51,10 @@ public class BookStorageService {
                               QuizAttemptRepository quizAttemptRepository,
                               QuizTrophyRepository quizTrophyRepository,
                               SearchService searchService,
-                              MlaCitationFormatter mlaCitationFormatter) {
+                              MlaCitationFormatter mlaCitationFormatter,
+                              CuratedCatalogService curatedCatalogService) {
         this.bookRepository = bookRepository;
+        this.bookCoverRepository = bookCoverRepository;
         this.chapterRepository = chapterRepository;
         this.chapterAnalysisRepository = chapterAnalysisRepository;
         this.chapterRecapRepository = chapterRecapRepository;
@@ -59,6 +65,7 @@ public class BookStorageService {
         this.quizTrophyRepository = quizTrophyRepository;
         this.searchService = searchService;
         this.mlaCitationFormatter = mlaCitationFormatter;
+        this.curatedCatalogService = curatedCatalogService;
     }
 
     public List<Book> getAllBooks() {
@@ -212,6 +219,7 @@ public class BookStorageService {
         chapterRecapRepository.deleteByBookId(bookId);
         chapterAnalysisRepository.deleteByBookId(bookId);
         illustrationRepository.deleteByBookId(bookId);
+        bookCoverRepository.deleteByBookId(bookId);
         characterRepository.deleteByBookId(bookId);
         quizTrophyRepository.deleteByBookId(bookId);
     }
@@ -227,12 +235,40 @@ public class BookStorageService {
             entity.getTitle(),
             entity.getAuthor(),
             entity.getDescription(),
-            entity.getCoverUrl(),
+            resolveCoverUrl(entity),
             chapters,
             Boolean.TRUE.equals(entity.getTtsEnabled()),
             Boolean.TRUE.equals(entity.getIllustrationEnabled()),
-            Boolean.TRUE.equals(entity.getCharacterEnabled())
+            Boolean.TRUE.equals(entity.getCharacterEnabled()),
+            isCuratedBook(entity)
         );
+    }
+
+    private boolean isCuratedBook(BookEntity entity) {
+        if (!"gutenberg".equalsIgnoreCase(entity.getSource()) || entity.getSourceId() == null) {
+            return false;
+        }
+        try {
+            return curatedCatalogService.isCuratedGutenbergId(Integer.parseInt(entity.getSourceId()));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private String resolveCoverUrl(BookEntity entity) {
+        return bookCoverRepository.findByBookId(entity.getId())
+                .filter(cover -> cover.getImageFilename() != null && !cover.getImageFilename().isBlank())
+                .map(cover -> buildCoverUrl(entity.getId(), cover.getCompletedAt()))
+                .orElse(entity.getCoverUrl());
+    }
+
+    private String buildCoverUrl(String bookId, java.time.LocalDateTime completedAt) {
+        String baseUrl = "/api/library/" + bookId + "/cover";
+        if (completedAt == null) {
+            return baseUrl;
+        }
+        String version = completedAt.toString().replaceAll("[^0-9]", "");
+        return version.isBlank() ? baseUrl : baseUrl + "?v=" + version;
     }
 
     private ChapterContent toChapterContentDto(ChapterEntity entity) {

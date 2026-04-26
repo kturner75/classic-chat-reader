@@ -41,6 +41,10 @@ public class AssetKeyService {
         return base + normalizedSlug + ".png";
     }
 
+    public String buildBookCoverKey(BookEntity book) {
+        return buildBookKey(book) + "/covers/cover.png";
+    }
+
     public String buildAudioKey(BookEntity book, String voice, int chapterIndex, int paragraphIndex) {
         String voiceSegment = normalizeSegment(voice);
         if (voiceSegment.isBlank()) {

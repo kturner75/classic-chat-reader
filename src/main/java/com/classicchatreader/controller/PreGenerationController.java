@@ -71,6 +71,30 @@ public class PreGenerationController {
         }
     }
 
+    @PostMapping("/book/{bookId}/covers")
+    public ResponseEntity<PreGenResult> preGenerateCoverForBook(@PathVariable String bookId) {
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        PreGenResult result = preGenerationService.preGenerateCoverForBook(bookId);
+        if (result.success()) {
+            return ResponseEntity.ok(result);
+        }
+        return ResponseEntity.badRequest().body(result);
+    }
+
+    @PostMapping("/gutenberg/{gutenbergId}/covers")
+    public ResponseEntity<PreGenResult> preGenerateCoverByGutenbergId(@PathVariable int gutenbergId) {
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        PreGenResult result = preGenerationService.preGenerateCoversByGutenbergId(gutenbergId);
+        if (result.success()) {
+            return ResponseEntity.ok(result);
+        }
+        return ResponseEntity.badRequest().body(result);
+    }
+
     @PostMapping("/jobs/book/{bookId}")
     public ResponseEntity<PreGenJobStatus> startJobForBook(@PathVariable String bookId) {
         if (cacheOnly) {

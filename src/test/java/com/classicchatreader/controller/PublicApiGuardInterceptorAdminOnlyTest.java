@@ -5,7 +5,9 @@ import com.classicchatreader.config.InMemoryIpRateLimiter;
 import com.classicchatreader.config.PublicApiGuardInterceptor;
 import com.classicchatreader.config.PublicApiGuardMvcConfig;
 import com.classicchatreader.model.Book;
+import com.classicchatreader.service.BookCoverService;
 import com.classicchatreader.service.BookStorageService;
+import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.ParagraphAnnotationService;
 import com.classicchatreader.service.PublicSessionAuthService;
 import com.classicchatreader.service.ReaderIdentityService;
@@ -51,6 +53,12 @@ class PublicApiGuardInterceptorAdminOnlyTest {
 
     @MockitoBean
     private BookStorageService bookStorageService;
+
+    @MockitoBean
+    private BookCoverService bookCoverService;
+
+    @MockitoBean
+    private CdnAssetService cdnAssetService;
 
     @MockitoBean
     private ParagraphAnnotationService paragraphAnnotationService;
