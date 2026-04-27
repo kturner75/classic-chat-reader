@@ -3258,15 +3258,24 @@
         const favoriteLabel = entry.favorite ? 'Saved' : 'Save';
         const favoriteTitle = entry.favorite ? 'Remove from My List' : 'Add to My List';
         const favoriteClass = entry.favorite ? ' active' : '';
+        const layout = options.layout || '';
+        const itemClass = [
+            'book-item',
+            layout === 'shelf' ? 'book-shelf-item' : '',
+            layout === 'featured' ? 'book-featured-item' : ''
+        ].filter(Boolean).join(' ');
+        const coverClass = layout === 'shelf'
+            ? 'book-cover-shelf'
+            : (layout === 'featured' ? 'book-cover-featured' : '');
         return `
             <div
-                class="book-item"
+                class="${itemClass}"
                 data-book-id="${bookId}"
                 role="button"
                 tabindex="0"
                 aria-label="Open ${title}"
             >
-                ${renderBookCover(entry.book)}
+                ${renderBookCover(entry.book, coverClass)}
                 <div class="book-item-body">
                     <div class="book-item-title-row">
                         <div class="book-item-title">${title}${badge}</div>
@@ -3294,23 +3303,31 @@
     }
 
     // Render a catalog book item (from Gutenberg)
-    function renderCatalogBookItem(book) {
+    function renderCatalogBookItem(book, options = {}) {
         const importedClass = book.alreadyImported ? ' imported' : '';
         const importedBadge = book.alreadyImported ? '<span class="imported-badge">✓</span>' : '';
         const title = escapeHtml(book.title || 'Untitled Book');
         const author = escapeHtml(normalizeAuthorName(book.author));
+        const layout = options.layout || '';
+        const itemClass = [
+            'book-item',
+            'catalog-book',
+            layout === 'shelf' ? 'book-shelf-item' : '',
+            importedClass.trim()
+        ].filter(Boolean).join(' ');
+        const coverClass = layout === 'shelf' ? 'book-cover-shelf' : '';
         const reason = (typeof book.discoverReason === 'string' && book.discoverReason.trim().length > 0)
             ? `<div class="book-item-discover-reason">${escapeHtml(book.discoverReason)}</div>`
             : '';
         return `
             <div
-                class="book-item catalog-book${importedClass}"
+                class="${itemClass}"
                 data-gutenberg-id="${escapeHtml(book.gutenbergId)}"
                 role="button"
                 tabindex="0"
                 aria-label="Open ${title}"
             >
-                ${renderBookCover(book)}
+                ${renderBookCover(book, coverClass)}
                 <div class="book-item-body">
                     <div class="book-item-title">${title}${importedBadge}</div>
                     <div class="book-item-author">${author}</div>
@@ -3343,8 +3360,14 @@
         if (!sectionElement || !listElement) {
             return;
         }
+        const layout = options.layout || '';
+        const hasShelf = layout === 'shelf';
+        sectionElement.classList.toggle('book-shelf-section', hasShelf);
+        listElement.classList.toggle('book-shelf-list', layout === 'shelf');
+        listElement.classList.toggle('book-featured-list', layout === 'featured');
         if (!entries || entries.length === 0) {
             listElement.innerHTML = '';
+            sectionElement.querySelectorAll('.shelf-scroll-btn').forEach(button => button.remove());
             sectionElement.classList.add('hidden');
             return;
         }
@@ -3352,9 +3375,24 @@
             const badge = typeof options.badge === 'function'
                 ? options.badge(entry, index)
                 : options.badge;
-            return renderLocalBookItem(entry, { badge });
+            return renderLocalBookItem(entry, { badge, layout });
         }).join('');
+        renderShelfControls(sectionElement, hasShelf && entries.length > 1);
         sectionElement.classList.remove('hidden');
+    }
+
+    function renderShelfControls(sectionElement, shouldShow) {
+        if (!sectionElement) {
+            return;
+        }
+        sectionElement.querySelectorAll('.shelf-scroll-btn').forEach(button => button.remove());
+        if (!shouldShow) {
+            return;
+        }
+        sectionElement.insertAdjacentHTML('beforeend', `
+            <button class="shelf-scroll-btn shelf-scroll-btn-left" type="button" data-shelf-scroll="-1" aria-label="Scroll shelf left">‹</button>
+            <button class="shelf-scroll-btn shelf-scroll-btn-right" type="button" data-shelf-scroll="1" aria-label="Scroll shelf right">›</button>
+        `);
     }
 
     function hideAchievementsShelf() {
@@ -3765,17 +3803,17 @@
             elements.continueReading,
             elements.continueReadingList,
             continueEntry ? [continueEntry] : [],
-            { badge: 'Now' }
+            { badge: 'Now', layout: 'featured' }
         );
         renderLocalSection(
             elements.upNext,
             elements.upNextList,
             upNext,
-            { badge: (_entry, index) => `Next ${index + 1}` }
+            { badge: (_entry, index) => `Next ${index + 1}`, layout: 'shelf' }
         );
-        renderLocalSection(elements.inProgress, elements.inProgressList, inProgress);
-        renderLocalSection(elements.completedBooks, elements.completedBooksList, completed);
-        renderLocalSection(elements.myList, elements.myListList, myListEntries);
+        renderLocalSection(elements.inProgress, elements.inProgressList, inProgress, { layout: 'shelf' });
+        renderLocalSection(elements.completedBooks, elements.completedBooksList, completed, { layout: 'shelf' });
+        renderLocalSection(elements.myList, elements.myListList, myListEntries, { layout: 'shelf' });
     }
 
     // Render library view
@@ -3794,16 +3832,26 @@
         }
 
         const discoverCatalog = searchTerm ? state.catalogBooks : getDiscoverCatalogEntries();
+        elements.allBooks.classList.toggle('book-shelf-section', !searchTerm && discoverCatalog.length > 1);
 
         if (discoverCatalog.length > 0) {
-            elements.bookList.innerHTML = discoverCatalog.map(renderCatalogBookItem).join('');
+            elements.bookList.classList.toggle('book-shelf-list', !searchTerm);
+            elements.bookList.classList.toggle('discover-shelf-list', !searchTerm);
+            elements.bookList.innerHTML = discoverCatalog
+                .map(book => renderCatalogBookItem(book, { layout: searchTerm ? '' : 'shelf' }))
+                .join('');
+            renderShelfControls(elements.allBooks, !searchTerm && discoverCatalog.length > 1);
             elements.allBooks.classList.remove('hidden');
             elements.noResults.classList.add('hidden');
         } else if (searchTerm) {
+            renderShelfControls(elements.allBooks, false);
+            elements.bookList.classList.remove('book-shelf-list', 'discover-shelf-list');
             elements.allBooks.classList.add('hidden');
             elements.noResults.classList.remove('hidden');
         } else {
             elements.bookList.innerHTML = '';
+            renderShelfControls(elements.allBooks, false);
+            elements.bookList.classList.remove('book-shelf-list', 'discover-shelf-list');
             elements.allBooks.classList.add('hidden');
             elements.noResults.classList.add('hidden');
         }
@@ -8059,6 +8107,20 @@
 
         // Personalized/local book selection
         elements.libraryView.addEventListener('click', async (e) => {
+            const shelfScrollButton = e.target.closest('[data-shelf-scroll]');
+            if (shelfScrollButton && elements.libraryView.contains(shelfScrollButton)) {
+                e.preventDefault();
+                e.stopPropagation();
+                const section = shelfScrollButton.closest('.book-shelf-section');
+                const shelfList = section?.querySelector('.book-shelf-list');
+                if (shelfList) {
+                    const direction = Number(shelfScrollButton.dataset.shelfScroll) || 1;
+                    const scrollAmount = Math.max(shelfList.clientWidth * 0.82, 260);
+                    shelfList.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
+                }
+                return;
+            }
+
             const achievementItem = e.target.closest('[data-achievement-book-id]');
             if (achievementItem && elements.libraryView.contains(achievementItem)) {
                 const achievementBookId = achievementItem.dataset.achievementBookId;
