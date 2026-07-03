@@ -1,6 +1,7 @@
 package com.classicchatreader.service.llm;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -9,6 +10,8 @@ import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -18,10 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class XaiOAuthTokenManagerTest {
 
+    @TempDir
+    Path tempDir;
+
     @Test
     void getAccessToken_notConfigured_returnsEmptyWithoutNetworkCall() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager("", true, countingWebClient(calls, tokenResponse(3600)));
+        XaiOAuthTokenManager manager = manager("", true, countingWebClient(calls, tokenResponse("access-token", 3600, null)));
 
         assertFalse(manager.isConfigured());
         assertEquals(Optional.empty(), manager.getAccessToken());
@@ -31,7 +37,7 @@ class XaiOAuthTokenManagerTest {
     @Test
     void getAccessToken_disabled_returnsEmptyWithoutNetworkCall() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager("refresh-token", false, countingWebClient(calls, tokenResponse(3600)));
+        XaiOAuthTokenManager manager = manager("refresh-token", false, countingWebClient(calls, tokenResponse("access-token", 3600, null)));
 
         assertFalse(manager.isConfigured());
         assertEquals(Optional.empty(), manager.getAccessToken());
@@ -41,8 +47,7 @@ class XaiOAuthTokenManagerTest {
     @Test
     void getAccessToken_configured_refreshesAndCachesToken() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
-                "refresh-token", true, countingWebClient(calls, tokenResponse(3600)));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, countingWebClient(calls, tokenResponse("access-token", 3600, null)));
 
         assertTrue(manager.isConfigured());
         assertEquals(Optional.of("access-token"), manager.getAccessToken());
@@ -56,8 +61,7 @@ class XaiOAuthTokenManagerTest {
         // Regression test: a flat 1-hour refresh skew would make a 3600s-lifetime token
         // immediately expired, defeating the cache on every call.
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
-                "refresh-token", true, countingWebClient(calls, tokenResponse(3600)));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, countingWebClient(calls, tokenResponse("access-token", 3600, null)));
 
         manager.getAccessToken();
         manager.getAccessToken();
@@ -69,8 +73,7 @@ class XaiOAuthTokenManagerTest {
     @Test
     void getAccessToken_refreshFails_returnsEmptyAndDoesNotThrow() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
-                "refresh-token", true, countingWebClient(calls, errorResponse()));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, countingWebClient(calls, errorResponse()));
 
         Optional<String> result = manager.getAccessToken();
 
@@ -81,8 +84,7 @@ class XaiOAuthTokenManagerTest {
     @Test
     void getAccessToken_afterFailure_respectsCooldownBeforeRetrying() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
-                "refresh-token", true, countingWebClient(calls, errorResponse()));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, countingWebClient(calls, errorResponse()));
 
         manager.getAccessToken();
         manager.getAccessToken();
@@ -94,8 +96,7 @@ class XaiOAuthTokenManagerTest {
     @Test
     void invalidate_forcesNextCallToRefresh() {
         AtomicInteger calls = new AtomicInteger();
-        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
-                "refresh-token", true, countingWebClient(calls, tokenResponse(3600)));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, countingWebClient(calls, tokenResponse("access-token", 3600, null)));
 
         manager.getAccessToken();
         manager.invalidate();
@@ -104,10 +105,65 @@ class XaiOAuthTokenManagerTest {
         assertEquals(2, calls.get());
     }
 
-    private String tokenResponse(int expiresInSeconds) {
+    @Test
+    void refresh_rotatedRefreshToken_isPersistedToFile() throws Exception {
+        // Regression test for the prod incident: xAI rotates the refresh token on every
+        // use, and the rotated value must be persisted so a restart doesn't retry the
+        // now-invalidated original token.
+        Path tokenFile = tempDir.resolve("refresh-token");
+        AtomicInteger calls = new AtomicInteger();
+        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
+                "original-refresh-token", true, tokenFile.toString(),
+                countingWebClient(calls, tokenResponse("access-token", 3600, "rotated-refresh-token")));
+
+        manager.getAccessToken();
+
+        assertEquals("rotated-refresh-token", Files.readString(tokenFile).trim());
+    }
+
+    @Test
+    void newManagerInstance_loadsRotatedRefreshTokenFromFile() throws Exception {
+        // Simulates a process restart: a prior instance rotated and persisted a new
+        // refresh token, and a fresh instance must use it instead of the original
+        // configured value, which xAI has since invalidated.
+        Path tokenFile = tempDir.resolve("refresh-token");
+        Files.writeString(tokenFile, "previously-rotated-token");
+
+        AtomicInteger calls = new AtomicInteger();
+        WebClient webClient = countingWebClient(calls, tokenResponse("access-token", 3600, null));
+
+        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
+                "stale-original-token-in-env-var", true, tokenFile.toString(), webClient);
+
+        assertTrue(manager.isConfigured());
+        assertEquals(Optional.of("access-token"), manager.getAccessToken());
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void refresh_responseWithoutRotatedToken_leavesFileUntouched() throws Exception {
+        Path tokenFile = tempDir.resolve("refresh-token");
+        AtomicInteger calls = new AtomicInteger();
+        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
+                "original-refresh-token", true, tokenFile.toString(),
+                countingWebClient(calls, tokenResponse("access-token", 3600, null)));
+
+        manager.getAccessToken();
+
+        assertFalse(Files.exists(tokenFile));
+    }
+
+    private XaiOAuthTokenManager manager(String refreshToken, boolean enabled, WebClient webClient) {
+        return new XaiOAuthTokenManager(refreshToken, enabled, null, webClient);
+    }
+
+    private String tokenResponse(String accessToken, int expiresInSeconds, String rotatedRefreshToken) {
+        String refreshTokenField = rotatedRefreshToken != null
+                ? ",\"refresh_token\":\"" + rotatedRefreshToken + "\""
+                : "";
         return """
-                {"access_token":"access-token","expires_in":%d,"token_type":"Bearer"}
-                """.formatted(expiresInSeconds);
+                {"access_token":"%s","expires_in":%d,"token_type":"Bearer"%s}
+                """.formatted(accessToken, expiresInSeconds, refreshTokenField);
     }
 
     private WebClient countingWebClient(AtomicInteger calls, String jsonBody) {

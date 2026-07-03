@@ -36,7 +36,7 @@ class XaiLlmProviderTest {
     void generate_oauthConfigured_prefersOAuthTokenOverApiKey() {
         List<String> authHeaders = new ArrayList<>();
         XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager(
-                "refresh-token", true, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
+                "refresh-token", true, null, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
         XaiLlmProvider provider = new XaiLlmProvider(
                 "api-key", "grok-test", 10, oauthManager, recordingWebClient(authHeaders, chatResponse("hi")));
 
@@ -48,7 +48,7 @@ class XaiLlmProviderTest {
     @Test
     void generate_oauthNotConfigured_fallsBackToApiKey() {
         List<String> authHeaders = new ArrayList<>();
-        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager("", true, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager("", true, null, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
         XaiLlmProvider provider = new XaiLlmProvider(
                 "api-key", "grok-test", 10, oauthManager, recordingWebClient(authHeaders, chatResponse("hi")));
 
@@ -61,7 +61,7 @@ class XaiLlmProviderTest {
     void generate_oauthRejectedWith401_invalidatesAndRetriesWithApiKey() {
         List<String> authHeaders = new ArrayList<>();
         XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager(
-                "refresh-token", true, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
+                "refresh-token", true, null, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
         XaiLlmProvider provider = new XaiLlmProvider(
                 "api-key", "grok-test", 10, oauthManager,
                 unauthorizedThenSuccessWebClient(authHeaders, chatResponse("recovered")));
@@ -75,7 +75,7 @@ class XaiLlmProviderTest {
     @Test
     void generate_oauthUnavailableAndNoApiKey_throwsCleanlyInsteadOfCallingWithBlankAuth() {
         List<String> authHeaders = new ArrayList<>();
-        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager("", true, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager("", true, null, oauthWebClient(new AtomicInteger(), tokenResponse(3600)));
         XaiLlmProvider provider = new XaiLlmProvider(
                 null, "grok-test", 10, oauthManager, recordingWebClient(authHeaders, chatResponse("unused")));
 

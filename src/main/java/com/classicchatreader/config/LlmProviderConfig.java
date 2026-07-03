@@ -142,9 +142,14 @@ public class LlmProviderConfig {
     @Value("${ai.xai.oauth.refresh-token:}")
     private String xaiOAuthRefreshToken;
 
+    // xAI rotates refresh tokens on every use; the newest one is persisted here so it
+    // survives process restarts instead of retrying the now-invalidated configured value.
+    @Value("${ai.xai.oauth.refresh-token-file:./data/xai-oauth-refresh-token}")
+    private String xaiOAuthRefreshTokenFile;
+
     @Bean
     public XaiOAuthTokenManager xaiOAuthTokenManager() {
-        return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled);
+        return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled, xaiOAuthRefreshTokenFile);
     }
 
     @Bean

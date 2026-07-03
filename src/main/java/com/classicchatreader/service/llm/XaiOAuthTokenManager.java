@@ -8,7 +8,13 @@ import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -20,10 +26,16 @@ import java.util.concurrent.atomic.AtomicReference;
  * short-lived access tokens, so xAI calls can draw against subscription quota
  * instead of pay-per-token API billing.
  *
- * The refresh token is provisioned manually per deployment; this class only
- * handles minting and caching access tokens from it. Callers must treat a
- * missing token (empty Optional) as "fall back to the API key" - this class
- * never throws for an unconfigured or dead refresh token.
+ * xAI rotates refresh tokens on every use: each refresh_token grant response
+ * carries a new refresh_token that invalidates the one just used. This class
+ * tracks the current refresh token in memory and persists it to a local file
+ * so a rotated token survives process restarts - without that, every restart
+ * would resend the original (already-invalidated) token from the env var and
+ * permanently fail with invalid_grant, as happened before this fix.
+ *
+ * Callers must treat a missing token (empty Optional) as "fall back to the
+ * API key" - this class never throws for an unconfigured or dead refresh
+ * token.
  */
 public class XaiOAuthTokenManager {
 
@@ -42,23 +54,35 @@ public class XaiOAuthTokenManager {
     }
 
     private final WebClient webClient;
-    private final String refreshToken;
+    private final AtomicReference<String> refreshToken = new AtomicReference<>();
+    private final Path refreshTokenFile;
     private final boolean enabled;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
     private volatile Instant lastFailureAt;
 
-    public XaiOAuthTokenManager(String refreshToken, boolean enabled) {
-        this(refreshToken, enabled, WebClient.builder().build());
+    public XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath) {
+        this(refreshToken, enabled, refreshTokenFilePath, WebClient.builder().build());
     }
 
     // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
-    XaiOAuthTokenManager(String refreshToken, boolean enabled, WebClient webClient) {
-        this.refreshToken = refreshToken;
+    XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath, WebClient webClient) {
         this.enabled = enabled;
         this.webClient = webClient;
-        if (enabled && refreshToken != null && !refreshToken.isBlank()) {
+        this.refreshTokenFile = (refreshTokenFilePath != null && !refreshTokenFilePath.isBlank())
+                ? Path.of(refreshTokenFilePath)
+                : null;
+
+        String initialToken = refreshToken;
+        String persistedToken = readPersistedRefreshToken();
+        if (persistedToken != null) {
+            initialToken = persistedToken;
+            log.info("event=xai_oauth_refresh_token_loaded_from_file");
+        }
+        this.refreshToken.set(initialToken);
+
+        if (enabled && initialToken != null && !initialToken.isBlank()) {
             log.info("event=xai_oauth_configured (SuperGrok subscription auth enabled)");
         }
     }
@@ -68,7 +92,7 @@ public class XaiOAuthTokenManager {
      * Empty means the caller should fall back to its xAI API key.
      */
     public synchronized Optional<String> getAccessToken() {
-        if (!enabled || refreshToken == null || refreshToken.isBlank()) {
+        if (!isConfigured()) {
             return Optional.empty();
         }
 
@@ -91,13 +115,15 @@ public class XaiOAuthTokenManager {
 
     /** True if a refresh token is configured and enabled, without making a network call. */
     public boolean isConfigured() {
-        return enabled && refreshToken != null && !refreshToken.isBlank();
+        String token = refreshToken.get();
+        return enabled && token != null && !token.isBlank();
     }
 
     private Optional<String> refresh() {
+        String currentRefreshToken = refreshToken.get();
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "refresh_token");
-        form.add("refresh_token", refreshToken);
+        form.add("refresh_token", currentRefreshToken);
         form.add("client_id", CLIENT_ID);
 
         try {
@@ -117,6 +143,16 @@ public class XaiOAuthTokenManager {
                 throw new IllegalStateException("xAI OAuth token response missing access_token/expires_in");
             }
 
+            // xAI rotates refresh tokens on every use - persist the new one so the next
+            // process restart doesn't retry the now-invalidated token from config.
+            String rotatedRefreshToken = node.path("refresh_token").asText(null);
+            if (rotatedRefreshToken != null && !rotatedRefreshToken.isBlank()
+                    && !rotatedRefreshToken.equals(currentRefreshToken)) {
+                refreshToken.set(rotatedRefreshToken);
+                persistRefreshToken(rotatedRefreshToken);
+                log.info("event=xai_oauth_refresh_token_rotated");
+            }
+
             Duration lifetime = Duration.ofSeconds(expiresInSeconds);
             Duration skew = lifetime.dividedBy(10).compareTo(MAX_REFRESH_SKEW) < 0
                     ? lifetime.dividedBy(10)
@@ -127,11 +163,45 @@ public class XaiOAuthTokenManager {
             log.info("event=xai_oauth_refreshed expires_in={}s", expiresInSeconds);
             return Optional.of(accessToken);
 
+        } catch (WebClientResponseException e) {
+            lastFailureAt = Instant.now();
+            cachedToken.set(null);
+            log.warn("event=xai_oauth_refresh_failed status={} body={}", e.getStatusCode(), e.getResponseBodyAsString());
+            return Optional.empty();
         } catch (Exception e) {
             lastFailureAt = Instant.now();
             cachedToken.set(null);
             log.warn("event=xai_oauth_refresh_failed error={}", e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private String readPersistedRefreshToken() {
+        if (refreshTokenFile == null || !Files.exists(refreshTokenFile)) {
+            return null;
+        }
+        try {
+            String stored = Files.readString(refreshTokenFile, StandardCharsets.UTF_8).trim();
+            return stored.isBlank() ? null : stored;
+        } catch (IOException e) {
+            log.warn("event=xai_oauth_refresh_token_file_read_failed error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void persistRefreshToken(String token) {
+        if (refreshTokenFile == null) {
+            return;
+        }
+        try {
+            if (refreshTokenFile.getParent() != null) {
+                Files.createDirectories(refreshTokenFile.getParent());
+            }
+            Path tmp = refreshTokenFile.resolveSibling(refreshTokenFile.getFileName() + ".tmp");
+            Files.writeString(tmp, token, StandardCharsets.UTF_8);
+            Files.move(tmp, refreshTokenFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            log.warn("event=xai_oauth_refresh_token_persist_failed error={}", e.getMessage());
         }
     }
 }
