@@ -130,6 +130,13 @@ public class GutenbergContentParser {
         doc.select("[class*=boilerplate]").remove();
         doc.select("[id*=boilerplate]").remove();
 
+        // Remove illustration blocks and their captions, plus inline print
+        // page-number markers (e.g. "{10}"). Illustrated Gutenberg editions wrap
+        // figures in .figcenter/.caption and stamp page breaks with .pagenum
+        // spans; none of this is narrative text, but left in place it gets
+        // parsed as ordinary paragraphs and can land mid-chapter.
+        doc.select(".figcenter, .caption, .pagenum").remove();
+
         // Remove small/centered text often used for notices
         for (Element small : doc.select("small")) {
             if (isBoilerplateText(small.text())) {

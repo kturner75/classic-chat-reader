@@ -100,7 +100,7 @@ scripts/transfer_recaps_remote.sh \
   --all-cached \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -116,7 +116,7 @@ scripts/transfer_recaps_remote.sh \
   --all-cached \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -130,7 +130,7 @@ scripts/transfer_recaps_remote.sh \
   --all-cached \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -144,7 +144,7 @@ scripts/transfer_recaps_remote.sh \
   --all-cached \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -158,7 +158,7 @@ scripts/transfer_recaps_remote.sh \
   --all-cached \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -171,7 +171,7 @@ scripts/publish_book_remote.sh \
   --gutenberg-id 1342 \
   --remote pdr \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/var/lib/classic-chat-reader/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
 ```

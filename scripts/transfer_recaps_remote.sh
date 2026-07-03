@@ -81,15 +81,15 @@ Options:
 
 Examples:
   scripts/transfer_recaps_remote.sh --book-source-id 1342 --remote reader-prod \\
-    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1"
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader"
 
   scripts/transfer_recaps_remote.sh --all-cached --remote reader-prod \\
-    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \\
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \\
     --apply-import --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \\
     --remote-start-cmd "sudo systemctl start classic-chat-reader"
 
   scripts/transfer_recaps_remote.sh --book-source-id 1342 --feature all --remote reader-prod \\
-    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \\
+    --remote-project-dir /opt/classic-chat-reader --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \\
     --apply-import
 EOF
 }

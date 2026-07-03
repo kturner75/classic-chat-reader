@@ -1,4 +1,10 @@
-# Database Cutover Runbook
+# Database Cutover Runbook (Completed)
+
+> **Status: Completed.** Production and local development have both been on PostgreSQL
+> since this cutover. Kept here as a historical record and as a reference if a similar
+> H2 -> PostgreSQL/MariaDB data migration is ever needed again (e.g. restoring an old
+> H2 export). The app no longer has an H2 default profile — see `README.md` for current
+> profile setup (`local-dev`, `prod`, `mariadb`).
 
 ## Scope
 This runbook covers migration from local-style H2 runtime to a production database engine.
@@ -73,5 +79,5 @@ If verification fails:
 5. Capture failure logs and Flyway state before retrying cutover.
 
 ## Notes
-- Local dev can continue using H2 defaults.
+- Local dev now runs against PostgreSQL via the `local-dev` profile; there is no H2 default profile.
 - Startup seed data is now profile-gated (`dev`, `test`, `smoke`) and does not run in production profiles.

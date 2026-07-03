@@ -2,6 +2,7 @@ package com.classicchatreader.config;
 
 import com.classicchatreader.service.llm.LlmProvider;
 import com.classicchatreader.service.llm.OllamaLlmProvider;
+import com.classicchatreader.service.llm.OpenAiLlmProvider;
 import com.classicchatreader.service.llm.XaiLlmProvider;
 import com.classicchatreader.service.llm.XaiOAuthTokenManager;
 import org.slf4j.Logger;
@@ -39,6 +40,15 @@ public class LlmProviderConfig {
     @Value("${ai.reasoning.xai.model:grok-4-1-fast-reasoning}")
     private String reasoningXaiModel;
 
+    @Value("${ai.reasoning.openai.base-url:https://api.openai.com/v1}")
+    private String reasoningOpenAiBaseUrl;
+
+    @Value("${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}")
+    private String reasoningOpenAiApiKey;
+
+    @Value("${ai.reasoning.openai.model:gpt-5.5}")
+    private String reasoningOpenAiModel;
+
     // Recap reasoning provider config (can differ from global reasoning provider)
     @Value("${recap.reasoning.provider:${ai.reasoning.provider:ollama}}")
     private String recapReasoningProvider;
@@ -57,6 +67,15 @@ public class LlmProviderConfig {
 
     @Value("${recap.reasoning.xai.model:${ai.reasoning.xai.model:grok-4-1-fast-reasoning}}")
     private String recapReasoningXaiModel;
+
+    @Value("${recap.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
+    private String recapReasoningOpenAiBaseUrl;
+
+    @Value("${recap.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}}")
+    private String recapReasoningOpenAiApiKey;
+
+    @Value("${recap.reasoning.openai.model:${ai.reasoning.openai.model:gpt-5.5}}")
+    private String recapReasoningOpenAiModel;
 
     // Quiz reasoning provider config (defaults to global reasoning provider)
     @Value("${quiz.reasoning.provider:${ai.reasoning.provider:ollama}}")
@@ -77,6 +96,15 @@ public class LlmProviderConfig {
     @Value("${quiz.reasoning.xai.model:${ai.reasoning.xai.model:grok-4-1-fast-reasoning}}")
     private String quizReasoningXaiModel;
 
+    @Value("${quiz.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
+    private String quizReasoningOpenAiBaseUrl;
+
+    @Value("${quiz.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}}")
+    private String quizReasoningOpenAiApiKey;
+
+    @Value("${quiz.reasoning.openai.model:${ai.reasoning.openai.model:gpt-5.5}}")
+    private String quizReasoningOpenAiModel;
+
     // Chat provider config
     @Value("${ai.chat.provider:xai}")
     private String chatProvider;
@@ -95,6 +123,15 @@ public class LlmProviderConfig {
 
     @Value("${ai.chat.xai.model:grok-4-1-fast-non-reasoning}")
     private String chatXaiModel;
+
+    @Value("${ai.chat.openai.base-url:https://api.openai.com/v1}")
+    private String chatOpenAiBaseUrl;
+
+    @Value("${ai.chat.openai.api-key:${OPENAI_API_KEY:}}")
+    private String chatOpenAiApiKey;
+
+    @Value("${ai.chat.openai.model:gpt-5.5}")
+    private String chatOpenAiModel;
 
     // xAI OAuth (SuperGrok subscription) config - shared across all xAI-backed providers.
     // Refresh token is provisioned manually via scripts/xai-oauth-login.sh; when absent,
@@ -118,6 +155,7 @@ public class LlmProviderConfig {
                 reasoningProvider,
                 reasoningOllamaBaseUrl, reasoningOllamaModel,
                 reasoningXaiApiKey, reasoningXaiModel,
+                reasoningOpenAiBaseUrl, reasoningOpenAiApiKey, reasoningOpenAiModel,
                 reasoningTimeoutSeconds,
                 "reasoning"
         );
@@ -131,6 +169,7 @@ public class LlmProviderConfig {
                 recapReasoningProvider,
                 recapReasoningOllamaBaseUrl, recapReasoningOllamaModel,
                 recapReasoningXaiApiKey, recapReasoningXaiModel,
+                recapReasoningOpenAiBaseUrl, recapReasoningOpenAiApiKey, recapReasoningOpenAiModel,
                 recapReasoningTimeoutSeconds,
                 "recap-reasoning"
         );
@@ -144,6 +183,7 @@ public class LlmProviderConfig {
                 quizReasoningProvider,
                 quizReasoningOllamaBaseUrl, quizReasoningOllamaModel,
                 quizReasoningXaiApiKey, quizReasoningXaiModel,
+                quizReasoningOpenAiBaseUrl, quizReasoningOpenAiApiKey, quizReasoningOpenAiModel,
                 quizReasoningTimeoutSeconds,
                 "quiz-reasoning"
         );
@@ -157,6 +197,7 @@ public class LlmProviderConfig {
                 chatProvider,
                 chatOllamaBaseUrl, chatOllamaModel,
                 chatXaiApiKey, chatXaiModel,
+                chatOpenAiBaseUrl, chatOpenAiApiKey, chatOpenAiModel,
                 chatTimeoutSeconds,
                 "chat"
         );
@@ -166,6 +207,7 @@ public class LlmProviderConfig {
             String providerType,
             String ollamaBaseUrl, String ollamaModel,
             String xaiApiKey, String xaiModel,
+            String openAiBaseUrl, String openAiApiKey, String openAiModel,
             int timeoutSeconds,
             String purpose) {
 
@@ -184,6 +226,14 @@ public class LlmProviderConfig {
                 log.info("Creating xAI provider for {}: model={}, oauth={}",
                         purpose, xaiModel, oauthTokenManager.isConfigured());
                 yield new XaiLlmProvider(xaiApiKey, xaiModel, timeoutSeconds, oauthTokenManager);
+            }
+            case "openai" -> {
+                if (openAiApiKey == null || openAiApiKey.isBlank()) {
+                    log.warn("OpenAI API key not configured for {} provider, falling back to Ollama", purpose);
+                    yield new OllamaLlmProvider(ollamaBaseUrl, ollamaModel, timeoutSeconds);
+                }
+                log.info("Creating OpenAI provider for {}: model={}", purpose, openAiModel);
+                yield new OpenAiLlmProvider(openAiBaseUrl, openAiApiKey, openAiModel, timeoutSeconds);
             }
             default -> {
                 log.warn("Unknown provider type '{}' for {}, falling back to Ollama", providerType, purpose);

@@ -1,7 +1,7 @@
 package com.classicchatreader.service.llm;
 
 /**
- * Abstraction for LLM providers (Ollama, xAI, etc.)
+ * Abstraction for LLM providers (OpenAI, Ollama, xAI, etc.)
  */
 public interface LlmProvider {
 
@@ -24,7 +24,7 @@ public interface LlmProvider {
     /**
      * Get the name of this provider for logging/debugging.
      *
-     * @return provider name (e.g., "ollama", "xai")
+     * @return provider name (e.g., "openai", "ollama", "xai")
      */
     String getProviderName();
 }

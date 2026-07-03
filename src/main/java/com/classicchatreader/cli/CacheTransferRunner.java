@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,7 +30,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 
@@ -166,37 +164,26 @@ public class CacheTransferRunner {
     }
 
     private static DbConfig resolveDbConfig(ParsedArgs parsed) {
-        Properties properties = loadProperties();
         Optional<String> explicitDbUrl = parsed.optionValue(DB_URL_FLAG);
         String dbUrl = explicitDbUrl.orElseGet(() -> firstNonBlank(
                 System.getenv("PDR_DATABASE_URL"),
                 System.getenv("SPRING_DATASOURCE_URL"),
-                System.getenv("DATABASE_URL"),
-                properties.getProperty("spring.datasource.url"),
-                "jdbc:h2:file:./data/library"));
+                System.getenv("DATABASE_URL")));
+        if (dbUrl == null || dbUrl.isBlank()) {
+            throw new IllegalArgumentException(
+                    "No database URL configured. Pass --db-url, or set PDR_DATABASE_URL/SPRING_DATASOURCE_URL/DATABASE_URL.");
+        }
 
-        String dbUser = parsed.optionValue(DB_USER_FLAG).orElseGet(() -> {
-            if (explicitDbUrl.isPresent()) {
-                return firstNonBlank(properties.getProperty("spring.datasource.username"), "sa");
-            }
-            return firstNonBlank(
-                    System.getenv("PDR_DATABASE_USERNAME"),
-                    System.getenv("SPRING_DATASOURCE_USERNAME"),
-                    System.getenv("DATABASE_USERNAME"),
-                    properties.getProperty("spring.datasource.username"),
-                    "sa");
-        });
-        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG).orElseGet(() -> {
-            if (explicitDbUrl.isPresent()) {
-                return firstNonBlank(properties.getProperty("spring.datasource.password"), "");
-            }
-            return firstNonBlank(
-                    System.getenv("PDR_DATABASE_PASSWORD"),
-                    System.getenv("SPRING_DATASOURCE_PASSWORD"),
-                    System.getenv("DATABASE_PASSWORD"),
-                    properties.getProperty("spring.datasource.password"),
-                    "");
-        });
+        String dbUser = parsed.optionValue(DB_USER_FLAG).orElseGet(() -> firstNonBlank(
+                System.getenv("PDR_DATABASE_USERNAME"),
+                System.getenv("SPRING_DATASOURCE_USERNAME"),
+                System.getenv("DATABASE_USERNAME"),
+                "sa"));
+        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG).orElseGet(() -> firstNonBlank(
+                System.getenv("PDR_DATABASE_PASSWORD"),
+                System.getenv("SPRING_DATASOURCE_PASSWORD"),
+                System.getenv("DATABASE_PASSWORD"),
+                ""));
         return new DbConfig(normalizeDbUrl(dbUrl), dbUser, dbPassword);
     }
 
@@ -2017,28 +2004,6 @@ public class CacheTransferRunner {
             }
         }
         return values;
-    }
-
-    private static Properties loadProperties() {
-        Properties properties = new Properties();
-        try (InputStream input = CacheTransferRunner.class.getClassLoader().getResourceAsStream("application.properties")) {
-            if (input != null) {
-                properties.load(input);
-                return properties;
-            }
-        } catch (IOException e) {
-            System.err.println("Failed to load application.properties from classpath: " + e.getMessage());
-        }
-
-        Path fallbackPath = Path.of("src/main/resources/application.properties");
-        if (Files.exists(fallbackPath)) {
-            try (InputStream input = Files.newInputStream(fallbackPath)) {
-                properties.load(input);
-            } catch (IOException e) {
-                System.err.println("Failed to load application.properties from disk: " + e.getMessage());
-            }
-        }
-        return properties;
     }
 
     private static ParsedArgs parseArgs(String[] args) {

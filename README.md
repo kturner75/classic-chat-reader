@@ -62,7 +62,7 @@ Example:
 ```bash
 scripts/pregen_transfer_book.sh \
   --gutenberg-id 1342 \
-  --import-db-url "jdbc:h2:file:/absolute/path/to/library-transfer-test;DB_CLOSE_DELAY=-1" \
+  --import-db-url "jdbc:postgresql://localhost:5432/library_transfer_test" \
   --sync-assets
 ```
 
@@ -74,7 +74,7 @@ scripts/transfer_recaps_remote.sh \
   --book-source-id 1342 \
   --remote ubuntu@reader-host \
   --remote-project-dir /opt/classic-chat-reader \
-  --remote-db-url "jdbc:h2:file:/opt/classic-chat-reader/data/library;DB_CLOSE_DELAY=-1" \
+  --remote-db-url "jdbc:postgresql://localhost:5432/classic_chat_reader" \
   --apply-import \
   --remote-stop-cmd "sudo systemctl stop classic-chat-reader" \
   --remote-start-cmd "sudo systemctl start classic-chat-reader"
@@ -98,7 +98,7 @@ Use these settings as baseline profiles in `src/main/resources/application.prope
 
 Notes:
 - `generation.cache-only=true` blocks artifact generation workflows (recaps/quizzes/illustrations/character generation pipelines) but does not disable chat.
-- Chat availability is controlled by `ai.chat.enabled` plus chat provider availability/configuration.
+- Chat availability is controlled by `ai.chat.enabled` plus chat provider availability/configuration. The default LLM provider is OpenAI with `gpt-5.5`, using `OPENAI_API_KEY`.
 - Keep `tts.cache-only=true` on public environments when TTS generation costs should be avoided.
 - When `deployment.mode=public`, sensitive generation/chat APIs require authentication:
   - `X-API-Key` matching `security.public.api-key` (or env `PUBLIC_API_KEY`), or

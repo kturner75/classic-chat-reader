@@ -1,6 +1,6 @@
 # Current Feature Inventory
 
-Last audited: 2026-02-19
+Last audited: 2026-04-27
 
 This inventory reflects implemented behavior in backend controllers/services and `static/js/reader.js`.
 
@@ -32,6 +32,7 @@ This inventory reflects implemented behavior in backend controllers/services and
 - Search Gutenberg catalog from library search box.
 - Import book by Gutenberg ID.
 - Detect and mark already-imported catalog books.
+- Library cards support generated or uploaded book cover images with CSS fallback covers when no image is available.
 - Library APIs for list/get/delete/delete-all books.
 - Book deletion cleans dependent generation/quiz/trophy records before deleting the parent book to avoid FK-blocked deletes.
 - Per-book feature flags for:
@@ -62,12 +63,15 @@ This inventory reflects implemented behavior in backend controllers/services and
 
 - Library landing renders personalized sections from local activity:
   - `Continue Reading`
-  - `Up Next`
+  - `For You`
   - `In Progress`
   - `Completed`
   - `My List` (favorites/saved-for-later)
+- Default landing browsing uses front-facing cover shelves with horizontal scrolling, edge fades, and desktop shelf arrow controls.
+- `Continue Reading` renders as a larger resume-focused card, while shelf sections emphasize cover art for browsing.
 - Landing ranking is deterministic for active/completed queues (see `landing-ranking.md`).
 - `Discover` rail uses deterministic affinity recommendations with user-facing reason chips when library search is empty (see `discover-affinity.md`).
+- `Discover` appears as a cover shelf when browsing and falls back to vertical result cards during explicit search.
 - Landing search runs on explicit submit only (`Enter` key or `Search` button); it does not fire on every keystroke.
 - Landing search has visible in-flight/loading state, a status message, and retry affordance on failures.
 - Search mode hides classroom/personalized rails and shows query-driven catalog results.
