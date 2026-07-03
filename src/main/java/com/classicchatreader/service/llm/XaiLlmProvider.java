@@ -39,13 +39,16 @@ public class XaiLlmProvider implements LlmProvider {
     }
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager) {
+        this(apiKey, model, timeoutSeconds, oauthTokenManager, WebClient.builder().baseUrl(BASE_URL).build());
+    }
+
+    // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
+    XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager, WebClient webClient) {
         this.apiKey = apiKey;
         this.model = model;
         this.timeoutSeconds = timeoutSeconds;
         this.oauthTokenManager = oauthTokenManager;
-        this.webClient = WebClient.builder()
-                .baseUrl(BASE_URL)
-                .build();
+        this.webClient = webClient;
         log.info("xAI LLM provider initialized: model={}", model);
     }
 
@@ -70,6 +73,12 @@ public class XaiLlmProvider implements LlmProvider {
                 : Optional.empty();
         boolean usingOAuth = oauthToken.isPresent();
         String bearerToken = oauthToken.orElse(apiKey);
+
+        if (bearerToken == null || bearerToken.isBlank()) {
+            throw new LlmProviderException(
+                    "xAI provider unavailable: OAuth token unavailable (refresh failed or not configured) "
+                            + "and no API key configured as fallback");
+        }
 
         try {
             return callChatCompletions(requestBody, bearerToken);

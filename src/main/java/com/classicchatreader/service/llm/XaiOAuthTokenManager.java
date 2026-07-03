@@ -30,8 +30,11 @@ public class XaiOAuthTokenManager {
     private static final Logger log = LoggerFactory.getLogger(XaiOAuthTokenManager.class);
     private static final String TOKEN_URL = "https://auth.x.ai/oauth2/token";
     private static final String CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828";
-    // Refresh well before expiry so in-flight requests never race a live token.
-    private static final Duration REFRESH_SKEW = Duration.ofHours(1);
+    // Refresh a bit before expiry so in-flight requests never race a live token, but bound the
+    // skew to a fraction of the token's own lifetime - a flat skew larger than a short-lived
+    // token's expires_in would make the cache permanently expired and force a synchronous
+    // refresh (and endpoint round-trip) on every single call.
+    private static final Duration MAX_REFRESH_SKEW = Duration.ofMinutes(5);
     // If a refresh attempt fails, don't hammer the endpoint on every subsequent call.
     private static final Duration FAILURE_COOLDOWN = Duration.ofMinutes(1);
 
@@ -47,9 +50,14 @@ public class XaiOAuthTokenManager {
     private volatile Instant lastFailureAt;
 
     public XaiOAuthTokenManager(String refreshToken, boolean enabled) {
+        this(refreshToken, enabled, WebClient.builder().build());
+    }
+
+    // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
+    XaiOAuthTokenManager(String refreshToken, boolean enabled, WebClient webClient) {
         this.refreshToken = refreshToken;
         this.enabled = enabled;
-        this.webClient = WebClient.builder().build();
+        this.webClient = webClient;
         if (enabled && refreshToken != null && !refreshToken.isBlank()) {
             log.info("xAI OAuth token manager initialized (SuperGrok subscription auth enabled)");
         }
@@ -109,7 +117,11 @@ public class XaiOAuthTokenManager {
                 throw new IllegalStateException("xAI OAuth token response missing access_token/expires_in");
             }
 
-            Instant expiresAt = Instant.now().plusSeconds(expiresInSeconds).minus(REFRESH_SKEW);
+            Duration lifetime = Duration.ofSeconds(expiresInSeconds);
+            Duration skew = lifetime.dividedBy(10).compareTo(MAX_REFRESH_SKEW) < 0
+                    ? lifetime.dividedBy(10)
+                    : MAX_REFRESH_SKEW;
+            Instant expiresAt = Instant.now().plus(lifetime).minus(skew);
             cachedToken.set(new CachedToken(accessToken, expiresAt));
             lastFailureAt = null;
             log.info("Refreshed xAI OAuth access token (SuperGrok subscription auth), expires in {}s", expiresInSeconds);
