@@ -15,8 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -53,8 +55,18 @@ public class XaiOAuthTokenManager {
     private record CachedToken(String accessToken, Instant expiresAt) {
     }
 
+    // seedToken is the configured (env var) value the persisted currentToken was derived
+    // from. Keying the cache on it lets an operator override a stale/bad persisted token
+    // simply by rotating XAI_OAUTH_REFRESH_TOKEN and redeploying, per the recovery path
+    // documented in scripts/xai_oauth_login.sh - without this, a persisted token that goes
+    // bad (revoked, corrupted, copied from another deployment) would be stuck forever,
+    // since it always wins over the configured value.
+    private record PersistedState(String seedToken, String currentToken) {
+    }
+
     private final WebClient webClient;
     private final AtomicReference<String> refreshToken = new AtomicReference<>();
+    private final String seedRefreshToken;
     private final Path refreshTokenFile;
     private final boolean enabled;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -70,15 +82,18 @@ public class XaiOAuthTokenManager {
     XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath, WebClient webClient) {
         this.enabled = enabled;
         this.webClient = webClient;
+        this.seedRefreshToken = refreshToken;
         this.refreshTokenFile = (refreshTokenFilePath != null && !refreshTokenFilePath.isBlank())
                 ? Path.of(refreshTokenFilePath)
                 : null;
 
         String initialToken = refreshToken;
-        String persistedToken = readPersistedRefreshToken();
-        if (persistedToken != null) {
-            initialToken = persistedToken;
+        PersistedState persisted = readPersistedState();
+        if (persisted != null && Objects.equals(persisted.seedToken(), refreshToken)) {
+            initialToken = persisted.currentToken();
             log.info("event=xai_oauth_refresh_token_loaded_from_file");
+        } else if (persisted != null) {
+            log.info("event=xai_oauth_configured_token_overrides_stale_file");
         }
         this.refreshToken.set(initialToken);
 
@@ -117,6 +132,12 @@ public class XaiOAuthTokenManager {
     public boolean isConfigured() {
         String token = refreshToken.get();
         return enabled && token != null && !token.isBlank();
+    }
+
+    // Visible for testing: exposes which refresh token would actually be sent, so tests can
+    // verify the seed-vs-persisted-cache selection logic without inspecting network traffic.
+    String currentRefreshTokenForTesting() {
+        return refreshToken.get();
     }
 
     private Optional<String> refresh() {
@@ -176,13 +197,22 @@ public class XaiOAuthTokenManager {
         }
     }
 
-    private String readPersistedRefreshToken() {
+    private PersistedState readPersistedState() {
         if (refreshTokenFile == null || !Files.exists(refreshTokenFile)) {
             return null;
         }
         try {
-            String stored = Files.readString(refreshTokenFile, StandardCharsets.UTF_8).trim();
-            return stored.isBlank() ? null : stored;
+            String raw = Files.readString(refreshTokenFile, StandardCharsets.UTF_8).trim();
+            if (raw.isBlank()) {
+                return null;
+            }
+            JsonNode node = objectMapper.readTree(raw);
+            String seed = node.path("seedToken").asText(null);
+            String current = node.path("currentToken").asText(null);
+            if (current == null || current.isBlank()) {
+                return null;
+            }
+            return new PersistedState(seed, current);
         } catch (IOException e) {
             log.warn("event=xai_oauth_refresh_token_file_read_failed error={}", e.getMessage());
             return null;
@@ -197,11 +227,25 @@ public class XaiOAuthTokenManager {
             if (refreshTokenFile.getParent() != null) {
                 Files.createDirectories(refreshTokenFile.getParent());
             }
+            String json = objectMapper.writeValueAsString(new PersistedState(seedRefreshToken, token));
             Path tmp = refreshTokenFile.resolveSibling(refreshTokenFile.getFileName() + ".tmp");
-            Files.writeString(tmp, token, StandardCharsets.UTF_8);
+            Files.writeString(tmp, json, StandardCharsets.UTF_8);
+            restrictToOwnerOnly(tmp);
             Files.move(tmp, refreshTokenFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             log.warn("event=xai_oauth_refresh_token_persist_failed error={}", e.getMessage());
+        }
+    }
+
+    // This file holds a bearer credential equivalent to the one previously kept only in an
+    // env var - lock it down to the owner so other local users/processes can't read it.
+    private void restrictToOwnerOnly(Path path) {
+        try {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException e) {
+            // Non-POSIX filesystem (e.g. Windows) - nothing to do.
+        } catch (IOException e) {
+            log.warn("event=xai_oauth_refresh_token_permissions_failed error={}", e.getMessage());
         }
     }
 }
