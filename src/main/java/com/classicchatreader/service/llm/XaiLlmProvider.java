@@ -12,10 +12,15 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * LLM provider implementation for xAI (Grok).
  * Calls the xAI OpenAI-compatible /v1/chat/completions endpoint.
+ *
+ * When an {@link XaiOAuthTokenManager} is configured with a live SuperGrok
+ * subscription token, requests use it (drawing against subscription quota)
+ * and fall back to the static API key otherwise.
  */
 public class XaiLlmProvider implements LlmProvider {
 
@@ -26,15 +31,20 @@ public class XaiLlmProvider implements LlmProvider {
     private final String model;
     private final int timeoutSeconds;
     private final String apiKey;
+    private final XaiOAuthTokenManager oauthTokenManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds) {
+        this(apiKey, model, timeoutSeconds, null);
+    }
+
+    public XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager) {
         this.apiKey = apiKey;
         this.model = model;
         this.timeoutSeconds = timeoutSeconds;
+        this.oauthTokenManager = oauthTokenManager;
         this.webClient = WebClient.builder()
                 .baseUrl(BASE_URL)
-                .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
         log.info("xAI LLM provider initialized: model={}", model);
     }
@@ -55,28 +65,25 @@ public class XaiLlmProvider implements LlmProvider {
             requestBody.put("max_tokens", options.maxTokens());
         }
 
-        try {
-            String response = webClient.post()
-                    .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(timeoutSeconds))
-                    .block();
+        Optional<String> oauthToken = oauthTokenManager != null
+                ? oauthTokenManager.getAccessToken()
+                : Optional.empty();
+        boolean usingOAuth = oauthToken.isPresent();
+        String bearerToken = oauthToken.orElse(apiKey);
 
-            JsonNode responseNode = objectMapper.readTree(response);
-            JsonNode choices = responseNode.get("choices");
-            if (choices != null && choices.isArray() && choices.size() > 0) {
-                JsonNode message = choices.get(0).get("message");
-                if (message != null && message.has("content")) {
-                    return message.get("content").asText();
+        try {
+            return callChatCompletions(requestBody, bearerToken);
+        } catch (WebClientResponseException e) {
+            if (usingOAuth && e.getStatusCode().value() == 401 && apiKey != null && !apiKey.isBlank()) {
+                log.warn("xAI OAuth token rejected (401), invalidating and retrying with API key");
+                oauthTokenManager.invalidate();
+                try {
+                    return callChatCompletions(requestBody, apiKey);
+                } catch (WebClientResponseException retryEx) {
+                    log.error("xAI API error: {} - {}", retryEx.getStatusCode(), retryEx.getResponseBodyAsString());
+                    throw new LlmProviderException("xAI API error: " + retryEx.getStatusCode(), retryEx);
                 }
             }
-
-            throw new LlmProviderException("Invalid response format from xAI API");
-
-        } catch (WebClientResponseException e) {
             log.error("xAI API error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new LlmProviderException("xAI API error: " + e.getStatusCode(), e);
         } catch (LlmProviderException e) {
@@ -87,10 +94,42 @@ public class XaiLlmProvider implements LlmProvider {
         }
     }
 
+    private String callChatCompletions(Map<String, Object> requestBody, String bearerToken) {
+        String response = webClient.post()
+                .uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + bearerToken)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .block();
+
+        try {
+            JsonNode responseNode = objectMapper.readTree(response);
+            JsonNode choices = responseNode.get("choices");
+            if (choices != null && choices.isArray() && choices.size() > 0) {
+                JsonNode message = choices.get(0).get("message");
+                if (message != null && message.has("content")) {
+                    return message.get("content").asText();
+                }
+            }
+            throw new LlmProviderException("Invalid response format from xAI API");
+        } catch (LlmProviderException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new LlmProviderException("Invalid response format from xAI API", e);
+        }
+    }
+
     @Override
     public boolean isAvailable() {
+        boolean hasOAuth = oauthTokenManager != null && oauthTokenManager.isConfigured();
+        if (hasOAuth) {
+            return true;
+        }
         if (apiKey == null || apiKey.isBlank()) {
-            log.debug("xAI not available: API key not configured");
+            log.debug("xAI not available: no OAuth token and no API key configured");
             return false;
         }
         // For xAI, we assume availability if the API key is set
