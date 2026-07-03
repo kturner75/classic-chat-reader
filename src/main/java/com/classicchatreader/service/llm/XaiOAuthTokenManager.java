@@ -59,7 +59,7 @@ public class XaiOAuthTokenManager {
         this.enabled = enabled;
         this.webClient = webClient;
         if (enabled && refreshToken != null && !refreshToken.isBlank()) {
-            log.info("xAI OAuth token manager initialized (SuperGrok subscription auth enabled)");
+            log.info("event=xai_oauth_configured (SuperGrok subscription auth enabled)");
         }
     }
 
@@ -124,13 +124,13 @@ public class XaiOAuthTokenManager {
             Instant expiresAt = Instant.now().plus(lifetime).minus(skew);
             cachedToken.set(new CachedToken(accessToken, expiresAt));
             lastFailureAt = null;
-            log.info("Refreshed xAI OAuth access token (SuperGrok subscription auth), expires in {}s", expiresInSeconds);
+            log.info("event=xai_oauth_refreshed expires_in={}s", expiresInSeconds);
             return Optional.of(accessToken);
 
         } catch (Exception e) {
             lastFailureAt = Instant.now();
             cachedToken.set(null);
-            log.warn("xAI OAuth token refresh failed, falling back to API key: {}", e.getMessage());
+            log.warn("event=xai_oauth_refresh_failed error={}", e.getMessage());
             return Optional.empty();
         }
     }
