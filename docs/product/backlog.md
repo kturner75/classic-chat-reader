@@ -1,12 +1,13 @@
 # Product Backlog
 
-Last updated: 2026-03-23
+Last updated: 2026-04-27
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
 ## Current Delivery State
 
 - Most recent completed slice: `BL-028 - Account auth endpoint hardening` (`Done`, delivered account auth rate limiting with `429` + `Retry-After`, login lockout/backoff persistence, and structured non-PII auth audit events with regression test coverage).
+- Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Active priority work: `None currently in progress`; next P1 candidate for additional scoping remains `BL-025` (`Discovery`).
 
@@ -355,6 +356,205 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Registered readers can favorite and unfavorite characters.
 - Favorite characters appear in at least one signed-in landing surface and one in-reader/character-browser surface.
 - Favorite-character state persists across devices for signed-in users.
+
+### BL-034 - Library Genre and Mood Shelves
+- Type: Improvement
+- Priority: P2
+- Effort: M
+- Status: Discovery
+- Problem: The cover-forward library now feels more browsable, but readers still need stronger thematic paths than a single `Discover` shelf.
+- Scope Buckets:
+- Genre/mood shelf taxonomy using existing catalog metadata (`subjects`, `bookshelves`, author/title signals) with curated overrides where metadata is weak.
+- Shelf ordering rules for anonymous readers, signed-in readers, and sparse-history states.
+- Mobile shelf density and horizontal-scroll affordances.
+- Discovery Questions:
+- Which shelves should launch first: genre (`Gothic`, `Adventure`, `Romance`), mood (`Short and gripping`, `Beautiful prose`, `Big epics`), or classroom-friendly groupings?
+- Should shelves be deterministic and curated, personalized per reader, or a hybrid?
+- How many shelves should appear before the page feels cluttered?
+- Exit Criteria for Discovery:
+- Approved v1 shelf taxonomy and ordering rules.
+- Decision on metadata source and fallback strategy for books with weak subjects.
+- Acceptance Criteria:
+- Library browsing shows multiple themed shelves beyond `For You`, `In Progress`, `My List`, `Completed`, and `Discover`.
+- Shelves remain stable, explainable, and usable on mobile.
+- Search mode remains focused on query results rather than shelf browsing.
+
+### BL-035 - Book Preview and Detail Drawer
+- Type: Improvement
+- Priority: P2
+- Effort: M
+- Status: Discovery
+- Problem: Cover shelves make books inviting, but selecting a book immediately opens/imports without a richer preview moment for browsing decisions.
+- Scope Buckets:
+- Lightweight preview drawer or modal with larger cover, title/author, progress state, description, recommendation reason, and primary action.
+- Different actions for local books (`Resume`, `Start`, `Save`) versus catalog books (`Import`, `Save for later` if supported).
+- Keyboard and mobile interaction model.
+- Discovery Questions:
+- Should clicking a shelf card open the preview first, or should preview be reserved for a secondary action/long press?
+- What metadata is reliable enough for preview copy today?
+- Should preview include generated cover variants or manual cover replacement controls for admins only?
+- Exit Criteria for Discovery:
+- Approved click/tap behavior and preview content model.
+- Decision on whether preview ships for local books only, catalog books only, or both.
+- Acceptance Criteria:
+- Readers can inspect a book without losing their place on the library shelf.
+- Primary actions are clear and no slower for the common resume-reading path.
+- Preview works across desktop keyboard, desktop pointer, and mobile touch.
+
+### BL-036 - Book Cover Curation Console
+- Type: Improvement
+- Priority: P2
+- Effort: M
+- Status: Discovery
+- Problem: Generated covers dramatically improve the library, but operators need a first-class way to retry, override, and audit cover choices without Postman or direct DB access.
+- Scope Buckets:
+- Admin/collaborator UI for current cover preview, regenerate, custom prompt regenerate, manual upload, and clear override.
+- Provider choice surfaced from configured generation providers (`comfyui`, `openai`, `xai`) where appropriate.
+- Status/history view for cover source, generated prompt/provider, upload time, and cache/CDN state.
+- Discovery Questions:
+- Should this live behind collaborator auth in the app, or remain a separate operator-only tool?
+- Which controls are safe for production use versus local-only experimentation?
+- Should cover prompts be saved and editable as durable metadata?
+- Exit Criteria for Discovery:
+- Approved operator surface and auth boundary.
+- Decision on persisted prompt/history fields needed for useful auditing.
+- Acceptance Criteria:
+- Operator can replace or regenerate a cover from the UI.
+- Cover changes update cached/CDN URLs predictably and avoid stale browser images.
+- Manual upload validates file type/size and preserves existing fallback behavior.
+
+### BL-037 - Richer Library Personalization Explanations
+- Type: Improvement
+- Priority: P3
+- Effort: M
+- Status: Discovery
+- Problem: The `For You` and `Discover` shelves can recommend books, but the reason behind a recommendation is still lightweight and easy to miss in cover-first browsing.
+- Scope Buckets:
+- Short explanation surfaces for recommendations without cluttering cover cards.
+- More useful recommendation inputs: favorite books, completed genres, recent authors, challenge goals, classroom context.
+- Optional "more like this" and "less like this" signals for future ranking.
+- Discovery Questions:
+- Should explanations appear inline, in a preview drawer, or on hover/focus only?
+- What recommendation reasons are trustworthy enough for v1?
+- Should users have direct feedback controls, or should ranking stay passive initially?
+- Exit Criteria for Discovery:
+- Approved recommendation explanation UX.
+- Ranked list of v1 explanation types and data dependencies.
+- Acceptance Criteria:
+- Readers can understand why a book is recommended without visual clutter.
+- Recommendation copy is deterministic and avoids overclaiming.
+- Explanation UX works for keyboard and touch users.
+
+### BL-038 - Public Character Chat Access and Cost Controls
+- Type: Feature
+- Priority: P1
+- Effort: L
+- Status: Discovery
+- Problem: Character chat is one of the app's most distinctive experiences, but public access needs cost controls, abuse throttling, and a path to paid usage before it can be opened broadly.
+- Scope Buckets:
+- Anonymous chat access with conservative limits by IP, reader cookie, and app-wide spend/usage caps.
+- Signed-in free tier with more generous limits and identity-backed abuse controls.
+- Pay-as-you-go credit model for readers who exceed free limits or want heavier chat usage.
+- Provider/cost guardrails for xAI-backed chat, including daily budget caps, emergency kill switches, and clear user-facing limit states.
+- Discovery Questions:
+- What is the right anonymous daily allowance that lets users feel the magic without inviting runaway cost?
+- Should signed-in users receive a higher free quota, bonus credits, or both?
+- Should pay-as-you-go credits be chat-only at launch or become a general AI credit balance for chat/media features?
+- What operational dashboards or alerts are needed before opening public chat access?
+- Current Direction (2026-04-27):
+- Let everyone experience character chat, but keep anonymous limits strict enough to protect cost.
+- Use registration as the first upgrade step by raising limits for signed-in readers.
+- Explore pay-as-you-go before subscription, because chat can be cheap enough for lightweight credit bundles.
+- Favor prepaid credit packs over monthly metered invoicing for v1, so usage can be blocked before cost runs away.
+- Initial paid pack candidates: `$5`, `$10`, and `$20`, with `$5` intended to feel useful because chat is relatively inexpensive on xAI.
+- Suggested phased rollout:
+- Phase 1: public/free chat with anonymous and signed-in throttles only.
+- Phase 2: account-backed credit ledger with manual/admin credit grants for testing.
+- Phase 3: Stripe Checkout credit packs plus webhook-based credit granting.
+- Phase 4: usage dashboard, alerts, refunds/chargeback handling, and pricing refinement.
+- Exit Criteria for Discovery:
+- Approved free-tier quotas for anonymous and signed-in readers.
+- Decision on PAYG credit scope, purchase unit, and balance/ledger model.
+- Cost-control checklist covering user limits, provider spend caps, abuse signals, and emergency disable behavior.
+- Acceptance Criteria:
+- Anonymous readers can send a limited number of character chat messages without collaborator auth.
+- Signed-in readers receive a clearly higher quota and understandable limit/reset messaging.
+- Signed-in readers can buy prepaid chat credits in `$5`, `$10`, and `$20` packs.
+- App enforces per-reader/per-IP/app-wide throttles with user-friendly upgrade or wait states.
+- PAYG credit accounting is auditable and prevents chat usage beyond available balance.
+
+### BL-039 - Character Chat Home and Discovery Surfaces
+- Type: Improvement
+- Priority: P1
+- Effort: M
+- Status: Discovery
+- Problem: Character chat is compelling, but the library/home experience does not yet make it obvious, resumable, or easy for new users to try.
+- Scope Buckets:
+- Recent chats shelf or module with character portraits, book context, last-message snippet, and `Continue chat` action.
+- `Characters You've Met` shelf based on discovered characters from reader progress.
+- First-run/public `Try Character Chat` module with a few curated characters and starter prompts from popular books.
+- Optional featured-character panel for the strongest resume or discovery opportunity.
+- Discovery Questions:
+- Should recent chats appear above or below `Continue Reading`?
+- Should anonymous users see starter chat prompts before reading progress creates discovered characters?
+- Which characters/books are safe and compelling defaults for a public try-chat module?
+- How should spoiler boundaries be communicated from home-page chat entry points?
+- Current Direction (2026-04-27):
+- Treat chat as a first-class home-page hook, not only an in-reader modal.
+- For signed-in/readers with history, prioritize resumable recent chats and discovered characters.
+- For new/anonymous readers, show a small curated try-chat surface that demonstrates the feature quickly.
+- Exit Criteria for Discovery:
+- Approved home-page placement and priority order for chat modules.
+- Decision on data requirements for recent chats, discovered characters, and starter prompt curation.
+- Acceptance Criteria:
+- Readers can resume recent character chats from the library/home view.
+- Readers can discover chat-capable characters without already knowing where the feature lives.
+- New users see at least one low-friction path to try character chat.
+- Home-page chat entry points preserve existing spoiler guardrails.
+
+### BL-040 - Personal Editions and Paid Creative Customization
+- Type: Feature
+- Priority: P1
+- Effort: XL
+- Status: Discovery
+- Problem: Book lovers may value a personalized reading experience where they can shape the visual and audio interpretation of a classic, but the app currently only exposes default generated media and voices.
+- Scope Buckets:
+- Account-backed user media library for custom covers, chapter illustrations, character portraits, and selected active variants.
+- Shared AI credit usage model for paid creative actions, linked to `BL-038` credit ledger/payment work.
+- Custom-prompt illustration and portrait regeneration with literary context and safety guardrails.
+- Premium scene video generation for selected passages/chapters as a later high-credit creative action.
+- TTS voice selection, saved per-reader/per-book voice preferences, and optional premium voice usage controls.
+- `My Edition` UI for selecting active cover/illustration/portrait/voice variants and reviewing generated assets.
+- Scene gallery/short-film assembly concepts if users generate multiple videos from a book.
+- DigitalOcean Spaces/CDN storage strategy for user-owned media using opaque UUID object keys and DB-backed ownership metadata.
+- Discovery Questions:
+- Which customization actions should be paid in v1: custom chapter illustration, custom character portrait, custom book cover, TTS voice selection, or all of them?
+- Should user-generated media be private-only, shareable by link, or eligible for curated public promotion later?
+- How many variants should a user be able to keep per book/chapter/character before storage cleanup or archiving is required?
+- What prompt controls are appropriate: free-form prompt, guided style presets, prompt templates, or a hybrid?
+- Should custom TTS voices be selected from provider voices only, or should the app support saved voice direction/prompting as a premium feature?
+- What level of character consistency is required before scene videos feel good enough, and should consistency rely on saved character portraits, style references, provider-specific reference images, or curated prompts?
+- Should multiple generated scene videos be composable into a simple user-owned short film or scene reel?
+- Current Direction (2026-04-27):
+- Position paid usage as `Personal Editions`, not simply more tokens.
+- Let free users read with default generated covers/illustrations/portraits and default TTS.
+- Let paid/account users spend AI credits on creative customization that makes the book feel like their own edition.
+- Keep custom media private by default, with opaque storage keys in DigitalOcean Spaces and DB-mediated ownership/selection.
+- Start with guided customization presets plus optional prompt text rather than unconstrained prompt-only flows.
+- Treat short scene video as a later premium/high-credit extension after image customization and credit accounting are stable.
+- If scene videos move forward, prioritize character/style consistency and storage lifecycle rules before broader sharing.
+- Exit Criteria for Discovery:
+- Approved v1 customization surface and priority order.
+- Credit cost model for chat versus image/TTS actions, including storage overhead.
+- Data model for user media ownership, active variant selection, storage keys, and cleanup policy.
+- Safety/guardrail plan for custom prompts and generated outputs.
+- Acceptance Criteria:
+- Signed-in reader can spend AI credits to create at least one custom media variant tied to a book/chapter/character.
+- User media is stored with opaque UUID object keys and ownership metadata, and is not discoverable by listing.
+- Reader can select which generated/default variant is active in their personal edition without changing the global/default book media.
+- Custom prompt flow includes guardrails and preserves book/character context.
+- Reader can select and persist preferred TTS voice behavior at least at the book level.
+- Later video slice: reader can spend credits to generate a short private scene video tied to a passage/chapter, with clear cost disclosure and consistency safeguards.
 
 ## P0
 

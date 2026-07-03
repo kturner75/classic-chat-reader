@@ -364,4 +364,54 @@ class GutenbergContentParserTest {
         assertEquals("II.", book.chapters().get(1).title());
         assertEquals(2, book.chapters().get(1).paragraphs().size());
     }
+
+    @Test
+    void parseExcludesIllustrationCaptionsAndPageNumbers() {
+        // Illustrated Gutenberg editions (e.g. Pride and Prejudice's pg1342-images.html)
+        // wrap figures in .figcenter/.caption divs and stamp print page breaks with
+        // .pagenum spans, e.g. "I'm the tallest{10}". None of this is narrative text
+        // and it must not leak into a chapter's paragraphs.
+        String html = """
+            <html>
+            <body>
+                <h2>Chapter II.</h2>
+                <p>This is a genuine paragraph of narrative text with enough length to be kept.</p>
+                <div class="figcenter" style="width: 386px;">
+                    <img alt="" src="images/i_038.jpg">
+                    <div class="caption"><p>"I'm the tallest<span class="pagenum"><a id="page_10">{10}</a></span>"</p></div>
+                </div>
+                <h2>Chapter III.</h2>
+                <p>This is another genuine paragraph of narrative text with plenty of length.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(2, book.chapters().size());
+        assertEquals(1, book.chapters().get(0).paragraphs().size());
+        assertFalse(book.chapters().get(0).paragraphs().get(0).contains("tallest"));
+        assertFalse(book.chapters().get(0).paragraphs().get(0).contains("{10}"));
+        assertEquals(1, book.chapters().get(1).paragraphs().size());
+    }
+
+    @Test
+    void parseStripsInlinePageNumberMarkersFromParagraphs() {
+        // Gutenberg also inserts .pagenum markers mid-paragraph at page breaks,
+        // not just inside illustration captions. Those must be stripped too.
+        String html = """
+            <html>
+            <body>
+                <h2>Chapter I</h2>
+                <p>The rest of the evening was spent in conjecturing how soon he would return Mr. Bennet's visit,<span class="pagenum"><a id="page_11">{11}</a></span> and determining when they should ask him to dinner.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(1, book.chapters().size());
+        assertEquals(1, book.chapters().get(0).paragraphs().size());
+        assertFalse(book.chapters().get(0).paragraphs().get(0).contains("{11}"));
+    }
 }

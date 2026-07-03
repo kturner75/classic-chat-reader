@@ -42,19 +42,17 @@ public class AssetCleanupRunner {
         Properties properties = loadProperties();
         String dbUrl = firstNonBlank(
                 System.getenv("SPRING_DATASOURCE_URL"),
-                System.getenv("DATABASE_URL"),
-                properties.getProperty("spring.datasource.url"),
-                "jdbc:h2:file:./data/library");
+                System.getenv("DATABASE_URL"));
+        if (dbUrl.isEmpty()) {
+            System.err.println("No database URL configured. Set SPRING_DATASOURCE_URL or DATABASE_URL.");
+            return;
+        }
         String dbUser = firstNonBlank(
                 System.getenv("SPRING_DATASOURCE_USERNAME"),
-                System.getenv("DATABASE_USERNAME"),
-                properties.getProperty("spring.datasource.username"),
-                "sa");
+                System.getenv("DATABASE_USERNAME"));
         String dbPassword = firstNonBlank(
                 System.getenv("SPRING_DATASOURCE_PASSWORD"),
-                System.getenv("DATABASE_PASSWORD"),
-                properties.getProperty("spring.datasource.password"),
-                "");
+                System.getenv("DATABASE_PASSWORD"));
 
         Path illustrationDir = Path.of(properties.getProperty("illustration.cache-dir", "./data/illustrations"));
         Path portraitDir = Path.of(properties.getProperty("character.portrait.cache-dir", "./data/character-portraits"));

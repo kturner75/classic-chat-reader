@@ -1,10 +1,6 @@
 package com.classicchatreader.cli;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -21,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 
 /**
@@ -90,8 +85,7 @@ public class DbMigrationRunner {
             return 1;
         }
 
-        Properties properties = loadProperties();
-        DbConfig source = resolveSourceConfig(parsed, properties);
+        DbConfig source = resolveSourceConfig(parsed);
         DbConfig target = resolveTargetConfig(parsed);
 
         if (target.url() == null || target.url().isBlank()) {
@@ -191,23 +185,22 @@ public class DbMigrationRunner {
         return new ParsedArgs(options, flags);
     }
 
-    private static DbConfig resolveSourceConfig(ParsedArgs parsed, Properties properties) {
+    // Source defaults to the legacy local H2 file: this tool exists specifically to
+    // migrate rows out of an H2 export/backup into the current runtime database.
+    private static DbConfig resolveSourceConfig(ParsedArgs parsed) {
         String url = firstNonBlank(
                 parsed.optionValue(SOURCE_URL_FLAG).orElse(null),
                 System.getenv("MIGRATION_SOURCE_URL"),
-                properties.getProperty("spring.datasource.url"),
                 "jdbc:h2:file:./data/library"
         );
         String user = firstNonBlank(
                 parsed.optionValue(SOURCE_USER_FLAG).orElse(null),
                 System.getenv("MIGRATION_SOURCE_USERNAME"),
-                properties.getProperty("spring.datasource.username"),
                 "sa"
         );
         String password = firstNonBlank(
                 parsed.optionValue(SOURCE_PASSWORD_FLAG).orElse(null),
                 System.getenv("MIGRATION_SOURCE_PASSWORD"),
-                properties.getProperty("spring.datasource.password"),
                 ""
         );
         return new DbConfig(normalizeDbUrl(url), user, password);
@@ -354,27 +347,6 @@ public class DbMigrationRunner {
         try (ResultSet tables = metaData.getTables(null, null, tableName, null)) {
             return tables.next();
         }
-    }
-
-    private static Properties loadProperties() {
-        Properties properties = new Properties();
-        try (InputStream input = DbMigrationRunner.class.getClassLoader().getResourceAsStream("application.properties")) {
-            if (input != null) {
-                properties.load(input);
-                return properties;
-            }
-        } catch (IOException ignored) {
-            // Best-effort fallback below.
-        }
-        Path fallbackPath = Path.of("src/main/resources/application.properties");
-        if (Files.exists(fallbackPath)) {
-            try (InputStream input = Files.newInputStream(fallbackPath)) {
-                properties.load(input);
-            } catch (IOException ignored) {
-                // Continue with defaults.
-            }
-        }
-        return properties;
     }
 
     private static String firstNonBlank(String... values) {
