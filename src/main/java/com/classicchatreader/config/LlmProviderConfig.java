@@ -37,7 +37,7 @@ public class LlmProviderConfig {
     @Value("${ai.reasoning.xai.api-key:}")
     private String reasoningXaiApiKey;
 
-    @Value("${ai.reasoning.xai.model:grok-4-1-fast-reasoning}")
+    @Value("${ai.reasoning.xai.model:grok-4.20-reasoning}")
     private String reasoningXaiModel;
 
     @Value("${ai.reasoning.openai.base-url:https://api.openai.com/v1}")
@@ -65,7 +65,7 @@ public class LlmProviderConfig {
     @Value("${recap.reasoning.xai.api-key:${ai.reasoning.xai.api-key:}}")
     private String recapReasoningXaiApiKey;
 
-    @Value("${recap.reasoning.xai.model:${ai.reasoning.xai.model:grok-4-1-fast-reasoning}}")
+    @Value("${recap.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.20-reasoning}}")
     private String recapReasoningXaiModel;
 
     @Value("${recap.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
@@ -93,7 +93,7 @@ public class LlmProviderConfig {
     @Value("${quiz.reasoning.xai.api-key:${ai.reasoning.xai.api-key:}}")
     private String quizReasoningXaiApiKey;
 
-    @Value("${quiz.reasoning.xai.model:${ai.reasoning.xai.model:grok-4-1-fast-reasoning}}")
+    @Value("${quiz.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.20-reasoning}}")
     private String quizReasoningXaiModel;
 
     @Value("${quiz.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
@@ -121,7 +121,7 @@ public class LlmProviderConfig {
     @Value("${ai.chat.xai.api-key:}")
     private String chatXaiApiKey;
 
-    @Value("${ai.chat.xai.model:grok-4-1-fast-non-reasoning}")
+    @Value("${ai.chat.xai.model:grok-4.20-non-reasoning}")
     private String chatXaiModel;
 
     @Value("${ai.chat.openai.base-url:https://api.openai.com/v1}")
