@@ -9254,11 +9254,13 @@
                     ttsInterrupt();
                     break;
                 case 'l':
+                case 'ArrowRight':
                     e.preventDefault();
                     nextPage();
                     ttsInterrupt();
                     break;
                 case 'h':
+                case 'ArrowLeft':
                     e.preventDefault();
                     prevPage();
                     ttsInterrupt();
