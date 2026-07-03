@@ -75,19 +75,27 @@ public class XaiLlmProvider implements LlmProvider {
         String bearerToken = oauthToken.orElse(apiKey);
 
         if (bearerToken == null || bearerToken.isBlank()) {
+            log.warn("event=xai_auth_unavailable model={} oauthConfigured={} apiKeyConfigured={}",
+                    model,
+                    oauthTokenManager != null && oauthTokenManager.isConfigured(),
+                    apiKey != null && !apiKey.isBlank());
             throw new LlmProviderException(
                     "xAI provider unavailable: OAuth token unavailable (refresh failed or not configured) "
                             + "and no API key configured as fallback");
         }
 
+        log.info("event=xai_request auth_source={} model={}", usingOAuth ? "oauth" : "api_key", model);
+
         try {
             return callChatCompletions(requestBody, bearerToken);
         } catch (WebClientResponseException e) {
             if (usingOAuth && e.getStatusCode().value() == 401 && apiKey != null && !apiKey.isBlank()) {
-                log.warn("xAI OAuth token rejected (401), invalidating and retrying with API key");
+                log.warn("event=xai_oauth_rejected model={} retrying_with=api_key", model);
                 oauthTokenManager.invalidate();
                 try {
-                    return callChatCompletions(requestBody, apiKey);
+                    String result = callChatCompletions(requestBody, apiKey);
+                    log.info("event=xai_request auth_source=api_key model={} reason=oauth_401_fallback", model);
+                    return result;
                 } catch (WebClientResponseException retryEx) {
                     log.error("xAI API error: {} - {}", retryEx.getStatusCode(), retryEx.getResponseBodyAsString());
                     throw new LlmProviderException("xAI API error: " + retryEx.getStatusCode(), retryEx);
