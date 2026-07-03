@@ -174,16 +174,24 @@ public class CacheTransferRunner {
                     "No database URL configured. Pass --db-url, or set PDR_DATABASE_URL/SPRING_DATASOURCE_URL/DATABASE_URL.");
         }
 
-        String dbUser = parsed.optionValue(DB_USER_FLAG).orElseGet(() -> firstNonBlank(
-                System.getenv("PDR_DATABASE_USERNAME"),
-                System.getenv("SPRING_DATASOURCE_USERNAME"),
-                System.getenv("DATABASE_USERNAME"),
-                "sa"));
-        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG).orElseGet(() -> firstNonBlank(
-                System.getenv("PDR_DATABASE_PASSWORD"),
-                System.getenv("SPRING_DATASOURCE_PASSWORD"),
-                System.getenv("DATABASE_PASSWORD"),
-                ""));
+        // When --db-url is explicit, don't let unrelated ambient DB credentials (e.g. a
+        // developer's globally-exported Postgres role for a different local database)
+        // leak into the connection. Only consult env-resolved credentials when the URL
+        // itself was also env-resolved, since then they're a matched, coherent pair.
+        String dbUser = parsed.optionValue(DB_USER_FLAG).orElseGet(() -> explicitDbUrl.isPresent()
+                ? "sa"
+                : firstNonBlank(
+                        System.getenv("PDR_DATABASE_USERNAME"),
+                        System.getenv("SPRING_DATASOURCE_USERNAME"),
+                        System.getenv("DATABASE_USERNAME"),
+                        "sa"));
+        String dbPassword = parsed.optionValue(DB_PASSWORD_FLAG).orElseGet(() -> explicitDbUrl.isPresent()
+                ? ""
+                : firstNonBlank(
+                        System.getenv("PDR_DATABASE_PASSWORD"),
+                        System.getenv("SPRING_DATASOURCE_PASSWORD"),
+                        System.getenv("DATABASE_PASSWORD"),
+                        ""));
         return new DbConfig(normalizeDbUrl(dbUrl), dbUser, dbPassword);
     }
 
