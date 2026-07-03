@@ -4,6 +4,7 @@ import com.classicchatreader.service.llm.LlmProvider;
 import com.classicchatreader.service.llm.OllamaLlmProvider;
 import com.classicchatreader.service.llm.OpenAiLlmProvider;
 import com.classicchatreader.service.llm.XaiLlmProvider;
+import com.classicchatreader.service.llm.XaiOAuthTokenManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -132,6 +133,20 @@ public class LlmProviderConfig {
     @Value("${ai.chat.openai.model:gpt-5.5}")
     private String chatOpenAiModel;
 
+    // xAI OAuth (SuperGrok subscription) config - shared across all xAI-backed providers.
+    // Refresh token is provisioned manually via scripts/xai-oauth-login.sh; when absent,
+    // providers behave exactly as before and use their configured API key.
+    @Value("${ai.xai.oauth.enabled:true}")
+    private boolean xaiOAuthEnabled;
+
+    @Value("${ai.xai.oauth.refresh-token:}")
+    private String xaiOAuthRefreshToken;
+
+    @Bean
+    public XaiOAuthTokenManager xaiOAuthTokenManager() {
+        return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled);
+    }
+
     @Bean
     @Qualifier("reasoningLlmProvider")
     public LlmProvider reasoningLlmProvider() {
@@ -203,12 +218,14 @@ public class LlmProviderConfig {
                 yield new OllamaLlmProvider(ollamaBaseUrl, ollamaModel, timeoutSeconds);
             }
             case "xai" -> {
-                if (xaiApiKey == null || xaiApiKey.isBlank()) {
-                    log.warn("xAI API key not configured for {} provider, falling back to Ollama", purpose);
+                XaiOAuthTokenManager oauthTokenManager = xaiOAuthTokenManager();
+                if ((xaiApiKey == null || xaiApiKey.isBlank()) && !oauthTokenManager.isConfigured()) {
+                    log.warn("Neither xAI OAuth nor API key configured for {} provider, falling back to Ollama", purpose);
                     yield new OllamaLlmProvider(ollamaBaseUrl, ollamaModel, timeoutSeconds);
                 }
-                log.info("Creating xAI provider for {}: model={}", purpose, xaiModel);
-                yield new XaiLlmProvider(xaiApiKey, xaiModel, timeoutSeconds);
+                log.info("Creating xAI provider for {}: model={}, oauth={}",
+                        purpose, xaiModel, oauthTokenManager.isConfigured());
+                yield new XaiLlmProvider(xaiApiKey, xaiModel, timeoutSeconds, oauthTokenManager);
             }
             case "openai" -> {
                 if (openAiApiKey == null || openAiApiKey.isBlank()) {

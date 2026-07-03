@@ -9258,7 +9258,19 @@
                     nextPage();
                     ttsInterrupt();
                     break;
+                case 'ArrowRight':
+                    if (e.altKey || e.shiftKey) return;
+                    e.preventDefault();
+                    nextPage();
+                    ttsInterrupt();
+                    break;
                 case 'h':
+                    e.preventDefault();
+                    prevPage();
+                    ttsInterrupt();
+                    break;
+                case 'ArrowLeft':
+                    if (e.altKey || e.shiftKey) return;
                     e.preventDefault();
                     prevPage();
                     ttsInterrupt();
