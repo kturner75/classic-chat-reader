@@ -113,6 +113,10 @@
                 return [];
             }
 
+            // Only updates the running caption here; finalization is anchored solely
+            // to input_audio_buffer.committed / response.created below so a turn is
+            // never finalized twice if both a transcription-completed and a
+            // buffer-committed event arrive for the same utterance.
             if (type === 'conversation.item.input_audio_transcription.updated'
                     || type === 'conversation.item.input_audio_transcription.completed') {
                 const transcript = event.transcript
@@ -120,10 +124,6 @@
                     ?? '';
                 if (transcript) {
                     userPartial = transcript;
-                }
-                if (type.endsWith('.completed')) {
-                    const turn = finalizeUser();
-                    return turn ? [turn] : [];
                 }
                 return [];
             }

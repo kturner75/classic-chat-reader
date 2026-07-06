@@ -8156,6 +8156,12 @@
             return;
         }
 
+        // The call may have been ended (or already reconnected) while the
+        // request above was in flight - don't open a socket for a dead call.
+        if (!state.callActive || state.callUserEnded) {
+            return;
+        }
+
         let ws;
         try {
             ws = new WebSocket(data.websocketUrl, ['xai-client-secret.' + data.token]);
@@ -8387,7 +8393,10 @@
             state.callWs = null;
         }
         teardownCallAudio();
-        state.callTracker = null;
+        if (state.callTracker) {
+            persistCallTurns(state.callTracker.flush());
+            state.callTracker = null;
+        }
         setCallStatus('');
         setCallError(message);
     }

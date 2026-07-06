@@ -362,6 +362,9 @@ public class CharacterController {
                     request.readerParagraphIndex()
             );
             return ResponseEntity.ok(session);
+        } catch (IllegalArgumentException e) {
+            // Character was removed between the check above and the service load
+            return ResponseEntity.notFound().build();
         } catch (LlmProviderException e) {
             log.error("Failed to create voice call session for character {}", characterId, e);
             return ResponseEntity.status(503)

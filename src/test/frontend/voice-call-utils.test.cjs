@@ -108,3 +108,32 @@ test('transcript tracker: unknown events are ignored', () => {
     assert.deepEqual(tracker.consume({ type: 'rate_limits.updated' }), []);
     assert.deepEqual(tracker.consume(null), []);
 });
+
+test('transcript tracker: transcription.completed does not double-finalize with buffer.committed', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Tell me about the moor' });
+    const committedTurns = tracker.consume({ type: 'input_audio_buffer.committed' });
+    assert.equal(committedTurns.length, 1);
+
+    // A late-arriving completed event for the same utterance must not re-finalize it.
+    const completedTurns = tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'Tell me about the moor'
+    });
+    assert.deepEqual(completedTurns, []);
+    assert.equal(tracker.getFinalized().length, 1);
+});
+
+test('transcript tracker: transcription.completed arriving before buffer.committed does not double-finalize', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Hello there' });
+    const completedTurns = tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'Hello there'
+    });
+    assert.deepEqual(completedTurns, []);
+
+    const committedTurns = tracker.consume({ type: 'input_audio_buffer.committed' });
+    assert.equal(committedTurns.length, 1);
+    assert.equal(tracker.getFinalized().length, 1);
+});

@@ -263,4 +263,31 @@ class CharacterControllerTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.error", is("Voice calls are unavailable right now.")));
     }
+
+    @Test
+    void callSession_characterRemovedBetweenCheckAndLoad_returnsNotFound() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(voiceCallService.isVoiceCallAvailable()).thenReturn(true);
+        when(voiceCallService.createSession(
+                org.mockito.ArgumentMatchers.eq("character-1"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new IllegalArgumentException("Character not found: character-1"));
+
+        mockMvc.perform(post("/api/characters/character-1/call-session")
+                        .contentType("application/json")
+                        .content("""
+                                {"conversationHistory": [], "readerChapterIndex": 0, "readerParagraphIndex": 0}
+                                """))
+                .andExpect(status().isNotFound());
+    }
 }
