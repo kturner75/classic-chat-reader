@@ -8189,7 +8189,10 @@
                     audio: {
                         input: {
                             format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE },
-                            transcription: {}
+                            // transcription.model must be set explicitly - xAI only emits
+                            // conversation.item.input_audio_transcription.updated events
+                            // when a transcription model is configured.
+                            transcription: { model: 'grok-transcribe' }
                         },
                         output: {
                             format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE }

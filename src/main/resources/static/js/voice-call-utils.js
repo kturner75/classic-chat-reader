@@ -135,9 +135,13 @@
             }
 
             if (type === 'input_audio_buffer.committed') {
-                // The user's turn ended (server VAD); their caption is final.
-                const turn = finalizeUser();
-                return turn ? [turn] : [];
+                // Marks the audio buffer as a message, NOT that transcription has
+                // caught up - xAI transcribes the committed audio asynchronously,
+                // so userPartial may still be behind at this point. Finalizing here
+                // risks locking in a truncated caption; wait for response.created
+                // instead (server VAD always auto-creates a response after a
+                // committed turn, by which point transcription has settled).
+                return [];
             }
 
             if (type === 'response.created') {

@@ -52,7 +52,7 @@ test('transcript tracker: cumulative user updates replace the caption', () => {
     tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Tell me about the moor' });
     assert.equal(tracker.getUserPartial(), 'Tell me about the moor');
 
-    const turns = tracker.consume({ type: 'input_audio_buffer.committed' });
+    const turns = tracker.consume({ type: 'response.created' });
     assert.deepEqual(turns, [{ role: 'user', content: 'Tell me about the moor', timestamp: 111 }]);
     assert.equal(tracker.getUserPartial(), '');
 });
@@ -109,31 +109,42 @@ test('transcript tracker: unknown events are ignored', () => {
     assert.deepEqual(tracker.consume(null), []);
 });
 
-test('transcript tracker: transcription.completed does not double-finalize with buffer.committed', () => {
+test('transcript tracker: input_audio_buffer.committed alone never finalizes', () => {
     const tracker = createTranscriptTracker({ now: () => 1 });
     tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Tell me about the moor' });
-    const committedTurns = tracker.consume({ type: 'input_audio_buffer.committed' });
-    assert.equal(committedTurns.length, 1);
 
-    // A late-arriving completed event for the same utterance must not re-finalize it.
-    const completedTurns = tracker.consume({
-        type: 'conversation.item.input_audio_transcription.completed',
-        transcript: 'Tell me about the moor'
-    });
-    assert.deepEqual(completedTurns, []);
+    // Committing the audio buffer is not a transcription-complete signal - xAI
+    // transcribes asynchronously, so the caption may still be behind here.
+    const committedTurns = tracker.consume({ type: 'input_audio_buffer.committed' });
+    assert.deepEqual(committedTurns, []);
+    assert.equal(tracker.getUserPartial(), 'Tell me about the moor');
+    assert.equal(tracker.getFinalized().length, 0);
+});
+
+test('transcript tracker: a correction arriving after committed but before response.created is captured', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Tell me about the mo' });
+    tracker.consume({ type: 'input_audio_buffer.committed' });
+    // Transcription catches up with the full, corrected text after commit.
+    tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Tell me about the moor' });
+
+    const turns = tracker.consume({ type: 'response.created' });
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0].content, 'Tell me about the moor');
     assert.equal(tracker.getFinalized().length, 1);
 });
 
-test('transcript tracker: transcription.completed arriving before buffer.committed does not double-finalize', () => {
+test('transcript tracker: transcription.completed events only update the caption, never finalize', () => {
     const tracker = createTranscriptTracker({ now: () => 1 });
     tracker.consume({ type: 'conversation.item.input_audio_transcription.updated', transcript: 'Hello there' });
     const completedTurns = tracker.consume({
         type: 'conversation.item.input_audio_transcription.completed',
-        transcript: 'Hello there'
+        transcript: 'Hello there, friend'
     });
     assert.deepEqual(completedTurns, []);
+    assert.equal(tracker.getUserPartial(), 'Hello there, friend');
 
-    const committedTurns = tracker.consume({ type: 'input_audio_buffer.committed' });
-    assert.equal(committedTurns.length, 1);
-    assert.equal(tracker.getFinalized().length, 1);
+    const turns = tracker.consume({ type: 'response.created' });
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0].content, 'Hello there, friend');
 });
