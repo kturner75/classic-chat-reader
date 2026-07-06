@@ -12,8 +12,10 @@ import com.classicchatreader.service.CharacterChatService;
 import com.classicchatreader.service.CharacterExtractionService;
 import com.classicchatreader.service.CharacterPrefetchService;
 import com.classicchatreader.service.CharacterService;
+import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
+import com.classicchatreader.service.llm.LlmProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,6 +53,7 @@ public class CharacterController {
 
     private final CharacterService characterService;
     private final CharacterChatService chatService;
+    private final CharacterVoiceCallService voiceCallService;
     private final CharacterExtractionService extractionService;
     private final CharacterPrefetchService prefetchService;
     private final ComfyUIService comfyUIService;
@@ -61,6 +64,7 @@ public class CharacterController {
     public CharacterController(
             CharacterService characterService,
             CharacterChatService chatService,
+            CharacterVoiceCallService voiceCallService,
             CharacterExtractionService extractionService,
             CharacterPrefetchService prefetchService,
             ComfyUIService comfyUIService,
@@ -69,6 +73,7 @@ public class CharacterController {
             ChapterRepository chapterRepository) {
         this.characterService = characterService;
         this.chatService = chatService;
+        this.voiceCallService = voiceCallService;
         this.extractionService = extractionService;
         this.prefetchService = prefetchService;
         this.comfyUIService = comfyUIService;
@@ -85,6 +90,8 @@ public class CharacterController {
         status.put("chatEnabled", chatEnabled);
         status.put("reasoningProviderAvailable", extractionService.isReasoningProviderAvailable());
         status.put("chatProviderAvailable", chatService.isChatProviderAvailable());
+        status.put("voiceCallEnabled", voiceCallService.isVoiceCallEnabled());
+        status.put("voiceCallAvailable", voiceCallService.isVoiceCallAvailable());
         // Legacy field for backwards compatibility
         status.put("ollamaAvailable", extractionService.isReasoningProviderAvailable());
         status.put("comfyuiAvailable", comfyUIService.isAvailable());
@@ -321,6 +328,55 @@ public class CharacterController {
                 System.currentTimeMillis()
         ));
     }
+
+    @PostMapping("/{characterId}/call-session")
+    public ResponseEntity<?> createCallSession(
+            @PathVariable String characterId,
+            @RequestBody CallSessionRequest request) {
+
+        if (!characterEnabled || !chatEnabled || !voiceCallService.isVoiceCallAvailable()) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Voice calls are not available."));
+        }
+
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        CharacterEntity character = characterOpt.get();
+        if (!isCharacterEnabled(character.getBook())) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Voice calls are not available."));
+        }
+        if (character.getCharacterType() != CharacterType.PRIMARY) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Voice calls are only available for main characters."));
+        }
+
+        try {
+            CharacterVoiceCallService.VoiceCallSession session = voiceCallService.createSession(
+                    characterId,
+                    request.conversationHistory(),
+                    request.readerChapterIndex(),
+                    request.readerParagraphIndex()
+            );
+            return ResponseEntity.ok(session);
+        } catch (IllegalArgumentException e) {
+            // Character was removed between the check above and the service load
+            return ResponseEntity.notFound().build();
+        } catch (LlmProviderException e) {
+            log.error("Failed to create voice call session for character {}", characterId, e);
+            return ResponseEntity.status(503)
+                    .body(Map.of("error", "Voice calls are unavailable right now."));
+        }
+    }
+
+    public record CallSessionRequest(
+            List<ChatMessage> conversationHistory,
+            int readerChapterIndex,
+            int readerParagraphIndex
+    ) {}
 
     public record ChatRequest(
             String message,

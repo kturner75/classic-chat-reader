@@ -116,6 +116,20 @@
         chatCharacter: null,              // Current character being chatted with
         chatHistory: [],                  // Loaded from localStorage
         chatLoading: false,
+        // Character voice call state
+        voiceCallAvailable: false,
+        callActive: false,
+        callMuted: false,
+        callWs: null,
+        callAudioCtx: null,
+        callMicStream: null,
+        callWorkletNode: null,
+        callMicSource: null,
+        callTracker: null,
+        callPlaybackSources: [],
+        callNextPlayTime: 0,
+        callReconnectAttempted: false,
+        callUserEnded: false,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
         cacheOnly: false,
@@ -382,6 +396,16 @@
         chatMessages: document.getElementById('chat-messages'),
         chatInput: document.getElementById('chat-input'),
         chatSendBtn: document.getElementById('chat-send-btn'),
+        characterCallBtn: document.getElementById('character-call-btn'),
+        characterCallModal: document.getElementById('character-call-modal'),
+        callCharacterPortrait: document.getElementById('call-character-portrait'),
+        callCharacterName: document.getElementById('call-character-name'),
+        callStatus: document.getElementById('call-status'),
+        callError: document.getElementById('call-error'),
+        callErrorMessage: document.getElementById('call-error-message'),
+        callCaptions: document.getElementById('call-captions'),
+        callMuteBtn: document.getElementById('call-mute-btn'),
+        callEndBtn: document.getElementById('call-end-btn'),
         accountModal: document.getElementById('account-modal'),
         accountModalBackdrop: document.getElementById('account-modal-backdrop'),
         accountModalClose: document.getElementById('account-modal-close'),
@@ -7353,6 +7377,10 @@
                 && status.chatEnabled === true
                 && isClassroomFeatureEnabled('chatEnabled')
                 && status.chatProviderAvailable === true;
+            // Voice calls require chat (same conversation) plus the realtime provider
+            state.voiceCallAvailable = state.characterChatAvailable
+                && status.voiceCallEnabled === true
+                && status.voiceCallAvailable === true;
             state.cacheOnly = state.cacheOnly || status.cacheOnly === true;
 
             console.log('Character status response:', status);
@@ -7371,6 +7399,7 @@
             state.characterAvailable = false;
             state.characterCacheOnly = false;
             state.characterChatAvailable = false;
+            state.voiceCallAvailable = false;
         }
 
         if (!state.characterAvailable) {
@@ -7836,6 +7865,13 @@
         // Render existing messages
         renderChatMessages();
 
+        // Voice call button: needs backend availability plus browser audio support
+        if (elements.characterCallBtn) {
+            const browserSupportsCalls = !!(navigator.mediaDevices?.getUserMedia && window.AudioWorkletNode);
+            elements.characterCallBtn.classList.toggle('hidden',
+                !(state.voiceCallAvailable && browserSupportsCalls && character.characterType === 'PRIMARY'));
+        }
+
         // Close browser, open chat (skip audio resume since chat modal keeps it paused)
         closeCharacterBrowser(true);
         elements.characterChatModal.classList.remove('hidden');
@@ -7846,6 +7882,9 @@
     }
 
     function closeCharacterChat() {
+        if (state.callActive) {
+            endVoiceCall();
+        }
         elements.characterChatModal.classList.add('hidden');
         state.characterChatOpen = false;
         state.chatCharacterId = null;
@@ -7978,6 +8017,391 @@
             elements.chatSendBtn.disabled = false;
             elements.chatInput.focus();
         }
+    }
+
+    // ========================================
+    // Character Voice Call (xAI Realtime)
+    // ========================================
+    // The browser talks to wss://api.x.ai/v1/realtime directly using an
+    // ephemeral token minted by the backend; audio never touches our server.
+    // Finalized transcript turns merge into the same chat history as text chat.
+
+    const CALL_SAMPLE_RATE = 24000;
+
+    function setCallStatus(text) {
+        if (elements.callStatus) {
+            elements.callStatus.textContent = text;
+        }
+    }
+
+    function setCallError(message) {
+        if (!elements.callError) return;
+        elements.callErrorMessage.textContent = message;
+        elements.callError.classList.remove('hidden');
+    }
+
+    function clearCallError() {
+        if (!elements.callError) return;
+        elements.callError.classList.add('hidden');
+        elements.callErrorMessage.textContent = '';
+    }
+
+    function renderCallCaptions() {
+        if (!elements.callCaptions || !state.callTracker) return;
+        const finalized = state.callTracker.getFinalized().slice(-6);
+        const parts = finalized.map(turn => `
+            <div class="call-caption ${turn.role}">${escapeHtml(turn.content)}</div>
+        `);
+        const userPartial = state.callTracker.getUserPartial();
+        if (userPartial) {
+            parts.push(`<div class="call-caption user partial">${escapeHtml(userPartial)}</div>`);
+        }
+        const assistantPartial = state.callTracker.getAssistantPartial();
+        if (assistantPartial) {
+            parts.push(`<div class="call-caption character partial">${escapeHtml(assistantPartial)}</div>`);
+        }
+        elements.callCaptions.innerHTML = parts.join('');
+        elements.callCaptions.scrollTop = elements.callCaptions.scrollHeight;
+    }
+
+    function persistCallTurns(turns) {
+        if (!turns || turns.length === 0 || !state.chatCharacterId) return;
+        for (const turn of turns) {
+            state.chatHistory.push(turn);
+        }
+        renderChatMessages();
+        saveChatHistory(state.chatCharacterId, state.chatHistory);
+    }
+
+    async function startVoiceCall() {
+        if (state.callActive || !state.chatCharacterId || !state.voiceCallAvailable) return;
+
+        const character = state.chatCharacter;
+        state.callActive = true;
+        state.callMuted = false;
+        state.callUserEnded = false;
+        state.callReconnectAttempted = false;
+        state.callTracker = VoiceCallUtils.createTranscriptTracker();
+        clearCallError();
+        setCallStatus('Connecting…');
+
+        if (elements.callCharacterName) {
+            elements.callCharacterName.textContent = character?.name || '';
+        }
+        if (elements.callCharacterPortrait) {
+            elements.callCharacterPortrait.src = character?.portraitReady
+                ? `/api/characters/${state.chatCharacterId}/portrait` : '';
+        }
+        if (elements.callCaptions) {
+            elements.callCaptions.innerHTML = '';
+        }
+        if (elements.callMuteBtn) {
+            elements.callMuteBtn.classList.remove('muted');
+        }
+        elements.characterCallModal.classList.remove('hidden');
+
+        try {
+            // Create + resume the AudioContext inside the click gesture (iOS unlock)
+            state.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: CALL_SAMPLE_RATE
+            });
+            await state.callAudioCtx.resume();
+
+            state.callMicStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    channelCount: 1
+                }
+            });
+        } catch (error) {
+            console.error('Voice call audio setup failed:', error);
+            teardownCallAudio();
+            state.callActive = false;
+            setCallStatus('');
+            setCallError(error && error.name === 'NotAllowedError'
+                ? 'Microphone access is needed for voice calls.'
+                : 'Could not start audio for the call.');
+            return;
+        }
+
+        await connectVoiceCall();
+    }
+
+    async function connectVoiceCall() {
+        let data;
+        try {
+            const response = await fetch(`/api/characters/${state.chatCharacterId}/call-session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conversationHistory: state.chatHistory.slice(-10),
+                    readerChapterIndex: state.currentChapterIndex,
+                    readerParagraphIndex: state.currentParagraphIndex
+                })
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                const message = response.status === 503
+                    ? 'Voice calls are unavailable right now.'
+                    : (payload.error || "Voice calls aren't available.");
+                failVoiceCall(message);
+                return;
+            }
+            data = await response.json();
+        } catch (error) {
+            console.error('Voice call session request failed:', error);
+            failVoiceCall('Could not reach the server to start the call.');
+            return;
+        }
+
+        // The call may have been ended (or already reconnected) while the
+        // request above was in flight - don't open a socket for a dead call.
+        if (!state.callActive || state.callUserEnded) {
+            return;
+        }
+
+        let ws;
+        try {
+            ws = new WebSocket(data.websocketUrl, ['xai-client-secret.' + data.token]);
+        } catch (error) {
+            console.error('Voice call WebSocket open failed:', error);
+            failVoiceCall('Could not connect to the voice service.');
+            return;
+        }
+        state.callWs = ws;
+
+        ws.onopen = () => {
+            const config = data.sessionConfig || {};
+            const vad = config.turnDetection || {};
+            ws.send(JSON.stringify({
+                type: 'session.update',
+                session: {
+                    instructions: config.instructions,
+                    voice: config.voice,
+                    turn_detection: {
+                        type: vad.type || 'server_vad',
+                        threshold: vad.threshold,
+                        silence_duration_ms: vad.silenceDurationMs,
+                        idle_timeout_ms: vad.idleTimeoutMs
+                    },
+                    audio: {
+                        input: {
+                            format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE },
+                            // transcription.model must be set explicitly - xAI only emits
+                            // conversation.item.input_audio_transcription.updated events
+                            // when a transcription model is configured.
+                            transcription: { model: 'grok-transcribe' }
+                        },
+                        output: {
+                            format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE }
+                        }
+                    }
+                }
+            }));
+        };
+
+        ws.onmessage = (messageEvent) => {
+            let event;
+            try {
+                event = JSON.parse(messageEvent.data);
+            } catch (_e) {
+                return;
+            }
+            handleVoiceCallEvent(event);
+        };
+
+        ws.onclose = () => handleVoiceCallDisconnect(ws);
+        ws.onerror = () => { /* onclose always follows; handled there */ };
+    }
+
+    function handleVoiceCallEvent(event) {
+        switch (event.type) {
+            case 'session.created':
+                break;
+            case 'session.updated':
+                startMicCapture().catch(error => {
+                    console.error('Mic capture failed:', error);
+                    failVoiceCall('Could not start the microphone.');
+                });
+                setCallStatus('Listening…');
+                break;
+            case 'response.output_audio.delta':
+            case 'response.audio.delta': {
+                if (typeof event.delta === 'string' && event.delta) {
+                    schedulePlayback(VoiceCallUtils.base64PcmToFloat32(event.delta));
+                    setCallStatus('Speaking…');
+                    elements.callCharacterPortrait?.classList.add('speaking');
+                }
+                break;
+            }
+            case 'input_audio_buffer.speech_started':
+                // Barge-in: the reader started talking; stop character audio now
+                flushPlayback();
+                elements.callCharacterPortrait?.classList.remove('speaking');
+                setCallStatus('Listening…');
+                persistCallTurns(state.callTracker.consume(event));
+                renderCallCaptions();
+                break;
+            case 'response.done':
+                elements.callCharacterPortrait?.classList.remove('speaking');
+                setCallStatus('Listening…');
+                persistCallTurns(state.callTracker.consume(event));
+                renderCallCaptions();
+                break;
+            case 'error':
+                console.error('Voice call event error:', event);
+                break;
+            default: {
+                persistCallTurns(state.callTracker.consume(event));
+                renderCallCaptions();
+            }
+        }
+    }
+
+    async function startMicCapture() {
+        const ctx = state.callAudioCtx;
+        if (!ctx || !state.callMicStream || state.callWorkletNode) return;
+
+        await ctx.audioWorklet.addModule('/js/pcm-capture-worklet.js');
+        if (!state.callActive) return;
+
+        const source = ctx.createMediaStreamSource(state.callMicStream);
+        const worklet = new AudioWorkletNode(ctx, 'pcm-capture');
+        worklet.port.onmessage = (msg) => {
+            if (state.callMuted || !state.callWs || state.callWs.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            let samples = msg.data;
+            if (ctx.sampleRate !== CALL_SAMPLE_RATE) {
+                samples = VoiceCallUtils.resampleLinear(samples, ctx.sampleRate, CALL_SAMPLE_RATE);
+            }
+            state.callWs.send(JSON.stringify({
+                type: 'input_audio_buffer.append',
+                audio: VoiceCallUtils.floatTo16BitPcmBase64(samples)
+            }));
+        };
+        source.connect(worklet);
+        state.callMicSource = source;
+        state.callWorkletNode = worklet;
+    }
+
+    function schedulePlayback(float32Samples) {
+        const ctx = state.callAudioCtx;
+        if (!ctx || float32Samples.length === 0) return;
+
+        const buffer = ctx.createBuffer(1, float32Samples.length, CALL_SAMPLE_RATE);
+        buffer.copyToChannel(float32Samples, 0);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+
+        const startAt = Math.max(ctx.currentTime, state.callNextPlayTime);
+        source.start(startAt);
+        state.callNextPlayTime = startAt + buffer.duration;
+
+        state.callPlaybackSources.push(source);
+        source.onended = () => {
+            const idx = state.callPlaybackSources.indexOf(source);
+            if (idx >= 0) state.callPlaybackSources.splice(idx, 1);
+        };
+    }
+
+    function flushPlayback() {
+        for (const source of state.callPlaybackSources) {
+            try { source.stop(); } catch (_e) { /* already stopped */ }
+        }
+        state.callPlaybackSources = [];
+        state.callNextPlayTime = 0;
+    }
+
+    function handleVoiceCallDisconnect(ws) {
+        if (state.callWs !== ws) return; // stale socket from a previous attempt
+        state.callWs = null;
+        if (!state.callActive || state.callUserEnded) return;
+
+        if (!state.callReconnectAttempted) {
+            state.callReconnectAttempted = true;
+            setCallStatus('Reconnecting…');
+            flushPlayback();
+            // Reconnect with the updated history so context survives the drop
+            connectVoiceCall();
+            return;
+        }
+        endVoiceCall('Connection lost');
+    }
+
+    function teardownCallAudio() {
+        flushPlayback();
+        if (state.callWorkletNode) {
+            try { state.callWorkletNode.disconnect(); } catch (_e) { /* noop */ }
+            state.callWorkletNode.port.onmessage = null;
+            state.callWorkletNode = null;
+        }
+        if (state.callMicSource) {
+            try { state.callMicSource.disconnect(); } catch (_e) { /* noop */ }
+            state.callMicSource = null;
+        }
+        if (state.callMicStream) {
+            state.callMicStream.getTracks().forEach(track => track.stop());
+            state.callMicStream = null;
+        }
+        if (state.callAudioCtx) {
+            state.callAudioCtx.close().catch(() => {});
+            state.callAudioCtx = null;
+        }
+    }
+
+    function endVoiceCall(reason) {
+        // Idempotent: also closes the modal after a failed call (callActive already false)
+        state.callActive = false;
+        state.callUserEnded = true;
+
+        if (state.callWs) {
+            try { state.callWs.close(); } catch (_e) { /* noop */ }
+            state.callWs = null;
+        }
+        teardownCallAudio();
+
+        // Persist any dangling partial captions into the shared chat history
+        if (state.callTracker) {
+            persistCallTurns(state.callTracker.flush());
+            state.callTracker = null;
+        }
+
+        elements.callCharacterPortrait?.classList.remove('speaking');
+        elements.characterCallModal?.classList.add('hidden');
+        setCallStatus('');
+        clearCallError();
+
+        if (reason) {
+            setCharacterChatError(reason, null);
+        }
+    }
+
+    function toggleCallMute() {
+        state.callMuted = !state.callMuted;
+        elements.callMuteBtn?.classList.toggle('muted', state.callMuted);
+        if (elements.callMuteBtn) {
+            elements.callMuteBtn.title = state.callMuted ? 'Unmute' : 'Mute';
+        }
+    }
+
+    function failVoiceCall(message) {
+        state.callActive = false;
+        state.callUserEnded = true;
+        if (state.callWs) {
+            try { state.callWs.close(); } catch (_e) { /* noop */ }
+            state.callWs = null;
+        }
+        teardownCallAudio();
+        if (state.callTracker) {
+            persistCallTurns(state.callTracker.flush());
+            state.callTracker = null;
+        }
+        setCallStatus('');
+        setCallError(message);
     }
 
     // ========================================
@@ -8961,6 +9385,15 @@
             elements.chatInput.addEventListener('input', () => {
                 clearCharacterChatError();
             });
+        }
+        if (elements.characterCallBtn) {
+            elements.characterCallBtn.addEventListener('click', startVoiceCall);
+        }
+        if (elements.callEndBtn) {
+            elements.callEndBtn.addEventListener('click', () => endVoiceCall());
+        }
+        if (elements.callMuteBtn) {
+            elements.callMuteBtn.addEventListener('click', toggleCallMute);
         }
 
         // Keyboard navigation

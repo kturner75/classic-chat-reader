@@ -26,6 +26,7 @@ class SensitiveApiRequestMatcherTest {
     @Test
     void classify_marksChatEndpoints() {
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/chat"));
+        assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/call-session"));
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/recaps/book/book-1/chat"));
     }
 

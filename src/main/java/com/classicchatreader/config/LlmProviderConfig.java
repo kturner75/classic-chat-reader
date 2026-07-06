@@ -5,6 +5,7 @@ import com.classicchatreader.service.llm.OllamaLlmProvider;
 import com.classicchatreader.service.llm.OpenAiLlmProvider;
 import com.classicchatreader.service.llm.XaiLlmProvider;
 import com.classicchatreader.service.llm.XaiOAuthTokenManager;
+import com.classicchatreader.service.llm.XaiRealtimeSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -147,9 +148,29 @@ public class LlmProviderConfig {
     @Value("${ai.xai.oauth.refresh-token-file:./data/xai-oauth-refresh-token}")
     private String xaiOAuthRefreshTokenFile;
 
+    // Voice call (xAI Realtime) config - independent of ai.chat.provider so voice
+    // keeps using xAI even when text chat runs on OpenAI/Ollama.
+    @Value("${voice.call.xai.api-key:${ai.chat.xai.api-key:}}")
+    private String voiceCallXaiApiKey;
+
+    @Value("${voice.call.xai.model:grok-voice-latest}")
+    private String voiceCallXaiModel;
+
+    @Value("${voice.call.token-ttl-seconds:1800}")
+    private int voiceCallTokenTtlSeconds;
+
+    @Value("${voice.call.timeout-seconds:15}")
+    private int voiceCallTimeoutSeconds;
+
     @Bean
     public XaiOAuthTokenManager xaiOAuthTokenManager() {
         return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled, xaiOAuthRefreshTokenFile);
+    }
+
+    @Bean
+    public XaiRealtimeSessionService xaiRealtimeSessionService() {
+        return new XaiRealtimeSessionService(voiceCallXaiApiKey, voiceCallXaiModel,
+                voiceCallTokenTtlSeconds, voiceCallTimeoutSeconds, xaiOAuthTokenManager());
     }
 
     @Bean

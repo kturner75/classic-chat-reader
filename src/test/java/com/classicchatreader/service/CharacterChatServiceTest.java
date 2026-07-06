@@ -30,7 +30,8 @@ class CharacterChatServiceTest {
     @BeforeEach
     void setUp() {
         when(llmProvider.getProviderName()).thenReturn("test-provider");
-        characterChatService = new CharacterChatService(llmProvider, characterRepository, chapterRepository);
+        characterChatService = new CharacterChatService(llmProvider, characterRepository, chapterRepository,
+                new CharacterPersonaPromptBuilder());
     }
 
     @Test

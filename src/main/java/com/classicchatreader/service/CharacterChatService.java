@@ -25,6 +25,7 @@ public class CharacterChatService {
     private final LlmProvider chatProvider;
     private final CharacterRepository characterRepository;
     private final ChapterRepository chapterRepository;
+    private final CharacterPersonaPromptBuilder personaPromptBuilder;
 
     @Value("${character.chat.max-context-messages:10}")
     private int maxContextMessages;
@@ -32,10 +33,12 @@ public class CharacterChatService {
     public CharacterChatService(
             @Qualifier("chatLlmProvider") LlmProvider chatProvider,
             CharacterRepository characterRepository,
-            ChapterRepository chapterRepository) {
+            ChapterRepository chapterRepository,
+            CharacterPersonaPromptBuilder personaPromptBuilder) {
         this.chatProvider = chatProvider;
         this.characterRepository = characterRepository;
         this.chapterRepository = chapterRepository;
+        this.personaPromptBuilder = personaPromptBuilder;
         log.info("Character chat service initialized with provider: {}", chatProvider.getProviderName());
     }
 
@@ -57,10 +60,11 @@ public class CharacterChatService {
 
         String chapterTitle = getChapterTitle(book.getId(), readerChapterIndex);
 
-        String systemPrompt = buildSystemPrompt(character, book, readerChapterIndex,
+        String systemPrompt = personaPromptBuilder.buildPersona(character, book, readerChapterIndex,
                 readerParagraphIndex, chapterTitle);
 
-        String conversationContext = buildConversationContext(conversationHistory);
+        String conversationContext = personaPromptBuilder.buildConversationContext(
+                conversationHistory, maxContextMessages);
 
         String fullPrompt = String.format("""
             %s
@@ -89,66 +93,6 @@ public class CharacterChatService {
             log.error("Failed to generate chat response for character '{}'", character.getName(), e);
             return "I... I'm not sure how to answer that. Perhaps we could discuss something else?";
         }
-    }
-
-    private String buildSystemPrompt(CharacterEntity character, BookEntity book,
-                                     int chapterIndex, int paragraphIndex, String chapterTitle) {
-        return String.format("""
-            You are roleplaying as %s from "%s" by %s.
-
-            CHARACTER DESCRIPTION:
-            %s
-
-            WHO YOU ARE TALKING TO:
-            - The person messaging you is a READER - someone from the modern day who is reading your story
-            - They are NOT a character from your book - do NOT address them as Watson, Elizabeth, or any other character
-            - Think of them as a curious stranger who has somehow been granted the ability to converse with you
-            - You may be intrigued, amused, or bewildered by this magical conversation, but accept it gracefully
-            - Address them simply as "my friend", "dear reader", or similar - never assume they are someone from your world
-
-            IMPORTANT STORY CONSTRAINTS:
-            - The reader is currently at Chapter %d ("%s"), paragraph %d
-            - You can ONLY discuss events that have happened UP TO this point in the story
-            - You do NOT know anything that happens AFTER this point
-            - If asked about future events, politely deflect by saying you don't know what will happen
-            - Stay in character at all times - speak as %s would speak
-            - Use vocabulary, mannerisms, and speech patterns appropriate to the character
-
-            RESPONSE GUIDELINES:
-            - Keep responses conversational and engaging, under 200 words
-            - Show the character's personality through your responses
-            - You may express opinions, feelings, and thoughts that the character would have
-            - If the character wouldn't know something, say so in character
-            - React emotionally to topics as the character would
-
-            Remember: You ARE %s. Respond as they would, with their voice, their concerns, their worldview.""",
-                character.getName(),
-                book.getTitle(),
-                book.getAuthor(),
-                character.getDescription(),
-                chapterIndex + 1,
-                chapterTitle != null ? chapterTitle : "Chapter " + (chapterIndex + 1),
-                paragraphIndex,
-                character.getName(),
-                character.getName());
-    }
-
-    private String buildConversationContext(List<ChatMessage> history) {
-        if (history == null || history.isEmpty()) {
-            return "";
-        }
-
-        List<ChatMessage> recentHistory = history.size() > maxContextMessages
-                ? history.subList(history.size() - maxContextMessages, history.size())
-                : history;
-
-        StringBuilder context = new StringBuilder("PREVIOUS CONVERSATION:\n");
-        for (ChatMessage msg : recentHistory) {
-            String role = "user".equals(msg.role()) ? "User" : "Character";
-            context.append(role).append(": ").append(msg.content()).append("\n\n");
-        }
-
-        return context.toString();
     }
 
     private String getChapterTitle(String bookId, int chapterIndex) {
