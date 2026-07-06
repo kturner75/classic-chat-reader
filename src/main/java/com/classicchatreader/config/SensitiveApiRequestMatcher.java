@@ -17,6 +17,7 @@ public final class SensitiveApiRequestMatcher {
             Pattern.compile("^/api/characters/chapter/[^/]+/(analyze|prefetch-next)$");
     private static final Pattern CHARACTER_BOOK_PREFETCH_PATH = Pattern.compile("^/api/characters/book/[^/]+/prefetch$");
     private static final Pattern CHARACTER_CHAT_PATH = Pattern.compile("^/api/characters/[^/]+/chat$");
+    private static final Pattern CHARACTER_CALL_SESSION_PATH = Pattern.compile("^/api/characters/[^/]+/call-session$");
 
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
@@ -77,6 +78,7 @@ public final class SensitiveApiRequestMatcher {
             }
 
             if (CHARACTER_CHAT_PATH.matcher(path).matches()
+                    || CHARACTER_CALL_SESSION_PATH.matcher(path).matches()
                     || RECAP_CHAT_PATH.matcher(path).matches()) {
                 return EndpointType.CHAT;
             }

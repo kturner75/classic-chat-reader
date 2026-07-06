@@ -10,6 +10,7 @@ import com.classicchatreader.service.CharacterChatService;
 import com.classicchatreader.service.CharacterExtractionService;
 import com.classicchatreader.service.CharacterPrefetchService;
 import com.classicchatreader.service.CharacterService;
+import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,9 @@ class CharacterControllerCacheOnlyTest {
 
     @MockitoBean
     private CharacterChatService chatService;
+
+    @MockitoBean
+    private CharacterVoiceCallService voiceCallService;
 
     @MockitoBean
     private CharacterExtractionService extractionService;
