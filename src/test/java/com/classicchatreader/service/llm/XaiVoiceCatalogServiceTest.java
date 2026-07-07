@@ -20,9 +20,26 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class XaiVoiceCatalogServiceTest {
 
     @Test
-    void getVoices_parsesObjectWrappedRosterAndAuthHeader() {
+    void getVoices_parsesDocumentedShape_voiceIdWinsOverDisplayName() {
         List<String> authHeaders = new ArrayList<>();
         XaiVoiceCatalogService service = service("api-key", recordingWebClient(authHeaders, """
+                {"voices":[
+                  {"voice_id":"ara","name":"Ara","language":"en"},
+                  {"voice_id":"zagan","name":"Zagan (Deep Narrator)","language":"en"}
+                ]}
+                """));
+
+        List<XaiVoice> voices = service.getVoices();
+
+        assertEquals(List.of(
+                new XaiVoice("ara", null, null),
+                new XaiVoice("zagan", null, null)), voices);
+        assertEquals(List.of("Bearer api-key"), authHeaders);
+    }
+
+    @Test
+    void getVoices_parsesOptionalGenderAndDescriptionFields() {
+        XaiVoiceCatalogService service = service("api-key", recordingWebClient(new ArrayList<>(), """
                 {"voices":[
                   {"id":"Atlas","gender":"male","description":"Grounded and reassuring"},
                   {"id":"luna","labels":{"gender":"female"},"preview_text":"Soft and dreamy"}
@@ -34,7 +51,6 @@ class XaiVoiceCatalogServiceTest {
         assertEquals(List.of(
                 new XaiVoice("atlas", "male", "Grounded and reassuring"),
                 new XaiVoice("luna", "female", "Soft and dreamy")), voices);
-        assertEquals(List.of("Bearer api-key"), authHeaders);
     }
 
     @Test

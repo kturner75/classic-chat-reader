@@ -161,8 +161,11 @@ public class XaiVoiceCatalogService {
         return parseVoices(objectMapper.readTree(response));
     }
 
-    // Tolerant of the exact response shape: a bare array, or an object wrapping the
-    // list under "voices" or "data", with per-voice fields under a few likely names.
+    // Documented shape: {"voices":[{"voice_id":"ara","name":"Ara","language":"en"}]} where
+    // voice_id is the canonical id for the Realtime "voice" param and name is display-only.
+    // Stays tolerant of variations: a bare array or a "data" wrapper, alternate id fields
+    // (display name only as a last resort), and optional description/gender fields that the
+    // endpoint may grow - today it returns no tone metadata, so those usually stay null.
     private List<XaiVoice> parseVoices(JsonNode root) {
         JsonNode list = root;
         if (root.isObject()) {
@@ -178,7 +181,7 @@ public class XaiVoiceCatalogService {
 
         List<XaiVoice> voices = new ArrayList<>();
         for (JsonNode item : list) {
-            String id = firstText(item, "id", "name", "voice");
+            String id = firstText(item, "voice_id", "id", "voice", "name");
             if (id == null || id.isBlank()) {
                 continue;
             }
