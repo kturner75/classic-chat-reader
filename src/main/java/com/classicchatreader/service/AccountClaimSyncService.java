@@ -273,6 +273,9 @@ public class AccountClaimSyncService {
                 clampOrNull(preferences.lineHeight(), 1.4, 2.1),
                 clampOrNull(preferences.columnGap(), 2.0, 6.0),
                 normalizeTheme(preferences.theme()),
+                booleanOrDefault(preferences.recapTabEnabled(), true),
+                booleanOrDefault(preferences.chatTabEnabled(), true),
+                booleanOrDefault(preferences.quizTabEnabled(), true),
                 trimToNull(preferences.updatedAt())
         );
     }
@@ -471,6 +474,10 @@ public class AccountClaimSyncService {
             return null;
         }
         return clamp(value, min, max);
+    }
+
+    private Boolean booleanOrDefault(Boolean value, boolean fallback) {
+        return value != null ? value : fallback;
     }
 
     private double clamp(double value, double min, double max) {

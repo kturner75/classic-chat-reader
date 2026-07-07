@@ -77,10 +77,12 @@
         characterCacheOnly: false,
         characterChatAvailable: false,
         recapAvailable: false,
+        recapBackendAvailable: false,
         recapGenerationAvailable: false,
         recapCacheOnly: false,
         recapChatEnabled: false,
         recapChatAvailable: false,
+        recapChatBackendAvailable: false,
         recapOptOut: false,
         recapPendingChapterIndex: null,
         recapActiveTab: 'recap',
@@ -91,6 +93,7 @@
         recapPollingChapterId: null,
         recapPollingInFlight: false,
         quizAvailable: false,
+        quizBackendAvailable: false,
         quizGenerationAvailable: false,
         quizCacheOnly: false,
         quizChapterId: null,
@@ -260,6 +263,9 @@
         readerColumnGap: document.getElementById('reader-column-gap'),
         readerColumnGapValue: document.getElementById('reader-column-gap-value'),
         readerTheme: document.getElementById('reader-theme'),
+        readerRecapTabToggle: document.getElementById('reader-recap-tab-toggle'),
+        readerChatTabToggle: document.getElementById('reader-chat-tab-toggle'),
+        readerQuizTabToggle: document.getElementById('reader-quiz-tab-toggle'),
         readerSettingsReset: document.getElementById('reader-settings-reset'),
         cacheOnlyIndicator: document.getElementById('cache-only-indicator'),
         shortcutsToggle: document.getElementById('shortcuts-toggle'),
@@ -464,13 +470,19 @@
         fontSize: 1.2,
         lineHeight: 1.7,
         columnGap: 4,
-        theme: 'warm'
+        theme: 'warm',
+        recapTabEnabled: true,
+        chatTabEnabled: true,
+        quizTabEnabled: true
     });
     const MOBILE_DEFAULT_READER_PREFERENCES = Object.freeze({
         fontSize: 1.08,
         lineHeight: 1.65,
         columnGap: 4,
-        theme: 'warm'
+        theme: 'warm',
+        recapTabEnabled: true,
+        chatTabEnabled: true,
+        quizTabEnabled: true
     });
     const SEARCH_PLACEHOLDER_DESKTOP = 'Search... (press /)';
     const SEARCH_PLACEHOLDER_MOBILE = 'Search chapter text...';
@@ -1805,6 +1817,7 @@
             state.readerPreferences = normalized;
             applyReaderPreferences();
             syncReaderPreferencesControls();
+            refreshChapterPauseTabGating();
         }
         if (snapshot.recapOptOut && typeof snapshot.recapOptOut === 'object') {
             const keysToClear = [];
@@ -2152,6 +2165,10 @@
         return Math.min(max, Math.max(min, value));
     }
 
+    function normalizePreferenceBoolean(value, fallback) {
+        return typeof value === 'boolean' ? value : fallback;
+    }
+
     function normalizeReaderPreferences(raw) {
         const source = raw || {};
         const theme = Object.prototype.hasOwnProperty.call(READER_THEMES, source.theme)
@@ -2176,7 +2193,10 @@
                 2.0,
                 6.0
             ),
-            theme
+            theme,
+            recapTabEnabled: normalizePreferenceBoolean(source.recapTabEnabled, DEFAULT_READER_PREFERENCES.recapTabEnabled),
+            chatTabEnabled: normalizePreferenceBoolean(source.chatTabEnabled, DEFAULT_READER_PREFERENCES.chatTabEnabled),
+            quizTabEnabled: normalizePreferenceBoolean(source.quizTabEnabled, DEFAULT_READER_PREFERENCES.quizTabEnabled)
         };
     }
 
@@ -2237,6 +2257,15 @@
         if (elements.readerTheme) {
             elements.readerTheme.value = state.readerPreferences.theme;
         }
+        if (elements.readerRecapTabToggle) {
+            elements.readerRecapTabToggle.checked = state.readerPreferences.recapTabEnabled;
+        }
+        if (elements.readerChatTabToggle) {
+            elements.readerChatTabToggle.checked = state.readerPreferences.chatTabEnabled;
+        }
+        if (elements.readerQuizTabToggle) {
+            elements.readerQuizTabToggle.checked = state.readerPreferences.quizTabEnabled;
+        }
     }
 
     function repaginateFromCurrentParagraph() {
@@ -2267,6 +2296,9 @@
         saveReaderPreferences();
         if (repaginate) {
             repaginateFromCurrentParagraph();
+        }
+        if ('recapTabEnabled' in nextPartial || 'chatTabEnabled' in nextPartial || 'quizTabEnabled' in nextPartial) {
+            refreshChapterPauseTabGating();
         }
     }
 
@@ -4650,7 +4682,7 @@
     }
 
     function shouldShowChapterRecapOnTransition() {
-        return (state.recapAvailable || state.quizAvailable) &&
+        return (state.recapAvailable || state.quizAvailable || state.recapChatAvailable) &&
             !state.recapOptOut &&
             !state.ttsEnabled &&
             !state.speedReadingActive;
@@ -4661,7 +4693,7 @@
         if (nextChapterIndex >= state.chapters.length) return;
 
         if (showRecap && shouldShowChapterRecapOnTransition()) {
-            if (state.recapCacheOnly || state.quizCacheOnly) {
+            if ((state.recapAvailable && state.recapCacheOnly) || (state.quizAvailable && state.quizCacheOnly)) {
                 const transitionDataReady = await isCurrentChapterPauseReady();
                 if (!transitionDataReady) {
                     loadChapter(nextChapterIndex, 0);
@@ -4702,7 +4734,7 @@
         if (elements.chapterRecapOptout) {
             elements.chapterRecapOptout.checked = state.recapOptOut;
         }
-        setChapterRecapTab(state.recapAvailable ? 'recap' : 'quiz');
+        setChapterRecapTab('recap');
         elements.chapterRecapChapterTitle.textContent = currentChapter.title || 'Current chapter';
         elements.chapterRecapStatus.textContent = 'Loading recap...';
         elements.chapterRecapSummary.textContent = 'Preparing chapter recap.';
@@ -4763,18 +4795,16 @@
 
     function setChapterRecapTab(tab) {
         const validTab = tab === 'chat' || tab === 'quiz' || tab === 'recap' ? tab : 'recap';
+        const tabAvailability = {
+            recap: !!state.recapAvailable,
+            quiz: !!state.quizAvailable,
+            chat: !!state.recapChatAvailable
+        };
         let nextTab = validTab;
-        if (nextTab === 'recap' && !state.recapAvailable && state.quizAvailable) {
-            nextTab = 'quiz';
-        }
-        if (nextTab === 'quiz' && !state.quizAvailable && state.recapAvailable) {
-            nextTab = 'recap';
-        }
-        if (nextTab === 'chat' && !state.recapChatAvailable) {
-            if (state.recapAvailable) {
-                nextTab = 'recap';
-            } else if (state.quizAvailable) {
-                nextTab = 'quiz';
+        if (!tabAvailability[nextTab]) {
+            const fallback = ['recap', 'quiz', 'chat'].find((candidate) => tabAvailability[candidate]);
+            if (fallback) {
+                nextTab = fallback;
             }
         }
 
@@ -7414,6 +7444,22 @@
         updateMobileHeaderMenuState();
     }
 
+    function applyRecapPreferenceGating() {
+        state.recapAvailable = !!state.recapBackendAvailable && !!state.readerPreferences?.recapTabEnabled;
+        state.quizAvailable = !!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled;
+        state.recapChatAvailable = !!state.recapChatBackendAvailable && !!state.readerPreferences?.chatTabEnabled;
+    }
+
+    function refreshChapterPauseTabGating() {
+        applyRecapPreferenceGating();
+        setRecapChatControls();
+        setQuizControls();
+        if (isChapterRecapVisible()) {
+            setChapterRecapTab(state.recapActiveTab);
+        }
+        updateRecapOptOutControl();
+    }
+
     async function recapCheckAvailability() {
         try {
             const statusUrl = state.currentBook?.id
@@ -7425,23 +7471,24 @@
                 && status.reasoningEnabled === true
                 && isClassroomFeatureEnabled('recapEnabled')
                 && status.cacheOnly !== true;
-            state.recapAvailable = status.available === true
+            state.recapBackendAvailable = status.available === true
                 && isClassroomFeatureEnabled('recapEnabled');
             state.recapCacheOnly = status.cacheOnly === true;
             state.recapChatEnabled = status.chatEnabled === true
                 && isClassroomFeatureEnabled('chatEnabled');
-            state.recapChatAvailable = state.recapAvailable &&
+            state.recapChatBackendAvailable = state.recapBackendAvailable &&
                 state.recapChatEnabled &&
                 status.chatProviderAvailable === true;
             state.cacheOnly = state.cacheOnly || status.cacheOnly === true;
         } catch (error) {
             console.debug('Failed to check recap availability:', error);
             state.recapGenerationAvailable = false;
-            state.recapAvailable = false;
+            state.recapBackendAvailable = false;
             state.recapCacheOnly = false;
             state.recapChatEnabled = false;
-            state.recapChatAvailable = false;
+            state.recapChatBackendAvailable = false;
         }
+        applyRecapPreferenceGating();
         updateRecapOptOutControl();
         updateCacheOnlyIndicator();
         setRecapChatControls();
@@ -7457,7 +7504,7 @@
             const response = await fetch(statusUrl, { cache: 'no-store' });
             const status = await response.json();
             state.quizCacheOnly = status.cacheOnly === true;
-            state.quizAvailable = status.available === true
+            state.quizBackendAvailable = status.available === true
                 && isClassroomFeatureEnabled('quizEnabled');
             state.quizGenerationAvailable = (status.generationAvailable === true
                 || (status.enabled === true && status.reasoningEnabled === true && status.cacheOnly !== true))
@@ -7465,10 +7512,11 @@
             state.cacheOnly = state.cacheOnly || status.cacheOnly === true;
         } catch (error) {
             console.debug('Failed to check quiz availability:', error);
-            state.quizAvailable = false;
+            state.quizBackendAvailable = false;
             state.quizGenerationAvailable = false;
             state.quizCacheOnly = false;
         }
+        applyRecapPreferenceGating();
         if (state.quizAvailable && !wasQuizAvailable) {
             // Force a fresh trophy read when quiz support becomes available after startup checks.
             state.achievementsLoaded = false;
@@ -8708,6 +8756,21 @@
         if (elements.readerTheme) {
             elements.readerTheme.addEventListener('change', (e) => {
                 setReaderPreferences({ theme: e.target.value });
+            });
+        }
+        if (elements.readerRecapTabToggle) {
+            elements.readerRecapTabToggle.addEventListener('change', (e) => {
+                setReaderPreferences({ recapTabEnabled: e.target.checked }, { repaginate: false });
+            });
+        }
+        if (elements.readerChatTabToggle) {
+            elements.readerChatTabToggle.addEventListener('change', (e) => {
+                setReaderPreferences({ chatTabEnabled: e.target.checked }, { repaginate: false });
+            });
+        }
+        if (elements.readerQuizTabToggle) {
+            elements.readerQuizTabToggle.addEventListener('change', (e) => {
+                setReaderPreferences({ quizTabEnabled: e.target.checked }, { repaginate: false });
             });
         }
         if (elements.readerSettingsReset) {

@@ -1432,6 +1432,26 @@ html, body {
     background: var(--highlight-color);
 }
 
+.reader-settings-divider {
+    border-top: 1px solid var(--border-color);
+    margin: 0.15rem 0;
+}
+
+.reader-settings-note {
+    font-size: 0.74rem;
+    color: var(--muted-color);
+    line-height: 1.3;
+    margin: 0;
+}
+
+.reader-settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+    cursor: pointer;
+}
+
 .search-results {
     position: absolute;
     top: 80px;
