@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-04-27
+Last updated: 2026-07-07
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -555,6 +555,32 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Custom prompt flow includes guardrails and preserves book/character context.
 - Reader can select and persist preferred TTS voice behavior at least at the book level.
 - Later video slice: reader can spend credits to generate a short private scene video tied to a passage/chapter, with clear cost disclosure and consistency safeguards.
+
+### BL-041 - Multi-Provider Voice-to-Voice (Character Calls)
+- Type: Tech Debt
+- Priority: P3
+- Effort: M
+- Status: Discovery
+- Problem: Character voice calls are hardwired to xAI's Realtime API end-to-end (session minting, voice roster, and the browser's WebSocket connection). OpenAI's Realtime API (`gpt-realtime-2.1`/`-mini` as of 2026-07-06) is now a mature, production-grade equivalent, and depending on a single voice provider carries cost, quality, and reliability risk with no fallback.
+- Context: As of 2026-07-07, voice selection was upgraded to reason over xAI's full voice roster (fetched live via `GET /v1/tts/voices`, cached, with a deterministic heuristic fallback) and persist the chosen voice per character (`characters.call_voice` / `call_voice_provider`, Flyway `V11`). The persistence layer already stores a provider tag and re-selects automatically on provider mismatch, so this epic is additive to that work, not a rework of it.
+- Scope Buckets:
+- Provider abstraction extracted from `XaiRealtimeSessionService` (ephemeral token minting, `isAvailable()`, voice roster, websocket/connection parameters) with an OpenAI Realtime implementation added behind it.
+- Frontend connection adapter in `reader.js` (currently xAI-specific: raw WebSocket with `xai-client-secret.<token>` subprotocol, `grok-transcribe` transcription model) to support OpenAI's differing connection model (WebRTC-preferred) without duplicating the whole call flow per provider.
+- `voice.call.provider` config switch (mirroring the existing `ai.chat.provider` pattern in `LlmProviderConfig`) plus provider-specific voice catalog sources for the LLM voice-selection prompt.
+- Decision on default/fallback behavior when the configured provider is unavailable (hard fail vs. automatic fallback to a secondary provider).
+- Discovery Questions:
+- Is there a concrete driver to prioritize this (cost, latency, voice quality, xAI reliability incidents) or does it stay speculative until one appears?
+- Should provider selection be a single global config value, or configurable per-deployment/per-book/per-character?
+- Does OpenAI's WebRTC-first browser connection model change the shape of the server response (`VoiceCallSession`) enough to warrant a versioned contract change?
+- Should the LLM voice-selection prompt be provider-agnostic (one prompt, swappable roster) or provider-specific (tuned per roster's actual voice descriptions)?
+- Current Direction (2026-07-07):
+- Do not build speculatively; the persistence/selection layer already accommodates a second provider cleanly (provider tag stored, automatic re-select on mismatch).
+- The abstraction is best designed once a second concrete implementation exists, since WebRTC vs. WebSocket differences could reshape the interface in ways that are hard to predict in advance.
+- Trigger to move this from Discovery to Ready: a concrete business/technical driver (pricing, quality, or reliability), not the mere existence of a competing API.
+- Exit Criteria for Discovery:
+- Decision on trigger conditions for building this (see Current Direction).
+- Approved provider interface boundary (what `XaiRealtimeSessionService` becomes an implementation of) and confirmation that WebRTC-based providers fit that interface without a rewrite.
+- Decision on config granularity (global vs. per-book/character) and fallback behavior when a provider is degraded.
 
 ## P0
 

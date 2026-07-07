@@ -1,0 +1,148 @@
+package com.classicchatreader.service.llm;
+
+import com.classicchatreader.service.llm.XaiVoiceCatalogService.XaiVoice;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.ExchangeFunction;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+class XaiVoiceCatalogServiceTest {
+
+    @Test
+    void getVoices_parsesObjectWrappedRosterAndAuthHeader() {
+        List<String> authHeaders = new ArrayList<>();
+        XaiVoiceCatalogService service = service("api-key", recordingWebClient(authHeaders, """
+                {"voices":[
+                  {"id":"Atlas","gender":"male","description":"Grounded and reassuring"},
+                  {"id":"luna","labels":{"gender":"female"},"preview_text":"Soft and dreamy"}
+                ]}
+                """));
+
+        List<XaiVoice> voices = service.getVoices();
+
+        assertEquals(List.of(
+                new XaiVoice("atlas", "male", "Grounded and reassuring"),
+                new XaiVoice("luna", "female", "Soft and dreamy")), voices);
+        assertEquals(List.of("Bearer api-key"), authHeaders);
+    }
+
+    @Test
+    void getVoices_parsesBareArrayAndToleratesMissingFields() {
+        XaiVoiceCatalogService service = service("api-key", recordingWebClient(new ArrayList<>(), """
+                [
+                  {"name":"rex"},
+                  {"description":"no id, skipped"},
+                  {"voice":"eve","tone":"bright"}
+                ]
+                """));
+
+        List<XaiVoice> voices = service.getVoices();
+
+        assertEquals(2, voices.size());
+        assertEquals("rex", voices.get(0).id());
+        assertNull(voices.get(0).gender());
+        assertNull(voices.get(0).description());
+        assertEquals(new XaiVoice("eve", null, "bright"), voices.get(1));
+    }
+
+    @Test
+    void getVoices_httpFailure_returnsFallbackWithoutThrowing() {
+        XaiVoiceCatalogService service = service("api-key", failingWebClient(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertEquals(XaiVoiceCatalogService.FALLBACK_VOICES, service.getVoices());
+    }
+
+    @Test
+    void getVoices_emptyRoster_returnsFallback() {
+        XaiVoiceCatalogService service = service("api-key",
+                recordingWebClient(new ArrayList<>(), "{\"voices\":[]}"));
+
+        assertEquals(XaiVoiceCatalogService.FALLBACK_VOICES, service.getVoices());
+    }
+
+    @Test
+    void getVoices_noApiKey_returnsFallbackWithoutCalling() {
+        AtomicInteger calls = new AtomicInteger();
+        XaiVoiceCatalogService service = service("", countingWebClient(calls, "{\"voices\":[]}"));
+
+        assertEquals(XaiVoiceCatalogService.FALLBACK_VOICES, service.getVoices());
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void getVoices_cachesSuccessfulFetch() {
+        AtomicInteger calls = new AtomicInteger();
+        XaiVoiceCatalogService service = service("api-key",
+                countingWebClient(calls, "{\"voices\":[{\"id\":\"ara\"}]}"));
+
+        service.getVoices();
+        List<XaiVoice> second = service.getVoices();
+
+        assertEquals(1, calls.get());
+        assertEquals("ara", second.get(0).id());
+    }
+
+    @Test
+    void getVoices_afterFailure_cooldownSuppressesImmediateRetry() {
+        AtomicInteger calls = new AtomicInteger();
+        ExchangeFunction exchangeFunction = request -> {
+            calls.incrementAndGet();
+            return Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .body("{\"error\":\"down\"}")
+                    .build());
+        };
+        XaiVoiceCatalogService service = service("api-key",
+                WebClient.builder().exchangeFunction(exchangeFunction).build());
+
+        assertEquals(XaiVoiceCatalogService.FALLBACK_VOICES, service.getVoices());
+        assertEquals(XaiVoiceCatalogService.FALLBACK_VOICES, service.getVoices());
+        assertEquals(1, calls.get());
+    }
+
+    private XaiVoiceCatalogService service(String apiKey, WebClient webClient) {
+        return new XaiVoiceCatalogService(apiKey, "https://api.x.ai/v1/tts/voices", 10, 1440, webClient);
+    }
+
+    private WebClient recordingWebClient(List<String> authHeaders, String jsonBody) {
+        ExchangeFunction exchangeFunction = request -> {
+            authHeaders.add(request.headers().getFirst(HttpHeaders.AUTHORIZATION));
+            return Mono.just(okResponse(jsonBody));
+        };
+        return WebClient.builder().exchangeFunction(exchangeFunction).build();
+    }
+
+    private WebClient countingWebClient(AtomicInteger calls, String jsonBody) {
+        ExchangeFunction exchangeFunction = request -> {
+            calls.incrementAndGet();
+            return Mono.just(okResponse(jsonBody));
+        };
+        return WebClient.builder().exchangeFunction(exchangeFunction).build();
+    }
+
+    private WebClient failingWebClient(HttpStatus status) {
+        ExchangeFunction exchangeFunction = request -> Mono.just(ClientResponse.create(status)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .body("{\"error\":\"boom\"}")
+                .build());
+        return WebClient.builder().exchangeFunction(exchangeFunction).build();
+    }
+
+    private ClientResponse okResponse(String jsonBody) {
+        return ClientResponse.create(HttpStatus.OK)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .body(jsonBody)
+                .build();
+    }
+}
