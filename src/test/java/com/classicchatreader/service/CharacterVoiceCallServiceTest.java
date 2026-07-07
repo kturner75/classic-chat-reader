@@ -127,11 +127,32 @@ class CharacterVoiceCallServiceTest {
         stubSessionCollaborators(character);
         when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
                 .thenReturn(new VoiceSelection("rex", null, false));
+        when(characterRepository.findById("char-1")).thenReturn(Optional.of(character));
 
         CharacterVoiceCallService.VoiceCallSession session =
                 service.createSession("char-1", List.of(), 2, 7);
 
         assertEquals("rex", session.sessionConfig().voice());
+        verify(characterRepository, never()).claimCallVoice(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void createSession_heuristicFallback_adoptsConcurrentlyPersistedVoice() {
+        CharacterEntity character = characterInBook();
+        stubSessionCollaborators(character);
+        when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
+                .thenReturn(new VoiceSelection("rex", null, false));
+
+        CharacterEntity winner = characterInBook();
+        winner.setCallVoice("luna");
+        winner.setCallVoiceProvider("xai");
+        when(characterRepository.findById("char-1")).thenReturn(Optional.of(winner));
+
+        CharacterVoiceCallService.VoiceCallSession session =
+                service.createSession("char-1", List.of(), 2, 7);
+
+        assertEquals("luna", session.sessionConfig().voice(),
+                "heuristic session should adopt a voice another session persisted meanwhile");
         verify(characterRepository, never()).claimCallVoice(anyString(), anyString(), anyString());
     }
 

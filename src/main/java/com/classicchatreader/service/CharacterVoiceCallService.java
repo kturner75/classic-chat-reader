@@ -131,28 +131,36 @@ public class CharacterVoiceCallService {
         CharacterVoiceSelectionService.VoiceSelection selection =
                 voiceSelectionService.selectVoice(character.getName(), character.getDescription());
 
-        if (selection.fromLlm()) {
-            try {
+        try {
+            if (selection.fromLlm()) {
                 int claimed = characterRepository.claimCallVoice(
                         character.getId(), selection.voice(), VOICE_PROVIDER);
-                if (claimed == 0) {
-                    // A concurrent session claimed the assignment first - adopt its voice
-                    // so simultaneous callers hear the same character.
-                    String winner = characterRepository.findById(character.getId())
-                            .filter(c -> VOICE_PROVIDER.equals(c.getCallVoiceProvider()))
-                            .map(CharacterEntity::getCallVoice)
-                            .orElse(null);
-                    if (winner != null && !winner.isBlank()) {
-                        log.info("event=voice_assignment_race_lost character={} adopted={} discarded={}",
-                                character.getName(), winner, selection.voice());
-                        return winner;
-                    }
+                if (claimed > 0) {
+                    return selection.voice();
                 }
-            } catch (Exception e) {
-                log.warn("event=voice_assignment_persist_failed character={} voice={} error={}",
-                        character.getName(), selection.voice(), e.toString());
             }
+            // Heuristic pick (never persisted) or lost claim race: a concurrent session
+            // may have persisted an LLM voice - adopt it so callers converge.
+            String winner = persistedVoice(character.getId());
+            if (winner != null) {
+                if (!winner.equals(selection.voice())) {
+                    log.info("event=voice_assignment_adopted character={} adopted={} discarded={}",
+                            character.getName(), winner, selection.voice());
+                }
+                return winner;
+            }
+        } catch (Exception e) {
+            log.warn("event=voice_assignment_persist_failed character={} voice={} error={}",
+                    character.getName(), selection.voice(), e.toString());
         }
         return selection.voice();
+    }
+
+    private String persistedVoice(String characterId) {
+        return characterRepository.findById(characterId)
+                .filter(c -> VOICE_PROVIDER.equals(c.getCallVoiceProvider()))
+                .map(CharacterEntity::getCallVoice)
+                .filter(voice -> !voice.isBlank())
+                .orElse(null);
     }
 }
