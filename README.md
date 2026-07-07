@@ -114,10 +114,12 @@ Notes:
 - Install dependencies: `npm install`
 - Install browser: `npm run e2e:install`
 - Run tests: `npm run e2e:test`
+- Verify the initial library loading path: `npm run initial-load:verify`
 
 Notes:
 - Tests run against a local static server (`node e2e/static-server.js`) and mock all `/api/*` traffic in Playwright.
-- Current coverage includes retry UX for recap overlay load errors, recap chat send failures, and character chat send failures (`e2e/retry-flows.spec.js`).
+- Current coverage includes retry UX for recap overlay load errors, recap chat send failures, character chat send failures (`e2e/retry-flows.spec.js`), account auth/claim sync (`e2e/account-auth.spec.js`), and an initial-load performance guard around the `Loading library...` state (`e2e/initial-load-performance.spec.js`).
+- The initial-load performance guard uses deterministic mocked API delays and fails if `Loading library...` hangs, if the library cards do not render, or if render settlement takes more than 1.5s after `/api/library`, `/api/import/popular`, and `/api/features` resolve. Override thresholds with `INITIAL_LOAD_CLEAR_BUDGET_MS` and `INITIAL_LOAD_POST_API_SETTLE_BUDGET_MS` when intentionally profiling slower environments.
 - CI runs this suite via GitHub Actions workflow `/Users/kevinturner/IdeaProjects/classic-chat-reader/.github/workflows/playwright-e2e.yml`.
 - Backend CI test coverage runs via `/Users/kevinturner/IdeaProjects/classic-chat-reader/.github/workflows/maven-test.yml` (`mvn test` on Java 21).
 

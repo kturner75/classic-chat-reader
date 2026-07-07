@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +18,8 @@ import java.util.Optional;
 public interface BookCoverRepository extends JpaRepository<BookCoverEntity, String> {
 
     Optional<BookCoverEntity> findByBookId(String bookId);
+
+    List<BookCoverEntity> findByBookIdIn(Collection<String> bookIds);
 
     List<BookCoverEntity> findByStatus(IllustrationStatus status);
 
