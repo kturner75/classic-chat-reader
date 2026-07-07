@@ -20,7 +20,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -113,12 +112,13 @@ class CharacterVoiceCallServiceTest {
         stubSessionCollaborators(character);
         when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
                 .thenReturn(new VoiceSelection("luna", "fits", true));
+        when(characterRepository.claimCallVoice("char-1", "luna", "xai")).thenReturn(1);
 
-        service.createSession("char-1", List.of(), 2, 7);
+        CharacterVoiceCallService.VoiceCallSession session =
+                service.createSession("char-1", List.of(), 2, 7);
 
-        assertEquals("luna", character.getCallVoice());
-        assertEquals("xai", character.getCallVoiceProvider());
-        verify(characterRepository).save(character);
+        assertEquals("luna", session.sessionConfig().voice());
+        verify(characterRepository).claimCallVoice("char-1", "luna", "xai");
     }
 
     @Test
@@ -132,8 +132,7 @@ class CharacterVoiceCallServiceTest {
                 service.createSession("char-1", List.of(), 2, 7);
 
         assertEquals("rex", session.sessionConfig().voice());
-        assertNull(character.getCallVoice());
-        verify(characterRepository, never()).save(character);
+        verify(characterRepository, never()).claimCallVoice(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -148,7 +147,7 @@ class CharacterVoiceCallServiceTest {
 
         assertEquals("celeste", session.sessionConfig().voice());
         verify(voiceSelectionService, never()).selectVoice(anyString(), anyString());
-        verify(characterRepository, never()).save(character);
+        verify(characterRepository, never()).claimCallVoice(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -159,14 +158,33 @@ class CharacterVoiceCallServiceTest {
         stubSessionCollaborators(character);
         when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
                 .thenReturn(new VoiceSelection("atlas", "fits", true));
+        when(characterRepository.claimCallVoice("char-1", "atlas", "xai")).thenReturn(1);
 
         CharacterVoiceCallService.VoiceCallSession session =
                 service.createSession("char-1", List.of(), 2, 7);
 
         assertEquals("atlas", session.sessionConfig().voice());
-        assertEquals("atlas", character.getCallVoice());
-        assertEquals("xai", character.getCallVoiceProvider());
-        verify(characterRepository).save(character);
+        verify(characterRepository).claimCallVoice("char-1", "atlas", "xai");
+    }
+
+    @Test
+    void createSession_concurrentClaimLost_adoptsWinningVoice() {
+        CharacterEntity character = characterInBook();
+        stubSessionCollaborators(character);
+        when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
+                .thenReturn(new VoiceSelection("luna", "fits", true));
+        when(characterRepository.claimCallVoice("char-1", "luna", "xai")).thenReturn(0);
+
+        CharacterEntity winner = characterInBook();
+        winner.setCallVoice("atlas");
+        winner.setCallVoiceProvider("xai");
+        when(characterRepository.findById("char-1")).thenReturn(Optional.of(winner));
+
+        CharacterVoiceCallService.VoiceCallSession session =
+                service.createSession("char-1", List.of(), 2, 7);
+
+        assertEquals("atlas", session.sessionConfig().voice(),
+                "losing session should adopt the concurrently persisted voice");
     }
 
     @Test
@@ -175,7 +193,8 @@ class CharacterVoiceCallServiceTest {
         stubSessionCollaborators(character);
         when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
                 .thenReturn(new VoiceSelection("luna", "fits", true));
-        when(characterRepository.save(character)).thenThrow(new RuntimeException("db down"));
+        when(characterRepository.claimCallVoice("char-1", "luna", "xai"))
+                .thenThrow(new RuntimeException("db down"));
 
         CharacterVoiceCallService.VoiceCallSession session =
                 service.createSession("char-1", List.of(), 2, 7);

@@ -186,7 +186,7 @@ public class LlmProviderConfig {
     @Bean
     public XaiVoiceCatalogService xaiVoiceCatalogService() {
         return new XaiVoiceCatalogService(voiceCallXaiApiKey, voiceCatalogUrl,
-                voiceCatalogTimeoutSeconds, voiceCatalogCacheTtlMinutes);
+                voiceCatalogTimeoutSeconds, voiceCatalogCacheTtlMinutes, xaiOAuthTokenManager());
     }
 
     @Bean

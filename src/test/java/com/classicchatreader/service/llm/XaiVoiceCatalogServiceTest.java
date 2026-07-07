@@ -111,8 +111,76 @@ class XaiVoiceCatalogServiceTest {
         assertEquals(1, calls.get());
     }
 
+    @Test
+    void getVoices_oauthConfigured_prefersOAuthToken() {
+        List<String> authHeaders = new ArrayList<>();
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager(
+                "refresh-token", true, null, oauthWebClient(tokenResponse(3600)));
+        XaiVoiceCatalogService service = service("api-key", oauthManager,
+                recordingWebClient(authHeaders, "{\"voices\":[{\"id\":\"ara\"}]}"));
+
+        service.getVoices();
+
+        assertEquals(List.of("Bearer oauth-access-token"), authHeaders);
+    }
+
+    @Test
+    void getVoices_oauthRejectedWith403_retriesWithApiKey() {
+        List<String> authHeaders = new ArrayList<>();
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager(
+                "refresh-token", true, null, oauthWebClient(tokenResponse(3600)));
+        AtomicInteger calls = new AtomicInteger();
+        ExchangeFunction exchangeFunction = request -> {
+            authHeaders.add(request.headers().getFirst(HttpHeaders.AUTHORIZATION));
+            if (calls.getAndIncrement() == 0) {
+                return Mono.just(ClientResponse.create(HttpStatus.FORBIDDEN)
+                        .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                        .body("{\"error\":\"rejected\"}")
+                        .build());
+            }
+            return Mono.just(okResponse("{\"voices\":[{\"id\":\"luna\"}]}"));
+        };
+        XaiVoiceCatalogService service = service("api-key", oauthManager,
+                WebClient.builder().exchangeFunction(exchangeFunction).build());
+
+        List<XaiVoice> voices = service.getVoices();
+
+        assertEquals("luna", voices.get(0).id());
+        assertEquals(List.of("Bearer oauth-access-token", "Bearer api-key"), authHeaders);
+    }
+
+    @Test
+    void getVoices_oauthOnlyNoApiKey_fetchesWithOAuth() {
+        List<String> authHeaders = new ArrayList<>();
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager(
+                "refresh-token", true, null, oauthWebClient(tokenResponse(3600)));
+        XaiVoiceCatalogService service = service("", oauthManager,
+                recordingWebClient(authHeaders, "{\"voices\":[{\"id\":\"atlas\"}]}"));
+
+        List<XaiVoice> voices = service.getVoices();
+
+        assertEquals("atlas", voices.get(0).id());
+        assertEquals(List.of("Bearer oauth-access-token"), authHeaders);
+    }
+
     private XaiVoiceCatalogService service(String apiKey, WebClient webClient) {
-        return new XaiVoiceCatalogService(apiKey, "https://api.x.ai/v1/tts/voices", 10, 1440, webClient);
+        return service(apiKey, null, webClient);
+    }
+
+    private XaiVoiceCatalogService service(String apiKey, XaiOAuthTokenManager oauthManager, WebClient webClient) {
+        return new XaiVoiceCatalogService(apiKey, "https://api.x.ai/v1/tts/voices", 10, 1440,
+                oauthManager, webClient);
+    }
+
+    private String tokenResponse(int expiresInSeconds) {
+        return """
+                {"access_token":"oauth-access-token","expires_in":%d,"token_type":"Bearer"}
+                """.formatted(expiresInSeconds);
+    }
+
+    private WebClient oauthWebClient(String jsonBody) {
+        ExchangeFunction exchangeFunction = request -> Mono.just(okResponse(jsonBody));
+        return WebClient.builder().exchangeFunction(exchangeFunction).build();
     }
 
     private WebClient recordingWebClient(List<String> authHeaders, String jsonBody) {

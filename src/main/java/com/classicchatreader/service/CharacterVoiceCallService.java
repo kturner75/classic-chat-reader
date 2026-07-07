@@ -118,7 +118,8 @@ public class CharacterVoiceCallService {
      * Returns the persisted voice when one exists for the current provider; otherwise
      * selects one and persists it - but only LLM picks. Heuristic fallback picks are
      * deterministic and cheap, so leaving the column empty lets a later call retry
-     * the LLM and upgrade to the full roster.
+     * the LLM and upgrade to the full roster. Persistence is an atomic claim so
+     * concurrent first callers converge on a single voice instead of racing.
      */
     private String resolveVoice(CharacterEntity character) {
         String persisted = character.getCallVoice();
@@ -131,10 +132,22 @@ public class CharacterVoiceCallService {
                 voiceSelectionService.selectVoice(character.getName(), character.getDescription());
 
         if (selection.fromLlm()) {
-            character.setCallVoice(selection.voice());
-            character.setCallVoiceProvider(VOICE_PROVIDER);
             try {
-                characterRepository.save(character);
+                int claimed = characterRepository.claimCallVoice(
+                        character.getId(), selection.voice(), VOICE_PROVIDER);
+                if (claimed == 0) {
+                    // A concurrent session claimed the assignment first - adopt its voice
+                    // so simultaneous callers hear the same character.
+                    String winner = characterRepository.findById(character.getId())
+                            .filter(c -> VOICE_PROVIDER.equals(c.getCallVoiceProvider()))
+                            .map(CharacterEntity::getCallVoice)
+                            .orElse(null);
+                    if (winner != null && !winner.isBlank()) {
+                        log.info("event=voice_assignment_race_lost character={} adopted={} discarded={}",
+                                character.getName(), winner, selection.voice());
+                        return winner;
+                    }
+                }
             } catch (Exception e) {
                 log.warn("event=voice_assignment_persist_failed character={} voice={} error={}",
                         character.getName(), selection.voice(), e.toString());

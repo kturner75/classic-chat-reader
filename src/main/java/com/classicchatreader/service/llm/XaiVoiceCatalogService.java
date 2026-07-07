@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Fetches the xAI voice roster (GET /v1/tts/voices) so voice selection can reason
@@ -39,23 +41,26 @@ public class XaiVoiceCatalogService {
     private final String voicesUrl;
     private final int timeoutSeconds;
     private final Duration cacheTtl;
+    private final XaiOAuthTokenManager oauthTokenManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile List<XaiVoice> cachedVoices;
     private volatile Instant cachedAt;
     private volatile Instant lastFetchFailureAt;
 
-    public XaiVoiceCatalogService(String apiKey, String voicesUrl, int timeoutSeconds, int cacheTtlMinutes) {
-        this(apiKey, voicesUrl, timeoutSeconds, cacheTtlMinutes, WebClient.builder().build());
+    public XaiVoiceCatalogService(String apiKey, String voicesUrl, int timeoutSeconds, int cacheTtlMinutes,
+                                  XaiOAuthTokenManager oauthTokenManager) {
+        this(apiKey, voicesUrl, timeoutSeconds, cacheTtlMinutes, oauthTokenManager, WebClient.builder().build());
     }
 
     // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
     XaiVoiceCatalogService(String apiKey, String voicesUrl, int timeoutSeconds, int cacheTtlMinutes,
-                           WebClient webClient) {
+                           XaiOAuthTokenManager oauthTokenManager, WebClient webClient) {
         this.apiKey = apiKey;
         this.voicesUrl = voicesUrl;
         this.timeoutSeconds = timeoutSeconds;
         this.cacheTtl = Duration.ofMinutes(cacheTtlMinutes);
+        this.oauthTokenManager = oauthTokenManager;
         this.webClient = webClient;
         log.info("xAI voice catalog service initialized: url={}, cacheTtlMinutes={}", voicesUrl, cacheTtlMinutes);
     }
@@ -75,7 +80,7 @@ public class XaiVoiceCatalogService {
             if (fresh != null) {
                 return fresh;
             }
-            if (apiKey == null || apiKey.isBlank()) {
+            if (!hasCredentials()) {
                 return staleOrFallback();
             }
             Instant failedAt = lastFetchFailureAt;
@@ -115,10 +120,39 @@ public class XaiVoiceCatalogService {
         return cached != null ? cached : FALLBACK_VOICES;
     }
 
+    private boolean hasCredentials() {
+        boolean hasOAuth = oauthTokenManager != null && oauthTokenManager.isConfigured();
+        return hasOAuth || (apiKey != null && !apiKey.isBlank());
+    }
+
+    // Auth mirrors XaiRealtimeSessionService: prefer the SuperGrok OAuth token, fall back
+    // to the static API key, and retry with the key on 401/402/403 because the OAuth
+    // subscription may not cover this API even when the token itself is valid.
     private List<XaiVoice> fetchVoices() throws Exception {
+        Optional<String> oauthToken = oauthTokenManager != null
+                ? oauthTokenManager.getAccessToken()
+                : Optional.empty();
+        boolean usingOAuth = oauthToken.isPresent();
+        String bearerToken = oauthToken.orElse(apiKey);
+
+        try {
+            return callVoices(bearerToken);
+        } catch (WebClientResponseException e) {
+            int status = e.getStatusCode().value();
+            boolean oauthRejected = usingOAuth && (status == 401 || status == 402 || status == 403);
+            if (oauthRejected && apiKey != null && !apiKey.isBlank()) {
+                log.warn("event=voice_catalog_oauth_rejected status={} retrying_with=api_key", status);
+                oauthTokenManager.invalidate();
+                return callVoices(apiKey);
+            }
+            throw e;
+        }
+    }
+
+    private List<XaiVoice> callVoices(String bearerToken) throws Exception {
         String response = webClient.get()
                 .uri(voicesUrl)
-                .header("Authorization", "Bearer " + apiKey)
+                .header("Authorization", "Bearer " + bearerToken)
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
