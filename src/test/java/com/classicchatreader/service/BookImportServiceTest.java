@@ -10,6 +10,7 @@ import com.classicchatreader.gutendex.GutendexResponse;
 import com.classicchatreader.model.Book;
 import com.classicchatreader.service.BookImportService.ImportResult;
 import com.classicchatreader.service.BookImportService.SearchResult;
+import com.classicchatreader.service.BookStorageService.CatalogImportStatus;
 import com.classicchatreader.service.CuratedCatalogService.CuratedCatalogBook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,6 @@ class BookImportServiceTest {
         GutendexBook book = createGutendexBook(1, "Pride and Prejudice", "Jane Austen");
         GutendexResponse response = new GutendexResponse(1, null, null, List.of(book));
         when(gutendexClient.searchBooks("austen")).thenReturn(response);
-        when(bookStorageService.existsBySource("gutenberg", "1")).thenReturn(false);
 
         List<SearchResult> results = bookImportService.searchGutenberg("austen");
 
@@ -74,7 +74,8 @@ class BookImportServiceTest {
         GutendexBook book = createGutendexBook(1, "Pride and Prejudice", "Jane Austen");
         GutendexResponse response = new GutendexResponse(1, null, null, List.of(book));
         when(gutendexClient.searchBooks("austen")).thenReturn(response);
-        when(bookStorageService.existsBySource("gutenberg", "1")).thenReturn(true);
+        when(bookStorageService.findImportStatusesBySource("gutenberg", List.of("1")))
+                .thenReturn(Map.of("1", new CatalogImportStatus("book-1", "/cover")));
 
         List<SearchResult> results = bookImportService.searchGutenberg("austen");
 
@@ -94,7 +95,6 @@ class BookImportServiceTest {
         );
         GutendexResponse response = new GutendexResponse(2, null, null, List.of(englishBook, frenchBook));
         when(gutendexClient.searchBooks("book")).thenReturn(response);
-        when(bookStorageService.existsBySource(anyString(), anyString())).thenReturn(false);
 
         List<SearchResult> results = bookImportService.searchGutenberg("book");
 
@@ -114,7 +114,6 @@ class BookImportServiceTest {
         );
         GutendexResponse response = new GutendexResponse(2, null, null, List.of(bookWithHtml, bookWithoutHtml));
         when(gutendexClient.searchBooks("book")).thenReturn(response);
-        when(bookStorageService.existsBySource(anyString(), anyString())).thenReturn(false);
 
         List<SearchResult> results = bookImportService.searchGutenberg("book");
 
@@ -136,7 +135,6 @@ class BookImportServiceTest {
         GutendexBook book = createGutendexBook(1, "Moby Dick", "Herman Melville");
         GutendexResponse response = new GutendexResponse(1, null, null, List.of(book));
         when(gutendexClient.getPopularBooks()).thenReturn(response);
-        when(bookStorageService.existsBySource(anyString(), anyString())).thenReturn(false);
 
         List<SearchResult> results = bookImportService.getPopularBooks();
 
@@ -149,7 +147,6 @@ class BookImportServiceTest {
         GutendexBook book = createGutendexBook(1, "Moby Dick", "Herman Melville");
         GutendexResponse response = new GutendexResponse(1, null, null, List.of(book));
         when(gutendexClient.getPopularBooks(2)).thenReturn(response);
-        when(bookStorageService.existsBySource(anyString(), anyString())).thenReturn(false);
 
         List<SearchResult> results = bookImportService.getPopularBooks(2);
 
@@ -170,7 +167,6 @@ class BookImportServiceTest {
             100
         );
         when(gutendexClient.searchBooks("metadata")).thenReturn(new GutendexResponse(1, null, null, List.of(book)));
-        when(bookStorageService.existsBySource("gutenberg", "5")).thenReturn(false);
 
         List<SearchResult> results = bookImportService.searchGutenberg("metadata");
 
@@ -191,10 +187,8 @@ class BookImportServiceTest {
                 List.of("Romance")
         );
         when(curatedCatalogService.search("austen")).thenReturn(List.of(curated));
-        when(bookStorageService.existsBySource("gutenberg", "1342")).thenReturn(true);
-        when(bookStorageService.findBySource("gutenberg", "1342")).thenReturn(Optional.of(
-                new Book("book-1342", "Pride and Prejudice", "Jane Austen", "", "/api/library/book-1342/cover", List.of(), true, true, true)
-        ));
+        when(bookStorageService.findImportStatusesBySource("gutenberg", List.of("1342")))
+                .thenReturn(Map.of("1342", new CatalogImportStatus("book-1342", "/api/library/book-1342/cover")));
 
         List<SearchResult> results = bookImportService.searchGutenberg("austen");
 
@@ -218,7 +212,6 @@ class BookImportServiceTest {
                 List.of("Horror")
         );
         when(curatedCatalogService.getPopularBooks()).thenReturn(List.of(curated));
-        when(bookStorageService.existsBySource("gutenberg", "84")).thenReturn(false);
 
         List<SearchResult> results = bookImportService.getPopularBooks(3);
 

@@ -209,3 +209,4 @@ This inventory reflects implemented behavior in backend controllers/services and
 - E2E coverage includes:
   - retry/recovery flows for recap + chat surfaces (`e2e/retry-flows.spec.js`)
   - account register/login/logout and anonymous->account claim-sync flow (`e2e/account-auth.spec.js`)
+  - initial library load performance guard for the `Loading library...` state (`e2e/initial-load-performance.spec.js`)

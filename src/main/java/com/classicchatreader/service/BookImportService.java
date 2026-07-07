@@ -10,6 +10,7 @@ import com.classicchatreader.gutendex.GutendexBook;
 import com.classicchatreader.gutendex.GutendexClient;
 import com.classicchatreader.gutendex.GutendexResponse;
 import com.classicchatreader.model.Book;
+import com.classicchatreader.service.BookStorageService.CatalogImportStatus;
 import com.classicchatreader.service.CuratedCatalogService.CuratedCatalogBook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,8 +102,12 @@ public class BookImportService {
 
     public List<SearchResult> searchGutenberg(String query) {
         if (catalogMode == CatalogMode.CURATED) {
-            return curatedCatalogService.search(query).stream()
-                    .map(this::toSearchResult)
+            List<CuratedCatalogBook> curatedBooks = curatedCatalogService.search(query);
+            Map<String, CatalogImportStatus> importStatuses = getImportStatuses(
+                    curatedBooks.stream().map(book -> String.valueOf(book.gutenbergId())).toList()
+            );
+            return curatedBooks.stream()
+                    .map(book -> toSearchResult(book, importStatuses))
                     .toList();
         }
 
@@ -111,8 +117,12 @@ public class BookImportService {
 
     public List<SearchResult> getPopularBooks() {
         if (catalogMode == CatalogMode.CURATED) {
-            return curatedCatalogService.getPopularBooks().stream()
-                    .map(this::toSearchResult)
+            List<CuratedCatalogBook> curatedBooks = curatedCatalogService.getPopularBooks();
+            Map<String, CatalogImportStatus> importStatuses = getImportStatuses(
+                    curatedBooks.stream().map(book -> String.valueOf(book.gutenbergId())).toList()
+            );
+            return curatedBooks.stream()
+                    .map(book -> toSearchResult(book, importStatuses))
                     .toList();
         }
 
@@ -122,8 +132,12 @@ public class BookImportService {
 
     public List<SearchResult> getPopularBooks(int page) {
         if (catalogMode == CatalogMode.CURATED) {
-            return curatedCatalogService.getPopularBooks().stream()
-                    .map(this::toSearchResult)
+            List<CuratedCatalogBook> curatedBooks = curatedCatalogService.getPopularBooks();
+            Map<String, CatalogImportStatus> importStatuses = getImportStatuses(
+                    curatedBooks.stream().map(book -> String.valueOf(book.gutenbergId())).toList()
+            );
+            return curatedBooks.stream()
+                    .map(book -> toSearchResult(book, importStatuses))
                     .toList();
         }
 
@@ -131,12 +145,10 @@ public class BookImportService {
         return toSearchResults(response);
     }
 
-    private SearchResult toSearchResult(CuratedCatalogBook book) {
+    private SearchResult toSearchResult(CuratedCatalogBook book, Map<String, CatalogImportStatus> importStatuses) {
         String sourceId = String.valueOf(book.gutenbergId());
-        boolean imported = bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId);
-        Optional<Book> localBook = imported
-                ? bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId)
-                : Optional.empty();
+        CatalogImportStatus importStatus = importStatuses.get(sourceId);
+        boolean imported = importStatus != null;
 
         return new SearchResult(
                 book.gutenbergId(),
@@ -146,8 +158,8 @@ public class BookImportService {
                 sanitizeMetadataList(book.subjects()),
                 sanitizeMetadataList(book.bookshelves()),
                 imported,
-                localBook.map(Book::id).orElse(null),
-                localBook.map(Book::coverUrl).orElse(null)
+                imported ? importStatus.localBookId() : null,
+                imported ? importStatus.coverUrl() : null
         );
     }
 
@@ -156,19 +168,21 @@ public class BookImportService {
             return List.of();
         }
 
+        List<GutendexBook> importableBooks = response.results().stream()
+                .filter(book -> book.languages().contains("en"))
+                .filter(book -> book.getHtmlUrl() != null)
+                .toList();
+        Map<String, CatalogImportStatus> importStatuses = getImportStatuses(
+                importableBooks.stream().map(book -> String.valueOf(book.id())).toList()
+        );
+
         // Use a map to deduplicate by normalized title, keeping highest download count
         Map<String, SearchResult> deduped = new LinkedHashMap<>();
 
-        for (GutendexBook book : response.results()) {
-            // Only include English books with HTML available
-            if (!book.languages().contains("en")) continue;
-            if (book.getHtmlUrl() == null) continue;
-
+        for (GutendexBook book : importableBooks) {
             String sourceId = String.valueOf(book.id());
-            boolean imported = bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId);
-            Optional<Book> localBook = imported
-                    ? bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId)
-                    : Optional.empty();
+            CatalogImportStatus importStatus = importStatuses.get(sourceId);
+            boolean imported = importStatus != null;
 
             SearchResult result = new SearchResult(
                 book.id(),
@@ -178,8 +192,8 @@ public class BookImportService {
                 sanitizeMetadataList(book.subjects()),
                 sanitizeMetadataList(book.bookshelves()),
                 imported,
-                localBook.map(Book::id).orElse(null),
-                localBook.map(Book::coverUrl).orElse(null)
+                imported ? importStatus.localBookId() : null,
+                imported ? importStatus.coverUrl() : null
             );
 
             // Normalize title for deduplication (lowercase, trim)
@@ -193,6 +207,16 @@ public class BookImportService {
         }
 
         return new ArrayList<>(deduped.values());
+    }
+
+    private Map<String, CatalogImportStatus> getImportStatuses(Collection<String> sourceIds) {
+        // Popular/discovery responses can include dozens of imported Gutenberg IDs. Resolve their
+        // local status in one repository call instead of doing exists/find lookups per catalog row.
+        Map<String, CatalogImportStatus> importStatuses = bookStorageService.findImportStatusesBySource(
+                SOURCE_GUTENBERG,
+                sourceIds
+        );
+        return importStatuses == null ? Map.of() : importStatuses;
     }
 
     private List<String> sanitizeMetadataList(List<String> values) {

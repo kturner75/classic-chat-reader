@@ -19,12 +19,18 @@ import com.classicchatreader.repository.QuizTrophyRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class BookStorageService {
+
+    public record CatalogImportStatus(String localBookId, String coverUrl) {}
 
     private final BookRepository bookRepository;
     private final BookCoverRepository bookCoverRepository;
@@ -155,6 +161,40 @@ public class BookStorageService {
 
     public boolean existsBySource(String source, String sourceId) {
         return bookRepository.existsBySourceAndSourceId(source, sourceId);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, CatalogImportStatus> findImportStatusesBySource(String source, Collection<String> sourceIds) {
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return Map.of();
+        }
+
+        List<BookEntity> books = bookRepository.findBySourceAndSourceIdIn(source, sourceIds);
+        if (books.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<String> bookIds = books.stream()
+                .map(BookEntity::getId)
+                .collect(Collectors.toSet());
+        Map<String, String> generatedCoverUrlsByBookId = bookCoverRepository.findByBookIdIn(bookIds).stream()
+                .filter(cover -> cover.getImageFilename() != null && !cover.getImageFilename().isBlank())
+                .collect(Collectors.toMap(
+                        cover -> cover.getBook().getId(),
+                        cover -> buildCoverUrl(cover.getBook().getId(), cover.getCompletedAt()),
+                        (first, ignored) -> first
+                ));
+
+        return books.stream()
+                .filter(book -> book.getSourceId() != null)
+                .collect(Collectors.toMap(
+                        BookEntity::getSourceId,
+                        book -> new CatalogImportStatus(
+                                book.getId(),
+                                generatedCoverUrlsByBookId.getOrDefault(book.getId(), book.getCoverUrl())
+                        ),
+                        (first, ignored) -> first
+                ));
     }
 
     @Transactional(readOnly = true)
