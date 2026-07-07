@@ -34,6 +34,9 @@ public record AccountStateSnapshot(
             Double lineHeight,
             Double columnGap,
             String theme,
+            Boolean recapTabEnabled,
+            Boolean chatTabEnabled,
+            Boolean quizTabEnabled,
             String updatedAt
     ) {
     }

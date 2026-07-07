@@ -125,7 +125,7 @@ class AccountClaimSyncServiceTest {
         AccountStateSnapshot incoming = new AccountStateSnapshot(
                 List.of("book-1"),
                 Map.of(),
-                new AccountStateSnapshot.ReaderPreferences(1.2, 1.7, 4.0, "warm", "2026-02-18T10:00:00Z"),
+                new AccountStateSnapshot.ReaderPreferences(1.2, 1.7, 4.0, "warm", true, true, true, "2026-02-18T10:00:00Z"),
                 Map.of("book-1", true)
         );
 
