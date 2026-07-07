@@ -114,5 +114,24 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             @Param("pendingStatus") CharacterStatus pendingStatus,
             @Param("generatingStatus") CharacterStatus generatingStatus);
 
+    /**
+     * Atomically records the call-voice assignment, but only if no assignment exists yet
+     * for this provider. Returns 0 when a concurrent session already claimed it, so the
+     * caller can adopt the persisted winner instead of racing.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.callVoice = :voice,
+                c.callVoiceProvider = :provider
+            WHERE c.id = :characterId
+              AND (c.callVoice IS NULL OR c.callVoiceProvider IS NULL OR c.callVoiceProvider <> :provider)
+            """)
+    int claimCallVoice(
+            @Param("characterId") String characterId,
+            @Param("voice") String voice,
+            @Param("provider") String provider);
+
     void deleteByBookId(String bookId);
 }

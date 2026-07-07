@@ -6,6 +6,7 @@ import com.classicchatreader.service.llm.OpenAiLlmProvider;
 import com.classicchatreader.service.llm.XaiLlmProvider;
 import com.classicchatreader.service.llm.XaiOAuthTokenManager;
 import com.classicchatreader.service.llm.XaiRealtimeSessionService;
+import com.classicchatreader.service.llm.XaiVoiceCatalogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -162,6 +163,15 @@ public class LlmProviderConfig {
     @Value("${voice.call.timeout-seconds:15}")
     private int voiceCallTimeoutSeconds;
 
+    @Value("${voice.call.xai.voices-url:https://api.x.ai/v1/tts/voices}")
+    private String voiceCatalogUrl;
+
+    @Value("${voice.call.voice-catalog.timeout-seconds:10}")
+    private int voiceCatalogTimeoutSeconds;
+
+    @Value("${voice.call.voice-catalog.cache-ttl-minutes:1440}")
+    private int voiceCatalogCacheTtlMinutes;
+
     @Bean
     public XaiOAuthTokenManager xaiOAuthTokenManager() {
         return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled, xaiOAuthRefreshTokenFile);
@@ -171,6 +181,12 @@ public class LlmProviderConfig {
     public XaiRealtimeSessionService xaiRealtimeSessionService() {
         return new XaiRealtimeSessionService(voiceCallXaiApiKey, voiceCallXaiModel,
                 voiceCallTokenTtlSeconds, voiceCallTimeoutSeconds, xaiOAuthTokenManager());
+    }
+
+    @Bean
+    public XaiVoiceCatalogService xaiVoiceCatalogService() {
+        return new XaiVoiceCatalogService(voiceCallXaiApiKey, voiceCatalogUrl,
+                voiceCatalogTimeoutSeconds, voiceCatalogCacheTtlMinutes, xaiOAuthTokenManager());
     }
 
     @Bean

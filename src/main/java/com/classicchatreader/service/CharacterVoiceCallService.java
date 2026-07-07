@@ -26,9 +26,12 @@ public class CharacterVoiceCallService {
 
     private static final Logger log = LoggerFactory.getLogger(CharacterVoiceCallService.class);
 
+    /** Provider tag persisted with the voice; calls are currently hardwired to xAI. */
+    static final String VOICE_PROVIDER = "xai";
+
     private final XaiRealtimeSessionService realtimeSessionService;
     private final CharacterPersonaPromptBuilder personaPromptBuilder;
-    private final CharacterVoiceAssigner voiceAssigner;
+    private final CharacterVoiceSelectionService voiceSelectionService;
     private final CharacterRepository characterRepository;
     private final ChapterRepository chapterRepository;
 
@@ -50,12 +53,12 @@ public class CharacterVoiceCallService {
     public CharacterVoiceCallService(
             XaiRealtimeSessionService realtimeSessionService,
             CharacterPersonaPromptBuilder personaPromptBuilder,
-            CharacterVoiceAssigner voiceAssigner,
+            CharacterVoiceSelectionService voiceSelectionService,
             CharacterRepository characterRepository,
             ChapterRepository chapterRepository) {
         this.realtimeSessionService = realtimeSessionService;
         this.personaPromptBuilder = personaPromptBuilder;
-        this.voiceAssigner = voiceAssigner;
+        this.voiceSelectionService = voiceSelectionService;
         this.characterRepository = characterRepository;
         this.chapterRepository = chapterRepository;
     }
@@ -93,7 +96,7 @@ public class CharacterVoiceCallService {
                 character, book, readerChapterIndex, readerParagraphIndex, chapterTitle,
                 conversationHistory, maxContextMessages);
 
-        String voice = voiceAssigner.assignVoice(character.getName(), character.getDescription());
+        String voice = resolveVoice(character);
 
         XaiRealtimeSessionService.RealtimeSession session = realtimeSessionService.mintSession();
 
@@ -109,5 +112,55 @@ public class CharacterVoiceCallService {
                         instructions,
                         voice,
                         new TurnDetection("server_vad", vadThreshold, vadSilenceDurationMs, vadIdleTimeoutMs)));
+    }
+
+    /**
+     * Returns the persisted voice when one exists for the current provider; otherwise
+     * selects one and persists it - but only LLM picks. Heuristic fallback picks are
+     * deterministic and cheap, so leaving the column empty lets a later call retry
+     * the LLM and upgrade to the full roster. Persistence is an atomic claim so
+     * concurrent first callers converge on a single voice instead of racing.
+     */
+    private String resolveVoice(CharacterEntity character) {
+        String persisted = character.getCallVoice();
+        if (persisted != null && !persisted.isBlank()
+                && VOICE_PROVIDER.equals(character.getCallVoiceProvider())) {
+            return persisted;
+        }
+
+        CharacterVoiceSelectionService.VoiceSelection selection =
+                voiceSelectionService.selectVoice(character.getName(), character.getDescription());
+
+        try {
+            if (selection.fromLlm()) {
+                int claimed = characterRepository.claimCallVoice(
+                        character.getId(), selection.voice(), VOICE_PROVIDER);
+                if (claimed > 0) {
+                    return selection.voice();
+                }
+            }
+            // Heuristic pick (never persisted) or lost claim race: a concurrent session
+            // may have persisted an LLM voice - adopt it so callers converge.
+            String winner = persistedVoice(character.getId());
+            if (winner != null) {
+                if (!winner.equals(selection.voice())) {
+                    log.info("event=voice_assignment_adopted character={} adopted={} discarded={}",
+                            character.getName(), winner, selection.voice());
+                }
+                return winner;
+            }
+        } catch (Exception e) {
+            log.warn("event=voice_assignment_persist_failed character={} voice={} error={}",
+                    character.getName(), selection.voice(), e.toString());
+        }
+        return selection.voice();
+    }
+
+    private String persistedVoice(String characterId) {
+        return characterRepository.findById(characterId)
+                .filter(c -> VOICE_PROVIDER.equals(c.getCallVoiceProvider()))
+                .map(CharacterEntity::getCallVoice)
+                .filter(voice -> !voice.isBlank())
+                .orElse(null);
     }
 }

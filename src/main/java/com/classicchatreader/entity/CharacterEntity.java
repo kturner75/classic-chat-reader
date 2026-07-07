@@ -61,6 +61,14 @@ public class CharacterEntity {
 
     private LocalDateTime completedAt;
 
+    // Voice assigned for voice calls, persisted once so the (possibly LLM-backed)
+    // selection runs at most once per character per provider.
+    @Column(length = 64)
+    private String callVoice;
+
+    @Column(length = 32)
+    private String callVoiceProvider;
+
     public CharacterEntity() {}
 
     public CharacterEntity(BookEntity book, String name, String description,
@@ -126,4 +134,10 @@ public class CharacterEntity {
 
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public String getCallVoice() { return callVoice; }
+    public void setCallVoice(String callVoice) { this.callVoice = callVoice; }
+
+    public String getCallVoiceProvider() { return callVoiceProvider; }
+    public void setCallVoiceProvider(String callVoiceProvider) { this.callVoiceProvider = callVoiceProvider; }
 }
