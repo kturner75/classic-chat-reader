@@ -1817,6 +1817,7 @@
             state.readerPreferences = normalized;
             applyReaderPreferences();
             syncReaderPreferencesControls();
+            refreshChapterPauseTabGating();
         }
         if (snapshot.recapOptOut && typeof snapshot.recapOptOut === 'object') {
             const keysToClear = [];
@@ -2297,13 +2298,7 @@
             repaginateFromCurrentParagraph();
         }
         if ('recapTabEnabled' in nextPartial || 'chatTabEnabled' in nextPartial || 'quizTabEnabled' in nextPartial) {
-            applyRecapPreferenceGating();
-            setRecapChatControls();
-            setQuizControls();
-            if (isChapterRecapVisible()) {
-                setChapterRecapTab(state.recapActiveTab);
-            }
-            updateRecapOptOutControl();
+            refreshChapterPauseTabGating();
         }
     }
 
@@ -4687,7 +4682,7 @@
     }
 
     function shouldShowChapterRecapOnTransition() {
-        return (state.recapAvailable || state.quizAvailable) &&
+        return (state.recapAvailable || state.quizAvailable || state.recapChatAvailable) &&
             !state.recapOptOut &&
             !state.ttsEnabled &&
             !state.speedReadingActive;
@@ -4698,7 +4693,7 @@
         if (nextChapterIndex >= state.chapters.length) return;
 
         if (showRecap && shouldShowChapterRecapOnTransition()) {
-            if (state.recapCacheOnly || state.quizCacheOnly) {
+            if ((state.recapAvailable && state.recapCacheOnly) || (state.quizAvailable && state.quizCacheOnly)) {
                 const transitionDataReady = await isCurrentChapterPauseReady();
                 if (!transitionDataReady) {
                     loadChapter(nextChapterIndex, 0);
@@ -4739,7 +4734,7 @@
         if (elements.chapterRecapOptout) {
             elements.chapterRecapOptout.checked = state.recapOptOut;
         }
-        setChapterRecapTab(state.recapAvailable ? 'recap' : 'quiz');
+        setChapterRecapTab('recap');
         elements.chapterRecapChapterTitle.textContent = currentChapter.title || 'Current chapter';
         elements.chapterRecapStatus.textContent = 'Loading recap...';
         elements.chapterRecapSummary.textContent = 'Preparing chapter recap.';
@@ -4800,18 +4795,16 @@
 
     function setChapterRecapTab(tab) {
         const validTab = tab === 'chat' || tab === 'quiz' || tab === 'recap' ? tab : 'recap';
+        const tabAvailability = {
+            recap: !!state.recapAvailable,
+            quiz: !!state.quizAvailable,
+            chat: !!state.recapChatAvailable
+        };
         let nextTab = validTab;
-        if (nextTab === 'recap' && !state.recapAvailable && state.quizAvailable) {
-            nextTab = 'quiz';
-        }
-        if (nextTab === 'quiz' && !state.quizAvailable && state.recapAvailable) {
-            nextTab = 'recap';
-        }
-        if (nextTab === 'chat' && !state.recapChatAvailable) {
-            if (state.recapAvailable) {
-                nextTab = 'recap';
-            } else if (state.quizAvailable) {
-                nextTab = 'quiz';
+        if (!tabAvailability[nextTab]) {
+            const fallback = ['recap', 'quiz', 'chat'].find((candidate) => tabAvailability[candidate]);
+            if (fallback) {
+                nextTab = fallback;
             }
         }
 
@@ -7455,6 +7448,16 @@
         state.recapAvailable = !!state.recapBackendAvailable && !!state.readerPreferences?.recapTabEnabled;
         state.quizAvailable = !!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled;
         state.recapChatAvailable = !!state.recapChatBackendAvailable && !!state.readerPreferences?.chatTabEnabled;
+    }
+
+    function refreshChapterPauseTabGating() {
+        applyRecapPreferenceGating();
+        setRecapChatControls();
+        setQuizControls();
+        if (isChapterRecapVisible()) {
+            setChapterRecapTab(state.recapActiveTab);
+        }
+        updateRecapOptOutControl();
     }
 
     async function recapCheckAvailability() {
