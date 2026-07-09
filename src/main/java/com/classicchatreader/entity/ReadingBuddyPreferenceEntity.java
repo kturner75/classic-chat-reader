@@ -8,9 +8,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(
@@ -59,20 +61,31 @@ public class ReadingBuddyPreferenceEntity {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /**
+     * When false, {@link #setUpdatedAt} stamped an explicit value (claim LWW or service touch)
+     * and {@link #onUpdate} must not overwrite it.
+     */
+    @Transient
+    private boolean autoTouchUpdatedAt = true;
+
     @PrePersist
     void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         if (createdAt == null) {
             createdAt = now;
         }
         if (updatedAt == null) {
             updatedAt = now;
         }
+        autoTouchUpdatedAt = true;
     }
 
     @PreUpdate
     void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        if (autoTouchUpdatedAt) {
+            updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+        autoTouchUpdatedAt = true;
     }
 
     public String getId() {
@@ -153,5 +166,7 @@ public class ReadingBuddyPreferenceEntity {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+        // Explicit stamp (claim LWW / service touch) — do not let @PreUpdate clobber it.
+        this.autoTouchUpdatedAt = false;
     }
 }

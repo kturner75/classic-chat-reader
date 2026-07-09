@@ -110,8 +110,10 @@ public class AccountClaimSyncService {
         String anonKey = readerId;
         String userKey = "user:" + userId;
         claimReadingBuddyPreferences(anonKey, userKey);
-        claimReadingBuddyMessages(anonKey, userKey);
-        claimReadingBuddyMemories(anonKey, userKey);
+        // deletedAnonMessageId -> surviving user message id (null if dropped without survivor)
+        Map<String, String> deletedAnonMessageIds =
+                claimReadingBuddyMessages(anonKey, userKey);
+        claimReadingBuddyMemories(anonKey, userKey, deletedAnonMessageIds);
 
         UserReaderClaimEntity claim = new UserReaderClaimEntity();
         claim.setUserId(userId);
@@ -168,12 +170,16 @@ public class AccountClaimSyncService {
     /**
      * Reassign or append anonymous messages. Per (book_id, persona_id): bulk rewrite if user
      * has zero history; else append by content_hash (and proactive position uniqueness).
+     *
+     * @return map of deleted anon message id → surviving user message id (null if dropped
+     * without a survivor). Used to remap {@code last_message_id} on memory claim.
      */
-    private void claimReadingBuddyMessages(String anonKey, String userKey) {
+    private Map<String, String> claimReadingBuddyMessages(String anonKey, String userKey) {
+        Map<String, String> deletedAnonToSurvivor = new HashMap<>();
         List<ReadingBuddyMessageEntity> anonMessages =
                 readingBuddyMessageRepository.findByOwnerKey(anonKey);
         if (anonMessages.isEmpty()) {
-            return;
+            return deletedAnonToSurvivor;
         }
 
         Map<String, List<ReadingBuddyMessageEntity>> anonByThread = new LinkedHashMap<>();
@@ -202,10 +208,12 @@ public class AccountClaimSyncService {
                     readingBuddyMessageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(
                             userKey, bookId, personaId);
             Set<String> userHashes = new LinkedHashSet<>();
+            Map<String, String> hashToUserMessageId = new HashMap<>();
             Map<String, ReadingBuddyMessageEntity> userProactiveByPosition = new HashMap<>();
             for (ReadingBuddyMessageEntity userMsg : userMessages) {
                 if (userMsg.getContentHash() != null) {
                     userHashes.add(userMsg.getContentHash());
+                    hashToUserMessageId.putIfAbsent(userMsg.getContentHash(), userMsg.getId());
                 }
                 if (userMsg.getProactivePositionKey() != null) {
                     userProactiveByPosition.put(userMsg.getProactivePositionKey(), userMsg);
@@ -219,6 +227,11 @@ public class AccountClaimSyncService {
 
             for (ReadingBuddyMessageEntity anon : threadAnon) {
                 if (anon.getContentHash() != null && userHashes.contains(anon.getContentHash())) {
+                    recordDeletedAnonMessage(
+                            deletedAnonToSurvivor,
+                            anon.getId(),
+                            hashToUserMessageId.get(anon.getContentHash())
+                    );
                     readingBuddyMessageRepository.delete(anon);
                     continue;
                 }
@@ -226,10 +239,10 @@ public class AccountClaimSyncService {
                 String positionKey = anon.getProactivePositionKey();
                 if (positionKey != null && userProactiveByPosition.containsKey(positionKey)) {
                     ReadingBuddyMessageEntity existing = userProactiveByPosition.get(positionKey);
-                    // Keep earlier created_at; delete the other.
+                    // Keep earlier created_at; delete the other (always drop anon row).
                     if (isBefore(anon.getCreatedAt(), existing.getCreatedAt())) {
                         existing.setOwnerKey(userKey);
-                        // Replace content with earlier anon message fields.
+                        // Replace content with earlier anon message fields; keep existing PK.
                         existing.setRole(anon.getRole());
                         existing.setContent(anon.getContent());
                         existing.setKind(anon.getKind());
@@ -240,8 +253,10 @@ public class AccountClaimSyncService {
                         readingBuddyMessageRepository.save(existing);
                         if (anon.getContentHash() != null) {
                             userHashes.add(anon.getContentHash());
+                            hashToUserMessageId.put(anon.getContentHash(), existing.getId());
                         }
                     }
+                    recordDeletedAnonMessage(deletedAnonToSurvivor, anon.getId(), existing.getId());
                     readingBuddyMessageRepository.delete(anon);
                     continue;
                 }
@@ -250,18 +265,24 @@ public class AccountClaimSyncService {
                 readingBuddyMessageRepository.save(anon);
                 if (anon.getContentHash() != null) {
                     userHashes.add(anon.getContentHash());
+                    hashToUserMessageId.putIfAbsent(anon.getContentHash(), anon.getId());
                 }
                 if (positionKey != null) {
                     userProactiveByPosition.put(positionKey, anon);
                 }
             }
         }
+        return deletedAnonToSurvivor;
     }
 
     /**
      * Memory rows: rewrite if only anon; if both, keep newer {@code updated_at} entire row.
+     * Remaps {@code last_message_id} when the referenced anon message was deleted/merged.
      */
-    private void claimReadingBuddyMemories(String anonKey, String userKey) {
+    private void claimReadingBuddyMemories(
+            String anonKey,
+            String userKey,
+            Map<String, String> deletedAnonToSurvivor) {
         List<ReadingBuddyMemoryEntity> anonMemories =
                 readingBuddyMemoryRepository.findByOwnerKey(anonKey);
         if (anonMemories.isEmpty()) {
@@ -269,10 +290,14 @@ public class AccountClaimSyncService {
         }
 
         for (ReadingBuddyMemoryEntity anon : anonMemories) {
+            String remappedLastMessageId =
+                    remapMessageId(anon.getLastMessageId(), deletedAnonToSurvivor);
+
             Optional<ReadingBuddyMemoryEntity> userOptional =
                     readingBuddyMemoryRepository.findByOwnerKeyAndBookIdAndPersonaId(
                             userKey, anon.getBookId(), anon.getPersonaId());
             if (userOptional.isEmpty()) {
+                anon.setLastMessageId(remappedLastMessageId);
                 anon.setOwnerKey(userKey);
                 readingBuddyMemoryRepository.save(anon);
                 continue;
@@ -285,12 +310,36 @@ public class AccountClaimSyncService {
                 userRow.setSummaryVersion(anon.getSummaryVersion());
                 userRow.setSummaryMaxChapterIndex(anon.getSummaryMaxChapterIndex());
                 userRow.setSummaryMaxParagraphIndex(anon.getSummaryMaxParagraphIndex());
-                userRow.setLastMessageId(anon.getLastMessageId());
+                userRow.setLastMessageId(remappedLastMessageId);
                 userRow.setUpdatedAt(anon.getUpdatedAt());
                 readingBuddyMemoryRepository.save(userRow);
             }
             readingBuddyMemoryRepository.delete(anon);
         }
+    }
+
+    private static void recordDeletedAnonMessage(
+            Map<String, String> deletedAnonToSurvivor,
+            String anonMessageId,
+            String survivingMessageId) {
+        if (anonMessageId == null || anonMessageId.isBlank()) {
+            return;
+        }
+        deletedAnonToSurvivor.put(anonMessageId, survivingMessageId);
+    }
+
+    /**
+     * If {@code messageId} was a deleted anon message, return the surviving user message id
+     * (possibly null). Otherwise leave unchanged.
+     */
+    private static String remapMessageId(String messageId, Map<String, String> deletedAnonToSurvivor) {
+        if (messageId == null || deletedAnonToSurvivor == null || deletedAnonToSurvivor.isEmpty()) {
+            return messageId;
+        }
+        if (!deletedAnonToSurvivor.containsKey(messageId)) {
+            return messageId;
+        }
+        return deletedAnonToSurvivor.get(messageId);
     }
 
     private static String threadKey(String bookId, String personaId) {

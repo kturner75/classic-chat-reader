@@ -170,4 +170,23 @@ class ReadingBuddyControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error", is("INVALID_PREFERENCES")));
     }
+
+    @Test
+    void preferences_put_unknownBook_returns404() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(preferenceService.update(eq("reader-1"), any()))
+                .thenThrow(new ReadingBuddyPreferenceService.BookNotFoundException("missing-book"));
+
+        mockMvc.perform(put("/api/reading-buddy/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "personaId": "humorist",
+                                  "bookId": "missing-book"
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error", is("BOOK_NOT_FOUND")));
+    }
 }

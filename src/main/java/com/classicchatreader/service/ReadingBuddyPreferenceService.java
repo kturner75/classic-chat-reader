@@ -4,6 +4,7 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.entity.ReadingBuddyPreferenceEntity;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ReadingBuddyPreferenceRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -120,7 +121,7 @@ public class ReadingBuddyPreferenceService {
             ReadingBuddyPreferenceEntity global = getOrCreateGlobal(ownerKey);
             global.setDefaultPersonaId(update.personaId().trim());
             touch(global);
-            preferenceRepository.save(global);
+            savePreferenceHandlingRace(global);
         }
 
         if (hasGlobalField) {
@@ -162,7 +163,7 @@ public class ReadingBuddyPreferenceService {
             }
 
             touch(global);
-            preferenceRepository.save(global);
+            savePreferenceHandlingRace(global);
         }
 
         // When only defaultPersonaId was set via personaId path without other global fields,
@@ -189,7 +190,31 @@ public class ReadingBuddyPreferenceService {
                 });
         row.setPersonaId(personaId.trim());
         touch(row);
-        preferenceRepository.save(row);
+        savePreferenceHandlingRace(row);
+    }
+
+    /**
+     * Insert/update prefs; on concurrent first-insert races against {@code uk_rbp_owner_book},
+     * reload the winner and re-apply intended fields (quiz/trophy claim pattern).
+     */
+    private ReadingBuddyPreferenceEntity savePreferenceHandlingRace(ReadingBuddyPreferenceEntity row) {
+        try {
+            return preferenceRepository.save(row);
+        } catch (DataIntegrityViolationException ex) {
+            ReadingBuddyPreferenceEntity existing = preferenceRepository
+                    .findByOwnerKeyAndBookId(row.getOwnerKey(), row.getBookId())
+                    .orElseThrow(() -> ex);
+            if (GLOBAL_BOOK_ID.equals(row.getBookId())) {
+                existing.setEnabled(row.isEnabled());
+                existing.setFrequency(row.getFrequency());
+                existing.setDefaultPersonaId(row.getDefaultPersonaId());
+                existing.setSuppressUntil(row.getSuppressUntil());
+            } else {
+                existing.setPersonaId(row.getPersonaId());
+            }
+            touch(existing);
+            return preferenceRepository.save(existing);
+        }
     }
 
     private void clearBookPersona(String ownerKey, String bookId) {
