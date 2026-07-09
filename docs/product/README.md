@@ -11,6 +11,7 @@ This folder is the source of truth for product scope and planning.
 - `landing-ranking.md`: deterministic ranking rules for personalized landing queues.
 - `discover-affinity.md`: deterministic recommendation model for the `Discover` rail.
 - `classroom-landing-usage.md`: setup and usage guide for classroom-aware landing mode (`BL-018.6`).
+- `reading-buddy-mode.md`: design document for Reading Buddy Mode (canned personas, sparse commentary, memory, PR plan).
 
 ## Backlog Workflow
 
