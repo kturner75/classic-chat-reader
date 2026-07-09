@@ -109,13 +109,31 @@ class ReadingBuddySpoilerAcceptanceTest {
     @DisplayName("1–2: Mid-book plot questions (stubbed LlmProvider)")
     class MidBookPlotQuestions {
 
+        /**
+         * Stub LLM: deflect only when assembled prompt is spoiler-safe.
+         * If gates regress (missing boundary, future memory/summary leak), returns
+         * a spoilery string so reply asserts fail — not a circular always-safe stub.
+         */
+        private String generateFromPromptGates(
+                String prompt,
+                String expectedStoryContext,
+                String safeReply,
+                String spoilerReply,
+                String... forbiddenFragments) {
+            if (promptGatesPass(prompt, expectedStoryContext, forbiddenFragments)) {
+                return safeReply;
+            }
+            return spoilerReply;
+        }
+
         @Test
-        @DisplayName("Pride and Prejudice mid-book: marriage question deflects; no confirmation; no future memory")
+        @DisplayName("Pride and Prejudice mid-book: marriage question — prompt bounds + no future memory")
         void prideAndPrejudice_doesElizabethMarryDarcy_deflectsWithoutConfirmation() {
             BookEntity book = book("book-pnp", "Pride and Prejudice", "Jane Austen");
             stubBookAndChapter(book, MID_CHAPTER, "Chapter IV");
+            String storyWindow = "[Current paragraph " + MID_PARAGRAPH + "]:\n" + SAFE_PNP;
             when(storyContextLoader.loadStoryContext(eq("book-pnp"), eq(MID_CHAPTER), eq(MID_PARAGRAPH)))
-                    .thenReturn("[Current paragraph " + MID_PARAGRAPH + "]:\n" + SAFE_PNP);
+                    .thenReturn(storyWindow);
 
             // Future-relative memory must not enter the prompt at mid-book position.
             when(memoryService.loadRecentMessagesForPrompt("owner-A", "book-pnp", "close_reader", MID_CHAPTER, MID_PARAGRAPH))
@@ -131,8 +149,15 @@ class ReadingBuddySpoilerAcceptanceTest {
             when(chatProvider.generate(anyString(), any(LlmOptions.class))).thenAnswer(invocation -> {
                 String prompt = invocation.getArgument(0);
                 capturedPrompt.set(prompt);
-                // Stub provider respects STORY BOUNDARY in the assembled prompt.
-                return "I only know what you've read so far — nothing later in the novel has been revealed yet.";
+                return generateFromPromptGates(
+                        prompt,
+                        SAFE_PNP,
+                        "I only know what you've read so far — nothing later in the novel has been revealed yet.",
+                        "Yes — Elizabeth marries Darcy at the end after the Wickham scandal.",
+                        PNP_SPOILER_SUMMARY,
+                        "Elizabeth marries Darcy",
+                        CH10_MESSAGE,
+                        "Wickham scandal");
             });
 
             when(memoryService.persistChatTurn(any(), any(), any(), any(), any(), anyInt(), anyInt()))
@@ -154,19 +179,27 @@ class ReadingBuddySpoilerAcceptanceTest {
 
             String prompt = capturedPrompt.get();
             assertTrue(prompt != null && !prompt.isBlank(), "prompt should be sent to LlmProvider");
+            // Assembled-prompt contract (primary acceptance gate under stubbed provider).
             assertTrue(prompt.contains("STORY BOUNDARY (CRITICAL)"));
+            assertTrue(prompt.contains("chapter index " + MID_CHAPTER));
+            assertTrue(prompt.contains("paragraph index " + MID_PARAGRAPH));
             assertTrue(prompt.toLowerCase(Locale.ROOT).contains("deflect"));
-            assertTrue(prompt.contains(SAFE_PNP));
+            assertTrue(prompt.contains("STORY CONTEXT"));
+            assertTrue(prompt.contains(SAFE_PNP), "mid-book story window only");
             assertTrue(prompt.contains("Does Elizabeth marry Darcy?"));
+            assertTrue(prompt.contains("Who is Mr Darcy?"), "past-position chat may remain");
             // Spoiler gates: ch10 summary + ch10 message must not appear at ch3.
             assertFalse(prompt.contains(PNP_SPOILER_SUMMARY));
             assertFalse(prompt.contains("Elizabeth marries Darcy"));
             assertFalse(prompt.contains(CH10_MESSAGE));
             assertFalse(prompt.toLowerCase(Locale.ROOT).contains("wickham scandal"));
+            assertTrue(prompt.contains("(No memory yet.)") || !prompt.contains("MEMORY:\n" + PNP_SPOILER_SUMMARY));
 
+            // Reply path: stub only deflects when prompt gates pass (see generateFromPromptGates).
             String reply = result.response().toLowerCase(Locale.ROOT);
             assertFalse(reply.matches("(?s).*\\byes\\b.*marry.*"), "must not confirm the marriage");
             assertFalse(reply.contains("they marry") || reply.contains("she marries"));
+            assertFalse(reply.contains("wickham scandal"));
             assertTrue(
                     reply.contains("read so far")
                             || reply.contains("nothing later")
@@ -177,7 +210,7 @@ class ReadingBuddySpoilerAcceptanceTest {
         }
 
         @Test
-        @DisplayName("Frankenstein mid-book: creature fate / who dies → no future reveal in prompt or reply")
+        @DisplayName("Frankenstein mid-book: creature fate — prompt bounds + no future reveal")
         void frankenstein_creatureFate_noFutureReveal() {
             BookEntity book = book("book-frank", "Frankenstein", "Mary Shelley");
             stubBookAndChapter(book, MID_CHAPTER, "Chapter III");
@@ -197,7 +230,16 @@ class ReadingBuddySpoilerAcceptanceTest {
             when(chatProvider.generate(anyString(), any(LlmOptions.class))).thenAnswer(invocation -> {
                 String prompt = invocation.getArgument(0);
                 capturedPrompt.set(prompt);
-                return "From what is on the page so far, I cannot say who dies later — that would be ahead of your reading.";
+                return generateFromPromptGates(
+                        prompt,
+                        SAFE_FRANKENSTEIN,
+                        "From what is on the page so far, I cannot say who dies later — that would be ahead of your reading.",
+                        "The creature kills William and frames Justine; later Victor and Elizabeth die.",
+                        FRANKENSTEIN_SPOILER_SUMMARY,
+                        "kills William",
+                        "frames Justine",
+                        "The creature kills everyone later.",
+                        "Elizabeth die");
             });
 
             when(memoryService.persistChatTurn(any(), any(), any(), any(), any(), anyInt(), anyInt()))
@@ -216,12 +258,16 @@ class ReadingBuddySpoilerAcceptanceTest {
             String prompt = capturedPrompt.get();
             assertTrue(prompt != null && !prompt.isBlank());
             assertTrue(prompt.contains("STORY BOUNDARY (CRITICAL)"));
+            assertTrue(prompt.contains("chapter index " + MID_CHAPTER));
+            assertTrue(prompt.contains("paragraph index " + MID_PARAGRAPH));
+            assertTrue(prompt.contains("STORY CONTEXT"));
             assertTrue(prompt.contains(SAFE_FRANKENSTEIN));
             assertFalse(prompt.contains(FRANKENSTEIN_SPOILER_SUMMARY));
             assertFalse(prompt.contains("kills William"));
             assertFalse(prompt.contains("frames Justine"));
             assertFalse(prompt.contains("The creature kills everyone later."));
             assertFalse(prompt.toLowerCase(Locale.ROOT).contains("elizabeth die"));
+            assertTrue(prompt.contains("(No memory yet.)"));
 
             String reply = result.response().toLowerCase(Locale.ROOT);
             assertFalse(reply.contains("kills william") || reply.contains("frames justine"));
@@ -233,6 +279,46 @@ class ReadingBuddySpoilerAcceptanceTest {
                             || reply.contains("on the page"),
                     "expected no-future-reveal deflection: " + result.response());
         }
+    }
+
+    /**
+     * Primary mid-book acceptance contract under a stubbed provider: story boundary,
+     * position-bounded story context present, and no future memory/summary fragments.
+     */
+    private static boolean promptGatesPass(
+            String prompt,
+            String expectedStoryContext,
+            String... forbiddenFragments) {
+        if (prompt == null || prompt.isBlank()) {
+            return false;
+        }
+        if (!prompt.contains("STORY BOUNDARY (CRITICAL)")) {
+            return false;
+        }
+        if (!prompt.contains("chapter index " + MID_CHAPTER)) {
+            return false;
+        }
+        if (!prompt.contains("paragraph index " + MID_PARAGRAPH)) {
+            return false;
+        }
+        if (!prompt.toLowerCase(Locale.ROOT).contains("deflect")) {
+            return false;
+        }
+        if (!prompt.contains("STORY CONTEXT")) {
+            return false;
+        }
+        if (expectedStoryContext != null && !expectedStoryContext.isBlank()
+                && !prompt.contains(expectedStoryContext)) {
+            return false;
+        }
+        if (forbiddenFragments != null) {
+            for (String fragment : forbiddenFragments) {
+                if (fragment != null && !fragment.isBlank() && prompt.contains(fragment)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     @Nested

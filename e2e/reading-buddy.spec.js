@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 /**
  * Reading Buddy smoke E2E (PR 6 gate).
  * Static server + API mocks — no live LLM required.
- * Covers: status-gated settings, toggle, Talk modal open/close, optional toast path.
+ * Covers: status-gated settings, toggle, Talk modal open/close, hard toast path.
  */
 
 const LONG_PARA_A =
@@ -43,6 +43,9 @@ const PERSONAS = [
   }
 ];
 
+const TOAST_COMMENT_TEXT =
+  'A quiet aside on the neighbourhood’s curiosity — nothing later in the plot.';
+
 function json(route, status, payload) {
   return route.fulfill({
     status,
@@ -52,6 +55,7 @@ function json(route, status, payload) {
 }
 
 async function installBuddyApiMocks(page, options = {}) {
+  const buddyAvailable = options.buddyAvailable !== false;
   const state = {
     prefs: {
       enabled: false,
@@ -63,7 +67,8 @@ async function installBuddyApiMocks(page, options = {}) {
       bookId: null
     },
     checkCommentCalls: 0,
-    forceCommentOnCheck: options.forceCommentOnCheck !== false
+    forceCommentOnCheck: options.forceCommentOnCheck === true,
+    buddyAvailable
   };
 
   await page.route('**/api/**', async (route) => {
@@ -194,10 +199,10 @@ async function installBuddyApiMocks(page, options = {}) {
     // --- Reading buddy ---
     if (method === 'GET' && path === '/api/reading-buddy/status') {
       return json(route, 200, {
-        enabled: true,
-        chatEnabled: true,
-        providerAvailable: true,
-        available: true,
+        enabled: state.buddyAvailable,
+        chatEnabled: state.buddyAvailable,
+        providerAvailable: state.buddyAvailable,
+        available: state.buddyAvailable,
         quietDefaultMinutes: 45
       });
     }
@@ -241,7 +246,7 @@ async function installBuddyApiMocks(page, options = {}) {
       if (state.forceCommentOnCheck) {
         return json(route, 200, {
           action: 'COMMENT',
-          text: 'A quiet aside on the neighbourhood’s curiosity — nothing later in the plot.',
+          text: TOAST_COMMENT_TEXT,
           messageId: 'proactive-1',
           personaId: state.prefs.personaId || 'historian',
           portraitUrl: '/images/buddies/historian.png',
@@ -286,8 +291,21 @@ async function openReaderSettings(page) {
   await expect(page.locator('#reader-settings-panel')).toBeVisible();
 }
 
+async function enableBuddyChatty(page) {
+  await openReaderSettings(page);
+  await page.selectOption('#reading-buddy-frequency', 'chatty');
+  await page.check('#reading-buddy-toggle');
+  await expect(page.locator('#reading-buddy-toggle')).toBeChecked();
+  await expect(page.locator('#reading-buddy-talk-btn')).toBeEnabled();
+  // Close settings so focused-modal gate is clear for proactive checks.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#reader-settings-panel')).toBeHidden();
+  // Ensure keyboard focus is on the document (not a leftover control).
+  await page.locator('#column-left').click({ position: { x: 8, y: 8 } }).catch(() => {});
+}
+
 test('reading buddy toggle enables Talk; modal opens and closes', async ({ page }) => {
-  await installBuddyApiMocks(page, { forceCommentOnCheck: false });
+  await installBuddyApiMocks(page, { forceCommentOnCheck: false, buddyAvailable: true });
   await openReaderForBuddyBook(page);
 
   await openReaderSettings(page);
@@ -310,46 +328,46 @@ test('reading buddy toggle enables Talk; modal opens and closes', async ({ page 
   await expect(page.locator('#reading-buddy-chat-modal')).toBeHidden();
 });
 
-test('reading buddy toast path (mocked check-comment) can open modal', async ({ page }) => {
-  const apiState = await installBuddyApiMocks(page, { forceCommentOnCheck: true });
+test('reading buddy toast appears after mocked check-comment COMMENT and opens modal', async ({ page }) => {
+  const apiState = await installBuddyApiMocks(page, {
+    forceCommentOnCheck: true,
+    buddyAvailable: true
+  });
+  await openReaderForBuddyBook(page);
+  await enableBuddyChatty(page);
+
+  // One forward advance is enough for chatty (sample every advance). Dwell is 800ms.
+  await page.keyboard.press('j');
+
+  // Hard-require that proactive check ran (client gates + enabled buddy).
+  await expect
+    .poll(() => apiState.checkCommentCalls, {
+      timeout: 10_000,
+      message: 'expected check-comment after enabling buddy + advancing with chatty frequency'
+    })
+    .toBeGreaterThan(0);
+
+  // Hard-require toast presentation after COMMENT (no Talk fallback).
+  const toast = page.locator('#reading-buddy-toast');
+  await expect(toast).toBeVisible({ timeout: 5000 });
+  await expect(toast).not.toHaveClass(/hidden/);
+  await expect(page.locator('#reading-buddy-toast-preview')).toContainText(/neighbourhood|curiosity|plot/i);
+
+  await page.click('#reading-buddy-toast-open');
+  await expect(page.locator('#reading-buddy-chat-modal')).toBeVisible();
+  await expect(page.locator('#reading-buddy-chat-messages')).toContainText(/neighbourhood|curiosity|plot/i);
+
+  await page.click('#reading-buddy-chat-close');
+  await expect(page.locator('#reading-buddy-chat-modal')).toBeHidden();
+});
+
+test('reading buddy settings stay hidden when status.available is false', async ({ page }) => {
+  await installBuddyApiMocks(page, { buddyAvailable: false, forceCommentOnCheck: false });
   await openReaderForBuddyBook(page);
 
   await openReaderSettings(page);
-  await page.selectOption('#reading-buddy-frequency', 'chatty');
-  await page.check('#reading-buddy-toggle');
-  await expect(page.locator('#reading-buddy-talk-btn')).toBeEnabled();
-
-  // Close settings so focused-modal gate is clear.
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#reader-settings-panel')).toBeHidden();
-
-  // Advance paragraphs (j) so client gates sample; dwell is 800ms.
-  await page.keyboard.press('j');
-  await page.waitForTimeout(1000);
-  await page.keyboard.press('j');
-  await page.waitForTimeout(1000);
-
-  // Toast may appear after a successful check-comment COMMENT.
-  const toast = page.locator('#reading-buddy-toast');
-  await expect
-    .poll(async () => {
-      const hidden = await toast.evaluate((el) => el.classList.contains('hidden'));
-      return !hidden || apiState.checkCommentCalls > 0;
-    }, { timeout: 8000 })
-    .toBeTruthy();
-
-  if (await toast.evaluate((el) => !el.classList.contains('hidden'))) {
-    await expect(page.locator('#reading-buddy-toast-preview')).not.toBeEmpty();
-    await page.click('#reading-buddy-toast-open');
-    await expect(page.locator('#reading-buddy-chat-modal')).toBeVisible();
-    await page.click('#reading-buddy-chat-close');
-    await expect(page.locator('#reading-buddy-chat-modal')).toBeHidden();
-  } else {
-    // Fallback: Talk path still exercises modal if client gates suppressed toast.
-    await openReaderSettings(page);
-    await page.click('#reading-buddy-talk-btn');
-    await expect(page.locator('#reading-buddy-chat-modal')).toBeVisible();
-    await page.click('#reading-buddy-chat-close');
-    await expect(page.locator('#reading-buddy-chat-modal')).toBeHidden();
-  }
+  await expect(page.locator('#reader-settings-panel')).toBeVisible();
+  // FE only shows the section when status.available (rollout safety net for default-off).
+  await expect(page.locator('#reading-buddy-settings')).toBeHidden();
+  await expect(page.locator('#reading-buddy-talk-btn')).toBeHidden();
 });
