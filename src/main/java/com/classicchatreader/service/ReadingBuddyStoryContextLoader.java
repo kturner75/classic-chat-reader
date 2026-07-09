@@ -51,6 +51,8 @@ public class ReadingBuddyStoryContextLoader {
         }
 
         ChapterEntity chapter = chapterOpt.get();
+        // Loads full chapter then windows in memory (spoiler-safe). A later optimization can
+        // add a repository range query for very long chapters; not required for prompt assembly.
         List<ParagraphEntity> paragraphs =
                 paragraphRepository.findByChapterIdOrderByParagraphIndex(chapter.getId());
         if (paragraphs == null || paragraphs.isEmpty()) {
@@ -64,13 +66,15 @@ public class ReadingBuddyStoryContextLoader {
                 Math.max(0, cfg.getPriorParagraphs()),
                 cfg.isIncludeChapterFirstParagraph());
 
-        return formatAndCap(window, readerParagraphIndex, Math.max(1, cfg.getMaxSourceChars()));
+        int effectiveCurrent = resolveEffectiveCurrentIndex(window, readerParagraphIndex);
+        return formatAndCap(window, effectiveCurrent, Math.max(1, cfg.getMaxSourceChars()));
     }
 
     /**
      * Pure selection of paragraph entities at or before the current index.
-     * Includes: current, up to {@code priorParagraphs} previous, and optionally chapter first.
-     * Never selects paragraphs with index &gt; {@code currentParagraphIndex}.
+     * Includes: current (or latest reachable if exact index missing), up to
+     * {@code priorParagraphs} previous <em>existing</em> neighbors (walked backward),
+     * and optionally chapter first. Never selects paragraphs with index &gt; current.
      */
     public static List<ParagraphEntity> selectParagraphWindow(
             List<ParagraphEntity> orderedParagraphs,
@@ -89,27 +93,23 @@ public class ReadingBuddyStoryContextLoader {
             return List.of();
         }
 
-        Set<Integer> selectedIndexes = new LinkedHashSet<>();
-
-        Optional<ParagraphEntity> current = reachable.stream()
-                .filter(p -> p.getParagraphIndex() == currentParagraphIndex)
-                .findFirst();
-        current.ifPresent(p -> selectedIndexes.add(p.getParagraphIndex()));
-
-        // Prefer exact current; if missing (gap), use the latest reachable as "current" anchor.
-        int anchorIndex = current.map(ParagraphEntity::getParagraphIndex)
-                .orElse(reachable.get(reachable.size() - 1).getParagraphIndex());
-        selectedIndexes.add(anchorIndex);
-
-        for (int back = 1; back <= priorParagraphs; back++) {
-            int target = anchorIndex - back;
-            if (target < 0) {
+        // Prefer exact current; if missing (gap), use the latest reachable as anchor.
+        int anchorPos = reachable.size() - 1;
+        for (int i = 0; i < reachable.size(); i++) {
+            if (reachable.get(i).getParagraphIndex() == currentParagraphIndex) {
+                anchorPos = i;
                 break;
             }
-            boolean exists = reachable.stream().anyMatch(p -> p.getParagraphIndex() == target);
-            if (exists) {
-                selectedIndexes.add(target);
-            }
+        }
+
+        Set<Integer> selectedIndexes = new LinkedHashSet<>();
+        selectedIndexes.add(reachable.get(anchorPos).getParagraphIndex());
+
+        // Walk backward over existing paragraphs (handles sparse indexes).
+        int taken = 0;
+        for (int i = anchorPos - 1; i >= 0 && taken < priorParagraphs; i--) {
+            selectedIndexes.add(reachable.get(i).getParagraphIndex());
+            taken++;
         }
 
         if (includeChapterFirstParagraph) {
@@ -128,6 +128,8 @@ public class ReadingBuddyStoryContextLoader {
     /**
      * Formats selected paragraphs and enforces a max character budget.
      * Priority when truncating: keep current paragraph, then nearest prior, then chapter opener.
+     * {@code currentParagraphIndex} should be the effective anchor (exact current, or latest
+     * reachable when the exact index is missing) so a block is always labeled Current.
      */
     public static String formatAndCap(
             List<ParagraphEntity> window,
@@ -137,6 +139,8 @@ public class ReadingBuddyStoryContextLoader {
             return "";
         }
 
+        int effectiveCurrent = resolveEffectiveCurrentIndex(window, currentParagraphIndex);
+
         // Emit in reading order; allocate budget from current backwards if needed.
         List<ParagraphEntity> ordered = window.stream()
                 .sorted(Comparator.comparingInt(ParagraphEntity::getParagraphIndex))
@@ -144,15 +148,13 @@ public class ReadingBuddyStoryContextLoader {
 
         // Build blocks with labels
         List<String> blocks = new ArrayList<>();
-        List<Integer> indexes = new ArrayList<>();
         for (ParagraphEntity p : ordered) {
             String content = p.getContent() == null ? "" : p.getContent().trim();
             if (content.isBlank()) {
                 continue;
             }
-            String label = paragraphLabel(p.getParagraphIndex(), currentParagraphIndex);
+            String label = paragraphLabel(p.getParagraphIndex(), effectiveCurrent);
             blocks.add(label + "\n" + content);
-            indexes.add(p.getParagraphIndex());
         }
         if (blocks.isEmpty()) {
             return "";
@@ -175,13 +177,30 @@ public class ReadingBuddyStoryContextLoader {
                 used += separator + block.length();
             } else if (kept.isEmpty()) {
                 // Always try to include a truncated current/last block.
-                int remaining = maxSourceChars;
-                kept.add(truncateBlock(block, remaining));
+                kept.add(truncateBlock(block, maxSourceChars));
                 break;
             }
             // else drop older block
         }
         return String.join("\n\n", kept);
+    }
+
+    /**
+     * Effective "current" label index: exact match if present in window, else the highest
+     * index in the window (anchor when exact current paragraph is missing).
+     */
+    static int resolveEffectiveCurrentIndex(List<ParagraphEntity> window, int requestedCurrentIndex) {
+        if (window == null || window.isEmpty()) {
+            return requestedCurrentIndex;
+        }
+        boolean hasExact = window.stream().anyMatch(p -> p.getParagraphIndex() == requestedCurrentIndex);
+        if (hasExact) {
+            return requestedCurrentIndex;
+        }
+        return window.stream()
+                .mapToInt(ParagraphEntity::getParagraphIndex)
+                .max()
+                .orElse(requestedCurrentIndex);
     }
 
     private static String paragraphLabel(int paragraphIndex, int currentParagraphIndex) {

@@ -15,6 +15,8 @@ import java.util.Objects;
  * plus position-bounded STORY CONTEXT (recap-chat style paragraph window).
  * <p>
  * No HTTP/LLM calls here — pure prompt assembly for chat and proactive paths.
+ * High-level chat/proactive builders always apply summary watermark omit via
+ * {@link #resolveMemorySummaryForPosition} so callers cannot skip the spoiler gate.
  */
 @Component
 public class ReadingBuddyPromptBuilder {
@@ -32,6 +34,9 @@ public class ReadingBuddyPromptBuilder {
     /**
      * System / persona block with position binding, story-boundary, commentary style,
      * and (for historian) non-plot carve-out reinforcement.
+     * <p>
+     * STORY BOUNDARY / COMMENTARY STYLE live here (authoritative, position-bound).
+     * Catalog {@link ReadingBuddyPersona#systemPrompt()} supplies persona voice only.
      */
     public String buildSystemPrompt(
             ReadingBuddyPersona persona,
@@ -134,6 +139,7 @@ public class ReadingBuddyPromptBuilder {
     /**
      * Inject memory summary only when usable at the current position (watermark rule).
      * If summary watermarks are ahead of the reader (rewind), omit summary text.
+     * Partial watermarks fail closed (omit).
      */
     public String resolveMemorySummaryForPosition(
             String memorySummary,
@@ -187,6 +193,9 @@ public class ReadingBuddyPromptBuilder {
 
     /**
      * Full proactive prompt: system + story context + memory + sparsity task.
+     * <p>
+     * Always resolves memory via watermark omit — pass stored summary + watermarks from memory row.
+     * Do not pre-inject raw summary text; this method is the spoiler gate for MEMORY.
      */
     public String buildProactivePrompt(
             ReadingBuddyPersona persona,
@@ -196,16 +205,41 @@ public class ReadingBuddyPromptBuilder {
             String chapterTitle,
             int paragraphIndex,
             String storyContextBody,
-            String memorySummary) {
+            String memorySummary,
+            Integer summaryMaxChapterIndex,
+            Integer summaryMaxParagraphIndex) {
+        String resolvedMemory = resolveMemorySummaryForPosition(
+                memorySummary,
+                summaryMaxChapterIndex,
+                summaryMaxParagraphIndex,
+                chapterIndex,
+                paragraphIndex);
         return joinSections(
                 buildSystemPrompt(persona, bookTitle, author, chapterIndex, chapterTitle, paragraphIndex),
                 buildStoryContextSection(storyContextBody),
-                buildMemorySection(memorySummary),
+                buildMemorySection(resolvedMemory),
                 buildProactiveTaskPrompt(persona));
     }
 
     /**
+     * Convenience when there is no stored summary yet (empty MEMORY).
+     */
+    public String buildProactivePrompt(
+            ReadingBuddyPersona persona,
+            String bookTitle,
+            String author,
+            int chapterIndex,
+            String chapterTitle,
+            int paragraphIndex,
+            String storyContextBody) {
+        return buildProactivePrompt(
+                persona, bookTitle, author, chapterIndex, chapterTitle, paragraphIndex,
+                storyContextBody, "", null, null);
+    }
+
+    /**
      * Full proactive prompt with story context loaded from repositories.
+     * Watermark fields are required so MEMORY omit cannot be skipped by callers.
      */
     public String buildProactivePromptForPosition(
             ReadingBuddyPersona persona,
@@ -215,10 +249,21 @@ public class ReadingBuddyPromptBuilder {
             int chapterIndex,
             String chapterTitle,
             int paragraphIndex,
-            String memorySummary) {
+            String memorySummary,
+            Integer summaryMaxChapterIndex,
+            Integer summaryMaxParagraphIndex) {
         String story = loadStoryContext(bookId, chapterIndex, paragraphIndex);
         return buildProactivePrompt(
-                persona, bookTitle, author, chapterIndex, chapterTitle, paragraphIndex, story, memorySummary);
+                persona,
+                bookTitle,
+                author,
+                chapterIndex,
+                chapterTitle,
+                paragraphIndex,
+                story,
+                memorySummary,
+                summaryMaxChapterIndex,
+                summaryMaxParagraphIndex);
     }
 
     /**
@@ -245,6 +290,9 @@ public class ReadingBuddyPromptBuilder {
 
     /**
      * Full interactive chat prompt pieces assembled.
+     * <p>
+     * Always resolves memory via watermark omit — pass stored summary + watermarks from memory row.
+     * Messages are also position-filtered. Callers must not bypass this for MEMORY injection.
      */
     public String buildChatPrompt(
             ReadingBuddyPersona persona,
@@ -255,21 +303,58 @@ public class ReadingBuddyPromptBuilder {
             int paragraphIndex,
             String storyContextBody,
             String memorySummary,
+            Integer summaryMaxChapterIndex,
+            Integer summaryMaxParagraphIndex,
             List<ReadingBuddyPositionedMessage> recentMessages,
             String userMessage) {
         int maxMsgs = Math.max(1, properties.getChat().getMaxContextMessages());
         List<ReadingBuddyPositionedMessage> filtered = filterMessagesByPosition(
                 recentMessages, chapterIndex, paragraphIndex);
+        String resolvedMemory = resolveMemorySummaryForPosition(
+                memorySummary,
+                summaryMaxChapterIndex,
+                summaryMaxParagraphIndex,
+                chapterIndex,
+                paragraphIndex);
         return joinSections(
                 buildSystemPrompt(persona, bookTitle, author, chapterIndex, chapterTitle, paragraphIndex),
                 buildStoryContextSection(storyContextBody),
-                buildMemorySection(memorySummary),
+                buildMemorySection(resolvedMemory),
                 buildConversationSection(filtered, maxMsgs),
                 "Reader: " + blankTo(userMessage, "").trim() + "\n" + persona.displayName() + ":");
     }
 
     /**
+     * Convenience when there is no stored summary yet (empty MEMORY).
+     */
+    public String buildChatPrompt(
+            ReadingBuddyPersona persona,
+            String bookTitle,
+            String author,
+            int chapterIndex,
+            String chapterTitle,
+            int paragraphIndex,
+            String storyContextBody,
+            List<ReadingBuddyPositionedMessage> recentMessages,
+            String userMessage) {
+        return buildChatPrompt(
+                persona,
+                bookTitle,
+                author,
+                chapterIndex,
+                chapterTitle,
+                paragraphIndex,
+                storyContextBody,
+                "",
+                null,
+                null,
+                recentMessages,
+                userMessage);
+    }
+
+    /**
      * Full chat prompt loading STORY CONTEXT for the given position.
+     * Watermark fields are required so MEMORY omit cannot be skipped by callers.
      */
     public String buildChatPromptForPosition(
             ReadingBuddyPersona persona,
@@ -280,6 +365,8 @@ public class ReadingBuddyPromptBuilder {
             String chapterTitle,
             int paragraphIndex,
             String memorySummary,
+            Integer summaryMaxChapterIndex,
+            Integer summaryMaxParagraphIndex,
             List<ReadingBuddyPositionedMessage> recentMessages,
             String userMessage) {
         String story = loadStoryContext(bookId, chapterIndex, paragraphIndex);
@@ -292,6 +379,8 @@ public class ReadingBuddyPromptBuilder {
                 paragraphIndex,
                 story,
                 memorySummary,
+                summaryMaxChapterIndex,
+                summaryMaxParagraphIndex,
                 recentMessages,
                 userMessage);
     }
@@ -343,17 +432,27 @@ public class ReadingBuddyPromptBuilder {
 
     /**
      * Rolling-summary watermark rule: include summary only when the reader is at or ahead of
-     * the summary watermark. If either watermark is null, treat as no watermark (include when
-     * summary text is non-empty — caller still decides empty). Strictly behind → omit.
+     * the summary watermark.
+     * <ul>
+     *   <li>Both watermarks null → treat as no watermark (include; summary may still be empty).</li>
+     *   <li>Exactly one watermark null (partial) → fail closed (omit).</li>
+     *   <li>Both set and reader strictly behind → omit; at or ahead → include.</li>
+     * </ul>
      */
     public static boolean shouldIncludeSummary(
             Integer summaryMaxChapterIndex,
             Integer summaryMaxParagraphIndex,
             int readerChapterIndex,
             int readerParagraphIndex) {
-        if (summaryMaxChapterIndex == null || summaryMaxParagraphIndex == null) {
+        boolean chapterNull = summaryMaxChapterIndex == null;
+        boolean paragraphNull = summaryMaxParagraphIndex == null;
+        if (chapterNull && paragraphNull) {
             // No watermark stored: safe to include (summary may still be empty).
             return true;
+        }
+        if (chapterNull || paragraphNull) {
+            // Partial watermark with non-empty summary would be unsafe — fail closed.
+            return false;
         }
         return comparePosition(
                 readerChapterIndex,

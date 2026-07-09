@@ -107,22 +107,73 @@ class ReadingBuddyStoryContextLoaderTest {
     }
 
     @Test
-    void formatAndCap_labelsCurrentAndDoesNotExceedBudget() {
+    void selectParagraphWindow_sparseIndexes_walksNeighborsNotExactArithmetic() {
+        // Gaps: 0, 2, 5, 9 — at 9 with prior=2 should take 5 and 2 (not miss due to 9-1/9-2)
+        List<ParagraphEntity> all = paragraphs(
+                0, "Opener",
+                2, "Sparse A",
+                5, "Sparse B",
+                9, "Sparse current",
+                12, "Future"
+        );
+
+        List<ParagraphEntity> window =
+                ReadingBuddyStoryContextLoader.selectParagraphWindow(all, 9, 2, false);
+
+        assertEquals(List.of(2, 5, 9),
+                window.stream().map(ParagraphEntity::getParagraphIndex).toList());
+    }
+
+    @Test
+    void selectParagraphWindow_missingExactCurrent_usesLatestReachableAsAnchor() {
+        List<ParagraphEntity> all = paragraphs(
+                0, "Opener",
+                1, "A",
+                2, "B latest",
+                5, "Future"
+        );
+
+        // Request index 4 which does not exist; reachable max is 2
+        List<ParagraphEntity> window =
+                ReadingBuddyStoryContextLoader.selectParagraphWindow(all, 4, 1, false);
+
+        assertEquals(List.of(1, 2),
+                window.stream().map(ParagraphEntity::getParagraphIndex).toList());
+
+        String formatted = ReadingBuddyStoryContextLoader.formatAndCap(window, 4, 4000);
+        assertTrue(formatted.contains("[Current paragraph 2]:"));
+        assertTrue(formatted.contains("B latest"));
+        assertFalse(formatted.contains("Future"));
+    }
+
+    @Test
+    void formatAndCap_labelsCurrentAndPrefersCurrentWhenOverBudget() {
+        // Distinctive fragments so we can prove prioritization under a tight budget.
+        String priorA = "AAA_ONLY_PRIOR_OPENER";
+        String priorB = "BBB_ONLY_PRIOR_MID";
+        String current = "CCC_ONLY_CURRENT_UNIQUE";
         List<ParagraphEntity> window = paragraphs(
-                0, "AAA",
-                1, "BBB",
-                2, "CCC current"
+                0, priorA,
+                1, priorB,
+                2, current
         );
 
         String formatted = ReadingBuddyStoryContextLoader.formatAndCap(window, 2, 4000);
         assertTrue(formatted.contains("[Current paragraph 2]:"));
-        assertTrue(formatted.contains("CCC current"));
+        assertTrue(formatted.contains(current));
         assertTrue(formatted.contains("[Chapter opener — paragraph 0]:"));
 
-        String tiny = ReadingBuddyStoryContextLoader.formatAndCap(window, 2, 40);
-        assertTrue(tiny.length() <= 40);
-        // Prefer current when budget is tight
-        assertTrue(tiny.contains("Current") || tiny.contains("CCC") || tiny.contains("..."));
+        // Budget large enough for current block alone, too small for current + a prior.
+        // Current block ≈ "[Current paragraph 2]:\n" (24) + content (23) = ~47 chars.
+        int currentBlockLen = ("[Current paragraph 2]:\n" + current).length();
+        int budget = currentBlockLen + 10; // not enough for another full prior block
+        String tiny = ReadingBuddyStoryContextLoader.formatAndCap(window, 2, budget);
+
+        assertTrue(tiny.length() <= budget);
+        assertTrue(tiny.contains("CCC_ONLY_CURRENT_UNIQUE"),
+                "tight budget must keep distinctive current fragment: " + tiny);
+        assertFalse(tiny.contains("AAA_ONLY_PRIOR_OPENER"),
+                "tight budget should drop distant prior: " + tiny);
     }
 
     @Test

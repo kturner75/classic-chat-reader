@@ -48,14 +48,14 @@ class ReadingBuddyPromptBuilderTest {
         assertTrue(prompt.contains("Pride and Prejudice"));
         assertTrue(prompt.contains("The Marginalian"));
         assertTrue(prompt.contains("NON-PLOT CONTEXT"));
+        // Catalog voice is persona-only (no second full STORY BOUNDARY block)
+        assertEquals(1, countOccurrences(prompt, "STORY BOUNDARY (CRITICAL)"));
     }
 
     @Test
     void historian_promptIncludesPlotBanAndPreferNoneBias() {
         ReadingBuddyPersona historian = catalog.findById(ReadingBuddyPersonaCatalog.HISTORIAN).orElseThrow();
 
-        String system = promptBuilder.buildSystemPrompt(
-                historian, "Frankenstein", "Mary Shelley", 2, "Chapter III", 5);
         String proactive = promptBuilder.buildProactivePrompt(
                 historian,
                 "Frankenstein",
@@ -63,23 +63,21 @@ class ReadingBuddyPromptBuilderTest {
                 2,
                 "Chapter III",
                 5,
-                "I beheld the wretch.",
-                "");
+                "I beheld the wretch.");
 
-        String combined = system + "\n" + proactive;
-        String lower = combined.toLowerCase();
+        String lower = proactive.toLowerCase();
 
-        assertTrue(combined.contains("STORY BOUNDARY (CRITICAL)"));
-        assertTrue(combined.contains("NON-PLOT CONTEXT"));
+        assertTrue(proactive.contains("STORY BOUNDARY (CRITICAL)"));
+        assertTrue(proactive.contains("NON-PLOT CONTEXT"));
         assertTrue(lower.contains("plot"));
         assertTrue(lower.contains("never") || lower.contains("only use story context"));
-        assertTrue(combined.contains("SPARSITY"));
+        assertTrue(proactive.contains("SPARSITY"));
         assertTrue(lower.contains("prefer none"));
         assertTrue(lower.contains("non-plot"));
-        // Persona catalog voice still present
         assertTrue(historian.systemPrompt().toLowerCase().contains("non-plot"));
-        assertTrue(combined.contains(historian.systemPrompt().trim().substring(0, 20))
-                || combined.contains("The Archivist"));
+        assertTrue(proactive.contains("The Archivist"));
+        // Builder is the single authoritative boundary (catalog is persona-voice only).
+        assertEquals(1, countOccurrences(proactive, "STORY BOUNDARY (CRITICAL)"));
     }
 
     @Test
@@ -109,7 +107,7 @@ class ReadingBuddyPromptBuilderTest {
         String storyBody = "[Current paragraph 1]:\nOnly safe text.";
 
         String prompt = promptBuilder.buildProactivePrompt(
-                persona, "Book", "Author", 0, "Ch 1", 1, storyBody, "");
+                persona, "Book", "Author", 0, "Ch 1", 1, storyBody);
 
         assertTrue(prompt.contains("STORY CONTEXT"));
         assertTrue(prompt.contains("Only safe text."));
@@ -117,6 +115,76 @@ class ReadingBuddyPromptBuilderTest {
         assertTrue(prompt.contains("(No memory yet.)"));
         assertTrue(prompt.contains("SPARSITY"));
         assertFalse(prompt.toLowerCase().contains("prefer none")); // not historian
+    }
+
+    @Test
+    void buildChatPrompt_omitsBehindWatermarkSummaryFromMemory() {
+        ReadingBuddyPersona persona = catalog.findById(ReadingBuddyPersonaCatalog.CLOSE_READER).orElseThrow();
+        String spoilerSummary = "Elizabeth marries Darcy after many misunderstandings.";
+
+        String prompt = promptBuilder.buildChatPrompt(
+                persona,
+                "Pride and Prejudice",
+                "Jane Austen",
+                3,
+                "Chapter IV",
+                2,
+                "She was not handsome enough to tempt me.",
+                spoilerSummary,
+                10,
+                0,
+                List.of(),
+                "Does she marry him?");
+
+        assertTrue(prompt.contains("MEMORY:"));
+        assertTrue(prompt.contains("(No memory yet.)"));
+        assertFalse(prompt.contains("Elizabeth marries Darcy"));
+        assertFalse(prompt.contains(spoilerSummary));
+    }
+
+    @Test
+    void buildProactivePrompt_omitsBehindWatermarkSummaryFromMemory() {
+        ReadingBuddyPersona persona = catalog.findById(ReadingBuddyPersonaCatalog.HISTORIAN).orElseThrow();
+        String spoilerSummary = "The creature kills William and frames Justine.";
+
+        String prompt = promptBuilder.buildProactivePrompt(
+                persona,
+                "Frankenstein",
+                "Mary Shelley",
+                2,
+                "Chapter III",
+                5,
+                "I beheld the wretch.",
+                spoilerSummary,
+                10,
+                0);
+
+        assertFalse(prompt.contains("kills William"));
+        assertFalse(prompt.contains(spoilerSummary));
+        assertTrue(prompt.contains("(No memory yet.)"));
+    }
+
+    @Test
+    void buildChatPrompt_includesSummaryWhenReaderAtOrAheadOfWatermark() {
+        ReadingBuddyPersona persona = catalog.findById(ReadingBuddyPersonaCatalog.ENCOURAGER).orElseThrow();
+        String summary = "Reader liked the rain scene.";
+
+        String prompt = promptBuilder.buildChatPrompt(
+                persona,
+                "Book",
+                "Author",
+                10,
+                "Ch XI",
+                0,
+                "Rain fell.",
+                summary,
+                10,
+                0,
+                List.of(),
+                "Hello");
+
+        assertTrue(prompt.contains(summary));
+        assertFalse(prompt.contains("(No memory yet.)"));
     }
 
     @Test
@@ -156,6 +224,13 @@ class ReadingBuddyPromptBuilderTest {
     }
 
     @Test
+    void shouldIncludeSummary_partialWatermark_failsClosed() {
+        assertFalse(ReadingBuddyPromptBuilder.shouldIncludeSummary(10, null, 3, 0));
+        assertFalse(ReadingBuddyPromptBuilder.shouldIncludeSummary(null, 2, 11, 0));
+        assertFalse(ReadingBuddyPromptBuilder.shouldIncludeSummary(10, null, 10, 0));
+    }
+
+    @Test
     void resolveMemorySummaryForPosition_omitsOnRewindBehindWatermark() {
         String summary = "They discussed Darcy at the ball.";
         assertEquals(
@@ -167,6 +242,9 @@ class ReadingBuddyPromptBuilderTest {
         assertEquals(
                 "",
                 promptBuilder.resolveMemorySummaryForPosition("", 1, 0, 5, 0));
+        assertEquals(
+                "",
+                promptBuilder.resolveMemorySummaryForPosition(summary, 10, null, 12, 0));
     }
 
     @Test
@@ -186,7 +264,6 @@ class ReadingBuddyPromptBuilderTest {
                 "Chapter II",
                 3,
                 "Call me Ishmael.",
-                "",
                 history,
                 "What does this line suggest?");
 
@@ -214,11 +291,13 @@ class ReadingBuddyPromptBuilderTest {
                 "Ch1",
                 2,
                 "",
+                null,
+                null,
                 List.of(),
                 "Ha?");
 
         assertTrue(prompt.contains("Safe passage."));
-        assertTrue(prompt.contains("school-safe") || prompt.toLowerCase().contains("school-safe"));
+        assertTrue(prompt.toLowerCase().contains("school-safe"));
     }
 
     @Test
@@ -227,5 +306,18 @@ class ReadingBuddyPromptBuilderTest {
         assertTrue(ReadingBuddyPromptBuilder.comparePosition(2, 0, 1, 99) > 0);
         assertEquals(0, ReadingBuddyPromptBuilder.comparePosition(3, 4, 3, 4));
         assertTrue(ReadingBuddyPromptBuilder.comparePosition(3, 1, 3, 2) < 0);
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int from = 0;
+        while (true) {
+            int idx = haystack.indexOf(needle, from);
+            if (idx < 0) {
+                return count;
+            }
+            count++;
+            from = idx + needle.length();
+        }
     }
 }
