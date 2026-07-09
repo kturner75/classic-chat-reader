@@ -3,6 +3,8 @@ package com.classicchatreader.controller;
 import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.model.ReadingBuddyPersona;
 import com.classicchatreader.service.ReaderIdentityService;
+import com.classicchatreader.service.ReadingBuddyChatService;
+import com.classicchatreader.service.ReadingBuddyMemoryService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
@@ -12,7 +14,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,7 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reading Buddy REST surface. PR2 adds preferences GET/PUT on top of status + personas.
+ * Reading Buddy REST surface: status, personas, preferences, chat, and history.
  */
 @RestController
 @RequestMapping("/api/reading-buddy")
@@ -34,6 +38,8 @@ public class ReadingBuddyController {
     private final ReadingBuddyProperties properties;
     private final ReadingBuddyPersonaCatalog personaCatalog;
     private final ReadingBuddyPreferenceService preferenceService;
+    private final ReadingBuddyChatService chatService;
+    private final ReadingBuddyMemoryService memoryService;
     private final ReaderIdentityService readerIdentityService;
     private final LlmProvider chatProvider;
 
@@ -44,11 +50,15 @@ public class ReadingBuddyController {
             ReadingBuddyProperties properties,
             ReadingBuddyPersonaCatalog personaCatalog,
             ReadingBuddyPreferenceService preferenceService,
+            ReadingBuddyChatService chatService,
+            ReadingBuddyMemoryService memoryService,
             ReaderIdentityService readerIdentityService,
             @Qualifier("chatLlmProvider") LlmProvider chatProvider) {
         this.properties = properties;
         this.personaCatalog = personaCatalog;
         this.preferenceService = preferenceService;
+        this.chatService = chatService;
+        this.memoryService = memoryService;
         this.readerIdentityService = readerIdentityService;
         this.chatProvider = chatProvider;
     }
@@ -122,6 +132,135 @@ public class ReadingBuddyController {
         }
     }
 
+    /**
+     * Interactive chat. Server loads recent DB messages (position-filtered) for prompts;
+     * any client {@code conversationHistory} is ignored.
+     */
+    @PostMapping("/chat")
+    public ResponseEntity<?> chat(
+            @RequestBody(required = false) ChatRequest body,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        if (!isFeatureAndChatEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
+        }
+
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+        if (body == null) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("INVALID_REQUEST", "Request body is required"));
+        }
+
+        try {
+            ReadingBuddyChatService.ChatResult result = chatService.chat(
+                    identity.readerKey(),
+                    body.bookId(),
+                    body.personaId(),
+                    body.message(),
+                    body.readerChapterIndex(),
+                    body.readerParagraphIndex()
+            );
+            Map<String, Object> dto = new LinkedHashMap<>();
+            dto.put("response", result.response());
+            dto.put("personaId", result.personaId());
+            dto.put("messageId", result.messageId());
+            dto.put("userMessageId", result.userMessageId());
+            dto.put("timestamp", result.timestamp());
+            return ResponseEntity.ok(dto);
+        } catch (ReadingBuddyChatService.BookNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(errorBody("BOOK_NOT_FOUND", e.getMessage()));
+        } catch (ReadingBuddyChatService.ValidationException e) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody(e.getErrorCode(), e.getMessage()));
+        }
+    }
+
+    /**
+     * Chronological history for owner×book×persona with rewind visibility flags.
+     */
+    @GetMapping("/history")
+    public ResponseEntity<?> getHistory(
+            @RequestParam("bookId") String bookId,
+            @RequestParam("personaId") String personaId,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam("readerChapterIndex") int readerChapterIndex,
+            @RequestParam("readerParagraphIndex") int readerParagraphIndex,
+            @RequestParam(value = "includeHidden", defaultValue = "true") boolean includeHidden,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        if (!isFeatureAndChatEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
+        }
+        if (bookId == null || bookId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("INVALID_BOOK_ID", "bookId is required"));
+        }
+        if (personaId == null || personaId.isBlank() || !personaCatalog.isKnown(personaId.trim())) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("UNKNOWN_PERSONA", "Unknown personaId: " + personaId));
+        }
+        if (readerChapterIndex < 0 || readerParagraphIndex < 0) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("INVALID_POSITION",
+                            "readerChapterIndex and readerParagraphIndex must be non-negative"));
+        }
+
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+        ReadingBuddyMemoryService.HistoryResult history = memoryService.getHistory(
+                identity.readerKey(),
+                bookId.trim(),
+                personaId.trim(),
+                limit,
+                readerChapterIndex,
+                readerParagraphIndex,
+                includeHidden);
+
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("personaId", history.personaId());
+        dto.put("bookId", history.bookId());
+        dto.put("messages", history.messages().stream().map(this::toHistoryMessageDto).toList());
+        return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Clears messages and empties memory summary/watermarks for owner×book×persona.
+     */
+    @DeleteMapping("/history")
+    public ResponseEntity<?> deleteHistory(
+            @RequestParam("bookId") String bookId,
+            @RequestParam("personaId") String personaId,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        if (!isFeatureAndChatEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
+        }
+        if (bookId == null || bookId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("INVALID_BOOK_ID", "bookId is required"));
+        }
+        if (personaId == null || personaId.isBlank() || !personaCatalog.isKnown(personaId.trim())) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("UNKNOWN_PERSONA", "Unknown personaId: " + personaId));
+        }
+
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+        memoryService.clearHistory(identity.readerKey(), bookId.trim(), personaId.trim());
+
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("cleared", true);
+        dto.put("bookId", bookId.trim());
+        dto.put("personaId", personaId.trim());
+        return ResponseEntity.ok(dto);
+    }
+
+    private boolean isFeatureAndChatEnabled() {
+        return properties.isEnabled() && chatEnabled;
+    }
+
     private ReadingBuddyPreferenceService.PreferenceUpdate toUpdate(PreferenceRequest body) {
         if (body == null) {
             return new ReadingBuddyPreferenceService.PreferenceUpdate(
@@ -152,6 +291,19 @@ public class ReadingBuddyController {
         return dto;
     }
 
+    private Map<String, Object> toHistoryMessageDto(ReadingBuddyMemoryService.HistoryMessage msg) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("id", msg.id());
+        dto.put("role", msg.role());
+        dto.put("content", msg.content());
+        dto.put("kind", msg.kind());
+        dto.put("chapterIndex", msg.chapterIndex());
+        dto.put("paragraphIndex", msg.paragraphIndex());
+        dto.put("createdAt", msg.createdAt());
+        dto.put("visibleAtPosition", msg.visibleAtPosition());
+        return dto;
+    }
+
     private Map<String, Object> toPublicPersona(ReadingBuddyPersona persona) {
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", persona.id());
@@ -178,6 +330,19 @@ public class ReadingBuddyController {
             Boolean clearBookPersona,
             Long suppressUntilEpochMs,
             Integer quietMinutes
+    ) {
+    }
+
+    /**
+     * Chat request. {@code conversationHistory} may be present for client compat but is ignored.
+     */
+    public record ChatRequest(
+            String bookId,
+            String personaId,
+            String message,
+            int readerChapterIndex,
+            int readerParagraphIndex,
+            List<Map<String, Object>> conversationHistory
     ) {
     }
 }

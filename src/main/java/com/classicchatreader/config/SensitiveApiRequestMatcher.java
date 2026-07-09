@@ -32,6 +32,8 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern RECAP_REQUEUE_PATH = Pattern.compile("^/api/recaps/book/[^/]+/requeue-stuck$");
     private static final Pattern RECAP_CHAT_PATH = Pattern.compile("^/api/recaps/book/[^/]+/chat$");
 
+    private static final Pattern READING_BUDDY_CHAT_PATH = Pattern.compile("^/api/reading-buddy/chat$");
+
     private static final Pattern QUIZ_GENERATE_PATH = Pattern.compile("^/api/quizzes/chapter/[^/]+/generate$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
     private static final Pattern LIBRARY_COVER_REQUEST_PATH = Pattern.compile("^/api/library/[^/]+/cover/request$");
@@ -79,7 +81,8 @@ public final class SensitiveApiRequestMatcher {
 
             if (CHARACTER_CHAT_PATH.matcher(path).matches()
                     || CHARACTER_CALL_SESSION_PATH.matcher(path).matches()
-                    || RECAP_CHAT_PATH.matcher(path).matches()) {
+                    || RECAP_CHAT_PATH.matcher(path).matches()
+                    || READING_BUDDY_CHAT_PATH.matcher(path).matches()) {
                 return EndpointType.CHAT;
             }
         }

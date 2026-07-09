@@ -33,4 +33,6 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
             String personaId,
             String proactivePositionKey
     );
+
+    void deleteByOwnerKeyAndBookIdAndPersonaId(String ownerKey, String bookId, String personaId);
 }

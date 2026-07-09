@@ -17,4 +17,6 @@ public interface ReadingBuddyMemoryRepository extends JpaRepository<ReadingBuddy
             String bookId,
             String personaId
     );
+
+    void deleteByOwnerKeyAndBookIdAndPersonaId(String ownerKey, String bookId, String personaId);
 }
