@@ -21,6 +21,7 @@ public class ReadingBuddyProperties {
     private Proactive proactive = new Proactive();
     private Chat chat = new Chat();
     private Memory memory = new Memory();
+    private StoryContext storyContext = new StoryContext();
     private int quietDefaultMinutes = 45;
     private int userMessageMaxChars = 2000;
     private int postChatParagraphGap = 4;
@@ -87,6 +88,14 @@ public class ReadingBuddyProperties {
 
     public void setMemory(Memory memory) {
         this.memory = memory == null ? new Memory() : memory;
+    }
+
+    public StoryContext getStoryContext() {
+        return storyContext;
+    }
+
+    public void setStoryContext(StoryContext storyContext) {
+        this.storyContext = storyContext == null ? new StoryContext() : storyContext;
     }
 
     public int getQuietDefaultMinutes() {
@@ -263,6 +272,42 @@ public class ReadingBuddyProperties {
 
         public void setSummaryEveryMessages(int summaryEveryMessages) {
             this.summaryEveryMessages = summaryEveryMessages;
+        }
+    }
+
+    /**
+     * Position-bounded paragraph window injected as STORY CONTEXT (spoiler-safe source text).
+     */
+    public static class StoryContext {
+        /** Max characters of paragraph text in STORY CONTEXT (similar to recap.chat.max-source-chars). */
+        private int maxSourceChars = 4000;
+        /** Number of prior paragraphs in the same chapter to include (in addition to current). */
+        private int priorParagraphs = 2;
+        /** When true, also include the first paragraph of the chapter if not already in the window. */
+        private boolean includeChapterFirstParagraph = true;
+
+        public int getMaxSourceChars() {
+            return maxSourceChars;
+        }
+
+        public void setMaxSourceChars(int maxSourceChars) {
+            this.maxSourceChars = maxSourceChars;
+        }
+
+        public int getPriorParagraphs() {
+            return priorParagraphs;
+        }
+
+        public void setPriorParagraphs(int priorParagraphs) {
+            this.priorParagraphs = priorParagraphs;
+        }
+
+        public boolean isIncludeChapterFirstParagraph() {
+            return includeChapterFirstParagraph;
+        }
+
+        public void setIncludeChapterFirstParagraph(boolean includeChapterFirstParagraph) {
+            this.includeChapterFirstParagraph = includeChapterFirstParagraph;
         }
     }
 }

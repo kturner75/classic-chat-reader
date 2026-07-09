@@ -29,6 +29,9 @@ class ReadingBuddyPropertiesTest {
         assertEquals(45, props.getQuietDefaultMinutes());
         assertEquals(2000, props.getUserMessageMaxChars());
         assertEquals(4, props.getPostChatParagraphGap());
+        assertEquals(4000, props.getStoryContext().getMaxSourceChars());
+        assertEquals(2, props.getStoryContext().getPriorParagraphs());
+        assertEquals(true, props.getStoryContext().isIncludeChapterFirstParagraph());
     }
 
     @Test
