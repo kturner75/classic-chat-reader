@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -9,6 +9,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent completed slice: `BL-028 - Account auth endpoint hardening` (`Done`, delivered account auth rate limiting with `429` + `Retry-After`, login lockout/backoff persistence, and structured non-PII auth audit events with regression test coverage).
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
+- Reading Buddy Mode stack is implemented end-to-end (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Prod flag-on remains blocked** until spoiler acceptance suite + Playwright smoke are green (see `Reading Buddy Mode` below). Default remains `reading-buddy.enabled=false`.
 - Active priority work: `None currently in progress`; next P1 candidate for additional scoping remains `BL-025` (`Discovery`).
 
 ## Discovery Epics (Pending Product Discussion)
@@ -922,6 +923,33 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-11: Completed recap UX polish with persistent modal chrome + scrollable body, recap/chat tab flow polish, and a reader header control to re-enable per-book recap popups after opt-out.
 - 2026-02-11: Hardened recap chat guardrails by enforcing source-only prompt behavior and chapter-scoped local chat history; validated behavior in manual QA on tested books.
 - 2026-02-11: Marked BL-017 as Done; next feature work continues under BL-020 (Post-Chapter Pop Quiz).
+
+### Reading Buddy Mode
+- Type: Feature
+- Priority: P1
+- Effort: L
+- Status: Done (implementation); **prod flag-on Blocked** on spoiler suite + E2E smoke green
+- Problem: Readers want optional companion commentary/chat without spoiling future plot or leaving the book-like experience.
+- Scope: Canned personas, position-bounded story context, server memory, proactive hard filters + LLM decide, reader UI (toggle/toast/modal), rolling summary watermarks, public-mode auth/rate limits, classroom FE kill-switch.
+- Design: `docs/product/reading-buddy-mode.md`
+- Default: `reading-buddy.enabled=false` (do not enable in prod until gates below pass).
+- Work Tracker:
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| PR1 Flags + personas | Done | `reading-buddy.*` properties, canned persona catalog | Status API reflects flag + chat provider |
+| PR2 Schema + prefs + claim | Done | Messages/memory/prefs tables; prefs API; claim-sync merge | Controller/service tests pass |
+| PR3a Prompt + story window | Done | Spoiler-safe prompt builder + position-bounded paragraphs | Prompt tests for boundary + watermark omit |
+| PR3b Chat + history | Done | Chat/history endpoints with server memory | Chat ignores client history for prompts |
+| PR3c Proactive + hard filters | Done | Trigger policy, check-comment, buddy-check rate limit | Silence/COMMENT paths tested |
+| PR4 Reader UI + classroom | Done | Toggle, toast, modal, classroom FE gates | UI wired; toast never auto-opens modal |
+| PR5 Summary refresh | Done | Rolling summary + fail-closed watermark omit | Summary ch10 omitted at ch3 |
+| PR6 E2E + spoiler gate + docs | Done | Spoiler acceptance suite, Playwright smoke, product docs, rollout comments | Suite + e2e green; docs list Reading Buddy |
+- Rollout gate (required before `reading-buddy.enabled=true` in prod):
+  1. `ReadingBuddySpoilerAcceptanceTest` green (P&P / Frankenstein mid-book deflection, historian prefer-NONE, ch10 message filter, history visibility, summary watermark omit).
+  2. Playwright smoke `e2e/reading-buddy.spec.js` green.
+  3. Public-mode auth/rate-limit verification for `/api/reading-buddy/chat` and `/check-comment`.
+- Session Log:
+- 2026-07-08: PR6 landed required spoiler acceptance suite, public-mode buddy route guard tests, Playwright reading-buddy smoke, product inventory/backlog updates, and `application.properties` rollout comments. Default remains off.
 
 ## P2
 
