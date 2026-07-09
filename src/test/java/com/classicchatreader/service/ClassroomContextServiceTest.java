@@ -97,6 +97,7 @@ class ClassroomContextServiceTest {
         assertEquals("class-1", context.classId());
         assertEquals("English 8", context.className());
         assertFalse(context.features().recapEnabled());
+        assertTrue(context.features().readingBuddyEnabled());
         assertEquals(1, context.assignments().size());
         assertEquals("book-1", context.assignments().get(0).bookId());
         assertEquals("Treasure Island", context.assignments().get(0).bookTitle());

@@ -434,7 +434,31 @@
         authModalStatus: document.getElementById('auth-modal-status'),
         authPassword: document.getElementById('auth-password'),
         authSignIn: document.getElementById('auth-signin'),
-        authSignOut: document.getElementById('auth-signout')
+        authSignOut: document.getElementById('auth-signout'),
+        // Reading buddy
+        readingBuddySettings: document.getElementById('reading-buddy-settings'),
+        readingBuddyToggle: document.getElementById('reading-buddy-toggle'),
+        readingBuddyFrequency: document.getElementById('reading-buddy-frequency'),
+        readingBuddyPersonaList: document.getElementById('reading-buddy-persona-list'),
+        readingBuddyTalkBtn: document.getElementById('reading-buddy-talk-btn'),
+        readingBuddyToast: document.getElementById('reading-buddy-toast'),
+        readingBuddyToastImage: document.getElementById('reading-buddy-toast-image'),
+        readingBuddyToastName: document.getElementById('reading-buddy-toast-name'),
+        readingBuddyToastPreview: document.getElementById('reading-buddy-toast-preview'),
+        readingBuddyToastOpen: document.getElementById('reading-buddy-toast-open'),
+        readingBuddyToastDismiss: document.getElementById('reading-buddy-toast-dismiss'),
+        readingBuddyToastQuiet: document.getElementById('reading-buddy-toast-quiet'),
+        readingBuddyChatModal: document.getElementById('reading-buddy-chat-modal'),
+        readingBuddyChatPortrait: document.getElementById('reading-buddy-chat-portrait'),
+        readingBuddyChatName: document.getElementById('reading-buddy-chat-name'),
+        readingBuddyChatClose: document.getElementById('reading-buddy-chat-close'),
+        readingBuddyClearHistory: document.getElementById('reading-buddy-clear-history'),
+        readingBuddyChatError: document.getElementById('reading-buddy-chat-error'),
+        readingBuddyChatErrorMessage: document.getElementById('reading-buddy-chat-error-message'),
+        readingBuddyChatErrorRetry: document.getElementById('reading-buddy-chat-error-retry'),
+        readingBuddyChatMessages: document.getElementById('reading-buddy-chat-messages'),
+        readingBuddyChatInput: document.getElementById('reading-buddy-chat-input'),
+        readingBuddyChatSend: document.getElementById('reading-buddy-chat-send')
     };
 
     // Chapter list state
@@ -464,6 +488,96 @@
         DISCOVERED_CHARACTERS_PREFIX: 'reader_discoveredCharacters_',
         DISCOVERED_CHARACTER_DETAILS_PREFIX: 'reader_discoveredCharacterDetails_'
     };
+
+    let readingBuddyController = null;
+
+    function isReadingBuddyModalVisible() {
+        return elements.readingBuddyChatModal
+            && !elements.readingBuddyChatModal.classList.contains('hidden');
+    }
+
+    function isCharacterCallVisible() {
+        return elements.characterCallModal
+            && !elements.characterCallModal.classList.contains('hidden');
+    }
+
+    function isReadingBuddyFocusedModal() {
+        return isCharacterBrowserVisible()
+            || isCharacterChatVisible()
+            || isCharacterCallVisible()
+            || isReadingBuddyModalVisible()
+            || isNoteModalVisible()
+            || isAuthModalVisible()
+            || isAccountModalVisible()
+            || isAchievementsModalVisible()
+            || isChapterRecapVisible()
+            || isPromptModalVisible();
+    }
+
+    function initReadingBuddyController() {
+        const ReadingBuddyApi = (typeof globalThis !== 'undefined' && globalThis.ReadingBuddy)
+            || (typeof window !== 'undefined' && window.ReadingBuddy)
+            || null;
+        if (!ReadingBuddyApi || typeof ReadingBuddyApi.createController !== 'function') {
+            console.debug('ReadingBuddy module not loaded');
+            return null;
+        }
+        return ReadingBuddyApi.createController({
+            elements: {
+                settingsSection: elements.readingBuddySettings,
+                toggle: elements.readingBuddyToggle,
+                frequency: elements.readingBuddyFrequency,
+                personaList: elements.readingBuddyPersonaList,
+                talkBtn: elements.readingBuddyTalkBtn,
+                toast: elements.readingBuddyToast,
+                toastImage: elements.readingBuddyToastImage,
+                toastName: elements.readingBuddyToastName,
+                toastPreview: elements.readingBuddyToastPreview,
+                toastOpen: elements.readingBuddyToastOpen,
+                toastDismiss: elements.readingBuddyToastDismiss,
+                toastQuiet: elements.readingBuddyToastQuiet,
+                chatModal: elements.readingBuddyChatModal,
+                chatPortrait: elements.readingBuddyChatPortrait,
+                chatName: elements.readingBuddyChatName,
+                chatClose: elements.readingBuddyChatClose,
+                clearHistoryBtn: elements.readingBuddyClearHistory,
+                chatError: elements.readingBuddyChatError,
+                chatErrorMessage: elements.readingBuddyChatErrorMessage,
+                chatErrorRetry: elements.readingBuddyChatErrorRetry,
+                chatMessages: elements.readingBuddyChatMessages,
+                chatInput: elements.readingBuddyChatInput,
+                chatSend: elements.readingBuddyChatSend
+            },
+            fetch: (...args) => fetch(...args),
+            getBookId: () => state.currentBook?.id || null,
+            getPosition: () => ({
+                chapterIndex: state.currentChapterIndex,
+                paragraphIndex: state.currentParagraphIndex
+            }),
+            getCurrentParagraphHtml: () => {
+                const para = state.paragraphs?.[state.currentParagraphIndex];
+                return para?.content || '';
+            },
+            isFocusedModal: () => isReadingBuddyFocusedModal(),
+            isSpeedReadingActive: () => !!state.speedReadingActive,
+            getClassroomContext: () => state.classroomContext,
+            isClassroomAllowed: () => isClassroomFeatureEnabled('chatEnabled')
+                && isClassroomFeatureEnabled('readingBuddyEnabled'),
+            mapChatError,
+            escapeHtml: (text) => {
+                const div = document.createElement('div');
+                div.textContent = text == null ? '' : String(text);
+                return div.innerHTML;
+            },
+            ttsPauseForModal,
+            ttsResumeAfterModal,
+            closeReaderSettingsPanel,
+            confirm: (message) => window.confirm(message),
+            onQuietApplied: () => {
+                // suppressUntil is applied via prefs response
+            }
+        });
+    }
 
     const MAX_RECENTLY_READ = 5;
     const DEFAULT_READER_PREFERENCES = Object.freeze({
@@ -496,6 +610,7 @@
         characterEnabled: true,
         chatEnabled: true,
         speedReadingEnabled: true,
+        readingBuddyEnabled: true,
         citationEnabled: true
     });
 
@@ -2332,6 +2447,10 @@
         state.readerPreferences = loadStoredReaderPreferences();
         applyReaderPreferences();
         syncReaderPreferencesControls();
+        readingBuddyController = initReadingBuddyController();
+        if (readingBuddyController) {
+            readingBuddyController.bindEvents();
+        }
         setupEventListeners();
         setDesktopSearchExpanded(false);
         await loadClassroomContext();
@@ -2346,6 +2465,13 @@
         await characterCheckAvailability();
         await recapCheckAvailability();
         await quizCheckAvailability();
+        if (readingBuddyController) {
+            await readingBuddyController.checkAvailability();
+            if (readingBuddyController.getState().statusAvailable) {
+                await readingBuddyController.loadPersonas();
+                await readingBuddyController.loadPreferences();
+            }
+        }
 
         // Load saved TTS speed preference
         const savedSpeed = parseFloat(localStorage.getItem(STORAGE_KEYS.TTS_SPEED));
@@ -2483,6 +2609,7 @@
             characterEnabled: features?.characterEnabled !== false,
             chatEnabled: features?.chatEnabled !== false,
             speedReadingEnabled: features?.speedReadingEnabled !== false,
+            readingBuddyEnabled: features?.readingBuddyEnabled !== false,
             citationEnabled: features?.citationEnabled !== false
         };
     }
@@ -2556,6 +2683,9 @@
             console.debug('Failed to load classroom context:', error);
             state.classroomContext = normalizeClassroomContext(null);
             state.classroomAssignments = [];
+        }
+        if (readingBuddyController) {
+            readingBuddyController.refreshClassroomGating();
         }
     }
 
@@ -3786,6 +3916,7 @@
         if (!isClassroomFeatureEnabled('illustrationEnabled')) disabled.push('illustrations');
         if (!isClassroomFeatureEnabled('characterEnabled')) disabled.push('characters');
         if (!isClassroomFeatureEnabled('chatEnabled')) disabled.push('chat');
+        if (!isClassroomFeatureEnabled('readingBuddyEnabled')) disabled.push('reading buddy');
         if (!isClassroomFeatureEnabled('citationEnabled')) disabled.push('citations');
         if (elements.classroomFeatureSummary) {
             elements.classroomFeatureSummary.textContent = disabled.length > 0
@@ -3962,6 +4093,9 @@
         await characterCheckAvailability();
         await recapCheckAvailability();
         await quizCheckAvailability();
+        if (readingBuddyController) {
+            await readingBuddyController.onBookOpened();
+        }
 
         state.recapOptOut = getRecapOptOut(book.id);
         if (elements.chapterRecapOptout) {
@@ -4596,6 +4730,9 @@
 
         updateAnnotationControls();
         scheduleCharacterDiscoveryCheck();
+        if (readingBuddyController) {
+            readingBuddyController.onPageRendered();
+        }
         updateTouchNavigationControls();
         updateMobileHeaderMenuState();
     }
@@ -4639,6 +4776,9 @@
                 nextPage();
             } else {
                 renderPage();
+            }
+            if (readingBuddyController) {
+                readingBuddyController.onParagraphAdvanced();
             }
         } else if (state.currentChapterIndex < state.chapters.length - 1) {
             goToNextChapter(true);
@@ -9598,6 +9738,15 @@
                 if (e.key === 'Enter' && !e.shiftKey && document.activeElement === elements.chatInput) {
                     e.preventDefault();
                     sendChatMessage();
+                }
+                return;
+            }
+
+            // Handle reading buddy chat modal keyboard
+            if (readingBuddyController && readingBuddyController.isModalVisible()) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    readingBuddyController.handleEscape();
                 }
                 return;
             }

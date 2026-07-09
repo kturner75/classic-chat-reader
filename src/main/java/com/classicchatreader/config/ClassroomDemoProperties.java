@@ -73,6 +73,8 @@ public class ClassroomDemoProperties {
         private boolean characterEnabled = true;
         private boolean chatEnabled = true;
         private boolean speedReadingEnabled = true;
+        /** FE-only kill-switch for Reading Buddy; default on (disable-only). */
+        private boolean readingBuddyEnabled = true;
 
         public boolean isQuizEnabled() {
             return quizEnabled;
@@ -128,6 +130,14 @@ public class ClassroomDemoProperties {
 
         public void setSpeedReadingEnabled(boolean speedReadingEnabled) {
             this.speedReadingEnabled = speedReadingEnabled;
+        }
+
+        public boolean isReadingBuddyEnabled() {
+            return readingBuddyEnabled;
+        }
+
+        public void setReadingBuddyEnabled(boolean readingBuddyEnabled) {
+            this.readingBuddyEnabled = readingBuddyEnabled;
         }
     }
 
