@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "reading-buddy.proactive.max-words=42",
         "reading-buddy.chat.max-context-messages=7",
         "reading-buddy.memory.summary-max-chars=999",
+        "reading-buddy.memory.summary-every-messages=3",
+        "reading-buddy.memory.max-retained-messages=50",
+        "reading-buddy.quiet-default-minutes=30",
         "reading-buddy.post-chat-paragraph-gap=11"
 })
 class ReadingBuddyPropertiesBindingTest {
@@ -42,6 +45,9 @@ class ReadingBuddyPropertiesBindingTest {
         assertEquals(42, properties.getProactive().getMaxWords());
         assertEquals(7, properties.getChat().getMaxContextMessages());
         assertEquals(999, properties.getMemory().getSummaryMaxChars());
+        assertEquals(3, properties.getMemory().getSummaryEveryMessages());
+        assertEquals(50, properties.getMemory().getMaxRetainedMessages());
+        assertEquals(30, properties.getQuietDefaultMinutes());
         assertEquals(11, properties.getPostChatParagraphGap());
     }
 }

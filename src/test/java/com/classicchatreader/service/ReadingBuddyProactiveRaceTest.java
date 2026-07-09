@@ -4,6 +4,7 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +41,12 @@ class ReadingBuddyProactiveRaceTest {
     @Mock
     private ReadingBuddyMemoryRepository memoryRepository;
 
+    @Mock
+    private LlmProvider chatProvider;
+
+    @Mock
+    private ReadingBuddyMetricsService metricsService;
+
     private ReadingBuddyMemoryService memoryService;
 
     @BeforeEach
@@ -48,6 +55,8 @@ class ReadingBuddyProactiveRaceTest {
                 messageRepository,
                 memoryRepository,
                 new ReadingBuddyProperties(),
+                chatProvider,
+                metricsService,
                 new ImmediateTransactionManager());
     }
 

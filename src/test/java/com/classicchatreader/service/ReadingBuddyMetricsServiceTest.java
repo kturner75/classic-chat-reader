@@ -25,4 +25,16 @@ class ReadingBuddyMetricsServiceTest {
         assertEquals(400L, snapshot.get("chatLatencyTotalMs"));
         assertEquals(200L, snapshot.get("chatAverageLatencyMs"));
     }
+
+    @Test
+    void snapshot_tracksSummaryRefreshCounters() {
+        ReadingBuddyMetricsService metrics = new ReadingBuddyMetricsService();
+        metrics.recordSummaryRefresh();
+        metrics.recordSummaryRefresh();
+        metrics.recordSummaryRefreshFailed();
+
+        Map<String, Object> snapshot = metrics.snapshot();
+        assertEquals(2L, snapshot.get("summaryRefreshTotal"));
+        assertEquals(1L, snapshot.get("summaryRefreshFailed"));
+    }
 }

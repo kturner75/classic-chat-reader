@@ -143,6 +143,34 @@ class ReadingBuddyPromptBuilderTest {
     }
 
     @Test
+    void buildChatPrompt_summaryWatermarkChapter10_fullyOmittedAtChapter3() {
+        // Acceptance bar: summary with watermark chapter 10 is fully omitted at chapter 3.
+        ReadingBuddyPersona persona = catalog.findById(ReadingBuddyPersonaCatalog.HISTORIAN).orElseThrow();
+        String summary = "They discussed the Netherfield ball and Darcy's first proposal.";
+
+        String prompt = promptBuilder.buildChatPrompt(
+                persona,
+                "Pride and Prejudice",
+                "Jane Austen",
+                3,
+                "Chapter IV",
+                0,
+                "Safe early text.",
+                summary,
+                10,
+                0,
+                List.of(new ReadingBuddyPositionedMessage(
+                        "buddy", "Future relative chat", "chat", 10, 0)),
+                "What happens later?");
+
+        assertFalse(prompt.contains(summary));
+        assertFalse(prompt.contains("Netherfield"));
+        assertFalse(prompt.contains("Future relative chat"));
+        assertTrue(prompt.contains("(No memory yet.)"));
+        assertTrue(prompt.contains("Safe early text."));
+    }
+
+    @Test
     void buildProactivePrompt_omitsBehindWatermarkSummaryFromMemory() {
         ReadingBuddyPersona persona = catalog.findById(ReadingBuddyPersonaCatalog.HISTORIAN).orElseThrow();
         String spoilerSummary = "The creature kills William and frames Justine.";

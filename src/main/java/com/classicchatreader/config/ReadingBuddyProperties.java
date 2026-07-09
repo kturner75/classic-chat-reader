@@ -249,6 +249,8 @@ public class ReadingBuddyProperties {
         private int summaryMaxChars = 1500;
         private int recentMessages = 20;
         private int summaryEveryMessages = 8;
+        /** Hard cap on durable messages per owner×book×persona after successful summary. */
+        private int maxRetainedMessages = 100;
 
         public int getSummaryMaxChars() {
             return summaryMaxChars;
@@ -272,6 +274,14 @@ public class ReadingBuddyProperties {
 
         public void setSummaryEveryMessages(int summaryEveryMessages) {
             this.summaryEveryMessages = summaryEveryMessages;
+        }
+
+        public int getMaxRetainedMessages() {
+            return maxRetainedMessages;
+        }
+
+        public void setMaxRetainedMessages(int maxRetainedMessages) {
+            this.maxRetainedMessages = maxRetainedMessages;
         }
     }
 

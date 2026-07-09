@@ -6,6 +6,11 @@ import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import com.classicchatreader.service.llm.LlmOptions;
+import com.classicchatreader.service.llm.LlmProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -19,17 +24,22 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
  * Durable reading-buddy messages and rolling-summary memory for an owner×book×persona thread.
  * <p>
- * PR 3b: recent-message CRUD, history with rewind visibility, clear history.
- * Rolling summary refresh is deferred (empty summary is OK).
+ * Rolling summary is refreshed <strong>inline</strong> via {@code chatLlmProvider} after every
+ * {@code reading-buddy.memory.summary-every-messages} new messages, or when the recent list
+ * exceeds budget. On failure: prior summary is kept and the recent list is truncated.
+ * Summary watermarks power fail-closed omit-on-rewind in {@link ReadingBuddyPromptBuilder}.
  */
 @Service
 public class ReadingBuddyMemoryService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReadingBuddyMemoryService.class);
 
     public static final String ROLE_USER = "user";
     public static final String ROLE_BUDDY = "buddy";
@@ -41,20 +51,27 @@ public class ReadingBuddyMemoryService {
 
     private static final int DEFAULT_HISTORY_LIMIT = 50;
     private static final int MAX_HISTORY_LIMIT = 200;
+    private static final double SUMMARY_TEMPERATURE = 0.2;
 
     private final ReadingBuddyMessageRepository messageRepository;
     private final ReadingBuddyMemoryRepository memoryRepository;
     private final ReadingBuddyProperties properties;
+    private final LlmProvider chatProvider;
+    private final ReadingBuddyMetricsService metricsService;
     private final TransactionTemplate requiresNewTx;
 
     public ReadingBuddyMemoryService(
             ReadingBuddyMessageRepository messageRepository,
             ReadingBuddyMemoryRepository memoryRepository,
             ReadingBuddyProperties properties,
+            @Qualifier("chatLlmProvider") LlmProvider chatProvider,
+            ReadingBuddyMetricsService metricsService,
             PlatformTransactionManager transactionManager) {
         this.messageRepository = messageRepository;
         this.memoryRepository = memoryRepository;
         this.properties = properties;
+        this.chatProvider = chatProvider;
+        this.metricsService = metricsService;
         this.requiresNewTx = new TransactionTemplate(transactionManager);
         this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -100,9 +117,9 @@ public class ReadingBuddyMemoryService {
     }
 
     /**
-     * Persists a user chat turn and buddy reply, updates memory last_message_id (summary unchanged).
+     * Persists a user chat turn and buddy reply, updates memory last_message_id,
+     * then maybe refreshes the rolling summary (inline LLM; outside the write TX).
      */
-    @Transactional
     public ChatTurn persistChatTurn(
             String ownerKey,
             String bookId,
@@ -111,16 +128,20 @@ public class ReadingBuddyMemoryService {
             String buddyContent,
             int chapterIndex,
             int paragraphIndex) {
-        ReadingBuddyMessageEntity userMessage = saveMessage(
-                ownerKey, bookId, personaId,
-                ROLE_USER, KIND_CHAT, userContent,
-                chapterIndex, paragraphIndex);
-        ReadingBuddyMessageEntity buddyMessage = saveMessage(
-                ownerKey, bookId, personaId,
-                ROLE_BUDDY, KIND_CHAT, buddyContent,
-                chapterIndex, paragraphIndex);
-        touchMemoryLastMessage(ownerKey, bookId, personaId, buddyMessage.getId());
-        return new ChatTurn(userMessage, buddyMessage);
+        ChatTurn turn = requiresNewTx.execute(status -> {
+            ReadingBuddyMessageEntity userMessage = saveMessageInCurrentTx(
+                    ownerKey, bookId, personaId,
+                    ROLE_USER, KIND_CHAT, userContent,
+                    chapterIndex, paragraphIndex);
+            ReadingBuddyMessageEntity buddyMessage = saveMessageInCurrentTx(
+                    ownerKey, bookId, personaId,
+                    ROLE_BUDDY, KIND_CHAT, buddyContent,
+                    chapterIndex, paragraphIndex);
+            touchMemoryLastMessage(ownerKey, bookId, personaId, buddyMessage.getId());
+            return new ChatTurn(userMessage, buddyMessage);
+        });
+        maybeRefreshRollingSummary(ownerKey, bookId, personaId);
+        return Objects.requireNonNull(turn, "chat turn");
     }
 
     /**
@@ -132,6 +153,7 @@ public class ReadingBuddyMemoryService {
      * checked before the nested TX commits. On PostgreSQL unique violation the nested TX aborts
      * independently; recovery re-queries outside that aborted TX (caller outer TX stays healthy).
      * Not annotated {@code @Transactional} so recovery reads are not bound to a doomed session.
+     * Rolling summary may refresh after a successful insert.
      */
     public ProactivePersistResult persistProactiveComment(
             String ownerKey,
@@ -152,12 +174,13 @@ public class ReadingBuddyMemoryService {
             return ProactivePersistResult.existing(existing.get());
         }
 
+        ProactivePersistResult result;
         try {
             ProactivePersistResult nested = requiresNewTx.execute(status ->
                     insertProactiveInCurrentTx(
                             ownerKey, bookId, personaId, content,
                             chapterIndex, paragraphIndex, positionKey));
-            return Objects.requireNonNull(nested, "proactive persist result");
+            result = Objects.requireNonNull(nested, "proactive persist result");
         } catch (DataIntegrityViolationException ex) {
             // Nested REQUIRES_NEW rolled back; re-query winner on a clean connection/session
             // (PostgreSQL aborts only the nested TX after unique violation).
@@ -169,6 +192,11 @@ public class ReadingBuddyMemoryService {
             }
             throw ex;
         }
+
+        if (result.inserted()) {
+            maybeRefreshRollingSummary(ownerKey, bookId, personaId);
+        }
+        return result;
     }
 
     /**
@@ -207,6 +235,35 @@ public class ReadingBuddyMemoryService {
         ReadingBuddyMessageEntity saved = messageRepository.saveAndFlush(entity);
         touchMemoryLastMessage(ownerKey, bookId, personaId, saved.getId());
         return ProactivePersistResult.inserted(saved);
+    }
+
+    private ReadingBuddyMessageEntity saveMessageInCurrentTx(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String role,
+            String kind,
+            String content,
+            int chapterIndex,
+            int paragraphIndex) {
+        ReadingBuddyMessageEntity entity = new ReadingBuddyMessageEntity();
+        entity.setOwnerKey(ownerKey);
+        entity.setBookId(bookId);
+        entity.setPersonaId(personaId);
+        entity.setRole(role);
+        entity.setKind(kind);
+        entity.setContent(content);
+        entity.setChapterIndex(chapterIndex);
+        entity.setParagraphIndex(paragraphIndex);
+        if (KIND_PROACTIVE.equals(kind)) {
+            entity.setProactivePositionKey(
+                    ReadingBuddyMessageEntity.proactivePositionKey(chapterIndex, paragraphIndex));
+        } else {
+            entity.setProactivePositionKey(null);
+        }
+        entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(role, kind, content));
+        entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        return messageRepository.save(entity);
     }
 
     private Optional<ReadingBuddyMessageEntity> findProactiveAtPosition(
@@ -294,7 +351,7 @@ public class ReadingBuddyMemoryService {
     }
 
     /**
-     * Returns stored rolling summary + watermarks. Empty summary is OK (PR 5 fills it).
+     * Returns stored rolling summary + watermarks. Empty summary is OK until first refresh.
      */
     @Transactional(readOnly = true)
     public MemorySnapshot getMemorySnapshot(String ownerKey, String bookId, String personaId) {
@@ -373,6 +430,263 @@ public class ReadingBuddyMemoryService {
                 });
     }
 
+    /**
+     * Inline rolling-summary refresh when cadence or budget thresholds are met.
+     * LLM runs outside a write transaction. Fail-closed: on error keep prior summary and
+     * truncate the recent list to the configured budget.
+     */
+    public void maybeRefreshRollingSummary(String ownerKey, String bookId, String personaId) {
+        Objects.requireNonNull(ownerKey, "ownerKey");
+        Objects.requireNonNull(bookId, "bookId");
+        Objects.requireNonNull(personaId, "personaId");
+
+        long total = messageRepository.countByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId);
+        if (total <= 0) {
+            return;
+        }
+        if (!shouldRefreshSummary(total)) {
+            return;
+        }
+
+        List<ReadingBuddyMessageEntity> all = messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
+        if (all.isEmpty()) {
+            return;
+        }
+
+        int recentBudget = Math.max(1, properties.getMemory().getRecentMessages());
+        // Fold older-than-recent when over budget; otherwise fold full chronology for cadence refresh.
+        List<ReadingBuddyMessageEntity> toFold;
+        if (all.size() > recentBudget) {
+            toFold = List.copyOf(all.subList(0, all.size() - recentBudget));
+        } else {
+            toFold = List.copyOf(all);
+        }
+        if (toFold.isEmpty()) {
+            return;
+        }
+
+        MemorySnapshot prior = getMemorySnapshot(ownerKey, bookId, personaId);
+        String priorSummary = prior.summaryText() == null ? "" : prior.summaryText().trim();
+
+        metricsService.recordSummaryRefresh();
+        long started = System.currentTimeMillis();
+        try {
+            String prompt = buildSummaryPrompt(priorSummary, toFold);
+            String generated = chatProvider.generate(
+                    prompt,
+                    LlmOptions.withTemperatureAndTopP(SUMMARY_TEMPERATURE, 0.9));
+            String cleaned = cleanSummaryText(generated);
+            if (cleaned.isBlank()) {
+                throw new IllegalStateException("blank summary from LLM");
+            }
+
+            int maxChars = Math.max(1, properties.getMemory().getSummaryMaxChars());
+            if (cleaned.length() > maxChars) {
+                cleaned = cleaned.substring(0, maxChars).trim();
+            }
+
+            PositionWatermark foldWatermark = maxPosition(toFold);
+            PositionWatermark watermark = mergeWatermark(
+                    prior.summaryMaxChapterIndex(),
+                    prior.summaryMaxParagraphIndex(),
+                    priorSummary,
+                    foldWatermark);
+
+            applySuccessfulSummary(
+                    ownerKey,
+                    bookId,
+                    personaId,
+                    cleaned,
+                    watermark.chapterIndex(),
+                    watermark.paragraphIndex());
+
+            log.info(
+                    "event=buddy_memory_summarized ownerKey={} bookId={} personaId={} folded={} versionBump=1 latencyMs={} summaryChars={}",
+                    truncateForLog(ownerKey, 40),
+                    bookId,
+                    personaId,
+                    toFold.size(),
+                    System.currentTimeMillis() - started,
+                    cleaned.length()
+            );
+        } catch (Exception e) {
+            metricsService.recordSummaryRefreshFailed();
+            log.warn(
+                    "event=buddy_memory_summarize_failed ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
+                    truncateForLog(ownerKey, 40),
+                    bookId,
+                    personaId,
+                    e.getClass().getSimpleName(),
+                    e.getMessage()
+            );
+            // Fail-closed: keep prior summary, truncate recent list to budget.
+            truncateToBudget(ownerKey, bookId, personaId, recentBudget);
+        }
+    }
+
+    /**
+     * Exposed for unit tests: whether total message count warrants a refresh attempt.
+     */
+    boolean shouldRefreshSummary(long totalMessages) {
+        if (totalMessages <= 0) {
+            return false;
+        }
+        int recentBudget = Math.max(1, properties.getMemory().getRecentMessages());
+        int every = properties.getMemory().getSummaryEveryMessages();
+        boolean exceedsBudget = totalMessages > recentBudget;
+        boolean cadence = every > 0 && totalMessages >= every && (totalMessages % every == 0);
+        return exceedsBudget || cadence;
+    }
+
+    private void applySuccessfulSummary(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String summaryText,
+            int maxChapterIndex,
+            int maxParagraphIndex) {
+        requiresNewTx.executeWithoutResult(status -> {
+            ReadingBuddyMemoryEntity memory = memoryRepository
+                    .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
+                    .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
+            memory.setSummaryText(summaryText);
+            memory.setSummaryMaxChapterIndex(maxChapterIndex);
+            memory.setSummaryMaxParagraphIndex(maxParagraphIndex);
+            memory.setSummaryVersion(memory.getSummaryVersion() + 1);
+            memory.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+            try {
+                memoryRepository.save(memory);
+            } catch (DataIntegrityViolationException ex) {
+                ReadingBuddyMemoryEntity existing = memoryRepository
+                        .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
+                        .orElseThrow(() -> ex);
+                existing.setSummaryText(summaryText);
+                existing.setSummaryMaxChapterIndex(maxChapterIndex);
+                existing.setSummaryMaxParagraphIndex(maxParagraphIndex);
+                existing.setSummaryVersion(existing.getSummaryVersion() + 1);
+                existing.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+                memoryRepository.save(existing);
+            }
+
+            int maxRetained = Math.max(1, properties.getMemory().getMaxRetainedMessages());
+            pruneToMaxRetained(ownerKey, bookId, personaId, maxRetained);
+        });
+    }
+
+    private void truncateToBudget(String ownerKey, String bookId, String personaId, int budget) {
+        requiresNewTx.executeWithoutResult(status ->
+                pruneToMaxRetained(ownerKey, bookId, personaId, Math.max(1, budget)));
+    }
+
+    private void pruneToMaxRetained(String ownerKey, String bookId, String personaId, int maxKeep) {
+        List<ReadingBuddyMessageEntity> all = messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
+        if (all.size() <= maxKeep) {
+            return;
+        }
+        List<String> toDelete = new ArrayList<>();
+        int excess = all.size() - maxKeep;
+        for (int i = 0; i < excess; i++) {
+            String id = all.get(i).getId();
+            if (id != null) {
+                toDelete.add(id);
+            }
+        }
+        if (!toDelete.isEmpty()) {
+            messageRepository.deleteAllById(toDelete);
+        }
+    }
+
+    private static String buildSummaryPrompt(String priorSummary, List<ReadingBuddyMessageEntity> toFold) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                You compress a reading-buddy conversation into a durable rolling memory.
+                Output ONLY the summary text (no labels, no markdown fences).
+                Keep it third-person, compact, and spoiler-safe: only facts present in the prior summary
+                and the messages below. Do not invent plot or future events.
+                Focus on reader interests, questions, buddy asides, and ongoing threads that help later callbacks.
+
+                PRIOR SUMMARY:
+                """);
+        if (priorSummary == null || priorSummary.isBlank()) {
+            sb.append("(none)\n");
+        } else {
+            sb.append(priorSummary.trim()).append('\n');
+        }
+        sb.append("\nMESSAGES TO FOLD:\n");
+        for (ReadingBuddyMessageEntity msg : toFold) {
+            sb.append(String.format(
+                    Locale.ROOT,
+                    "[%s/%s ch=%d p=%d]: %s%n",
+                    msg.getRole() == null ? "?" : msg.getRole(),
+                    msg.getKind() == null ? "?" : msg.getKind(),
+                    msg.getChapterIndex(),
+                    msg.getParagraphIndex(),
+                    msg.getContent() == null ? "" : msg.getContent().trim()
+            ));
+        }
+        sb.append("\nSUMMARY:");
+        return sb.toString();
+    }
+
+    static String cleanSummaryText(String generated) {
+        if (generated == null) {
+            return "";
+        }
+        String cleaned = generated.trim();
+        if (cleaned.regionMatches(true, 0, "SUMMARY:", 0, "SUMMARY:".length())) {
+            cleaned = cleaned.substring("SUMMARY:".length()).trim();
+        }
+        if (cleaned.startsWith("\"") && cleaned.endsWith("\"") && cleaned.length() >= 2) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        return cleaned;
+    }
+
+    private static PositionWatermark maxPosition(List<ReadingBuddyMessageEntity> messages) {
+        int maxChapter = Integer.MIN_VALUE;
+        int maxParagraph = Integer.MIN_VALUE;
+        for (ReadingBuddyMessageEntity msg : messages) {
+            if (msg == null) {
+                continue;
+            }
+            int cmp = ReadingBuddyPromptBuilder.comparePosition(
+                    msg.getChapterIndex(), msg.getParagraphIndex(), maxChapter, maxParagraph);
+            if (cmp > 0 || maxChapter == Integer.MIN_VALUE) {
+                maxChapter = msg.getChapterIndex();
+                maxParagraph = msg.getParagraphIndex();
+            }
+        }
+        if (maxChapter == Integer.MIN_VALUE) {
+            return new PositionWatermark(0, 0);
+        }
+        return new PositionWatermark(maxChapter, maxParagraph);
+    }
+
+    /**
+     * When prior summary text is non-empty and has a full watermark, keep the max of prior and fold.
+     * Otherwise use the fold watermark alone (summary content from prior is re-included in the LLM input).
+     */
+    private static PositionWatermark mergeWatermark(
+            Integer priorChapter,
+            Integer priorParagraph,
+            String priorSummary,
+            PositionWatermark fold) {
+        boolean priorUsable = priorSummary != null
+                && !priorSummary.isBlank()
+                && priorChapter != null
+                && priorParagraph != null;
+        if (!priorUsable) {
+            return fold;
+        }
+        if (ReadingBuddyPromptBuilder.comparePosition(
+                priorChapter, priorParagraph, fold.chapterIndex(), fold.paragraphIndex()) >= 0) {
+            return new PositionWatermark(priorChapter, priorParagraph);
+        }
+        return fold;
+    }
+
     private void touchMemoryLastMessage(
             String ownerKey,
             String bookId,
@@ -382,7 +696,6 @@ public class ReadingBuddyMemoryService {
                 .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
                 .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
         memory.setLastMessageId(lastMessageId);
-        // Do not bump summary_version or watermarks here — summary refresh is PR 5.
         try {
             memoryRepository.save(memory);
         } catch (DataIntegrityViolationException ex) {
@@ -450,6 +763,19 @@ public class ReadingBuddyMemoryService {
                 createdAt,
                 visible
         );
+    }
+
+    private static String truncateForLog(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max) + "…";
+    }
+
+    private record PositionWatermark(int chapterIndex, int paragraphIndex) {
     }
 
     public record ChatTurn(

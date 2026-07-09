@@ -145,6 +145,7 @@ public class ReadingBuddyPreferenceService {
                 if (minutes == 0) {
                     global.setSuppressUntil(null);
                 } else {
+                    // 0 clears; positive uses client minutes (FE prefers status.quietDefaultMinutes).
                     global.setSuppressUntil(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(minutes));
                 }
             } else if (update.suppressUntilEpochMs() != null) {

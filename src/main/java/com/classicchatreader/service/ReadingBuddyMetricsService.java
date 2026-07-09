@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 /**
  * In-process counters for Reading Buddy (mirrors {@link RecapMetricsService}).
- * Chat counters are used in PR 3b; check/summary counters reserved for later PRs.
+ * Chat, check-comment, and rolling-summary refresh counters.
  */
 @Service
 public class ReadingBuddyMetricsService {

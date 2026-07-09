@@ -6,6 +6,8 @@ import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import com.classicchatreader.service.llm.LlmOptions;
+import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,7 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +54,12 @@ class ReadingBuddyMemoryServiceTest {
     @Mock
     private ReadingBuddyMemoryRepository memoryRepository;
 
+    @Mock
+    private LlmProvider chatProvider;
+
+    @Mock
+    private ReadingBuddyMetricsService metricsService;
+
     private final Map<String, List<ReadingBuddyMessageEntity>> messagesByThread = new LinkedHashMap<>();
     private final Map<String, ReadingBuddyMemoryEntity> memories = new LinkedHashMap<>();
     private final AtomicInteger idSeq = new AtomicInteger(1);
@@ -61,10 +71,14 @@ class ReadingBuddyMemoryServiceTest {
     void setUp() {
         properties = new ReadingBuddyProperties();
         properties.getMemory().setRecentMessages(20);
+        properties.getMemory().setSummaryEveryMessages(8);
+        properties.getMemory().setMaxRetainedMessages(100);
         memoryService = new ReadingBuddyMemoryService(
                 messageRepository,
                 memoryRepository,
                 properties,
+                chatProvider,
+                metricsService,
                 new ImmediateTransactionManager());
 
         org.mockito.Mockito.lenient().when(messageRepository.save(any(ReadingBuddyMessageEntity.class)))
@@ -100,6 +114,28 @@ class ReadingBuddyMemoryServiceTest {
                     return newestFirstPage(messagesByThread.getOrDefault(key, List.of()), pageable.getPageSize());
                 });
 
+        org.mockito.Mockito.lenient().when(messageRepository
+                        .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    String key = threadKey(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2));
+                    return messagesByThread.getOrDefault(key, List.of()).stream()
+                            .sorted(Comparator.comparing(ReadingBuddyMessageEntity::getCreatedAt))
+                            .collect(Collectors.toList());
+                });
+
+        org.mockito.Mockito.lenient().when(messageRepository.countByOwnerKeyAndBookIdAndPersonaId(
+                        any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    String key = threadKey(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2));
+                    return (long) messagesByThread.getOrDefault(key, List.of()).size();
+                });
+
         org.mockito.Mockito.lenient().when(messageRepository.findVisibleAtOrBeforeOrderByCreatedAtDesc(
                         any(), any(), any(), anyInt(), anyInt(), any(Pageable.class)))
                 .thenAnswer(invocation -> {
@@ -121,6 +157,17 @@ class ReadingBuddyMemoryServiceTest {
                             .collect(Collectors.toCollection(ArrayList::new));
                     return newestFirstPage(visible, pageable.getPageSize());
                 });
+
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Iterable<String> ids = (Iterable<String>) invocation.getArgument(0);
+            for (String id : ids) {
+                for (List<ReadingBuddyMessageEntity> list : messagesByThread.values()) {
+                    list.removeIf(m -> id.equals(m.getId()));
+                }
+            }
+            return null;
+        }).when(messageRepository).deleteAllById(any());
 
         org.mockito.Mockito.lenient().when(memoryRepository.findByOwnerKeyAndBookIdAndPersonaId(any(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -289,6 +336,106 @@ class ReadingBuddyMemoryServiceTest {
         assertEquals("", snapshot.summaryText());
         assertNull(snapshot.summaryMaxChapterIndex());
         assertEquals(0, snapshot.summaryVersion());
+    }
+
+    @Test
+    void shouldRefreshSummary_everyMessagesOrOverBudget() {
+        assertFalse(memoryService.shouldRefreshSummary(0));
+        assertFalse(memoryService.shouldRefreshSummary(7));
+        assertTrue(memoryService.shouldRefreshSummary(8));
+        assertTrue(memoryService.shouldRefreshSummary(16));
+        assertFalse(memoryService.shouldRefreshSummary(9));
+
+        properties.getMemory().setRecentMessages(5);
+        assertTrue(memoryService.shouldRefreshSummary(6)); // exceeds budget
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_setsWatermarksAndIncrementsVersion() {
+        properties.getMemory().setSummaryEveryMessages(4);
+        properties.getMemory().setRecentMessages(20);
+        // Positions up to chapter 10 so watermark can be ch10 for omit tests.
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "q1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "a1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "q2", 10, 2);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "a2", 10, 2);
+
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Reader asked about early scenes; later returned at chapter 10.");
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        verify(metricsService).recordSummaryRefresh();
+        verify(metricsService, never()).recordSummaryRefreshFailed();
+        verify(chatProvider).generate(anyString(), any(LlmOptions.class));
+
+        ReadingBuddyMemoryEntity memory = memories.get(threadKey("owner-A", "book-1", "humorist"));
+        assertNotNull(memory);
+        assertTrue(memory.getSummaryText().contains("chapter 10")
+                || memory.getSummaryText().contains("Reader asked"));
+        assertEquals(10, memory.getSummaryMaxChapterIndex());
+        assertEquals(2, memory.getSummaryMaxParagraphIndex());
+        assertEquals(1, memory.getSummaryVersion());
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_onFailure_keepsPriorSummaryAndTruncates() {
+        properties.getMemory().setSummaryEveryMessages(4);
+        properties.getMemory().setRecentMessages(2);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "old-1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "old-2", 1, 1);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "new-1", 2, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "new-2", 2, 1);
+
+        ReadingBuddyMemoryEntity prior = new ReadingBuddyMemoryEntity();
+        prior.setId("mem-prior");
+        prior.setOwnerKey("owner-A");
+        prior.setBookId("book-1");
+        prior.setPersonaId("humorist");
+        prior.setSummaryText("prior summary text");
+        prior.setSummaryVersion(2);
+        prior.setSummaryMaxChapterIndex(1);
+        prior.setSummaryMaxParagraphIndex(1);
+        memories.put(threadKey("owner-A", "book-1", "humorist"), prior);
+
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenThrow(new RuntimeException("provider down"));
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        verify(metricsService).recordSummaryRefresh();
+        verify(metricsService).recordSummaryRefreshFailed();
+
+        ReadingBuddyMemoryEntity memory = memories.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals("prior summary text", memory.getSummaryText());
+        assertEquals(2, memory.getSummaryVersion());
+        assertEquals(1, memory.getSummaryMaxChapterIndex());
+
+        List<ReadingBuddyMessageEntity> remaining =
+                messagesByThread.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(2, remaining.size());
+        assertTrue(remaining.stream().anyMatch(m -> "new-1".equals(m.getContent())));
+        assertTrue(remaining.stream().anyMatch(m -> "new-2".equals(m.getContent())));
+        assertTrue(remaining.stream().noneMatch(m -> "old-1".equals(m.getContent())));
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_skipsWhenBelowThresholds() {
+        properties.getMemory().setSummaryEveryMessages(8);
+        properties.getMemory().setRecentMessages(20);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "only", 0, 0);
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        verify(chatProvider, never()).generate(anyString(), any(LlmOptions.class));
+        verify(metricsService, never()).recordSummaryRefresh();
+    }
+
+    @Test
+    void cleanSummaryText_stripsLabelAndQuotes() {
+        assertEquals("Hello world", ReadingBuddyMemoryService.cleanSummaryText("SUMMARY: Hello world"));
+        assertEquals("Hi", ReadingBuddyMemoryService.cleanSummaryText("\"Hi\""));
+        assertEquals("", ReadingBuddyMemoryService.cleanSummaryText("  "));
     }
 
     private static List<ReadingBuddyMessageEntity> newestFirstPage(

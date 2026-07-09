@@ -83,7 +83,8 @@ class ReadingBuddyControllerTest {
                 .andExpect(jsonPath("$.enabled", is(true)))
                 .andExpect(jsonPath("$.chatEnabled", is(true)))
                 .andExpect(jsonPath("$.providerAvailable", is(true)))
-                .andExpect(jsonPath("$.available", is(true)));
+                .andExpect(jsonPath("$.available", is(true)))
+                .andExpect(jsonPath("$.quietDefaultMinutes", is(45)));
     }
 
     @Test

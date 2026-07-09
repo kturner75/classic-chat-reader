@@ -88,6 +88,8 @@ public class ReadingBuddyController {
         status.put("chatEnabled", chatEnabled);
         status.put("providerAvailable", providerAvailable);
         status.put("available", available);
+        // FE quiet-for-a-while uses this default (aligned with reading-buddy.quiet-default-minutes).
+        status.put("quietDefaultMinutes", properties.getQuietDefaultMinutes());
         return status;
     }
 

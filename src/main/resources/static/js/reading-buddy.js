@@ -14,6 +14,7 @@
     const MIN_PARAGRAPH_CHARS = 40;
     const DWELL_MS = 800;
     const TOAST_AUTO_HIDE_MS = 8000;
+    /** Fallback when status has not loaded quietDefaultMinutes yet. */
     const QUIET_MINUTES = 45;
     const TOAST_PREVIEW_CHARS = 120;
     const FREQUENCIES = Object.freeze(['rare', 'occasional', 'chatty']);
@@ -200,6 +201,7 @@
 
         const state = {
             statusAvailable: false,
+            quietDefaultMinutes: QUIET_MINUTES,
             personas: [],
             prefs: {
                 enabled: false,
@@ -373,6 +375,10 @@
                     state.statusAvailable = false;
                 } else {
                     const status = await response.json();
+                    const quietFromStatus = Number(status && status.quietDefaultMinutes);
+                    if (Number.isFinite(quietFromStatus) && quietFromStatus > 0) {
+                        state.quietDefaultMinutes = Math.floor(quietFromStatus);
+                    }
                     state.statusAvailable = isFeatureAvailable(status, host.getClassroomContext
                         ? host.getClassroomContext()
                         : null);
@@ -691,15 +697,24 @@
             }, 400);
         }
 
+        function quietMinutes() {
+            const fromStatus = Number(state.quietDefaultMinutes);
+            if (Number.isFinite(fromStatus) && fromStatus > 0) {
+                return Math.floor(fromStatus);
+            }
+            return QUIET_MINUTES;
+        }
+
         async function quietForAWhile() {
             // Invalidate in-flight checks immediately; optimistic suppress while PUT runs.
             invalidatePendingChecks({ resetAdvances: false });
             dismissToast();
-            state.prefs.suppressUntilEpochMs = Date.now() + (QUIET_MINUTES * 60 * 1000);
+            const minutes = quietMinutes();
+            state.prefs.suppressUntilEpochMs = Date.now() + (minutes * 60 * 1000);
             try {
-                await putPreferences({ quietMinutes: QUIET_MINUTES });
+                await putPreferences({ quietMinutes: minutes });
                 if (typeof host.onQuietApplied === 'function') {
-                    host.onQuietApplied(QUIET_MINUTES);
+                    host.onQuietApplied(minutes);
                 }
             } catch (error) {
                 console.debug('Reading buddy quiet failed:', error);

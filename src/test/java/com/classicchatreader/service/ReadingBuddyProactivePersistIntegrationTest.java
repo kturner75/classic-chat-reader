@@ -5,9 +5,13 @@ import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import com.classicchatreader.service.llm.LlmOptions;
+import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,8 +33,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * REQUIRES_NEW inserts commit independently of a wrapping test transaction.
  */
 @DataJpaTest
-@Import({ReadingBuddyMemoryService.class, ReadingBuddyProperties.class})
+@Import({
+        ReadingBuddyMemoryService.class,
+        ReadingBuddyProperties.class,
+        ReadingBuddyMetricsService.class,
+        ReadingBuddyProactivePersistIntegrationTest.StubLlmConfig.class
+})
 class ReadingBuddyProactivePersistIntegrationTest {
+
+    @TestConfiguration
+    static class StubLlmConfig {
+        @Bean(name = "chatLlmProvider")
+        LlmProvider chatLlmProvider() {
+            return new LlmProvider() {
+                @Override
+                public String generate(String prompt, LlmOptions options) {
+                    return "stub summary";
+                }
+
+                @Override
+                public boolean isAvailable() {
+                    return true;
+                }
+
+                @Override
+                public String getProviderName() {
+                    return "stub";
+                }
+            };
+        }
+    }
 
     @Autowired
     private ReadingBuddyMemoryService memoryService;
