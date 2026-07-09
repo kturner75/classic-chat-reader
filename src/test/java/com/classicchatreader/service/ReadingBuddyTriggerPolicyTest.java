@@ -132,6 +132,34 @@ class ReadingBuddyTriggerPolicyTest {
     }
 
     @Test
+    void rateCap_whenHourlyLimitReached_usesOldestInWindowForRetry() {
+        stubNoExistingAtPosition();
+        when(messageRepository.findByOwnerKeyAndBookIdAndPersonaIdAndKindOrderByCreatedAtDesc(
+                anyString(), anyString(), anyString(), eq("proactive"), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(messageRepository.countByOwnerKeyAndBookIdAndPersonaIdAndKindAndChapterIndex(
+                anyString(), anyString(), anyString(), eq("proactive"), anyInt()))
+                .thenReturn(0L);
+        when(messageRepository.countByOwnerKeyAndBookIdAndPersonaIdAndKindAndCreatedAtGreaterThanEqual(
+                eq("owner"), eq("book-1"), eq("humorist"), eq("proactive"), any()))
+                .thenReturn(12L);
+
+        LocalDateTime oldestAt = now.minusMinutes(20);
+        ReadingBuddyMessageEntity oldest = proactive(1, 0, oldestAt);
+        when(messageRepository.findOldestSince(
+                eq("owner"), eq("book-1"), eq("humorist"), eq("proactive"), any(), any(Pageable.class)))
+                .thenReturn(List.of(oldest));
+
+        ReadingBuddyTriggerPolicy.TriggerDecision.Silence silence =
+                assertInstanceOf(ReadingBuddyTriggerPolicy.TriggerDecision.Silence.class,
+                        policy.evaluate(baseContext(true), now));
+        assertEquals(ReadingBuddyTriggerPolicy.SilenceReason.RATE_CAP, silence.reason());
+        // Oldest at now-20m unlocks at now+40m → ~40 minutes remaining
+        assertTrue(silence.nextEligibleAfterMs() > 30 * 60_000L);
+        assertTrue(silence.nextEligibleAfterMs() <= 40 * 60_000L);
+    }
+
+    @Test
     void postChatGap_whenTooSoonAfterUserChat() {
         stubNoExistingAtPosition();
         when(messageRepository.findByOwnerKeyAndBookIdAndPersonaIdAndKindOrderByCreatedAtDesc(

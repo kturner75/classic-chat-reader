@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -135,7 +136,7 @@ class ReadingBuddyCommentServiceTest {
         when(memoryService.persistProactiveComment(
                 eq("owner"), eq("book-1"), eq("humorist"),
                 eq("Darcy really said she is tolerable."), eq(3), eq(12)))
-                .thenReturn(saved);
+                .thenReturn(ReadingBuddyMemoryService.ProactivePersistResult.inserted(saved));
 
         ReadingBuddyCommentService.CheckCommentResult.Comment comment =
                 assertInstanceOf(ReadingBuddyCommentService.CheckCommentResult.Comment.class,
@@ -148,6 +149,59 @@ class ReadingBuddyCommentServiceTest {
         assertEquals("humorist", comment.personaId());
         assertEquals("/images/buddies/humorist.png", comment.portraitUrl());
         verify(metricsService).recordCheckComment();
+    }
+
+    @Test
+    void checkComment_providerError_returnsProviderErrorNotDecidedNone() {
+        stubBookAndPosition();
+        when(preferenceService.getEffective("owner", "book-1"))
+                .thenReturn(enabledPrefs());
+        when(triggerPolicy.evaluate(any()))
+                .thenReturn(new ReadingBuddyTriggerPolicy.TriggerDecision.Eligible(180_000L));
+        when(memoryService.getMemorySnapshot(any(), any(), any()))
+                .thenReturn(new ReadingBuddyMemoryService.MemorySnapshot("", null, null, 0, null));
+        when(promptBuilder.buildProactivePromptForPosition(
+                any(), any(), any(), any(), anyInt(), any(), anyInt(), any(), any(), any()))
+                .thenReturn("PROMPT");
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenThrow(new RuntimeException("timeout"));
+
+        ReadingBuddyCommentService.CheckCommentResult.Silence silence =
+                assertInstanceOf(ReadingBuddyCommentService.CheckCommentResult.Silence.class,
+                        commentService.checkComment("owner", "book-1", "humorist", 3, 12, null));
+        assertEquals(ReadingBuddyTriggerPolicy.SilenceReason.PROVIDER_ERROR, silence.reason());
+        verify(metricsService).recordCheckFailed();
+        verify(memoryService, never()).persistProactiveComment(
+                any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void checkComment_raceExisting_doesNotRecordCheckComment() {
+        stubBookAndPosition();
+        when(preferenceService.getEffective("owner", "book-1"))
+                .thenReturn(enabledPrefs());
+        when(triggerPolicy.evaluate(any()))
+                .thenReturn(new ReadingBuddyTriggerPolicy.TriggerDecision.Eligible(180_000L));
+        when(memoryService.getMemorySnapshot(any(), any(), any()))
+                .thenReturn(new ReadingBuddyMemoryService.MemorySnapshot("", null, null, 0, null));
+        when(promptBuilder.buildProactivePromptForPosition(
+                any(), any(), any(), any(), anyInt(), any(), anyInt(), any(), any(), any()))
+                .thenReturn("PROMPT");
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("COMMENT: Loser text after race.");
+        ReadingBuddyMessageEntity winner = new ReadingBuddyMessageEntity();
+        winner.setId("winner-1");
+        winner.setContent("First comment wins");
+        when(memoryService.persistProactiveComment(any(), any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(ReadingBuddyMemoryService.ProactivePersistResult.existing(winner));
+
+        ReadingBuddyCommentService.CheckCommentResult.Comment comment =
+                assertInstanceOf(ReadingBuddyCommentService.CheckCommentResult.Comment.class,
+                        commentService.checkComment("owner", "book-1", "humorist", 3, 12, null));
+        assertEquals("winner-1", comment.messageId());
+        assertEquals("First comment wins", comment.text());
+        verify(metricsService, never()).recordCheckComment();
+        verify(metricsService).recordCheckSilence();
     }
 
     @Test
@@ -213,6 +267,16 @@ class ReadingBuddyCommentServiceTest {
         String noSentence = "alpha beta gamma delta epsilon zeta eta";
         assertEquals("alpha beta gamma", ReadingBuddyCommentService.hardTruncateWords(noSentence, 3));
         assertTrue(ReadingBuddyCommentService.hardTruncateWords("", 10).isEmpty());
+    }
+
+    @Test
+    void hardTruncateWords_skipsShortAbbreviations() {
+        // Would otherwise cut at "Dr." if abbreviation detection were absent.
+        String text = "Dr. Smith said something witty about Darcy today evening night.";
+        String truncated = ReadingBuddyCommentService.hardTruncateWords(text, 6);
+        assertTrue(truncated.length() > 4, truncated);
+        assertFalse(truncated.equals("Dr."), truncated);
+        assertTrue(ReadingBuddyCommentService.isLikelyAbbreviation("Dr. Smith", 2));
     }
 
     private void stubBookAndPosition() {

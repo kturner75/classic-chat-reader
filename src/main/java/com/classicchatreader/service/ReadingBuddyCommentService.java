@@ -167,9 +167,12 @@ public class ReadingBuddyCommentService {
                         e.getMessage(),
                         e
                 );
-                long nextMs = Math.max(0L, properties.minCooldownMsFor(frequency));
+                // Distinct from DECIDED_NONE so clients can retry sooner after outages.
+                long nextMs = Math.min(
+                        30_000L,
+                        Math.max(5_000L, properties.minCooldownMsFor(frequency) / 6));
                 return CheckCommentResult.silence(
-                        ReadingBuddyTriggerPolicy.SilenceReason.DECIDED_NONE,
+                        ReadingBuddyTriggerPolicy.SilenceReason.PROVIDER_ERROR,
                         nextMs,
                         effectivePersonaId,
                         readerChapterIndex,
@@ -201,21 +204,45 @@ public class ReadingBuddyCommentService {
                         readerParagraphIndex);
             }
 
-            // Narrow write TX inside memoryService; race → keep first row.
-            ReadingBuddyMessageEntity saved = memoryService.persistProactiveComment(
-                    ownerKey,
-                    book.getId(),
-                    effectivePersonaId,
-                    truncated,
-                    readerChapterIndex,
-                    readerParagraphIndex);
+            // Narrow REQUIRES_NEW write inside memoryService; race → keep first row.
+            ReadingBuddyMemoryService.ProactivePersistResult persistResult =
+                    memoryService.persistProactiveComment(
+                            ownerKey,
+                            book.getId(),
+                            effectivePersonaId,
+                            truncated,
+                            readerChapterIndex,
+                            readerParagraphIndex);
 
-            metricsService.recordCheckComment();
+            ReadingBuddyMessageEntity saved = persistResult.message();
             long nextEligible = decision.nextEligibleAfterMs();
             if (nextEligible <= 0) {
                 nextEligible = Math.max(0L, properties.minCooldownMsFor(frequency));
             }
 
+            if (!persistResult.inserted()) {
+                // Concurrent winner already stored — do not double-count COMMENT metrics.
+                // Still return the first row so the client can show the same toast text.
+                metricsService.recordCheckSilence();
+                log.debug(
+                        "event=buddy_check_race_existing bookId={} personaId={} chapter={} paragraph={} messageId={}",
+                        book.getId(),
+                        effectivePersonaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        saved.getId()
+                );
+                return CheckCommentResult.comment(
+                        saved.getId(),
+                        saved.getContent(),
+                        effectivePersonaId,
+                        persona.portraitPath(),
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        nextEligible);
+            }
+
+            metricsService.recordCheckComment();
             log.debug(
                     "event=buddy_check_comment bookId={} personaId={} chapter={} paragraph={} chars={}",
                     book.getId(),
@@ -305,6 +332,9 @@ public class ReadingBuddyCommentService {
     /**
      * Hard-truncates by whitespace words; prefers ending on a sentence boundary when possible.
      * No ellipsis (proactive toast should not look cut mid-word with "…").
+     * <p>
+     * Sentence ends must be followed by whitespace or end-of-string, and short title-style
+     * abbreviations ({@code Dr.}, {@code Mr.}) are skipped so we do not cut to {@code "Dr."}.
      */
     static String hardTruncateWords(String text, int maxWords) {
         if (text == null) {
@@ -326,14 +356,46 @@ public class ReadingBuddyCommentService {
             sb.append(words[i]);
         }
         String cut = sb.toString().trim();
-        // Prefer sentence boundary within the truncated window
-        int lastSentenceEnd = Math.max(
-                Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!')),
-                cut.lastIndexOf('?'));
-        if (lastSentenceEnd >= Math.max(8, cut.length() / 3)) {
-            return cut.substring(0, lastSentenceEnd + 1).trim();
+        int minIndex = Math.max(8, cut.length() / 3);
+        for (int i = cut.length() - 1; i >= minIndex; i--) {
+            char c = cut.charAt(i);
+            if (c != '.' && c != '!' && c != '?') {
+                continue;
+            }
+            // Boundary must be end-of-window or followed by whitespace (true sentence end).
+            if (i + 1 < cut.length() && !Character.isWhitespace(cut.charAt(i + 1))) {
+                continue;
+            }
+            if (c == '.' && isLikelyAbbreviation(cut, i)) {
+                continue;
+            }
+            // Require a meaningful body before the boundary.
+            if (i + 1 < 12) {
+                continue;
+            }
+            return cut.substring(0, i + 1).trim();
         }
         return cut;
+    }
+
+    /**
+     * True when the word immediately before {@code periodIndex} looks like a short title
+     * abbreviation (1–3 letters), e.g. {@code Dr.}, {@code Mr.}, {@code St.}.
+     */
+    static boolean isLikelyAbbreviation(String text, int periodIndex) {
+        if (periodIndex <= 0 || text.charAt(periodIndex) != '.') {
+            return false;
+        }
+        int end = periodIndex - 1;
+        if (!Character.isLetter(text.charAt(end))) {
+            return false;
+        }
+        int start = end;
+        while (start >= 0 && Character.isLetter(text.charAt(start))) {
+            start--;
+        }
+        int wordLen = end - start;
+        return wordLen >= 1 && wordLen <= 3;
     }
 
     private static String truncateForLog(String value, int max) {

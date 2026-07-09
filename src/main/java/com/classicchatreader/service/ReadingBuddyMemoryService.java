@@ -9,7 +9,10 @@ import com.classicchatreader.repository.ReadingBuddyMessageRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -42,14 +45,18 @@ public class ReadingBuddyMemoryService {
     private final ReadingBuddyMessageRepository messageRepository;
     private final ReadingBuddyMemoryRepository memoryRepository;
     private final ReadingBuddyProperties properties;
+    private final TransactionTemplate requiresNewTx;
 
     public ReadingBuddyMemoryService(
             ReadingBuddyMessageRepository messageRepository,
             ReadingBuddyMemoryRepository memoryRepository,
-            ReadingBuddyProperties properties) {
+            ReadingBuddyProperties properties,
+            PlatformTransactionManager transactionManager) {
         this.messageRepository = messageRepository;
         this.memoryRepository = memoryRepository;
         this.properties = properties;
+        this.requiresNewTx = new TransactionTemplate(transactionManager);
+        this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -120,9 +127,13 @@ public class ReadingBuddyMemoryService {
      * Inserts a proactive buddy comment at the given position.
      * Unique on {@code proactive_position_key}: re-checks before insert; on concurrent race
      * keeps the first row and returns it.
+     * <p>
+     * Insert runs in {@code REQUIRES_NEW} with {@code saveAndFlush} so the unique constraint is
+     * checked before the nested TX commits. On PostgreSQL unique violation the nested TX aborts
+     * independently; recovery re-queries outside that aborted TX (caller outer TX stays healthy).
+     * Not annotated {@code @Transactional} so recovery reads are not bound to a doomed session.
      */
-    @Transactional
-    public ReadingBuddyMessageEntity persistProactiveComment(
+    public ProactivePersistResult persistProactiveComment(
             String ownerKey,
             String bookId,
             String personaId,
@@ -135,27 +146,76 @@ public class ReadingBuddyMemoryService {
         Objects.requireNonNull(content, "content");
 
         String positionKey = ReadingBuddyMessageEntity.proactivePositionKey(chapterIndex, paragraphIndex);
-        Optional<ReadingBuddyMessageEntity> existing = messageRepository
-                .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
-                        ownerKey, bookId, personaId, positionKey);
+        Optional<ReadingBuddyMessageEntity> existing = findProactiveAtPosition(
+                ownerKey, bookId, personaId, positionKey);
         if (existing.isPresent()) {
-            return existing.get();
+            return ProactivePersistResult.existing(existing.get());
         }
 
         try {
-            ReadingBuddyMessageEntity saved = saveMessage(
-                    ownerKey, bookId, personaId,
-                    ROLE_BUDDY, KIND_PROACTIVE, content,
-                    chapterIndex, paragraphIndex);
-            touchMemoryLastMessage(ownerKey, bookId, personaId, saved.getId());
-            return saved;
+            ProactivePersistResult nested = requiresNewTx.execute(status ->
+                    insertProactiveInCurrentTx(
+                            ownerKey, bookId, personaId, content,
+                            chapterIndex, paragraphIndex, positionKey));
+            return Objects.requireNonNull(nested, "proactive persist result");
         } catch (DataIntegrityViolationException ex) {
-            // Concurrent double-check: unique index on proactive_position_key — keep first.
-            return messageRepository
-                    .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
-                            ownerKey, bookId, personaId, positionKey)
-                    .orElseThrow(() -> ex);
+            // Nested REQUIRES_NEW rolled back; re-query winner on a clean connection/session
+            // (PostgreSQL aborts only the nested TX after unique violation).
+            ReadingBuddyMessageEntity winner = requiresNewTx.execute(status ->
+                    findProactiveAtPosition(ownerKey, bookId, personaId, positionKey)
+                            .orElse(null));
+            if (winner != null) {
+                return ProactivePersistResult.existing(winner);
+            }
+            throw ex;
         }
+    }
+
+    /**
+     * Insert + flush + memory touch inside the caller's transaction (intended for REQUIRES_NEW).
+     * Re-checks existence first. Does <em>not</em> catch unique violations (must propagate so
+     * the nested TX rolls back cleanly on PostgreSQL).
+     */
+    private ProactivePersistResult insertProactiveInCurrentTx(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String content,
+            int chapterIndex,
+            int paragraphIndex,
+            String positionKey) {
+        Optional<ReadingBuddyMessageEntity> again = findProactiveAtPosition(
+                ownerKey, bookId, personaId, positionKey);
+        if (again.isPresent()) {
+            return ProactivePersistResult.existing(again.get());
+        }
+
+        ReadingBuddyMessageEntity entity = new ReadingBuddyMessageEntity();
+        entity.setOwnerKey(ownerKey);
+        entity.setBookId(bookId);
+        entity.setPersonaId(personaId);
+        entity.setRole(ROLE_BUDDY);
+        entity.setKind(KIND_PROACTIVE);
+        entity.setContent(content);
+        entity.setChapterIndex(chapterIndex);
+        entity.setParagraphIndex(paragraphIndex);
+        entity.setProactivePositionKey(positionKey);
+        entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(ROLE_BUDDY, KIND_PROACTIVE, content));
+        entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        // saveAndFlush forces unique-index check before nested TX commit (GenerationType.UUID
+        // would otherwise defer INSERT until flush/commit, missing our catch path).
+        ReadingBuddyMessageEntity saved = messageRepository.saveAndFlush(entity);
+        touchMemoryLastMessage(ownerKey, bookId, personaId, saved.getId());
+        return ProactivePersistResult.inserted(saved);
+    }
+
+    private Optional<ReadingBuddyMessageEntity> findProactiveAtPosition(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String positionKey) {
+        return messageRepository.findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
+                ownerKey, bookId, personaId, positionKey);
     }
 
     /**
@@ -169,10 +229,20 @@ public class ReadingBuddyMemoryService {
             int chapterIndex,
             int paragraphIndex) {
         String positionKey = ReadingBuddyMessageEntity.proactivePositionKey(chapterIndex, paragraphIndex);
-        return messageRepository
-                .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
-                        ownerKey, bookId, personaId, positionKey)
-                .isPresent();
+        return findProactiveAtPosition(ownerKey, bookId, personaId, positionKey).isPresent();
+    }
+
+    /**
+     * Result of a proactive insert attempt: whether a new row was written.
+     */
+    public record ProactivePersistResult(ReadingBuddyMessageEntity message, boolean inserted) {
+        public static ProactivePersistResult inserted(ReadingBuddyMessageEntity message) {
+            return new ProactivePersistResult(Objects.requireNonNull(message), true);
+        }
+
+        public static ProactivePersistResult existing(ReadingBuddyMessageEntity message) {
+            return new ProactivePersistResult(Objects.requireNonNull(message), false);
+        }
     }
 
     /**

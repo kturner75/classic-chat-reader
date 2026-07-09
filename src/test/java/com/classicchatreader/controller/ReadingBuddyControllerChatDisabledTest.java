@@ -95,6 +95,24 @@ class ReadingBuddyControllerChatDisabledTest {
     }
 
     @Test
+    void checkComment_whenAiChatDisabled_returns403() throws Exception {
+        mockMvc.perform(post("/api/reading-buddy/check-comment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bookId": "book-1",
+                                  "personaId": "humorist",
+                                  "readerChapterIndex": 0,
+                                  "readerParagraphIndex": 0
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", is("CHAT_DISABLED")));
+
+        verify(commentService, never()).checkComment(any(), any(), any(), anyInt(), anyInt(), any());
+    }
+
+    @Test
     void history_whenAiChatDisabled_returns403() throws Exception {
         mockMvc.perform(get("/api/reading-buddy/history")
                         .param("bookId", "book-1")

@@ -24,7 +24,10 @@ public class ReadingBuddyTriggerPolicy {
         COOLDOWN,
         RATE_CAP,
         POST_CHAT_GAP,
-        DECIDED_NONE
+        /** LLM returned NONE / invalid grammar after eligible path (intentional sparsity). */
+        DECIDED_NONE,
+        /** Provider/LLM infrastructure failure — not a deliberate NONE. */
+        PROVIDER_ERROR
     }
 
     private final ReadingBuddyMessageRepository messageRepository;

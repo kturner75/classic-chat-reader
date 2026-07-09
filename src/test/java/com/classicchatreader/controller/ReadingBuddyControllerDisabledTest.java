@@ -96,4 +96,28 @@ class ReadingBuddyControllerDisabledTest {
                 org.mockito.ArgumentMatchers.anyInt());
         verify(metricsService).recordChatRejected();
     }
+
+    @Test
+    void checkComment_whenFeatureDisabled_returns403() throws Exception {
+        mockMvc.perform(post("/api/reading-buddy/check-comment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bookId": "book-1",
+                                  "personaId": "humorist",
+                                  "readerChapterIndex": 0,
+                                  "readerParagraphIndex": 0
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", is("CHAT_DISABLED")));
+
+        verify(commentService, never()).checkComment(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.any());
+    }
 }

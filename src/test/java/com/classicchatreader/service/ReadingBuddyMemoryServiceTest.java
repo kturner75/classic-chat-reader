@@ -13,6 +13,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -56,9 +61,23 @@ class ReadingBuddyMemoryServiceTest {
     void setUp() {
         properties = new ReadingBuddyProperties();
         properties.getMemory().setRecentMessages(20);
-        memoryService = new ReadingBuddyMemoryService(messageRepository, memoryRepository, properties);
+        memoryService = new ReadingBuddyMemoryService(
+                messageRepository,
+                memoryRepository,
+                properties,
+                new ImmediateTransactionManager());
 
         org.mockito.Mockito.lenient().when(messageRepository.save(any(ReadingBuddyMessageEntity.class)))
+                .thenAnswer(invocation -> {
+                    ReadingBuddyMessageEntity entity = invocation.getArgument(0);
+                    if (entity.getId() == null) {
+                        entity.setId("msg-" + idSeq.getAndIncrement());
+                    }
+                    String key = threadKey(entity.getOwnerKey(), entity.getBookId(), entity.getPersonaId());
+                    messagesByThread.computeIfAbsent(key, k -> new ArrayList<>()).add(entity);
+                    return entity;
+                });
+        org.mockito.Mockito.lenient().when(messageRepository.saveAndFlush(any(ReadingBuddyMessageEntity.class)))
                 .thenAnswer(invocation -> {
                     ReadingBuddyMessageEntity entity = invocation.getArgument(0);
                     if (entity.getId() == null) {
@@ -307,5 +326,21 @@ class ReadingBuddyMemoryServiceTest {
 
     private static String threadKey(String ownerKey, String bookId, String personaId) {
         return ownerKey + "|" + bookId + "|" + personaId;
+    }
+
+    /** Runs callbacks immediately (unit-test stand-in for REQUIRES_NEW). */
+    static final class ImmediateTransactionManager implements PlatformTransactionManager {
+        @Override
+        public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
+            return new SimpleTransactionStatus();
+        }
+
+        @Override
+        public void commit(TransactionStatus status) throws TransactionException {
+        }
+
+        @Override
+        public void rollback(TransactionStatus status) throws TransactionException {
+        }
     }
 }
