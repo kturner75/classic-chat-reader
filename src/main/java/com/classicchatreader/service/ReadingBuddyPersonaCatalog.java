@@ -4,7 +4,6 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.model.ReadingBuddyPersona;
 import org.springframework.stereotype.Component;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,10 +84,6 @@ public class ReadingBuddyPersonaCatalog {
 
     public List<ReadingBuddyPersona> listAll() {
         return List.copyOf(personasById.values());
-    }
-
-    public Collection<ReadingBuddyPersona> values() {
-        return listAll();
     }
 
     public Optional<ReadingBuddyPersona> findById(String personaId) {

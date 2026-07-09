@@ -11,6 +11,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
@@ -70,7 +71,12 @@ class ReadingBuddyControllerTest {
                 .andExpect(jsonPath("$[0].shortBlurb").isNotEmpty())
                 .andExpect(jsonPath("$[0].toneTags", hasSize(2)))
                 .andExpect(jsonPath("$[0].portraitUrl", is("/images/buddies/historian.png")))
+                // Public DTO is an explicit allow-list of five keys only.
+                .andExpect(jsonPath("$[0]", aMapWithSize(5)))
                 .andExpect(jsonPath("$[0].systemPrompt").doesNotExist())
+                .andExpect(jsonPath("$[0].temperature").doesNotExist())
+                .andExpect(jsonPath("$[0].maxProactiveWords").doesNotExist())
+                .andExpect(jsonPath("$[0].maxChatWords").doesNotExist())
                 .andExpect(jsonPath("$[1].id", is("close_reader")))
                 .andExpect(jsonPath("$[2].id", is("humorist")))
                 .andExpect(jsonPath("$[3].id", is("encourager")))

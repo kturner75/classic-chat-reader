@@ -3,6 +3,8 @@ package com.classicchatreader.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
+
 /**
  * Configuration for Reading Buddy Mode ({@code reading-buddy.*}).
  * Off by default; later PRs use these knobs for trigger policy, chat, and memory.
@@ -119,7 +121,7 @@ public class ReadingBuddyProperties {
         if (frequency == null) {
             return minParagraphGap.getRare();
         }
-        return switch (frequency.toLowerCase()) {
+        return switch (frequency.toLowerCase(Locale.ROOT)) {
             case "occasional" -> minParagraphGap.getOccasional();
             case "chatty" -> minParagraphGap.getChatty();
             default -> minParagraphGap.getRare();
@@ -134,7 +136,7 @@ public class ReadingBuddyProperties {
         if (frequency == null) {
             return minCooldownMs.getRare();
         }
-        return switch (frequency.toLowerCase()) {
+        return switch (frequency.toLowerCase(Locale.ROOT)) {
             case "occasional" -> minCooldownMs.getOccasional();
             case "chatty" -> minCooldownMs.getChatty();
             default -> minCooldownMs.getRare();
