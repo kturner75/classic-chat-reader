@@ -249,7 +249,11 @@ public class ReadingBuddyProperties {
         private int summaryMaxChars = 1500;
         private int recentMessages = 20;
         private int summaryEveryMessages = 8;
-        /** Hard cap on durable messages per owner×book×persona after successful summary. */
+        /**
+         * Hard cap on durable messages per owner×book×persona after successful summary.
+         * Effective value is always at least {@link #recentMessages} (see
+         * {@link com.classicchatreader.service.ReadingBuddyMemoryService#effectiveMaxRetainedMessages()}).
+         */
         private int maxRetainedMessages = 100;
 
         public int getSummaryMaxChars() {

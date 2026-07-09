@@ -20,8 +20,9 @@ import java.util.List;
  * Interactive reading-buddy chat: server memory for prompts (client history ignored),
  * position-bounded story context, durable turn persistence.
  * <p>
- * LLM generate runs outside a write transaction; only {@link ReadingBuddyMemoryService#persistChatTurn}
- * is transactional (avoids holding a pool connection for multi-second model latency).
+ * Reply LLM generate runs outside any write transaction. {@link ReadingBuddyMemoryService#persistChatTurn}
+ * commits the user/buddy rows in an internal {@code REQUIRES_NEW} write, then may run an optional
+ * inline summary LLM after that TX commits (summary failures never fail the chat path).
  */
 @Service
 public class ReadingBuddyChatService {

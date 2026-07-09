@@ -31,9 +31,12 @@ import java.util.Optional;
 /**
  * Durable reading-buddy messages and rolling-summary memory for an owner×book×persona thread.
  * <p>
- * Rolling summary is refreshed <strong>inline</strong> via {@code chatLlmProvider} after every
- * {@code reading-buddy.memory.summary-every-messages} new messages, or when the recent list
- * exceeds budget. On failure: prior summary is kept and the recent list is truncated.
+ * Rolling summary is refreshed <strong>inline</strong> via {@code chatLlmProvider} on a
+ * {@code reading-buddy.memory.summary-every-messages} cadence (and as a hard-cap safety when
+ * total exceeds max retained). Older folded messages are deleted after a successful refresh so
+ * over-budget does not force an LLM call on every subsequent turn. Summary maintenance never
+ * fails the caller after durable message writes.
+ * <p>
  * Summary watermarks power fail-closed omit-on-rewind in {@link ReadingBuddyPromptBuilder}.
  */
 @Service
@@ -140,7 +143,8 @@ public class ReadingBuddyMemoryService {
             touchMemoryLastMessage(ownerKey, bookId, personaId, buddyMessage.getId());
             return new ChatTurn(userMessage, buddyMessage);
         });
-        maybeRefreshRollingSummary(ownerKey, bookId, personaId);
+        // Summary is best-effort after durable write — never fail the chat path.
+        safeMaybeRefreshRollingSummary(ownerKey, bookId, personaId);
         return Objects.requireNonNull(turn, "chat turn");
     }
 
@@ -194,7 +198,8 @@ public class ReadingBuddyMemoryService {
         }
 
         if (result.inserted()) {
-            maybeRefreshRollingSummary(ownerKey, bookId, personaId);
+            // Summary is best-effort after durable write — never fail the proactive path.
+            safeMaybeRefreshRollingSummary(ownerKey, bookId, personaId);
         }
         return result;
     }
@@ -431,112 +436,190 @@ public class ReadingBuddyMemoryService {
     }
 
     /**
-     * Inline rolling-summary refresh when cadence or budget thresholds are met.
-     * LLM runs outside a write transaction. Fail-closed: on error keep prior summary and
-     * truncate the recent list to the configured budget.
+     * Call-site wrapper: summary refresh must never fail chat/proactive after durable writes.
      */
-    public void maybeRefreshRollingSummary(String ownerKey, String bookId, String personaId) {
-        Objects.requireNonNull(ownerKey, "ownerKey");
-        Objects.requireNonNull(bookId, "bookId");
-        Objects.requireNonNull(personaId, "personaId");
-
-        long total = messageRepository.countByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId);
-        if (total <= 0) {
-            return;
-        }
-        if (!shouldRefreshSummary(total)) {
-            return;
-        }
-
-        List<ReadingBuddyMessageEntity> all = messageRepository
-                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
-        if (all.isEmpty()) {
-            return;
-        }
-
-        int recentBudget = Math.max(1, properties.getMemory().getRecentMessages());
-        // Fold older-than-recent when over budget; otherwise fold full chronology for cadence refresh.
-        List<ReadingBuddyMessageEntity> toFold;
-        if (all.size() > recentBudget) {
-            toFold = List.copyOf(all.subList(0, all.size() - recentBudget));
-        } else {
-            toFold = List.copyOf(all);
-        }
-        if (toFold.isEmpty()) {
-            return;
-        }
-
-        MemorySnapshot prior = getMemorySnapshot(ownerKey, bookId, personaId);
-        String priorSummary = prior.summaryText() == null ? "" : prior.summaryText().trim();
-
-        metricsService.recordSummaryRefresh();
-        long started = System.currentTimeMillis();
+    private void safeMaybeRefreshRollingSummary(String ownerKey, String bookId, String personaId) {
         try {
-            String prompt = buildSummaryPrompt(priorSummary, toFold);
-            String generated = chatProvider.generate(
-                    prompt,
-                    LlmOptions.withTemperatureAndTopP(SUMMARY_TEMPERATURE, 0.9));
-            String cleaned = cleanSummaryText(generated);
-            if (cleaned.isBlank()) {
-                throw new IllegalStateException("blank summary from LLM");
-            }
-
-            int maxChars = Math.max(1, properties.getMemory().getSummaryMaxChars());
-            if (cleaned.length() > maxChars) {
-                cleaned = cleaned.substring(0, maxChars).trim();
-            }
-
-            PositionWatermark foldWatermark = maxPosition(toFold);
-            PositionWatermark watermark = mergeWatermark(
-                    prior.summaryMaxChapterIndex(),
-                    prior.summaryMaxParagraphIndex(),
-                    priorSummary,
-                    foldWatermark);
-
-            applySuccessfulSummary(
-                    ownerKey,
-                    bookId,
-                    personaId,
-                    cleaned,
-                    watermark.chapterIndex(),
-                    watermark.paragraphIndex());
-
-            log.info(
-                    "event=buddy_memory_summarized ownerKey={} bookId={} personaId={} folded={} versionBump=1 latencyMs={} summaryChars={}",
-                    truncateForLog(ownerKey, 40),
-                    bookId,
-                    personaId,
-                    toFold.size(),
-                    System.currentTimeMillis() - started,
-                    cleaned.length()
-            );
+            maybeRefreshRollingSummary(ownerKey, bookId, personaId);
         } catch (Exception e) {
-            metricsService.recordSummaryRefreshFailed();
+            try {
+                metricsService.recordSummaryRefreshFailed();
+            } catch (Exception ignored) {
+                // metrics must not surface either
+            }
             log.warn(
-                    "event=buddy_memory_summarize_failed ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
+                    "event=buddy_memory_summarize_unexpected ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
                     truncateForLog(ownerKey, 40),
                     bookId,
                     personaId,
                     e.getClass().getSimpleName(),
                     e.getMessage()
             );
-            // Fail-closed: keep prior summary, truncate recent list to budget.
-            truncateToBudget(ownerKey, bookId, personaId, recentBudget);
         }
     }
 
     /**
-     * Exposed for unit tests: whether total message count warrants a refresh attempt.
+     * Inline rolling-summary refresh when the message-count cadence (or hard retention cap) is met.
+     * LLM runs outside a write transaction. Never throws to callers.
+     * <p>
+     * On success: update summary + watermarks, delete folded older-than-recent messages, then
+     * hard-cap at {@code maxRetainedMessages}.
+     * On failure: keep prior summary; truncate to recent budget only when a prior non-empty
+     * summary already covers older context (avoid deleting unsummarized history).
+     */
+    public void maybeRefreshRollingSummary(String ownerKey, String bookId, String personaId) {
+        Objects.requireNonNull(ownerKey, "ownerKey");
+        Objects.requireNonNull(bookId, "bookId");
+        Objects.requireNonNull(personaId, "personaId");
+
+        try {
+            long total = messageRepository.countByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId);
+            if (total <= 0) {
+                return;
+            }
+            if (!shouldRefreshSummary(total)) {
+                return;
+            }
+
+            List<ReadingBuddyMessageEntity> all = messageRepository
+                    .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
+            if (all.isEmpty()) {
+                return;
+            }
+
+            int recentBudget = effectiveRecentMessages();
+            // Fold older-than-recent when over recent budget; otherwise fold full chronology for cadence.
+            List<ReadingBuddyMessageEntity> toFold;
+            boolean deleteFoldedAfterSuccess;
+            if (all.size() > recentBudget) {
+                toFold = List.copyOf(all.subList(0, all.size() - recentBudget));
+                deleteFoldedAfterSuccess = true;
+            } else {
+                toFold = List.copyOf(all);
+                // Cadence under budget: compress into MEMORY but keep recent rows for conversation.
+                deleteFoldedAfterSuccess = false;
+            }
+            if (toFold.isEmpty()) {
+                return;
+            }
+
+            MemorySnapshot prior = getMemorySnapshot(ownerKey, bookId, personaId);
+            String priorSummary = prior.summaryText() == null ? "" : prior.summaryText().trim();
+            boolean priorSummaryPresent = !priorSummary.isBlank();
+
+            metricsService.recordSummaryRefresh();
+            long started = System.currentTimeMillis();
+            try {
+                String prompt = buildSummaryPrompt(priorSummary, toFold);
+                String generated = chatProvider.generate(
+                        prompt,
+                        LlmOptions.withTemperatureAndTopP(SUMMARY_TEMPERATURE, 0.9));
+                String cleaned = cleanSummaryText(generated);
+                if (cleaned.isBlank()) {
+                    throw new IllegalStateException("blank summary from LLM");
+                }
+
+                int maxChars = Math.max(1, properties.getMemory().getSummaryMaxChars());
+                if (cleaned.length() > maxChars) {
+                    cleaned = cleaned.substring(0, maxChars).trim();
+                }
+
+                PositionWatermark foldWatermark = maxPosition(toFold);
+                PositionWatermark watermark = mergeWatermark(
+                        prior.summaryMaxChapterIndex(),
+                        prior.summaryMaxParagraphIndex(),
+                        priorSummary,
+                        foldWatermark);
+
+                List<String> foldedIds = deleteFoldedAfterSuccess
+                        ? toFold.stream().map(ReadingBuddyMessageEntity::getId).filter(Objects::nonNull).toList()
+                        : List.of();
+
+                applySuccessfulSummary(
+                        ownerKey,
+                        bookId,
+                        personaId,
+                        cleaned,
+                        watermark.chapterIndex(),
+                        watermark.paragraphIndex(),
+                        foldedIds);
+
+                log.info(
+                        "event=buddy_memory_summarized ownerKey={} bookId={} personaId={} folded={} deletedFolded={} versionBump=1 latencyMs={} summaryChars={}",
+                        truncateForLog(ownerKey, 40),
+                        bookId,
+                        personaId,
+                        toFold.size(),
+                        foldedIds.size(),
+                        System.currentTimeMillis() - started,
+                        cleaned.length()
+                );
+            } catch (Exception e) {
+                metricsService.recordSummaryRefreshFailed();
+                log.warn(
+                        "event=buddy_memory_summarize_failed ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
+                        truncateForLog(ownerKey, 40),
+                        bookId,
+                        personaId,
+                        e.getClass().getSimpleName(),
+                        e.getMessage()
+                );
+                // Fail-closed for spoilers: keep prior summary/watermarks.
+                // Truncate only when older turns are already represented in MEMORY — do not
+                // permanently drop unsummarized history during provider outages.
+                if (priorSummaryPresent) {
+                    safeTruncateToBudget(ownerKey, bookId, personaId, recentBudget);
+                }
+            }
+        } catch (Exception e) {
+            // Pre-try / unexpected — never surface to chat/proactive HTTP.
+            try {
+                metricsService.recordSummaryRefreshFailed();
+            } catch (Exception ignored) {
+                // ignore
+            }
+            log.warn(
+                    "event=buddy_memory_summarize_unexpected ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
+                    truncateForLog(ownerKey, 40),
+                    bookId,
+                    personaId,
+                    e.getClass().getSimpleName(),
+                    e.getMessage()
+            );
+        }
+    }
+
+    /**
+     * Whether total message count warrants a refresh attempt.
+     * <ul>
+     *   <li>Cadence: every {@code summaryEveryMessages} (primary frequency control).</li>
+     *   <li>Hard cap safety: when total exceeds effective max retained (must fold/prune).</li>
+     * </ul>
+     * Does <em>not</em> treat {@code total > recentMessages} as a standing continuous trigger —
+     * after a successful over-budget fold, folded rows are deleted so the next LLM is cadence-driven.
      */
     boolean shouldRefreshSummary(long totalMessages) {
         if (totalMessages <= 0) {
             return false;
         }
-        int recentBudget = Math.max(1, properties.getMemory().getRecentMessages());
         int every = properties.getMemory().getSummaryEveryMessages();
-        boolean exceedsBudget = totalMessages > recentBudget;
         boolean cadence = every > 0 && totalMessages >= every && (totalMessages % every == 0);
-        return exceedsBudget || cadence;
+        int maxRetained = effectiveMaxRetainedMessages();
+        boolean hardCapSafety = totalMessages > maxRetained;
+        return cadence || hardCapSafety;
+    }
+
+    /** recentMessages clamped to at least 1. */
+    int effectiveRecentMessages() {
+        return Math.max(1, properties.getMemory().getRecentMessages());
+    }
+
+    /**
+     * maxRetainedMessages clamped to at least {@link #effectiveRecentMessages()} so success prune
+     * is never tighter than the recent conversation budget.
+     */
+    int effectiveMaxRetainedMessages() {
+        return Math.max(effectiveRecentMessages(), Math.max(1, properties.getMemory().getMaxRetainedMessages()));
     }
 
     private void applySuccessfulSummary(
@@ -545,7 +628,8 @@ public class ReadingBuddyMemoryService {
             String personaId,
             String summaryText,
             int maxChapterIndex,
-            int maxParagraphIndex) {
+            int maxParagraphIndex,
+            List<String> foldedMessageIdsToDelete) {
         requiresNewTx.executeWithoutResult(status -> {
             ReadingBuddyMemoryEntity memory = memoryRepository
                     .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
@@ -569,14 +653,28 @@ public class ReadingBuddyMemoryService {
                 memoryRepository.save(existing);
             }
 
-            int maxRetained = Math.max(1, properties.getMemory().getMaxRetainedMessages());
-            pruneToMaxRetained(ownerKey, bookId, personaId, maxRetained);
+            if (foldedMessageIdsToDelete != null && !foldedMessageIdsToDelete.isEmpty()) {
+                messageRepository.deleteAllById(foldedMessageIdsToDelete);
+            }
+            // Hard ceiling after folding (no-op when already under cap).
+            pruneToMaxRetained(ownerKey, bookId, personaId, effectiveMaxRetainedMessages());
         });
     }
 
-    private void truncateToBudget(String ownerKey, String bookId, String personaId, int budget) {
-        requiresNewTx.executeWithoutResult(status ->
-                pruneToMaxRetained(ownerKey, bookId, personaId, Math.max(1, budget)));
+    private void safeTruncateToBudget(String ownerKey, String bookId, String personaId, int budget) {
+        try {
+            requiresNewTx.executeWithoutResult(status ->
+                    pruneToMaxRetained(ownerKey, bookId, personaId, Math.max(1, budget)));
+        } catch (Exception e) {
+            log.warn(
+                    "event=buddy_memory_truncate_failed ownerKey={} bookId={} personaId={} errorType={} errorMessage={}",
+                    truncateForLog(ownerKey, 40),
+                    bookId,
+                    personaId,
+                    e.getClass().getSimpleName(),
+                    e.getMessage()
+            );
+        }
     }
 
     private void pruneToMaxRetained(String ownerKey, String bookId, String personaId, int maxKeep) {

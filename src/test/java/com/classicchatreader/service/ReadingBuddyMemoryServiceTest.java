@@ -339,15 +339,34 @@ class ReadingBuddyMemoryServiceTest {
     }
 
     @Test
-    void shouldRefreshSummary_everyMessagesOrOverBudget() {
+    void shouldRefreshSummary_cadenceOrHardCap_notStandingOverRecentBudget() {
+        properties.getMemory().setSummaryEveryMessages(8);
+        properties.getMemory().setRecentMessages(20);
+        properties.getMemory().setMaxRetainedMessages(100);
+
         assertFalse(memoryService.shouldRefreshSummary(0));
         assertFalse(memoryService.shouldRefreshSummary(7));
         assertTrue(memoryService.shouldRefreshSummary(8));
         assertTrue(memoryService.shouldRefreshSummary(16));
         assertFalse(memoryService.shouldRefreshSummary(9));
+        // Over recent budget but not on cadence and under hard cap → no continuous refresh.
+        assertFalse(memoryService.shouldRefreshSummary(21));
+        assertFalse(memoryService.shouldRefreshSummary(23));
+        // Cadence still fires when over recent budget.
+        assertTrue(memoryService.shouldRefreshSummary(24));
+        // Hard cap safety (effective max retained = max(100, 20) = 100).
+        assertTrue(memoryService.shouldRefreshSummary(101));
+    }
 
-        properties.getMemory().setRecentMessages(5);
-        assertTrue(memoryService.shouldRefreshSummary(6)); // exceeds budget
+    @Test
+    void effectiveMaxRetained_clampsToAtLeastRecentMessages() {
+        properties.getMemory().setRecentMessages(20);
+        properties.getMemory().setMaxRetainedMessages(10);
+        assertEquals(20, memoryService.effectiveMaxRetainedMessages());
+        assertEquals(20, memoryService.effectiveRecentMessages());
+
+        properties.getMemory().setMaxRetainedMessages(50);
+        assertEquals(50, memoryService.effectiveMaxRetainedMessages());
     }
 
     @Test
@@ -376,10 +395,12 @@ class ReadingBuddyMemoryServiceTest {
         assertEquals(10, memory.getSummaryMaxChapterIndex());
         assertEquals(2, memory.getSummaryMaxParagraphIndex());
         assertEquals(1, memory.getSummaryVersion());
+        // Under recent budget: cadence fold keeps messages for conversation context.
+        assertEquals(4, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
     }
 
     @Test
-    void maybeRefreshRollingSummary_onFailure_keepsPriorSummaryAndTruncates() {
+    void maybeRefreshRollingSummary_onFailure_withPriorSummary_truncatesToRecent() {
         properties.getMemory().setSummaryEveryMessages(4);
         properties.getMemory().setRecentMessages(2);
         seedMessage("owner-A", "book-1", "humorist", "user", "chat", "old-1", 1, 0);
@@ -420,6 +441,29 @@ class ReadingBuddyMemoryServiceTest {
     }
 
     @Test
+    void maybeRefreshRollingSummary_onFailure_emptyPrior_doesNotDeleteMessages() {
+        properties.getMemory().setSummaryEveryMessages(4);
+        properties.getMemory().setRecentMessages(2);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "old-1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "old-2", 1, 1);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "new-1", 2, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "new-2", 2, 1);
+
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenThrow(new RuntimeException("provider down"));
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        verify(metricsService).recordSummaryRefreshFailed();
+        List<ReadingBuddyMessageEntity> remaining =
+                messagesByThread.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(4, remaining.size(), "empty prior must not drop unsummarized history");
+        ReadingBuddyMemoryService.MemorySnapshot snap =
+                memoryService.getMemorySnapshot("owner-A", "book-1", "humorist");
+        assertEquals("", snap.summaryText());
+    }
+
+    @Test
     void maybeRefreshRollingSummary_skipsWhenBelowThresholds() {
         properties.getMemory().setSummaryEveryMessages(8);
         properties.getMemory().setRecentMessages(20);
@@ -429,6 +473,140 @@ class ReadingBuddyMemoryServiceTest {
 
         verify(chatProvider, never()).generate(anyString(), any(LlmOptions.class));
         verify(metricsService, never()).recordSummaryRefresh();
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_afterSuccess_doesNotRefreshAgainUntilNextCadence() {
+        properties.getMemory().setSummaryEveryMessages(8);
+        properties.getMemory().setRecentMessages(5);
+        properties.getMemory().setMaxRetainedMessages(100);
+
+        // 8 messages on cadence → refresh; over recent (5) so folded older 3 are deleted.
+        for (int i = 0; i < 8; i++) {
+            seedMessage("owner-A", "book-1", "humorist", "user", "chat", "m" + i, i, 0);
+        }
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Compact summary of early turns.");
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+        verify(chatProvider, org.mockito.Mockito.times(1)).generate(anyString(), any(LlmOptions.class));
+
+        List<ReadingBuddyMessageEntity> afterFirst =
+                messagesByThread.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(5, afterFirst.size(), "folded older-than-recent deleted after success");
+
+        // Seed to 21 total would have been continuous under the old bug; after prune we have 5.
+        // Add messages so total is 21 (over recent, not on cadence 8): 5 + 16 = 21.
+        for (int i = 0; i < 16; i++) {
+            seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "extra" + i, 10 + i, 0);
+        }
+        assertEquals(21, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
+        assertFalse(memoryService.shouldRefreshSummary(21));
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+        // Still only the first generate — no continuous refresh at 21.
+        verify(chatProvider, org.mockito.Mockito.times(1)).generate(anyString(), any(LlmOptions.class));
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_success_prunesToMaxRetained() {
+        properties.getMemory().setSummaryEveryMessages(5);
+        properties.getMemory().setRecentMessages(3);
+        properties.getMemory().setMaxRetainedMessages(3);
+
+        for (int i = 0; i < 5; i++) {
+            seedMessage("owner-A", "book-1", "humorist", "user", "chat", "row" + i, i, 0);
+        }
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Five-turn summary.");
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        List<ReadingBuddyMessageEntity> remaining =
+                messagesByThread.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(3, remaining.size());
+        assertEquals(1, memories.get(threadKey("owner-A", "book-1", "humorist")).getSummaryVersion());
+        // Newest three kept
+        assertTrue(remaining.stream().anyMatch(m -> "row4".equals(m.getContent())));
+        assertTrue(remaining.stream().noneMatch(m -> "row0".equals(m.getContent())));
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_mergesWatermarkWithPriorSummary() {
+        properties.getMemory().setSummaryEveryMessages(2);
+        properties.getMemory().setRecentMessages(20);
+
+        ReadingBuddyMemoryEntity prior = new ReadingBuddyMemoryEntity();
+        prior.setId("mem-prior");
+        prior.setOwnerKey("owner-A");
+        prior.setBookId("book-1");
+        prior.setPersonaId("humorist");
+        prior.setSummaryText("Earlier discussion at chapter 12.");
+        prior.setSummaryVersion(1);
+        prior.setSummaryMaxChapterIndex(12);
+        prior.setSummaryMaxParagraphIndex(0);
+        memories.put(threadKey("owner-A", "book-1", "humorist"), prior);
+
+        // New fold only reaches chapter 3 — prior watermark (12) must win.
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "rewind chat", 3, 1);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "ok", 3, 1);
+
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Updated summary still covering earlier high-water material.");
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        ReadingBuddyMemoryEntity memory = memories.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(12, memory.getSummaryMaxChapterIndex());
+        assertEquals(0, memory.getSummaryMaxParagraphIndex());
+        assertEquals(2, memory.getSummaryVersion());
+    }
+
+    @Test
+    void maybeRefreshRollingSummary_secondFoldRaisesWatermark() {
+        properties.getMemory().setSummaryEveryMessages(2);
+        properties.getMemory().setRecentMessages(20);
+
+        ReadingBuddyMemoryEntity prior = new ReadingBuddyMemoryEntity();
+        prior.setId("mem-prior");
+        prior.setOwnerKey("owner-A");
+        prior.setBookId("book-1");
+        prior.setPersonaId("humorist");
+        prior.setSummaryText("Early notes.");
+        prior.setSummaryVersion(1);
+        prior.setSummaryMaxChapterIndex(2);
+        prior.setSummaryMaxParagraphIndex(0);
+        memories.put(threadKey("owner-A", "book-1", "humorist"), prior);
+
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "later", 10, 5);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "reply", 10, 5);
+
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Now includes chapter 10 material.");
+
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+
+        ReadingBuddyMemoryEntity memory = memories.get(threadKey("owner-A", "book-1", "humorist"));
+        assertEquals(10, memory.getSummaryMaxChapterIndex());
+        assertEquals(5, memory.getSummaryMaxParagraphIndex());
+    }
+
+    @Test
+    void persistChatTurn_summaryFailureDoesNotPropagate() {
+        properties.getMemory().setSummaryEveryMessages(2);
+        properties.getMemory().setRecentMessages(20);
+        // After this turn we will have 2 messages → cadence triggers summary.
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenThrow(new RuntimeException("summary boom"));
+
+        ReadingBuddyMemoryService.ChatTurn turn = memoryService.persistChatTurn(
+                "owner-A", "book-1", "humorist",
+                "user text", "buddy text",
+                1, 0);
+
+        assertNotNull(turn.userMessage().getId());
+        assertNotNull(turn.buddyMessage().getId());
+        verify(metricsService).recordSummaryRefreshFailed();
     }
 
     @Test
