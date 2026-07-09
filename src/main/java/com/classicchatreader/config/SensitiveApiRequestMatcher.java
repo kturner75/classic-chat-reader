@@ -33,6 +33,8 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern RECAP_CHAT_PATH = Pattern.compile("^/api/recaps/book/[^/]+/chat$");
 
     private static final Pattern READING_BUDDY_CHAT_PATH = Pattern.compile("^/api/reading-buddy/chat$");
+    private static final Pattern READING_BUDDY_CHECK_COMMENT_PATH =
+            Pattern.compile("^/api/reading-buddy/check-comment$");
 
     private static final Pattern QUIZ_GENERATE_PATH = Pattern.compile("^/api/quizzes/chapter/[^/]+/generate$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
@@ -48,6 +50,8 @@ public final class SensitiveApiRequestMatcher {
         NONE,
         GENERATION,
         CHAT,
+        /** Proactive reading-buddy check-comment (separate bucket from CHAT). */
+        BUDDY_CHECK,
         ADMIN
     }
 
@@ -77,6 +81,10 @@ public final class SensitiveApiRequestMatcher {
                     || LIBRARY_COVER_REQUEST_PATH.matcher(path).matches()
                     || LIBRARY_COVER_RETRY_PATH.matcher(path).matches()) {
                 return EndpointType.GENERATION;
+            }
+
+            if (READING_BUDDY_CHECK_COMMENT_PATH.matcher(path).matches()) {
+                return EndpointType.BUDDY_CHECK;
             }
 
             if (CHARACTER_CHAT_PATH.matcher(path).matches()

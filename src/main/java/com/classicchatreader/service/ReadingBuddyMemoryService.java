@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Durable reading-buddy messages and rolling-summary memory for an owner×book×persona thread.
@@ -113,6 +114,65 @@ public class ReadingBuddyMemoryService {
                 chapterIndex, paragraphIndex);
         touchMemoryLastMessage(ownerKey, bookId, personaId, buddyMessage.getId());
         return new ChatTurn(userMessage, buddyMessage);
+    }
+
+    /**
+     * Inserts a proactive buddy comment at the given position.
+     * Unique on {@code proactive_position_key}: re-checks before insert; on concurrent race
+     * keeps the first row and returns it.
+     */
+    @Transactional
+    public ReadingBuddyMessageEntity persistProactiveComment(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String content,
+            int chapterIndex,
+            int paragraphIndex) {
+        Objects.requireNonNull(ownerKey, "ownerKey");
+        Objects.requireNonNull(bookId, "bookId");
+        Objects.requireNonNull(personaId, "personaId");
+        Objects.requireNonNull(content, "content");
+
+        String positionKey = ReadingBuddyMessageEntity.proactivePositionKey(chapterIndex, paragraphIndex);
+        Optional<ReadingBuddyMessageEntity> existing = messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
+                        ownerKey, bookId, personaId, positionKey);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        try {
+            ReadingBuddyMessageEntity saved = saveMessage(
+                    ownerKey, bookId, personaId,
+                    ROLE_BUDDY, KIND_PROACTIVE, content,
+                    chapterIndex, paragraphIndex);
+            touchMemoryLastMessage(ownerKey, bookId, personaId, saved.getId());
+            return saved;
+        } catch (DataIntegrityViolationException ex) {
+            // Concurrent double-check: unique index on proactive_position_key — keep first.
+            return messageRepository
+                    .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
+                            ownerKey, bookId, personaId, positionKey)
+                    .orElseThrow(() -> ex);
+        }
+    }
+
+    /**
+     * Whether a proactive comment already exists at this position for the thread.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasProactiveAtPosition(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            int chapterIndex,
+            int paragraphIndex) {
+        String positionKey = ReadingBuddyMessageEntity.proactivePositionKey(chapterIndex, paragraphIndex);
+        return messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdAndProactivePositionKey(
+                        ownerKey, bookId, personaId, positionKey)
+                .isPresent();
     }
 
     /**

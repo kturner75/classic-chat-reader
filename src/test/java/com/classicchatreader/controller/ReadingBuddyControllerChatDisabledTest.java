@@ -3,6 +3,7 @@ package com.classicchatreader.controller;
 import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyChatService;
+import com.classicchatreader.service.ReadingBuddyCommentService;
 import com.classicchatreader.service.ReadingBuddyMemoryService;
 import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
@@ -48,6 +49,9 @@ class ReadingBuddyControllerChatDisabledTest {
 
     @MockitoBean
     private ReadingBuddyChatService chatService;
+
+    @MockitoBean
+    private ReadingBuddyCommentService commentService;
 
     @MockitoBean
     private ReadingBuddyMemoryService memoryService;

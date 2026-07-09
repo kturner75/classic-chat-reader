@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -68,6 +69,66 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
             String bookId,
             String personaId,
             String proactivePositionKey
+    );
+
+    /**
+     * Most recent proactive comment for the thread (newest first with {@link Pageable} limit 1).
+     */
+    List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdAndKindOrderByCreatedAtDesc(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String kind,
+            Pageable pageable
+    );
+
+    /**
+     * Most recent user chat turn for the thread (newest first with {@link Pageable} limit 1).
+     */
+    List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdAndRoleAndKindOrderByCreatedAtDesc(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String role,
+            String kind,
+            Pageable pageable
+    );
+
+    long countByOwnerKeyAndBookIdAndPersonaIdAndKindAndChapterIndex(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String kind,
+            int chapterIndex
+    );
+
+    long countByOwnerKeyAndBookIdAndPersonaIdAndKindAndCreatedAtGreaterThanEqual(
+            String ownerKey,
+            String bookId,
+            String personaId,
+            String kind,
+            LocalDateTime createdAt
+    );
+
+    /**
+     * Oldest proactive comment within the recent window (for hourly rate-cap retry timing).
+     */
+    @Query("""
+            SELECT m FROM ReadingBuddyMessageEntity m
+            WHERE m.ownerKey = :ownerKey
+              AND m.bookId = :bookId
+              AND m.personaId = :personaId
+              AND m.kind = :kind
+              AND m.createdAt >= :since
+            ORDER BY m.createdAt ASC
+            """)
+    List<ReadingBuddyMessageEntity> findOldestSince(
+            @Param("ownerKey") String ownerKey,
+            @Param("bookId") String bookId,
+            @Param("personaId") String personaId,
+            @Param("kind") String kind,
+            @Param("since") LocalDateTime since,
+            Pageable pageable
     );
 
     void deleteByOwnerKeyAndBookIdAndPersonaId(String ownerKey, String bookId, String personaId);

@@ -3,10 +3,12 @@ package com.classicchatreader.controller;
 import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyChatService;
+import com.classicchatreader.service.ReadingBuddyCommentService;
 import com.classicchatreader.service.ReadingBuddyMemoryService;
 import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
+import com.classicchatreader.service.ReadingBuddyTriggerPolicy;
 import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,6 +61,9 @@ class ReadingBuddyControllerTest {
 
     @MockitoBean
     private ReadingBuddyChatService chatService;
+
+    @MockitoBean
+    private ReadingBuddyCommentService commentService;
 
     @MockitoBean
     private ReadingBuddyMemoryService memoryService;
@@ -208,6 +213,76 @@ class ReadingBuddyControllerTest {
                                 """))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error", is("BOOK_NOT_FOUND")));
+    }
+
+    @Test
+    void checkComment_commentAction_returnsPayload() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(commentService.checkComment(
+                eq("reader-1"), eq("book-1"), eq("humorist"), eq(3), eq(12), any()))
+                .thenReturn(ReadingBuddyCommentService.CheckCommentResult.comment(
+                        "msg-1",
+                        "Darcy really said that.",
+                        "humorist",
+                        "/images/buddies/humorist.png",
+                        3,
+                        12,
+                        180000L
+                ));
+
+        mockMvc.perform(post("/api/reading-buddy/check-comment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bookId": "book-1",
+                                  "personaId": "humorist",
+                                  "readerChapterIndex": 3,
+                                  "readerParagraphIndex": 12,
+                                  "clientHint": {"paragraphsSinceLastComment": 9, "dwellMs": 1200}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action", is("COMMENT")))
+                .andExpect(jsonPath("$.messageId", is("msg-1")))
+                .andExpect(jsonPath("$.text", is("Darcy really said that.")))
+                .andExpect(jsonPath("$.personaId", is("humorist")))
+                .andExpect(jsonPath("$.portraitUrl", is("/images/buddies/humorist.png")))
+                .andExpect(jsonPath("$.chapterIndex", is(3)))
+                .andExpect(jsonPath("$.paragraphIndex", is(12)))
+                .andExpect(jsonPath("$.nextEligibleAfterMs", is(180000)));
+    }
+
+    @Test
+    void checkComment_silenceAction_returnsReason() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(commentService.checkComment(any(), any(), any(), anyInt(), anyInt(), any()))
+                .thenReturn(ReadingBuddyCommentService.CheckCommentResult.silence(
+                        ReadingBuddyTriggerPolicy.SilenceReason.COOLDOWN,
+                        120000L,
+                        "humorist",
+                        3,
+                        12
+                ));
+
+        mockMvc.perform(post("/api/reading-buddy/check-comment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bookId": "book-1",
+                                  "personaId": "humorist",
+                                  "readerChapterIndex": 3,
+                                  "readerParagraphIndex": 12
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action", is("SILENCE")))
+                .andExpect(jsonPath("$.reason", is("COOLDOWN")))
+                .andExpect(jsonPath("$.nextEligibleAfterMs", is(120000)))
+                .andExpect(jsonPath("$.personaId", is("humorist")))
+                .andExpect(jsonPath("$.chapterIndex", is(3)))
+                .andExpect(jsonPath("$.paragraphIndex", is(12)));
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.model.ReadingBuddyPersona;
 import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyChatService;
+import com.classicchatreader.service.ReadingBuddyCommentService;
 import com.classicchatreader.service.ReadingBuddyMemoryService;
 import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
@@ -30,7 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reading Buddy REST surface: status, personas, preferences, chat, and history.
+ * Reading Buddy REST surface: status, personas, preferences, proactive check, chat, and history.
  */
 @RestController
 @RequestMapping("/api/reading-buddy")
@@ -40,6 +41,7 @@ public class ReadingBuddyController {
     private final ReadingBuddyPersonaCatalog personaCatalog;
     private final ReadingBuddyPreferenceService preferenceService;
     private final ReadingBuddyChatService chatService;
+    private final ReadingBuddyCommentService commentService;
     private final ReadingBuddyMemoryService memoryService;
     private final ReadingBuddyMetricsService metricsService;
     private final ReaderIdentityService readerIdentityService;
@@ -53,6 +55,7 @@ public class ReadingBuddyController {
             ReadingBuddyPersonaCatalog personaCatalog,
             ReadingBuddyPreferenceService preferenceService,
             ReadingBuddyChatService chatService,
+            ReadingBuddyCommentService commentService,
             ReadingBuddyMemoryService memoryService,
             ReadingBuddyMetricsService metricsService,
             ReaderIdentityService readerIdentityService,
@@ -61,6 +64,7 @@ public class ReadingBuddyController {
         this.personaCatalog = personaCatalog;
         this.preferenceService = preferenceService;
         this.chatService = chatService;
+        this.commentService = commentService;
         this.memoryService = memoryService;
         this.metricsService = metricsService;
         this.readerIdentityService = readerIdentityService;
@@ -133,6 +137,50 @@ public class ReadingBuddyController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
                     .body(errorBody("INVALID_PREFERENCES", e.getMessage()));
+        }
+    }
+
+    /**
+     * Proactive decide-or-comment check. Hard filters first (no LLM on silence);
+     * rate-limited on the dedicated buddy-check bucket (not shared CHAT).
+     */
+    @PostMapping("/check-comment")
+    public ResponseEntity<?> checkComment(
+            @RequestBody(required = false) CheckCommentRequest body,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        if (!isFeatureAndChatEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody("CHAT_DISABLED", "Reading buddy is disabled in this environment."));
+        }
+
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+        if (body == null) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody("INVALID_REQUEST", "Request body is required"));
+        }
+
+        try {
+            ReadingBuddyCommentService.ClientHint hint = null;
+            if (body.clientHint() != null) {
+                hint = new ReadingBuddyCommentService.ClientHint(
+                        body.clientHint().paragraphsSinceLastComment(),
+                        body.clientHint().dwellMs());
+            }
+            ReadingBuddyCommentService.CheckCommentResult result = commentService.checkComment(
+                    identity.readerKey(),
+                    body.bookId(),
+                    body.personaId(),
+                    body.readerChapterIndex(),
+                    body.readerParagraphIndex(),
+                    hint);
+            return ResponseEntity.ok(toCheckCommentDto(result));
+        } catch (ReadingBuddyCommentService.BookNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(errorBody("BOOK_NOT_FOUND", e.getMessage()));
+        } catch (ReadingBuddyCommentService.ValidationException e) {
+            return ResponseEntity.badRequest()
+                    .body(errorBody(e.getErrorCode(), e.getMessage()));
         }
     }
 
@@ -318,6 +366,27 @@ public class ReadingBuddyController {
         return dto;
     }
 
+    private Map<String, Object> toCheckCommentDto(ReadingBuddyCommentService.CheckCommentResult result) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("action", result.action());
+        if (result instanceof ReadingBuddyCommentService.CheckCommentResult.Comment comment) {
+            dto.put("messageId", comment.messageId());
+            dto.put("text", comment.text());
+            dto.put("personaId", comment.personaId());
+            dto.put("portraitUrl", comment.portraitUrl());
+            dto.put("chapterIndex", comment.chapterIndex());
+            dto.put("paragraphIndex", comment.paragraphIndex());
+            dto.put("nextEligibleAfterMs", comment.nextEligibleAfterMs());
+        } else if (result instanceof ReadingBuddyCommentService.CheckCommentResult.Silence silence) {
+            dto.put("reason", silence.reason().name());
+            dto.put("nextEligibleAfterMs", silence.nextEligibleAfterMs());
+            dto.put("personaId", silence.personaId());
+            dto.put("chapterIndex", silence.chapterIndex());
+            dto.put("paragraphIndex", silence.paragraphIndex());
+        }
+        return dto;
+    }
+
     private Map<String, Object> toPublicPersona(ReadingBuddyPersona persona) {
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", persona.id());
@@ -357,6 +426,24 @@ public class ReadingBuddyController {
             int readerChapterIndex,
             int readerParagraphIndex,
             List<Map<String, Object>> conversationHistory
+    ) {
+    }
+
+    /**
+     * Proactive check request. {@code clientHint} is advisory only.
+     */
+    public record CheckCommentRequest(
+            String bookId,
+            String personaId,
+            int readerChapterIndex,
+            int readerParagraphIndex,
+            ClientHintBody clientHint
+    ) {
+    }
+
+    public record ClientHintBody(
+            Integer paragraphsSinceLastComment,
+            Long dwellMs
     ) {
     }
 }

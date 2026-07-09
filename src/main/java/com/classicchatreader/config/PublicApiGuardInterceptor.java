@@ -27,8 +27,10 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
     private final String publicApiKey;
     private final int generationLimit;
     private final int chatLimit;
+    private final int buddyCheckLimit;
     private final int authenticatedGenerationLimit;
     private final int authenticatedChatLimit;
+    private final int authenticatedBuddyCheckLimit;
     private final int windowSeconds;
 
     public PublicApiGuardInterceptor(
@@ -39,22 +41,29 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
             @Value("${security.public.rate-limit.window-seconds:60}") int windowSeconds,
             @Value("${security.public.rate-limit.generation-requests:30}") int generationLimit,
             @Value("${security.public.rate-limit.chat-requests:45}") int chatLimit,
+            @Value("${security.public.rate-limit.buddy-check-requests:30}") int buddyCheckLimit,
             @Value("${security.public.rate-limit.authenticated-generation-requests:0}")
             int authenticatedGenerationLimit,
             @Value("${security.public.rate-limit.authenticated-chat-requests:0}")
-            int authenticatedChatLimit) {
+            int authenticatedChatLimit,
+            @Value("${security.public.rate-limit.authenticated-buddy-check-requests:0}")
+            int authenticatedBuddyCheckLimit) {
         this.rateLimiter = rateLimiter != null ? rateLimiter : new InMemoryIpRateLimiter(20000);
         this.sessionAuthService = sessionAuthService;
         this.deploymentMode = deploymentMode;
         this.publicApiKey = publicApiKey;
         this.generationLimit = Math.max(1, generationLimit);
         this.chatLimit = Math.max(1, chatLimit);
+        this.buddyCheckLimit = Math.max(1, buddyCheckLimit);
         this.authenticatedGenerationLimit = authenticatedGenerationLimit > 0
                 ? authenticatedGenerationLimit
                 : this.generationLimit;
         this.authenticatedChatLimit = authenticatedChatLimit > 0
                 ? authenticatedChatLimit
                 : this.chatLimit;
+        this.authenticatedBuddyCheckLimit = authenticatedBuddyCheckLimit > 0
+                ? authenticatedBuddyCheckLimit
+                : this.buddyCheckLimit;
         this.windowSeconds = Math.max(1, windowSeconds);
     }
 
@@ -186,6 +195,9 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
     private int resolveLimit(SensitiveApiRequestMatcher.EndpointType endpointType, boolean authenticatedScope) {
         if (endpointType == SensitiveApiRequestMatcher.EndpointType.CHAT) {
             return authenticatedScope ? authenticatedChatLimit : chatLimit;
+        }
+        if (endpointType == SensitiveApiRequestMatcher.EndpointType.BUDDY_CHECK) {
+            return authenticatedScope ? authenticatedBuddyCheckLimit : buddyCheckLimit;
         }
         if (endpointType == SensitiveApiRequestMatcher.EndpointType.ADMIN) {
             return authenticatedGenerationLimit;
