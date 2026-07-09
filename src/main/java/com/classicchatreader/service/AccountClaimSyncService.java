@@ -310,6 +310,7 @@ public class AccountClaimSyncService {
                 userRow.setSummaryVersion(anon.getSummaryVersion());
                 userRow.setSummaryMaxChapterIndex(anon.getSummaryMaxChapterIndex());
                 userRow.setSummaryMaxParagraphIndex(anon.getSummaryMaxParagraphIndex());
+                userRow.setMessagesAtLastSummary(anon.getMessagesAtLastSummary());
                 userRow.setLastMessageId(remappedLastMessageId);
                 userRow.setUpdatedAt(anon.getUpdatedAt());
                 readingBuddyMemoryRepository.save(userRow);

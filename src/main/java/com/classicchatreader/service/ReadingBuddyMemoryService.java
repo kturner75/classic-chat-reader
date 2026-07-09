@@ -366,9 +366,10 @@ public class ReadingBuddyMemoryService {
                         entity.getSummaryMaxChapterIndex(),
                         entity.getSummaryMaxParagraphIndex(),
                         entity.getSummaryVersion(),
-                        entity.getLastMessageId()
+                        entity.getLastMessageId(),
+                        entity.getMessagesAtLastSummary()
                 ))
-                .orElseGet(() -> new MemorySnapshot("", null, null, 0, null));
+                .orElseGet(() -> new MemorySnapshot("", null, null, 0, null, 0));
     }
 
     /**
@@ -429,6 +430,7 @@ public class ReadingBuddyMemoryService {
                     memory.setSummaryVersion(0);
                     memory.setSummaryMaxChapterIndex(null);
                     memory.setSummaryMaxParagraphIndex(null);
+                    memory.setMessagesAtLastSummary(0);
                     memory.setLastMessageId(null);
                     memory.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
                     memoryRepository.save(memory);
@@ -477,7 +479,8 @@ public class ReadingBuddyMemoryService {
             if (total <= 0) {
                 return;
             }
-            if (!shouldRefreshSummary(total)) {
+            MemorySnapshot priorForCadence = getMemorySnapshot(ownerKey, bookId, personaId);
+            if (!shouldRefreshSummary(total, priorForCadence.messagesAtLastSummary())) {
                 return;
             }
 
@@ -503,7 +506,7 @@ public class ReadingBuddyMemoryService {
                 return;
             }
 
-            MemorySnapshot prior = getMemorySnapshot(ownerKey, bookId, personaId);
+            MemorySnapshot prior = priorForCadence;
             String priorSummary = prior.summaryText() == null ? "" : prior.summaryText().trim();
             boolean priorSummaryPresent = !priorSummary.isBlank();
 
@@ -592,20 +595,42 @@ public class ReadingBuddyMemoryService {
     /**
      * Whether total message count warrants a refresh attempt.
      * <ul>
-     *   <li>Cadence: every {@code summaryEveryMessages} (primary frequency control).</li>
-     *   <li>Hard cap safety: when total exceeds effective max retained (must fold/prune).</li>
+     *   <li>Cadence: every {@code summaryEveryMessages} <em>new</em> messages since
+     *       {@code messagesAtLastSummary} (count right after last successful summary).</li>
+     *   <li>Hard cap safety: when total exceeds effective max retained <em>and</em> max retained
+     *       is strictly greater than the recent budget (avoids continuous refresh when misconfigured
+     *       {@code maxRetained <= recent}).</li>
      * </ul>
-     * Does <em>not</em> treat {@code total > recentMessages} as a standing continuous trigger —
-     * after a successful over-budget fold, folded rows are deleted so the next LLM is cadence-driven.
      */
     boolean shouldRefreshSummary(long totalMessages) {
+        return shouldRefreshSummary(totalMessages, 0);
+    }
+
+    /**
+     * @param messagesAtLastSummary thread message count stored after the last successful summary
+     *                              (0 if never summarized successfully)
+     */
+    boolean shouldRefreshSummary(long totalMessages, int messagesAtLastSummary) {
         if (totalMessages <= 0) {
             return false;
         }
         int every = properties.getMemory().getSummaryEveryMessages();
-        boolean cadence = every > 0 && totalMessages >= every && (totalMessages % every == 0);
+        boolean cadence = false;
+        if (every > 0) {
+            if (messagesAtLastSummary <= 0) {
+                // Never summarized: use absolute total multiples to avoid retrying every turn on failure.
+                cadence = totalMessages >= every && (totalMessages % every == 0);
+            } else {
+                long since = totalMessages - (long) messagesAtLastSummary;
+                // Steady-state: fire every N new messages since last success (not absolute total % every).
+                cadence = since >= every && (since % every == 0);
+            }
+        }
+        int recent = effectiveRecentMessages();
         int maxRetained = effectiveMaxRetainedMessages();
-        boolean hardCapSafety = totalMessages > maxRetained;
+        // Only when max retained can grow beyond the recent floor; otherwise hard-cap would re-fire
+        // on every message after fold-back-to-recent.
+        boolean hardCapSafety = maxRetained > recent && totalMessages > maxRetained;
         return cadence || hardCapSafety;
     }
 
@@ -631,6 +656,16 @@ public class ReadingBuddyMemoryService {
             int maxParagraphIndex,
             List<String> foldedMessageIdsToDelete) {
         requiresNewTx.executeWithoutResult(status -> {
+            if (foldedMessageIdsToDelete != null && !foldedMessageIdsToDelete.isEmpty()) {
+                messageRepository.deleteAllById(foldedMessageIdsToDelete);
+            }
+            // Hard ceiling after folding (no-op when already under cap).
+            pruneToMaxRetained(ownerKey, bookId, personaId, effectiveMaxRetainedMessages());
+
+            long remaining = messageRepository.countByOwnerKeyAndBookIdAndPersonaId(
+                    ownerKey, bookId, personaId);
+            int baseline = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, remaining));
+
             ReadingBuddyMemoryEntity memory = memoryRepository
                     .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
                     .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
@@ -638,6 +673,7 @@ public class ReadingBuddyMemoryService {
             memory.setSummaryMaxChapterIndex(maxChapterIndex);
             memory.setSummaryMaxParagraphIndex(maxParagraphIndex);
             memory.setSummaryVersion(memory.getSummaryVersion() + 1);
+            memory.setMessagesAtLastSummary(baseline);
             memory.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
             try {
                 memoryRepository.save(memory);
@@ -649,15 +685,10 @@ public class ReadingBuddyMemoryService {
                 existing.setSummaryMaxChapterIndex(maxChapterIndex);
                 existing.setSummaryMaxParagraphIndex(maxParagraphIndex);
                 existing.setSummaryVersion(existing.getSummaryVersion() + 1);
+                existing.setMessagesAtLastSummary(baseline);
                 existing.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
                 memoryRepository.save(existing);
             }
-
-            if (foldedMessageIdsToDelete != null && !foldedMessageIdsToDelete.isEmpty()) {
-                messageRepository.deleteAllById(foldedMessageIdsToDelete);
-            }
-            // Hard ceiling after folding (no-op when already under cap).
-            pruneToMaxRetained(ownerKey, bookId, personaId, effectiveMaxRetainedMessages());
         });
     }
 
@@ -814,6 +845,7 @@ public class ReadingBuddyMemoryService {
         created.setPersonaId(personaId);
         created.setSummaryText("");
         created.setSummaryVersion(0);
+        created.setMessagesAtLastSummary(0);
         return created;
     }
 
@@ -887,8 +919,19 @@ public class ReadingBuddyMemoryService {
             Integer summaryMaxChapterIndex,
             Integer summaryMaxParagraphIndex,
             int summaryVersion,
-            String lastMessageId
+            String lastMessageId,
+            int messagesAtLastSummary
     ) {
+        /** Back-compat convenience for tests that omit the cadence baseline. */
+        public MemorySnapshot(
+                String summaryText,
+                Integer summaryMaxChapterIndex,
+                Integer summaryMaxParagraphIndex,
+                int summaryVersion,
+                String lastMessageId) {
+            this(summaryText, summaryMaxChapterIndex, summaryMaxParagraphIndex,
+                    summaryVersion, lastMessageId, 0);
+        }
     }
 
     public record HistoryMessage(

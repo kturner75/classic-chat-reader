@@ -54,6 +54,13 @@ public class ReadingBuddyMemoryEntity {
     @Column(name = "last_message_id", length = 255)
     private String lastMessageId;
 
+    /**
+     * Message count for this thread immediately after the last successful rolling summary
+     * (post fold-delete / hard-cap prune). Cadence uses {@code total - messagesAtLastSummary}.
+     */
+    @Column(name = "messages_at_last_summary", nullable = false)
+    private int messagesAtLastSummary = 0;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -153,6 +160,14 @@ public class ReadingBuddyMemoryEntity {
 
     public void setLastMessageId(String lastMessageId) {
         this.lastMessageId = lastMessageId;
+    }
+
+    public int getMessagesAtLastSummary() {
+        return messagesAtLastSummary;
+    }
+
+    public void setMessagesAtLastSummary(int messagesAtLastSummary) {
+        this.messagesAtLastSummary = Math.max(0, messagesAtLastSummary);
     }
 
     public LocalDateTime getUpdatedAt() {

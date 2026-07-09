@@ -339,23 +339,34 @@ class ReadingBuddyMemoryServiceTest {
     }
 
     @Test
-    void shouldRefreshSummary_cadenceOrHardCap_notStandingOverRecentBudget() {
+    void shouldRefreshSummary_cadenceUsesMessagesSinceLastSummary_notAbsoluteTotal() {
         properties.getMemory().setSummaryEveryMessages(8);
         properties.getMemory().setRecentMessages(20);
         properties.getMemory().setMaxRetainedMessages(100);
 
-        assertFalse(memoryService.shouldRefreshSummary(0));
-        assertFalse(memoryService.shouldRefreshSummary(7));
-        assertTrue(memoryService.shouldRefreshSummary(8));
-        assertTrue(memoryService.shouldRefreshSummary(16));
-        assertFalse(memoryService.shouldRefreshSummary(9));
-        // Over recent budget but not on cadence and under hard cap → no continuous refresh.
-        assertFalse(memoryService.shouldRefreshSummary(21));
-        assertFalse(memoryService.shouldRefreshSummary(23));
-        // Cadence still fires when over recent budget.
-        assertTrue(memoryService.shouldRefreshSummary(24));
-        // Hard cap safety (effective max retained = max(100, 20) = 100).
-        assertTrue(memoryService.shouldRefreshSummary(101));
+        // Never summarized (baseline 0): absolute multiples.
+        assertFalse(memoryService.shouldRefreshSummary(0, 0));
+        assertFalse(memoryService.shouldRefreshSummary(7, 0));
+        assertTrue(memoryService.shouldRefreshSummary(8, 0));
+        assertTrue(memoryService.shouldRefreshSummary(16, 0));
+        assertFalse(memoryService.shouldRefreshSummary(9, 0));
+        assertFalse(memoryService.shouldRefreshSummary(21, 0));
+
+        // After success folded back to 20 remaining → baseline 20.
+        // Next refresh only after 8 new messages (total 28), not at 24 (old absolute % bug).
+        assertFalse(memoryService.shouldRefreshSummary(21, 20));
+        assertFalse(memoryService.shouldRefreshSummary(24, 20));
+        assertFalse(memoryService.shouldRefreshSummary(27, 20));
+        assertTrue(memoryService.shouldRefreshSummary(28, 20));
+        assertFalse(memoryService.shouldRefreshSummary(29, 20));
+        assertTrue(memoryService.shouldRefreshSummary(36, 20));
+
+        // Hard cap safety when maxRetained > recent.
+        assertTrue(memoryService.shouldRefreshSummary(101, 20));
+        // When maxRetained clamped equal to recent, hard-cap disabled (avoids continuous refresh).
+        properties.getMemory().setMaxRetainedMessages(5);
+        properties.getMemory().setRecentMessages(20);
+        assertFalse(memoryService.shouldRefreshSummary(21, 20));
     }
 
     @Test
@@ -494,18 +505,28 @@ class ReadingBuddyMemoryServiceTest {
         List<ReadingBuddyMessageEntity> afterFirst =
                 messagesByThread.get(threadKey("owner-A", "book-1", "humorist"));
         assertEquals(5, afterFirst.size(), "folded older-than-recent deleted after success");
+        assertEquals(5, memories.get(threadKey("owner-A", "book-1", "humorist")).getMessagesAtLastSummary());
 
-        // Seed to 21 total would have been continuous under the old bug; after prune we have 5.
-        // Add messages so total is 21 (over recent, not on cadence 8): 5 + 16 = 21.
-        for (int i = 0; i < 16; i++) {
-            seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "extra" + i, 10 + i, 0);
+        // +3 messages → total 8; old absolute-% would fire at total 8, but since-last is only 3.
+        for (int i = 0; i < 3; i++) {
+            seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "early" + i, 20 + i, 0);
         }
-        assertEquals(21, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
-        assertFalse(memoryService.shouldRefreshSummary(21));
-
+        assertEquals(8, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
         memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
-        // Still only the first generate — no continuous refresh at 21.
         verify(chatProvider, org.mockito.Mockito.times(1)).generate(anyString(), any(LlmOptions.class));
+
+        // +5 more → total 13; since last summary = 8 → cadence fires.
+        for (int i = 0; i < 5; i++) {
+            seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "late" + i, 30 + i, 0);
+        }
+        assertEquals(13, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
+        when(chatProvider.generate(anyString(), any(LlmOptions.class)))
+                .thenReturn("Second compact summary.");
+        memoryService.maybeRefreshRollingSummary("owner-A", "book-1", "humorist");
+        verify(chatProvider, org.mockito.Mockito.times(2)).generate(anyString(), any(LlmOptions.class));
+        // Folded down to recent budget again; baseline updated to remaining count.
+        assertEquals(5, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
+        assertEquals(5, memories.get(threadKey("owner-A", "book-1", "humorist")).getMessagesAtLastSummary());
     }
 
     @Test
