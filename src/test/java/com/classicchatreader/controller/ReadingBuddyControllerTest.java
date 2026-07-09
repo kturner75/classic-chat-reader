@@ -1,12 +1,15 @@
 package com.classicchatreader.controller;
 
 import com.classicchatreader.config.ReadingBuddyProperties;
+import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
+import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -14,8 +17,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -34,6 +42,12 @@ class ReadingBuddyControllerTest {
 
     @MockitoBean(name = "chatLlmProvider")
     private LlmProvider chatLlmProvider;
+
+    @MockitoBean
+    private ReadingBuddyPreferenceService preferenceService;
+
+    @MockitoBean
+    private ReaderIdentityService readerIdentityService;
 
     @Test
     void status_whenAllGatesOpen_availableIsTrue() throws Exception {
@@ -82,5 +96,78 @@ class ReadingBuddyControllerTest {
                 .andExpect(jsonPath("$[3].id", is("encourager")))
                 .andExpect(jsonPath("$[3].displayName", is("The Steady Companion")))
                 .andExpect(jsonPath("$[3].portraitUrl", is("/images/buddies/encourager.png")));
+    }
+
+    @Test
+    void preferences_get_returnsEffectiveFromIdentity() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(preferenceService.getEffective(eq("reader-1"), isNull()))
+                .thenReturn(new ReadingBuddyPreferenceService.EffectivePreferences(
+                        false,
+                        "rare",
+                        "close_reader",
+                        "close_reader",
+                        "global",
+                        null,
+                        null
+                ));
+
+        mockMvc.perform(get("/api/reading-buddy/preferences"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled", is(false)))
+                .andExpect(jsonPath("$.frequency", is("rare")))
+                .andExpect(jsonPath("$.defaultPersonaId", is("close_reader")))
+                .andExpect(jsonPath("$.personaId", is("close_reader")))
+                .andExpect(jsonPath("$.personaSource", is("global")))
+                .andExpect(jsonPath("$.suppressUntilEpochMs", nullValue()))
+                .andExpect(jsonPath("$.bookId", nullValue()));
+    }
+
+    @Test
+    void preferences_put_appliesPartialUpdate() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("user:u1", true, "u1"));
+        when(preferenceService.update(eq("user:u1"), any()))
+                .thenReturn(new ReadingBuddyPreferenceService.EffectivePreferences(
+                        true,
+                        "occasional",
+                        "historian",
+                        "humorist",
+                        "book_override",
+                        null,
+                        "book-1"
+                ));
+
+        mockMvc.perform(put("/api/reading-buddy/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "enabled": true,
+                                  "frequency": "occasional",
+                                  "personaId": "humorist",
+                                  "bookId": "book-1"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled", is(true)))
+                .andExpect(jsonPath("$.frequency", is("occasional")))
+                .andExpect(jsonPath("$.personaId", is("humorist")))
+                .andExpect(jsonPath("$.personaSource", is("book_override")))
+                .andExpect(jsonPath("$.bookId", is("book-1")));
+    }
+
+    @Test
+    void preferences_put_unknownPersona_returns400() throws Exception {
+        when(readerIdentityService.resolve(any(), any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(preferenceService.update(eq("reader-1"), any()))
+                .thenThrow(new IllegalArgumentException("Unknown personaId: nope"));
+
+        mockMvc.perform(put("/api/reading-buddy/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"defaultPersonaId\":\"nope\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", is("INVALID_PREFERENCES")));
     }
 }

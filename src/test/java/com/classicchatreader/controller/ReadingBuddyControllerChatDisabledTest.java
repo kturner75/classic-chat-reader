@@ -1,7 +1,9 @@
 package com.classicchatreader.controller;
 
 import com.classicchatreader.config.ReadingBuddyProperties;
+import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
+import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +32,12 @@ class ReadingBuddyControllerChatDisabledTest {
 
     @MockitoBean(name = "chatLlmProvider")
     private LlmProvider chatLlmProvider;
+
+    @MockitoBean
+    private ReadingBuddyPreferenceService preferenceService;
+
+    @MockitoBean
+    private ReaderIdentityService readerIdentityService;
 
     @Test
     void status_whenChatDisabled_availableIsFalseEvenIfBuddyAndProviderReady() throws Exception {

@@ -5,12 +5,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.classicchatreader.entity.ParagraphAnnotationEntity;
 import com.classicchatreader.entity.QuizAttemptEntity;
 import com.classicchatreader.entity.QuizTrophyEntity;
+import com.classicchatreader.entity.ReadingBuddyMemoryEntity;
+import com.classicchatreader.entity.ReadingBuddyMessageEntity;
+import com.classicchatreader.entity.ReadingBuddyPreferenceEntity;
 import com.classicchatreader.entity.UserReaderClaimEntity;
 import com.classicchatreader.entity.UserReaderStateEntity;
 import com.classicchatreader.model.AccountStateSnapshot;
 import com.classicchatreader.repository.ParagraphAnnotationRepository;
 import com.classicchatreader.repository.QuizAttemptRepository;
 import com.classicchatreader.repository.QuizTrophyRepository;
+import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
+import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import com.classicchatreader.repository.ReadingBuddyPreferenceRepository;
 import com.classicchatreader.repository.UserReaderClaimRepository;
 import com.classicchatreader.repository.UserReaderStateRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,6 +41,9 @@ public class AccountClaimSyncService {
     private final ParagraphAnnotationRepository paragraphAnnotationRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final QuizTrophyRepository quizTrophyRepository;
+    private final ReadingBuddyPreferenceRepository readingBuddyPreferenceRepository;
+    private final ReadingBuddyMessageRepository readingBuddyMessageRepository;
+    private final ReadingBuddyMemoryRepository readingBuddyMemoryRepository;
     private final UserReaderStateRepository userReaderStateRepository;
     private final UserReaderClaimRepository userReaderClaimRepository;
     private final ObjectMapper objectMapper;
@@ -42,12 +52,18 @@ public class AccountClaimSyncService {
             ParagraphAnnotationRepository paragraphAnnotationRepository,
             QuizAttemptRepository quizAttemptRepository,
             QuizTrophyRepository quizTrophyRepository,
+            ReadingBuddyPreferenceRepository readingBuddyPreferenceRepository,
+            ReadingBuddyMessageRepository readingBuddyMessageRepository,
+            ReadingBuddyMemoryRepository readingBuddyMemoryRepository,
             UserReaderStateRepository userReaderStateRepository,
             UserReaderClaimRepository userReaderClaimRepository,
             ObjectMapper objectMapper) {
         this.paragraphAnnotationRepository = paragraphAnnotationRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.quizTrophyRepository = quizTrophyRepository;
+        this.readingBuddyPreferenceRepository = readingBuddyPreferenceRepository;
+        this.readingBuddyMessageRepository = readingBuddyMessageRepository;
+        this.readingBuddyMemoryRepository = readingBuddyMemoryRepository;
         this.userReaderStateRepository = userReaderStateRepository;
         this.userReaderClaimRepository = userReaderClaimRepository;
         this.objectMapper = objectMapper;
@@ -91,6 +107,12 @@ public class AccountClaimSyncService {
         claimQuizAttempts(userId, readerId);
         claimQuizTrophies(userId, readerId);
 
+        String anonKey = readerId;
+        String userKey = "user:" + userId;
+        claimReadingBuddyPreferences(anonKey, userKey);
+        claimReadingBuddyMessages(anonKey, userKey);
+        claimReadingBuddyMemories(anonKey, userKey);
+
         UserReaderClaimEntity claim = new UserReaderClaimEntity();
         claim.setUserId(userId);
         claim.setReaderId(readerId);
@@ -100,6 +122,179 @@ public class AccountClaimSyncService {
             // Duplicate claim from concurrent requests is safe and idempotent.
         }
         return true;
+    }
+
+    /**
+     * Merge anonymous reading-buddy preferences into the account owner key.
+     * Global + per-book: last-write-wins by {@code updated_at}; account wins on tie.
+     */
+    private void claimReadingBuddyPreferences(String anonKey, String userKey) {
+        List<ReadingBuddyPreferenceEntity> anonPrefs =
+                readingBuddyPreferenceRepository.findByOwnerKey(anonKey);
+        if (anonPrefs.isEmpty()) {
+            return;
+        }
+
+        Map<String, ReadingBuddyPreferenceEntity> userByBook = new HashMap<>();
+        for (ReadingBuddyPreferenceEntity userPref : readingBuddyPreferenceRepository.findByOwnerKey(userKey)) {
+            userByBook.put(userPref.getBookId(), userPref);
+        }
+
+        for (ReadingBuddyPreferenceEntity anon : anonPrefs) {
+            ReadingBuddyPreferenceEntity userRow = userByBook.get(anon.getBookId());
+            if (userRow == null) {
+                anon.setOwnerKey(userKey);
+                readingBuddyPreferenceRepository.save(anon);
+                continue;
+            }
+
+            // Last-write-wins; account (user) wins on equal updated_at.
+            if (isAfter(anon.getUpdatedAt(), userRow.getUpdatedAt())) {
+                if (ReadingBuddyPreferenceService.GLOBAL_BOOK_ID.equals(anon.getBookId())) {
+                    userRow.setEnabled(anon.isEnabled());
+                    userRow.setFrequency(anon.getFrequency());
+                    userRow.setDefaultPersonaId(anon.getDefaultPersonaId());
+                    userRow.setSuppressUntil(anon.getSuppressUntil());
+                } else {
+                    userRow.setPersonaId(anon.getPersonaId());
+                }
+                userRow.setUpdatedAt(anon.getUpdatedAt());
+                readingBuddyPreferenceRepository.save(userRow);
+            }
+            readingBuddyPreferenceRepository.delete(anon);
+        }
+    }
+
+    /**
+     * Reassign or append anonymous messages. Per (book_id, persona_id): bulk rewrite if user
+     * has zero history; else append by content_hash (and proactive position uniqueness).
+     */
+    private void claimReadingBuddyMessages(String anonKey, String userKey) {
+        List<ReadingBuddyMessageEntity> anonMessages =
+                readingBuddyMessageRepository.findByOwnerKey(anonKey);
+        if (anonMessages.isEmpty()) {
+            return;
+        }
+
+        Map<String, List<ReadingBuddyMessageEntity>> anonByThread = new LinkedHashMap<>();
+        for (ReadingBuddyMessageEntity msg : anonMessages) {
+            String threadKey = threadKey(msg.getBookId(), msg.getPersonaId());
+            anonByThread.computeIfAbsent(threadKey, ignored -> new ArrayList<>()).add(msg);
+        }
+
+        for (Map.Entry<String, List<ReadingBuddyMessageEntity>> entry : anonByThread.entrySet()) {
+            List<ReadingBuddyMessageEntity> threadAnon = entry.getValue();
+            ReadingBuddyMessageEntity sample = threadAnon.get(0);
+            String bookId = sample.getBookId();
+            String personaId = sample.getPersonaId();
+
+            long userCount = readingBuddyMessageRepository.countByOwnerKeyAndBookIdAndPersonaId(
+                    userKey, bookId, personaId);
+            if (userCount == 0) {
+                for (ReadingBuddyMessageEntity anon : threadAnon) {
+                    anon.setOwnerKey(userKey);
+                    readingBuddyMessageRepository.save(anon);
+                }
+                continue;
+            }
+
+            List<ReadingBuddyMessageEntity> userMessages =
+                    readingBuddyMessageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(
+                            userKey, bookId, personaId);
+            Set<String> userHashes = new LinkedHashSet<>();
+            Map<String, ReadingBuddyMessageEntity> userProactiveByPosition = new HashMap<>();
+            for (ReadingBuddyMessageEntity userMsg : userMessages) {
+                if (userMsg.getContentHash() != null) {
+                    userHashes.add(userMsg.getContentHash());
+                }
+                if (userMsg.getProactivePositionKey() != null) {
+                    userProactiveByPosition.put(userMsg.getProactivePositionKey(), userMsg);
+                }
+            }
+
+            threadAnon.sort(Comparator.comparing(
+                    ReadingBuddyMessageEntity::getCreatedAt,
+                    Comparator.nullsLast(Comparator.naturalOrder())
+            ));
+
+            for (ReadingBuddyMessageEntity anon : threadAnon) {
+                if (anon.getContentHash() != null && userHashes.contains(anon.getContentHash())) {
+                    readingBuddyMessageRepository.delete(anon);
+                    continue;
+                }
+
+                String positionKey = anon.getProactivePositionKey();
+                if (positionKey != null && userProactiveByPosition.containsKey(positionKey)) {
+                    ReadingBuddyMessageEntity existing = userProactiveByPosition.get(positionKey);
+                    // Keep earlier created_at; delete the other.
+                    if (isBefore(anon.getCreatedAt(), existing.getCreatedAt())) {
+                        existing.setOwnerKey(userKey);
+                        // Replace content with earlier anon message fields.
+                        existing.setRole(anon.getRole());
+                        existing.setContent(anon.getContent());
+                        existing.setKind(anon.getKind());
+                        existing.setChapterIndex(anon.getChapterIndex());
+                        existing.setParagraphIndex(anon.getParagraphIndex());
+                        existing.setContentHash(anon.getContentHash());
+                        existing.setCreatedAt(anon.getCreatedAt());
+                        readingBuddyMessageRepository.save(existing);
+                        if (anon.getContentHash() != null) {
+                            userHashes.add(anon.getContentHash());
+                        }
+                    }
+                    readingBuddyMessageRepository.delete(anon);
+                    continue;
+                }
+
+                anon.setOwnerKey(userKey);
+                readingBuddyMessageRepository.save(anon);
+                if (anon.getContentHash() != null) {
+                    userHashes.add(anon.getContentHash());
+                }
+                if (positionKey != null) {
+                    userProactiveByPosition.put(positionKey, anon);
+                }
+            }
+        }
+    }
+
+    /**
+     * Memory rows: rewrite if only anon; if both, keep newer {@code updated_at} entire row.
+     */
+    private void claimReadingBuddyMemories(String anonKey, String userKey) {
+        List<ReadingBuddyMemoryEntity> anonMemories =
+                readingBuddyMemoryRepository.findByOwnerKey(anonKey);
+        if (anonMemories.isEmpty()) {
+            return;
+        }
+
+        for (ReadingBuddyMemoryEntity anon : anonMemories) {
+            Optional<ReadingBuddyMemoryEntity> userOptional =
+                    readingBuddyMemoryRepository.findByOwnerKeyAndBookIdAndPersonaId(
+                            userKey, anon.getBookId(), anon.getPersonaId());
+            if (userOptional.isEmpty()) {
+                anon.setOwnerKey(userKey);
+                readingBuddyMemoryRepository.save(anon);
+                continue;
+            }
+
+            ReadingBuddyMemoryEntity userRow = userOptional.get();
+            // Keep newer updated_at; account wins on tie (do not prefer anon when equal).
+            if (isAfter(anon.getUpdatedAt(), userRow.getUpdatedAt())) {
+                userRow.setSummaryText(anon.getSummaryText());
+                userRow.setSummaryVersion(anon.getSummaryVersion());
+                userRow.setSummaryMaxChapterIndex(anon.getSummaryMaxChapterIndex());
+                userRow.setSummaryMaxParagraphIndex(anon.getSummaryMaxParagraphIndex());
+                userRow.setLastMessageId(anon.getLastMessageId());
+                userRow.setUpdatedAt(anon.getUpdatedAt());
+                readingBuddyMemoryRepository.save(userRow);
+            }
+            readingBuddyMemoryRepository.delete(anon);
+        }
+    }
+
+    private static String threadKey(String bookId, String personaId) {
+        return bookId + "\0" + personaId;
     }
 
     private void claimParagraphAnnotations(String userId, String readerId) {
