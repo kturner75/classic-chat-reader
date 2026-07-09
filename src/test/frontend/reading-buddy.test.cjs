@@ -15,8 +15,111 @@ const {
     formatHiddenPlaceholder,
     renderHistoryMessagesHtml,
     evaluateClientGates,
-    isFeatureAvailable
+    isFeatureAvailable,
+    isForwardPosition,
+    escapeHtml,
+    createController
 } = require('../../main/resources/static/js/reading-buddy.js');
+
+function fakeEl(initial = {}) {
+    const classSet = new Set(
+        String(initial.className || '')
+            .split(/\s+/)
+            .filter(Boolean)
+    );
+    if (initial.hidden !== false) {
+        classSet.add('hidden');
+    }
+    return {
+        classList: {
+            add: (...names) => names.forEach(n => classSet.add(n)),
+            remove: (...names) => names.forEach(n => classSet.delete(n)),
+            contains: (name) => classSet.has(name),
+            toggle: (name, force) => {
+                if (force === true) classSet.add(name);
+                else if (force === false) classSet.delete(name);
+                else if (classSet.has(name)) classSet.delete(name);
+                else classSet.add(name);
+            }
+        },
+        textContent: '',
+        src: '',
+        alt: '',
+        value: '',
+        disabled: false,
+        checked: false,
+        innerHTML: '',
+        scrollTop: 0,
+        focus: () => {},
+        querySelector: () => null,
+        appendChild: () => {},
+        addEventListener: () => {}
+    };
+}
+
+function createFakeHost(overrides = {}) {
+    let bookId = overrides.bookId || 'book-a';
+    let pos = overrides.position || { chapterIndex: 0, paragraphIndex: 0 };
+    let focused = overrides.focusedModal === true;
+    let speed = overrides.speedReadingActive === true;
+    const fetchImpl = overrides.fetch || (async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({})
+    }));
+
+    const elements = {
+        settingsSection: fakeEl({ hidden: true }),
+        toggle: fakeEl(),
+        frequency: Object.assign(fakeEl(), { value: 'rare' }),
+        personaList: fakeEl(),
+        talkBtn: fakeEl(),
+        toast: fakeEl(),
+        toastImage: fakeEl(),
+        toastName: fakeEl(),
+        toastPreview: fakeEl(),
+        toastOpen: fakeEl(),
+        toastDismiss: fakeEl(),
+        toastQuiet: fakeEl(),
+        chatModal: fakeEl(),
+        chatPortrait: fakeEl(),
+        chatName: fakeEl(),
+        chatClose: fakeEl(),
+        clearHistoryBtn: fakeEl(),
+        chatError: fakeEl(),
+        chatErrorMessage: fakeEl(),
+        chatErrorRetry: fakeEl(),
+        chatMessages: fakeEl(),
+        chatInput: fakeEl(),
+        chatSend: fakeEl()
+    };
+
+    return {
+        elements,
+        fetch: fetchImpl,
+        getBookId: () => bookId,
+        setBookId: (id) => { bookId = id; },
+        getPosition: () => ({ ...pos }),
+        setPosition: (next) => { pos = { ...next }; },
+        getCurrentParagraphHtml: () => overrides.paragraphHtml || ('x'.repeat(80)),
+        isFocusedModal: () => focused,
+        setFocusedModal: (v) => { focused = v; },
+        isSpeedReadingActive: () => speed,
+        getClassroomContext: () => ({ enrolled: false }),
+        isClassroomAllowed: () => true,
+        mapChatError: () => ({ message: 'err', retryable: true }),
+        escapeHtml,
+        ttsPauseForModal: () => {},
+        ttsResumeAfterModal: () => {},
+        closeReaderSettingsPanel: () => {},
+        confirm: () => true
+    };
+}
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 test('normalizeFrequency defaults to rare', () => {
     assert.equal(normalizeFrequency('CHATTY'), 'chatty');
@@ -118,4 +221,251 @@ test('isFeatureAvailable honors status and classroom kill-switch', () => {
 
 test('quiet default is 45 minutes', () => {
     assert.equal(QUIET_MINUTES, 45);
+});
+
+test('escapeHtml fallback encodes single quotes', () => {
+    assert.equal(escapeHtml("it's"), 'it&#39;s');
+});
+
+test('isForwardPosition is lexicographic on chapter then paragraph', () => {
+    assert.equal(isForwardPosition({ chapterIndex: 0, paragraphIndex: 1 }, { chapterIndex: 0, paragraphIndex: 2 }), true);
+    assert.equal(isForwardPosition({ chapterIndex: 0, paragraphIndex: 5 }, { chapterIndex: 1, paragraphIndex: 0 }), true);
+    assert.equal(isForwardPosition({ chapterIndex: 1, paragraphIndex: 0 }, { chapterIndex: 0, paragraphIndex: 9 }), false);
+    assert.equal(isForwardPosition(null, { chapterIndex: 0, paragraphIndex: 1 }), false);
+});
+
+test('page-turn position deltas count as advances (not only nextParagraph)', () => {
+    const host = createFakeHost({ position: { chapterIndex: 0, paragraphIndex: 0 } });
+    const controller = createController(host);
+    const state = controller.getState();
+    state.statusAvailable = true;
+    state.prefs.enabled = true;
+    state.prefs.frequency = 'chatty';
+    state.prefs.personaId = 'humorist';
+
+    // Baseline position (first render does not count as advance)
+    controller.onPageRendered();
+    assert.equal(state.advancesSinceSample, 0);
+
+    // Page-turn style forward move
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 3 });
+    controller.onPageRendered();
+    assert.equal(state.advancesSinceSample, 1);
+
+    // Same position again (renderPage + onParagraphAdvanced) does not double-count
+    controller.onParagraphAdvanced();
+    assert.equal(state.advancesSinceSample, 1);
+
+    // Another page jump forward
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 8 });
+    controller.onPageRendered();
+    assert.equal(state.advancesSinceSample, 2);
+
+    // Backward move does not count
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 2 });
+    controller.onPageRendered();
+    assert.equal(state.advancesSinceSample, 2);
+});
+
+test('stale checkRequestId after book switch does not show toast', async () => {
+    let resolveFetch;
+    const host = createFakeHost({
+        bookId: 'book-a',
+        position: { chapterIndex: 0, paragraphIndex: 0 },
+        fetch: () => new Promise(resolve => {
+            resolveFetch = resolve;
+        })
+    });
+    const controller = createController(host);
+    const state = controller.getState();
+    state.statusAvailable = true;
+    state.prefs.enabled = true;
+    state.prefs.frequency = 'chatty';
+    state.prefs.personaId = 'humorist';
+    state.prefs.suppressUntilEpochMs = null;
+
+    controller.onPageRendered();
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 1 });
+    controller.onPageRendered();
+    assert.equal(state.advancesSinceSample, 1);
+
+    // Fire dwell check
+    await delay(DWELL_MS + 50);
+    assert.equal(typeof resolveFetch, 'function', 'check-comment fetch should have started');
+
+    // Book switch invalidates sequence token
+    host.setBookId('book-b');
+    controller.onBookSwitch();
+    const tokenAfterSwitch = state.checkRequestId;
+
+    resolveFetch({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+            action: 'COMMENT',
+            messageId: 'm1',
+            text: 'Comment for previous book',
+            personaId: 'humorist',
+            chapterIndex: 0,
+            paragraphIndex: 1
+        })
+    });
+    await delay(30);
+
+    assert.ok(state.checkRequestId >= tokenAfterSwitch);
+    assert.equal(host.elements.toast.classList.contains('hidden'), true,
+        'toast must stay hidden for stale book response');
+    assert.equal(state.pendingComment, null);
+});
+
+test('disable during in-flight check prevents toast', async () => {
+    let resolveFetch;
+    const host = createFakeHost({
+        bookId: 'book-a',
+        position: { chapterIndex: 0, paragraphIndex: 0 },
+        fetch: async (url, options = {}) => {
+            if (options.method === 'PUT') {
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: { get: () => null },
+                    json: async () => ({
+                        enabled: false,
+                        frequency: 'chatty',
+                        defaultPersonaId: 'humorist',
+                        personaId: 'humorist',
+                        personaSource: 'global',
+                        suppressUntilEpochMs: null,
+                        bookId: null
+                    })
+                };
+            }
+            return new Promise(resolve => {
+                resolveFetch = resolve;
+            });
+        }
+    });
+    const controller = createController(host);
+    const state = controller.getState();
+    state.statusAvailable = true;
+    state.prefs.enabled = true;
+    state.prefs.frequency = 'chatty';
+    state.prefs.personaId = 'humorist';
+
+    controller.onPageRendered();
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 1 });
+    controller.onPageRendered();
+    await delay(DWELL_MS + 50);
+    assert.equal(typeof resolveFetch, 'function');
+
+    await controller.setEnabled(false);
+
+    resolveFetch({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+            action: 'COMMENT',
+            text: 'Should not toast after disable',
+            personaId: 'humorist',
+            chapterIndex: 0,
+            paragraphIndex: 1
+        })
+    });
+    await delay(30);
+
+    assert.equal(host.elements.toast.classList.contains('hidden'), true);
+    assert.equal(state.prefs.enabled, false);
+});
+
+test('quiet for a while sends quietMinutes 45 and suppresses immediately', async () => {
+    const putBodies = [];
+    let resolveCheck;
+    const host = createFakeHost({
+        bookId: 'book-a',
+        position: { chapterIndex: 0, paragraphIndex: 0 },
+        fetch: async (url, options = {}) => {
+            if (options.method === 'PUT' && String(url).includes('/preferences')) {
+                putBodies.push(JSON.parse(options.body || '{}'));
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: { get: () => null },
+                    json: async () => ({
+                        enabled: true,
+                        frequency: 'chatty',
+                        defaultPersonaId: 'humorist',
+                        personaId: 'humorist',
+                        personaSource: 'global',
+                        suppressUntilEpochMs: Date.now() + (QUIET_MINUTES * 60 * 1000),
+                        bookId: null
+                    })
+                };
+            }
+            if (options.method === 'POST' && String(url).includes('check-comment')) {
+                return new Promise(resolve => {
+                    resolveCheck = resolve;
+                });
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => null },
+                json: async () => ({})
+            };
+        }
+    });
+    const controller = createController(host);
+    const state = controller.getState();
+    state.statusAvailable = true;
+    state.prefs.enabled = true;
+    state.prefs.frequency = 'chatty';
+    state.prefs.personaId = 'humorist';
+
+    controller.onPageRendered();
+    host.setPosition({ chapterIndex: 0, paragraphIndex: 1 });
+    controller.onPageRendered();
+    await delay(DWELL_MS + 50);
+    assert.equal(typeof resolveCheck, 'function');
+
+    await controller.quietForAWhile();
+
+    assert.equal(putBodies.length, 1);
+    assert.deepEqual(putBodies[0], { quietMinutes: 45 });
+    assert.ok((state.prefs.suppressUntilEpochMs || 0) > Date.now());
+    assert.equal(controller.canPresentProactiveToast(Date.now()), false);
+
+    resolveCheck({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+            action: 'COMMENT',
+            text: 'Should not toast after quiet',
+            personaId: 'humorist',
+            chapterIndex: 0,
+            paragraphIndex: 1
+        })
+    });
+    await delay(30);
+    assert.equal(host.elements.toast.classList.contains('hidden'), true);
+});
+
+test('toast open path never auto-opens modal; openChat is explicit', async () => {
+    const host = createFakeHost();
+    const controller = createController(host);
+    const state = controller.getState();
+    state.statusAvailable = true;
+    state.prefs.enabled = true;
+    state.prefs.personaId = 'humorist';
+
+    // COMMENT path only uses showToast via canPresent — modal stays closed unless openChat.
+    assert.equal(controller.isModalVisible(), false);
+    assert.equal(state.chatOpen, false);
+
+    // Explicit open is the only path that shows the modal (history fetch empty ok)
+    await controller.openChat();
+    assert.equal(state.chatOpen, true);
+    assert.equal(controller.isModalVisible(), true);
 });

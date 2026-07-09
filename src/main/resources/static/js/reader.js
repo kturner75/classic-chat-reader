@@ -511,7 +511,11 @@
             || isAccountModalVisible()
             || isAchievementsModalVisible()
             || isChapterRecapVisible()
-            || isPromptModalVisible();
+            || isPromptModalVisible()
+            || isBookmarksOverlayVisible()
+            || isShortcutsOverlayVisible()
+            || isChapterListVisible()
+            || isReaderSettingsPanelVisible();
     }
 
     function initReadingBuddyController() {
@@ -4047,6 +4051,10 @@
     // Select a book
     async function selectBook(book, chapterIndex = 0, pageIndex = 0, paragraphIndex = 0) {
         state.currentBook = book;
+        // Cancel buddy dwell/in-flight checks before any await so prior book cannot toast.
+        if (readingBuddyController) {
+            readingBuddyController.onBookSwitch();
+        }
         state.chapters = book.chapters;
         state.currentChapterIndex = chapterIndex;
         state.newCharacterQueue = [];

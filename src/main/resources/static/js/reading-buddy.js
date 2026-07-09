@@ -87,7 +87,19 @@
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /** Lexicographic forward move on (chapter, paragraph). */
+    function isForwardPosition(from, to) {
+        if (!from || !to) {
+            return false;
+        }
+        if (to.chapterIndex > from.chapterIndex) {
+            return true;
+        }
+        return to.chapterIndex === from.chapterIndex && to.paragraphIndex > from.paragraphIndex;
     }
 
     /**
@@ -203,6 +215,7 @@
             paragraphEnteredAt: 0,
             clientCooldownUntilMs: 0,
             lastSampledAtAdvance: 0,
+            lastPosition: null,
             pendingComment: null,
             toastTimer: null,
             dwellTimer: null,
@@ -214,6 +227,44 @@
             renderSettled: false,
             enabledEverAdvanced: false
         };
+
+        /**
+         * Cancel dwell + in-flight check-comment applicability.
+         * Safe to call synchronously on book switch / disable / quiet.
+         */
+        function invalidatePendingChecks(options = {}) {
+            const resetAdvances = options.resetAdvances !== false;
+            if (state.dwellTimer) {
+                clearTimeout(state.dwellTimer);
+                state.dwellTimer = null;
+            }
+            state.checkRequestId += 1;
+            state.renderSettled = false;
+            if (resetAdvances) {
+                state.advancesSinceSample = 0;
+            }
+        }
+
+        function canPresentProactiveToast(nowMs) {
+            const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+            if (!state.statusAvailable || !classroomAllowed()) {
+                return false;
+            }
+            if (state.prefs.enabled !== true) {
+                return false;
+            }
+            const suppressUntil = Number(state.prefs.suppressUntilEpochMs) || 0;
+            if (suppressUntil > now) {
+                return false;
+            }
+            if (state.chatOpen || isFocusedModal()) {
+                return false;
+            }
+            if (isSpeedReading()) {
+                return false;
+            }
+            return true;
+        }
 
         function els() {
             return host.elements || {};
@@ -412,21 +463,49 @@
             state.renderSettled = true;
         }
 
-        function onParagraphAdvanced() {
+        /**
+         * Drive advance counting from position deltas so page turns (l/ArrowRight)
+         * and paragraph steps (j) both sample. Idempotent if called twice for the
+         * same position (e.g. renderPage + onParagraphAdvanced).
+         */
+        function noteReadingPosition() {
+            const pos = position();
+            const prev = state.lastPosition;
+            const movedForward = isForwardPosition(prev, pos);
+            const positionChanged = !prev
+                || prev.chapterIndex !== pos.chapterIndex
+                || prev.paragraphIndex !== pos.paragraphIndex;
+
+            state.lastPosition = {
+                chapterIndex: pos.chapterIndex,
+                paragraphIndex: pos.paragraphIndex
+            };
+
+            if (positionChanged) {
+                markParagraphEntered();
+            }
+
             if (!state.statusAvailable || !state.prefs.enabled) {
                 return;
             }
-            state.advancesSinceSample += 1;
-            state.enabledEverAdvanced = true;
-            markParagraphEntered();
-            scheduleProactiveCheck();
+
+            if (movedForward) {
+                state.advancesSinceSample += 1;
+                state.enabledEverAdvanced = true;
+            }
+
+            if (positionChanged) {
+                scheduleProactiveCheck();
+            }
+        }
+
+        function onParagraphAdvanced() {
+            // Position already updated by caller; count via shared delta path.
+            noteReadingPosition();
         }
 
         function onPageRendered() {
-            markParagraphEntered();
-            if (state.statusAvailable && state.prefs.enabled) {
-                scheduleProactiveCheck();
-            }
+            noteReadingPosition();
         }
 
         function scheduleProactiveCheck() {
@@ -445,7 +524,8 @@
         }
 
         async function maybeCheckComment() {
-            if (!bookId()) {
+            const requestBookId = bookId();
+            if (!requestBookId) {
                 return;
             }
             const pos = position();
@@ -484,7 +564,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        bookId: bookId(),
+                        bookId: requestBookId,
                         personaId,
                         readerChapterIndex: chapterIndex,
                         readerParagraphIndex: paragraphIndex,
@@ -498,11 +578,14 @@
                 if (requestId !== state.checkRequestId) {
                     return;
                 }
+                if (bookId() !== requestBookId) {
+                    return;
+                }
                 const current = position();
                 if (current.chapterIndex !== chapterIndex || current.paragraphIndex !== paragraphIndex) {
                     return;
                 }
-                if (state.chatOpen || isFocusedModal()) {
+                if (!canPresentProactiveToast(Date.now())) {
                     return;
                 }
 
@@ -522,6 +605,12 @@
                 if (!data || requestId !== state.checkRequestId) {
                     return;
                 }
+                if (bookId() !== requestBookId) {
+                    return;
+                }
+                if (!canPresentProactiveToast(Date.now())) {
+                    return;
+                }
 
                 if (typeof data.nextEligibleAfterMs === 'number' && data.nextEligibleAfterMs > 0) {
                     state.clientCooldownUntilMs = Date.now() + data.nextEligibleAfterMs;
@@ -535,7 +624,8 @@
                         personaId: data.personaId || personaId,
                         portraitUrl: data.portraitUrl,
                         chapterIndex: data.chapterIndex ?? chapterIndex,
-                        paragraphIndex: data.paragraphIndex ?? paragraphIndex
+                        paragraphIndex: data.paragraphIndex ?? paragraphIndex,
+                        bookId: requestBookId
                     });
                 }
             } catch (error) {
@@ -544,6 +634,12 @@
         }
 
         function showToast(comment) {
+            if (!canPresentProactiveToast(Date.now())) {
+                return;
+            }
+            if (comment && comment.bookId && bookId() && comment.bookId !== bookId()) {
+                return;
+            }
             const toast = els().toast;
             if (!toast) {
                 return;
@@ -596,7 +692,10 @@
         }
 
         async function quietForAWhile() {
+            // Invalidate in-flight checks immediately; optimistic suppress while PUT runs.
+            invalidatePendingChecks({ resetAdvances: false });
             dismissToast();
+            state.prefs.suppressUntilEpochMs = Date.now() + (QUIET_MINUTES * 60 * 1000);
             try {
                 await putPreferences({ quietMinutes: QUIET_MINUTES });
                 if (typeof host.onQuietApplied === 'function') {
@@ -669,6 +768,36 @@
             renderChatMessages();
         }
 
+        function upsertProactiveComment(comment) {
+            if (!comment || typeof comment.text !== 'string' || !comment.text.trim()) {
+                return;
+            }
+            const exists = state.chatHistory.some(msg => {
+                if (!msg || msg.visibleAtPosition === false) {
+                    return false;
+                }
+                if (comment.messageId && msg.id === comment.messageId) {
+                    return true;
+                }
+                return msg.role !== 'user'
+                    && typeof msg.content === 'string'
+                    && msg.content === comment.text;
+            });
+            if (exists) {
+                return;
+            }
+            state.chatHistory.push({
+                id: comment.messageId || null,
+                role: 'buddy',
+                content: comment.text,
+                kind: 'proactive',
+                visibleAtPosition: true,
+                chapterIndex: comment.chapterIndex,
+                paragraphIndex: comment.paragraphIndex
+            });
+            renderChatMessages();
+        }
+
         async function openChat(options = {}) {
             if (!state.statusAvailable || !classroomAllowed()) {
                 return;
@@ -677,6 +806,8 @@
                 return;
             }
 
+            // Capture before dismiss clears pending on already-hidden toast.
+            const pendingFromToast = options.fromToast ? state.pendingComment : null;
             dismissToast();
             if (typeof host.closeReaderSettingsPanel === 'function') {
                 host.closeReaderSettingsPanel();
@@ -705,10 +836,11 @@
 
             await loadHistory();
 
-            // If opened from toast, ensure the proactive comment is visible (server history should include it)
-            if (options.fromToast && state.pendingComment) {
-                state.pendingComment = null;
+            // If opened from toast, ensure the proactive text is visible even if history failed/raced.
+            if (pendingFromToast) {
+                upsertProactiveComment(pendingFromToast);
             }
+            state.pendingComment = null;
 
             if (els().chatInput) {
                 els().chatInput.focus();
@@ -866,11 +998,27 @@
         }
 
         async function setEnabled(enabled) {
-            await putPreferences({ enabled: !!enabled });
-            if (enabled) {
+            const turnOn = !!enabled;
+            if (!turnOn) {
+                // Invalidate before network so in-flight COMMENT cannot toast after disable.
+                invalidatePendingChecks({ resetAdvances: true });
+                dismissToast();
+                if (state.chatOpen) {
+                    closeChat();
+                }
+                state.prefs.enabled = false;
+                updateTalkButton();
+            }
+            await putPreferences({ enabled: turnOn });
+            if (turnOn) {
                 state.advancesSinceSample = 0;
                 state.enabledEverAdvanced = false;
+                state.lastPosition = position();
             } else {
+                // Re-assert local off if PUT response somehow diverged (shouldn't).
+                if (state.prefs.enabled) {
+                    state.prefs.enabled = false;
+                }
                 dismissToast();
                 if (state.chatOpen) {
                     closeChat();
@@ -904,14 +1052,24 @@
             syncSettingsPanel();
         }
 
-        async function onBookOpened() {
-            state.advancesSinceSample = 0;
+        /**
+         * Synchronous book-switch barrier. Call as soon as currentBook changes
+         * (before any await) so dwell/check from the previous book cannot toast.
+         */
+        function onBookSwitch() {
+            invalidatePendingChecks({ resetAdvances: true });
             state.pendingComment = null;
-            state.checkRequestId += 1;
+            state.lastPosition = null;
+            state.clientCooldownUntilMs = 0;
             dismissToast();
             if (state.chatOpen) {
                 closeChat();
             }
+        }
+
+        async function onBookOpened() {
+            // Idempotent if onBookSwitch already ran; still safe if only this is called.
+            onBookSwitch();
             await checkAvailability();
             if (state.statusAvailable) {
                 await loadPersonas();
@@ -1019,6 +1177,7 @@
             checkAvailability,
             loadPersonas,
             loadPreferences,
+            onBookSwitch,
             onBookOpened,
             onParagraphAdvanced,
             onPageRendered,
@@ -1029,10 +1188,15 @@
             bindEvents,
             syncSettingsPanel,
             refreshClassroomGating,
+            invalidatePendingChecks,
+            setEnabled,
+            quietForAWhile,
             getState: () => state,
             // exposed for tests / debugging
             evaluateClientGates,
-            isFeatureAvailable
+            isFeatureAvailable,
+            noteReadingPosition,
+            canPresentProactiveToast
         };
     }
 
@@ -1053,6 +1217,8 @@
         renderHistoryMessagesHtml,
         evaluateClientGates,
         isFeatureAvailable,
+        isForwardPosition,
+        escapeHtml,
         createController
     };
 });
