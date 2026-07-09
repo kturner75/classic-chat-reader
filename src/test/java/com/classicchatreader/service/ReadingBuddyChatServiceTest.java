@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -168,7 +169,7 @@ class ReadingBuddyChatServiceTest {
     }
 
     @Test
-    void chat_llmFailure_recordsFailedAndStillPersistsFallback() {
+    void chat_llmFailure_recordsFailedAndDoesNotPersistFallback() {
         BookEntity book = new BookEntity("Title", "Author", "manual");
         book.setId("book-1");
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
@@ -184,23 +185,15 @@ class ReadingBuddyChatServiceTest {
         when(chatProvider.generate(anyString(), any(LlmOptions.class)))
                 .thenThrow(new RuntimeException("provider down"));
 
-        ReadingBuddyMessageEntity userMsg = message("u1", "user", "hi");
-        ReadingBuddyMessageEntity buddyMsg = message("b1", "buddy", "fallback");
-        when(memoryService.persistChatTurn(any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                .thenAnswer(invocation -> {
-                    String buddyContent = invocation.getArgument(4);
-                    buddyMsg.setContent(buddyContent);
-                    return new ReadingBuddyMemoryService.ChatTurn(userMsg, buddyMsg);
-                });
-
         ReadingBuddyChatService.ChatResult result =
                 chatService.chat("owner-A", "book-1", "humorist", "hi", 0, 0);
 
         assertTrue(result.response().contains("can't answer"));
+        assertNull(result.messageId());
+        assertNull(result.userMessageId());
         verify(metricsService).recordChatFailed();
-        verify(memoryService).persistChatTurn(
-                eq("owner-A"), eq("book-1"), eq("humorist"),
-                eq("hi"), anyString(), eq(0), eq(0));
+        verify(memoryService, never()).persistChatTurn(
+                any(), any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     @Test

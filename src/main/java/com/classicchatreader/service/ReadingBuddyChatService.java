@@ -13,13 +13,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 /**
  * Interactive reading-buddy chat: server memory for prompts (client history ignored),
  * position-bounded story context, durable turn persistence.
+ * <p>
+ * LLM generate runs outside a write transaction; only {@link ReadingBuddyMemoryService#persistChatTurn}
+ * is transactional (avoids holding a pool connection for multi-second model latency).
  */
 @Service
 public class ReadingBuddyChatService {
@@ -65,8 +67,10 @@ public class ReadingBuddyChatService {
     /**
      * Runs a chat turn. Client {@code conversationHistory} must not be used for prompts —
      * only server-persisted recent messages (position-filtered) are injected.
+     * <p>
+     * Successful replies are persisted. LLM failure / blank cleaned replies are <em>not</em>
+     * written to durable memory (synthetic fallbacks must not pollute conversation context).
      */
-    @Transactional
     public ChatResult chat(
             String ownerKey,
             String bookId,
@@ -74,15 +78,11 @@ public class ReadingBuddyChatService {
             String message,
             int readerChapterIndex,
             int readerParagraphIndex) {
-        validateChatRequest(bookId, personaId, message, readerChapterIndex, readerParagraphIndex);
+        ReadingBuddyPersona persona = resolvePersona(personaId);
+        validateChatRequest(bookId, message, readerChapterIndex, readerParagraphIndex);
 
         BookEntity book = bookRepository.findById(bookId.trim())
                 .orElseThrow(() -> new BookNotFoundException(bookId));
-
-        ReadingBuddyPersona persona = personaCatalog.findById(personaId.trim())
-                .orElseThrow(() -> new ValidationException(
-                        "UNKNOWN_PERSONA",
-                        "Unknown personaId: " + personaId));
 
         String userMessage = message.trim();
         String chapterTitle = chapterRepository
@@ -117,6 +117,7 @@ public class ReadingBuddyChatService {
         long started = System.currentTimeMillis();
         metricsService.recordChatRequest();
         String reply;
+        boolean generationOk;
         try {
             double temperature = persona.temperature() > 0 ? persona.temperature() : 0.7;
             String generated = chatProvider.generate(
@@ -125,10 +126,14 @@ public class ReadingBuddyChatService {
             reply = softTruncateWords(cleanResponse(generated, persona.displayName()), CHAT_SOFT_TRUNCATE_WORDS);
             if (reply.isBlank()) {
                 metricsService.recordChatFailed();
+                generationOk = false;
                 reply = "I'm not sure how to respond to that just yet — keep reading and ask again anytime.";
+            } else {
+                generationOk = true;
             }
         } catch (Exception e) {
             metricsService.recordChatFailed();
+            generationOk = false;
             log.error(
                     "event=buddy_chat_failed bookId={} personaId={} ownerKey={} errorType={} errorMessage={}",
                     book.getId(),
@@ -143,46 +148,57 @@ public class ReadingBuddyChatService {
             metricsService.recordChatLatency(System.currentTimeMillis() - started);
         }
 
-        ReadingBuddyMemoryService.ChatTurn turn = memoryService.persistChatTurn(
-                ownerKey,
-                book.getId(),
-                persona.id(),
-                userMessage,
-                reply,
-                readerChapterIndex,
-                readerParagraphIndex);
+        String messageId = null;
+        String userMessageId = null;
+        if (generationOk) {
+            // Narrow write TX lives inside memoryService.persistChatTurn only.
+            ReadingBuddyMemoryService.ChatTurn turn = memoryService.persistChatTurn(
+                    ownerKey,
+                    book.getId(),
+                    persona.id(),
+                    userMessage,
+                    reply,
+                    readerChapterIndex,
+                    readerParagraphIndex);
+            messageId = turn.buddyMessage().getId();
+            userMessageId = turn.userMessage().getId();
+        }
 
         log.debug(
-                "event=buddy_chat_generated bookId={} personaId={} latencyMs={} replyChars={}",
+                "event=buddy_chat_generated bookId={} personaId={} latencyMs={} replyChars={} persisted={}",
                 book.getId(),
                 persona.id(),
                 System.currentTimeMillis() - started,
-                reply.length()
+                reply.length(),
+                generationOk
         );
 
         return new ChatResult(
                 reply,
                 persona.id(),
-                turn.buddyMessage().getId(),
-                turn.userMessage().getId(),
+                messageId,
+                userMessageId,
                 System.currentTimeMillis()
         );
     }
 
+    private ReadingBuddyPersona resolvePersona(String personaId) {
+        if (personaId == null || personaId.isBlank()) {
+            throw new ValidationException("UNKNOWN_PERSONA", "personaId is required");
+        }
+        return personaCatalog.findById(personaId.trim())
+                .orElseThrow(() -> new ValidationException(
+                        "UNKNOWN_PERSONA",
+                        "Unknown personaId: " + personaId));
+    }
+
     private void validateChatRequest(
             String bookId,
-            String personaId,
             String message,
             int readerChapterIndex,
             int readerParagraphIndex) {
         if (bookId == null || bookId.isBlank()) {
             throw new ValidationException("INVALID_BOOK_ID", "bookId is required");
-        }
-        if (personaId == null || personaId.isBlank()) {
-            throw new ValidationException("UNKNOWN_PERSONA", "personaId is required");
-        }
-        if (!personaCatalog.isKnown(personaId.trim())) {
-            throw new ValidationException("UNKNOWN_PERSONA", "Unknown personaId: " + personaId);
         }
         if (message == null || message.isBlank()) {
             throw new ValidationException("BLANK_MESSAGE", "Message must not be blank");

@@ -4,6 +4,7 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyChatService;
 import com.classicchatreader.service.ReadingBuddyMemoryService;
+import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
@@ -52,6 +53,9 @@ class ReadingBuddyControllerChatDisabledTest {
     private ReadingBuddyMemoryService memoryService;
 
     @MockitoBean
+    private ReadingBuddyMetricsService metricsService;
+
+    @MockitoBean
     private ReaderIdentityService readerIdentityService;
 
     @Test
@@ -83,6 +87,7 @@ class ReadingBuddyControllerChatDisabledTest {
                 .andExpect(jsonPath("$.error", is("CHAT_DISABLED")));
 
         verify(chatService, never()).chat(any(), any(), any(), any(), anyInt(), anyInt());
+        verify(metricsService).recordChatRejected();
     }
 
     @Test

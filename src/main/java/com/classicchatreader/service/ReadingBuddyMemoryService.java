@@ -6,12 +6,15 @@ import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -115,6 +118,7 @@ public class ReadingBuddyMemoryService {
     /**
      * Loads recent messages for the thread (chronological), capped by config / argument.
      * Not position-filtered — callers use {@link #loadRecentMessagesForPrompt} for prompts.
+     * Uses a DB-side {@code LIMIT} (newest first, then reversed to chronological).
      */
     @Transactional(readOnly = true)
     public List<ReadingBuddyMessageEntity> loadRecentMessages(
@@ -123,16 +127,16 @@ public class ReadingBuddyMemoryService {
             String personaId,
             int limit) {
         int effectiveLimit = limit > 0 ? limit : properties.getMemory().getRecentMessages();
-        List<ReadingBuddyMessageEntity> all = messageRepository
-                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
-        if (all.isEmpty() || all.size() <= effectiveLimit) {
-            return List.copyOf(all);
-        }
-        return List.copyOf(all.subList(all.size() - effectiveLimit, all.size()));
+        effectiveLimit = Math.max(1, effectiveLimit);
+        List<ReadingBuddyMessageEntity> newestFirst = messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
+                        ownerKey, bookId, personaId, PageRequest.of(0, effectiveLimit));
+        return chronologicalCopy(newestFirst);
     }
 
     /**
-     * Recent messages mapped + position-filtered for prompt injection (spoiler-safe).
+     * Recent messages for prompt injection: <strong>position-filter first, then take last N</strong>
+     * (spoiler-safe and rewind-safe). Uses a position-bounded DB query with {@code LIMIT}.
      */
     @Transactional(readOnly = true)
     public List<ReadingBuddyPositionedMessage> loadRecentMessagesForPrompt(
@@ -142,13 +146,21 @@ public class ReadingBuddyMemoryService {
             int readerChapterIndex,
             int readerParagraphIndex) {
         int limit = Math.max(1, properties.getMemory().getRecentMessages());
-        List<ReadingBuddyMessageEntity> recent = loadRecentMessages(ownerKey, bookId, personaId, limit);
-        List<ReadingBuddyPositionedMessage> positioned = new ArrayList<>(recent.size());
-        for (ReadingBuddyMessageEntity msg : recent) {
+        // Filter by position at the DB (or equivalent), then take newest N of the safe set.
+        List<ReadingBuddyMessageEntity> newestSafeFirst = messageRepository
+                .findVisibleAtOrBeforeOrderByCreatedAtDesc(
+                        ownerKey,
+                        bookId,
+                        personaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        PageRequest.of(0, limit));
+        List<ReadingBuddyMessageEntity> chronological = chronologicalCopy(newestSafeFirst);
+        List<ReadingBuddyPositionedMessage> positioned = new ArrayList<>(chronological.size());
+        for (ReadingBuddyMessageEntity msg : chronological) {
             positioned.add(toPositioned(msg));
         }
-        return ReadingBuddyPromptBuilder.filterMessagesByPosition(
-                positioned, readerChapterIndex, readerParagraphIndex);
+        return List.copyOf(positioned);
     }
 
     /**
@@ -170,6 +182,7 @@ public class ReadingBuddyMemoryService {
     /**
      * Full chronology for UI history with rewind visibility flags.
      * Scoped strictly by {@code ownerKey} (IDOR-safe when controller passes identity.readerKey()).
+     * Applies visibility first when {@code includeHidden} is false, then limits to last N.
      */
     @Transactional(readOnly = true)
     public HistoryResult getHistory(
@@ -181,24 +194,31 @@ public class ReadingBuddyMemoryService {
             int readerParagraphIndex,
             boolean includeHidden) {
         int effectiveLimit = normalizeHistoryLimit(limit);
-        List<ReadingBuddyMessageEntity> all = messageRepository
-                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(ownerKey, bookId, personaId);
+        List<ReadingBuddyMessageEntity> pageNewestFirst;
+        if (includeHidden) {
+            // Include future-relative rows (UI collapses them via visibleAtPosition).
+            pageNewestFirst = messageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
+                    ownerKey, bookId, personaId, PageRequest.of(0, effectiveLimit));
+        } else {
+            // Visible-only: position-filter first, then last N.
+            pageNewestFirst = messageRepository.findVisibleAtOrBeforeOrderByCreatedAtDesc(
+                    ownerKey,
+                    bookId,
+                    personaId,
+                    readerChapterIndex,
+                    readerParagraphIndex,
+                    PageRequest.of(0, effectiveLimit));
+        }
 
-        List<HistoryMessage> messages = new ArrayList<>();
-        for (ReadingBuddyMessageEntity msg : all) {
+        List<ReadingBuddyMessageEntity> chronological = chronologicalCopy(pageNewestFirst);
+        List<HistoryMessage> messages = new ArrayList<>(chronological.size());
+        for (ReadingBuddyMessageEntity msg : chronological) {
             boolean visible = ReadingBuddyPromptBuilder.isPositionAtOrBefore(
                     msg.getChapterIndex(),
                     msg.getParagraphIndex(),
                     readerChapterIndex,
                     readerParagraphIndex);
-            if (!includeHidden && !visible) {
-                continue;
-            }
             messages.add(toHistoryMessage(msg, visible));
-        }
-
-        if (messages.size() > effectiveLimit) {
-            messages = new ArrayList<>(messages.subList(messages.size() - effectiveLimit, messages.size()));
         }
 
         return new HistoryResult(bookId, personaId, List.copyOf(messages));
@@ -230,18 +250,43 @@ public class ReadingBuddyMemoryService {
             String lastMessageId) {
         ReadingBuddyMemoryEntity memory = memoryRepository
                 .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
-                .orElseGet(() -> {
-                    ReadingBuddyMemoryEntity created = new ReadingBuddyMemoryEntity();
-                    created.setOwnerKey(ownerKey);
-                    created.setBookId(bookId);
-                    created.setPersonaId(personaId);
-                    created.setSummaryText("");
-                    created.setSummaryVersion(0);
-                    return created;
-                });
+                .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
         memory.setLastMessageId(lastMessageId);
         // Do not bump summary_version or watermarks here — summary refresh is PR 5.
-        memoryRepository.save(memory);
+        try {
+            memoryRepository.save(memory);
+        } catch (DataIntegrityViolationException ex) {
+            // Concurrent first-insert race on uk_rbmem_owner_book_persona — reload winner.
+            ReadingBuddyMemoryEntity existing = memoryRepository
+                    .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
+                    .orElseThrow(() -> ex);
+            existing.setLastMessageId(lastMessageId);
+            memoryRepository.save(existing);
+        }
+    }
+
+    private static ReadingBuddyMemoryEntity newEmptyMemory(
+            String ownerKey, String bookId, String personaId) {
+        ReadingBuddyMemoryEntity created = new ReadingBuddyMemoryEntity();
+        created.setOwnerKey(ownerKey);
+        created.setBookId(bookId);
+        created.setPersonaId(personaId);
+        created.setSummaryText("");
+        created.setSummaryVersion(0);
+        return created;
+    }
+
+    /**
+     * Reverses a newest-first list into chronological ASC order (defensive copy).
+     */
+    private static List<ReadingBuddyMessageEntity> chronologicalCopy(
+            List<ReadingBuddyMessageEntity> newestFirst) {
+        if (newestFirst == null || newestFirst.isEmpty()) {
+            return List.of();
+        }
+        List<ReadingBuddyMessageEntity> chrono = new ArrayList<>(newestFirst);
+        Collections.reverse(chrono);
+        return List.copyOf(chrono);
     }
 
     private static int normalizeHistoryLimit(Integer limit) {

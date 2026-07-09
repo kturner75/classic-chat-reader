@@ -12,14 +12,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,11 +49,12 @@ class ReadingBuddyMemoryServiceTest {
     private final Map<String, ReadingBuddyMemoryEntity> memories = new LinkedHashMap<>();
     private final AtomicInteger idSeq = new AtomicInteger(1);
 
+    private ReadingBuddyProperties properties;
     private ReadingBuddyMemoryService memoryService;
 
     @BeforeEach
     void setUp() {
-        ReadingBuddyProperties properties = new ReadingBuddyProperties();
+        properties = new ReadingBuddyProperties();
         properties.getMemory().setRecentMessages(20);
         memoryService = new ReadingBuddyMemoryService(messageRepository, memoryRepository, properties);
 
@@ -64,14 +69,39 @@ class ReadingBuddyMemoryServiceTest {
                     return entity;
                 });
 
-        org.mockito.Mockito.lenient().when(messageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(
-                any(), any(), any())).thenAnswer(invocation -> {
-            String key = threadKey(
-                    invocation.getArgument(0),
-                    invocation.getArgument(1),
-                    invocation.getArgument(2));
-            return List.copyOf(messagesByThread.getOrDefault(key, List.of()));
-        });
+        org.mockito.Mockito.lenient().when(messageRepository
+                        .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
+                                any(), any(), any(), any(Pageable.class)))
+                .thenAnswer(invocation -> {
+                    String key = threadKey(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2));
+                    Pageable pageable = invocation.getArgument(3);
+                    return newestFirstPage(messagesByThread.getOrDefault(key, List.of()), pageable.getPageSize());
+                });
+
+        org.mockito.Mockito.lenient().when(messageRepository.findVisibleAtOrBeforeOrderByCreatedAtDesc(
+                        any(), any(), any(), anyInt(), anyInt(), any(Pageable.class)))
+                .thenAnswer(invocation -> {
+                    String key = threadKey(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2));
+                    int readerChapter = invocation.getArgument(3);
+                    int readerParagraph = invocation.getArgument(4);
+                    Pageable pageable = invocation.getArgument(5);
+                    List<ReadingBuddyMessageEntity> visible = messagesByThread
+                            .getOrDefault(key, List.of())
+                            .stream()
+                            .filter(m -> ReadingBuddyPromptBuilder.isPositionAtOrBefore(
+                                    m.getChapterIndex(),
+                                    m.getParagraphIndex(),
+                                    readerChapter,
+                                    readerParagraph))
+                            .collect(Collectors.toCollection(ArrayList::new));
+                    return newestFirstPage(visible, pageable.getPageSize());
+                });
 
         org.mockito.Mockito.lenient().when(memoryRepository.findByOwnerKeyAndBookIdAndPersonaId(any(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -155,6 +185,25 @@ class ReadingBuddyMemoryServiceTest {
     }
 
     @Test
+    void loadRecentMessagesForPrompt_filterThenLimit_survivesRewind() {
+        // Seed: chapters 1, 2, 5, 10. Small recent limit would only cover 5–10 if sliced first.
+        properties.getMemory().setRecentMessages(2);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "ch1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "ch2", 2, 0);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "ch5", 5, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "ch10", 10, 0);
+
+        List<ReadingBuddyPositionedMessage> forPrompt = memoryService.loadRecentMessagesForPrompt(
+                "owner-A", "book-1", "humorist", 2, 0);
+
+        assertEquals(2, forPrompt.size());
+        assertEquals("ch1", forPrompt.get(0).content());
+        assertEquals("ch2", forPrompt.get(1).content());
+        assertTrue(forPrompt.stream().noneMatch(m -> m.content().equals("ch5")));
+        assertTrue(forPrompt.stream().noneMatch(m -> m.content().equals("ch10")));
+    }
+
+    @Test
     void getHistory_marksVisibleAtPositionAndIncludeHidden() {
         seedMessage("owner-A", "book-1", "humorist", "user", "chat", "visible", 1, 0);
         seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "hidden", 9, 0);
@@ -210,7 +259,6 @@ class ReadingBuddyMemoryServiceTest {
         assertNull(cleared.getSummaryMaxParagraphIndex());
         assertNull(cleared.getLastMessageId());
 
-        // Does not clear another owner's memory
         verify(messageRepository, never())
                 .deleteByOwnerKeyAndBookIdAndPersonaId(eq("owner-B"), any(), any());
     }
@@ -222,6 +270,14 @@ class ReadingBuddyMemoryServiceTest {
         assertEquals("", snapshot.summaryText());
         assertNull(snapshot.summaryMaxChapterIndex());
         assertEquals(0, snapshot.summaryVersion());
+    }
+
+    private static List<ReadingBuddyMessageEntity> newestFirstPage(
+            List<ReadingBuddyMessageEntity> source, int limit) {
+        return source.stream()
+                .sorted(Comparator.comparing(ReadingBuddyMessageEntity::getCreatedAt).reversed())
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
     }
 
     private void seedMessage(

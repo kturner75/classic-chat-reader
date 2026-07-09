@@ -5,6 +5,7 @@ import com.classicchatreader.model.ReadingBuddyPersona;
 import com.classicchatreader.service.ReaderIdentityService;
 import com.classicchatreader.service.ReadingBuddyChatService;
 import com.classicchatreader.service.ReadingBuddyMemoryService;
+import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
@@ -40,6 +41,7 @@ public class ReadingBuddyController {
     private final ReadingBuddyPreferenceService preferenceService;
     private final ReadingBuddyChatService chatService;
     private final ReadingBuddyMemoryService memoryService;
+    private final ReadingBuddyMetricsService metricsService;
     private final ReaderIdentityService readerIdentityService;
     private final LlmProvider chatProvider;
 
@@ -52,6 +54,7 @@ public class ReadingBuddyController {
             ReadingBuddyPreferenceService preferenceService,
             ReadingBuddyChatService chatService,
             ReadingBuddyMemoryService memoryService,
+            ReadingBuddyMetricsService metricsService,
             ReaderIdentityService readerIdentityService,
             @Qualifier("chatLlmProvider") LlmProvider chatProvider) {
         this.properties = properties;
@@ -59,6 +62,7 @@ public class ReadingBuddyController {
         this.preferenceService = preferenceService;
         this.chatService = chatService;
         this.memoryService = memoryService;
+        this.metricsService = metricsService;
         this.readerIdentityService = readerIdentityService;
         this.chatProvider = chatProvider;
     }
@@ -142,12 +146,14 @@ public class ReadingBuddyController {
             HttpServletRequest request,
             HttpServletResponse response) {
         if (!isFeatureAndChatEnabled()) {
+            metricsService.recordChatRejected();
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
         }
 
         ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
         if (body == null) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("INVALID_REQUEST", "Request body is required"));
         }
@@ -172,6 +178,7 @@ public class ReadingBuddyController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(errorBody("BOOK_NOT_FOUND", e.getMessage()));
         } catch (ReadingBuddyChatService.ValidationException e) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody(e.getErrorCode(), e.getMessage()));
         }
@@ -191,18 +198,22 @@ public class ReadingBuddyController {
             HttpServletRequest request,
             HttpServletResponse response) {
         if (!isFeatureAndChatEnabled()) {
+            metricsService.recordChatRejected();
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
         }
         if (bookId == null || bookId.isBlank()) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("INVALID_BOOK_ID", "bookId is required"));
         }
         if (personaId == null || personaId.isBlank() || !personaCatalog.isKnown(personaId.trim())) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("UNKNOWN_PERSONA", "Unknown personaId: " + personaId));
         }
         if (readerChapterIndex < 0 || readerParagraphIndex < 0) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("INVALID_POSITION",
                             "readerChapterIndex and readerParagraphIndex must be non-negative"));
@@ -235,14 +246,17 @@ public class ReadingBuddyController {
             HttpServletRequest request,
             HttpServletResponse response) {
         if (!isFeatureAndChatEnabled()) {
+            metricsService.recordChatRejected();
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
         }
         if (bookId == null || bookId.isBlank()) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("INVALID_BOOK_ID", "bookId is required"));
         }
         if (personaId == null || personaId.isBlank() || !personaCatalog.isKnown(personaId.trim())) {
+            metricsService.recordChatRejected();
             return ResponseEntity.badRequest()
                     .body(errorBody("UNKNOWN_PERSONA", "Unknown personaId: " + personaId));
         }
