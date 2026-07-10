@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -9,8 +9,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent completed slice: `BL-028 - Account auth endpoint hardening` (`Done`, delivered account auth rate limiting with `429` + `Retry-After`, login lockout/backoff persistence, and structured non-PII auth audit events with regression test coverage).
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
-- Reading Buddy Mode stack is implemented end-to-end (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Prod flag-on remains blocked** until spoiler acceptance suite + Playwright smoke are green (see `Reading Buddy Mode` below). Default remains `reading-buddy.enabled=false`.
-- Active priority work: `None currently in progress`; next P1 candidate for additional scoping remains `BL-025` (`Discovery`).
+- Reading Buddy Mode stack is implemented end-to-end on `feature/reading-buddy` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Local spoiler suite + Playwright smoke are green (2026-07-09).** Prod flag-on remains blocked until merge to `main` and public-mode deploy verification. Default remains `reading-buddy.enabled=false`.
+- Active priority work: Reading Buddy local test / PR review on `feature/reading-buddy`; next P1 discovery candidate remains `BL-025`.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -928,10 +928,11 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature
 - Priority: P1
 - Effort: L
-- Status: Done (implementation); **prod flag-on Blocked** on spoiler suite + E2E smoke green
+- Status: Done (implementation); **prod flag-on Blocked** on merge to `main` + public deploy verification (local spoiler suite + E2E smoke green)
 - Problem: Readers want optional companion commentary/chat without spoiling future plot or leaving the book-like experience.
 - Scope: Canned personas, position-bounded story context, server memory, proactive hard filters + LLM decide, reader UI (toggle/toast/modal), rolling summary watermarks, public-mode auth/rate limits, classroom FE kill-switch.
 - Design: `docs/product/reading-buddy-mode.md`
+- Branch: `feature/reading-buddy` (execute-plan PR1–PR6 tip + backlog/status sync)
 - Default: `reading-buddy.enabled=false` (do not enable in prod until gates below pass).
 - Work Tracker:
 | Slice | Status | Scope | Done When |
@@ -945,11 +946,13 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | PR5 Summary refresh | Done | Rolling summary + fail-closed watermark omit | Summary ch10 omitted at ch3 |
 | PR6 E2E + spoiler gate + docs | Done | Spoiler acceptance suite, Playwright smoke, product docs, rollout comments | Suite + e2e green; docs list Reading Buddy |
 - Rollout gate (required before `reading-buddy.enabled=true` in prod):
-  1. `ReadingBuddySpoilerAcceptanceTest` green (P&P / Frankenstein mid-book deflection, historian prefer-NONE, ch10 message filter, history visibility, summary watermark omit).
-  2. Playwright smoke `e2e/reading-buddy.spec.js` green.
-  3. Public-mode auth/rate-limit verification for `/api/reading-buddy/chat` and `/check-comment`.
+  1. `ReadingBuddySpoilerAcceptanceTest` green (P&P / Frankenstein mid-book deflection, historian prefer-NONE, ch10 message filter, history visibility, summary watermark omit). **Local green 2026-07-09.**
+  2. Playwright smoke `e2e/reading-buddy.spec.js` green. **Local green 2026-07-09.**
+  3. Public-mode auth/rate-limit verification for `/api/reading-buddy/chat` and `/check-comment` (unit coverage present; re-check on real public deploy).
+  4. Merge `feature/reading-buddy` to `main` before any prod flag-on.
 - Session Log:
 - 2026-07-08: PR6 landed required spoiler acceptance suite, public-mode buddy route guard tests, Playwright reading-buddy smoke, product inventory/backlog updates, and `application.properties` rollout comments. Default remains off.
+- 2026-07-09: Consolidated execute-plan PR1–PR6 tip onto `feature/reading-buddy` for local testing. Verified: frontend tests (49), ReadingBuddy* Maven suite (142), spoiler acceptance suite, Playwright reading-buddy smoke (3), full `mvn test`. Updated design doc status to Implemented (prod flag-on gated).
 
 ## P2
 

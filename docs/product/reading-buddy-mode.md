@@ -5,8 +5,8 @@
 | **Title** | Reading Buddy Mode |
 | **Author** | TBD |
 | **Date** | 2026-07-08 |
-| **Status** | Ready for implementation |
-| **Related branch** | `feature/reading-buddy` |
+| **Status** | Implemented (prod flag-on gated) |
+| **Related branch** | `feature/reading-buddy` (full execute-plan PR1–PR6 stack) |
 | **Audience** | Senior engineers familiar with classic-chat-reader |
 
 ---
