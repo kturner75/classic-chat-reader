@@ -162,7 +162,8 @@ public class ClassroomContextService {
                 configured.isIllustrationEnabled(),
                 configured.isCharacterEnabled(),
                 configured.isChatEnabled(),
-                configured.isSpeedReadingEnabled()
+                configured.isSpeedReadingEnabled(),
+                configured.isReadingBuddyEnabled()
         );
     }
 

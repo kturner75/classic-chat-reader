@@ -1,6 +1,6 @@
 # Current Feature Inventory
 
-Last audited: 2026-04-27
+Last audited: 2026-07-08
 
 This inventory reflects implemented behavior in backend controllers/services and `static/js/reader.js`.
 
@@ -140,6 +140,19 @@ This inventory reflects implemented behavior in backend controllers/services and
 - Difficulty progression tied to chapter index, with quiz attempt/trophy progression tracking.
 - `generation.cache-only` blocks new recap/quiz generation on misses, while recap chat can still be available when `ai.chat.enabled=true`.
 
+## Reading Buddy Mode
+
+- Optional companion persona (not an in-story character) that can comment while reading and answer chat questions.
+- **Off by default** via `reading-buddy.enabled=false`. Production flag-on is gated on the required spoiler acceptance suite (`ReadingBuddySpoilerAcceptanceTest`) and Playwright smoke (`e2e/reading-buddy.spec.js`).
+- Availability is reported only by `GET /api/reading-buddy/status` (`available === enabled && ai.chat.enabled && providerAvailable`); not dual-published on `FeatureController`.
+- Canned personas (historian, close reader, humorist, encourager) from a code catalog (`GET /api/reading-buddy/personas`).
+- Preferences (toggle, frequency rare/occasional/chatty, persona, quiet-for-a-while) at `GET/PUT /api/reading-buddy/preferences`, scoped by reader identity (anonymous cookie or signed-in account).
+- Proactive path: client gates + server hard filters (`ReadingBuddyTriggerPolicy`), then LLM decide-or-comment (`COMMENT:` / `NONE:`) via `POST /api/reading-buddy/check-comment`.
+- Interactive chat: `POST /api/reading-buddy/chat` uses server memory only (client history ignored for prompts).
+- Spoiler safety: position-bounded STORY CONTEXT, future messages filtered from prompts, history `visibleAtPosition` for rewind masking, rolling summary omitted when reader is behind summary watermarks.
+- Reader UI: settings toggle/persona/frequency, toast (never auto-opens modal), Talk modal, classroom FE kill-switch via `readingBuddyEnabled` (+ `chatEnabled`).
+- Design notes: `docs/product/reading-buddy-mode.md`.
+
 ## Pre-Generation and Operations
 
 - Pre-generation APIs:
@@ -180,7 +193,8 @@ This inventory reflects implemented behavior in backend controllers/services and
 - In public mode, collaborator prompts are tied to protected actions; passive background prefetch/generation calls do not force collaborator auth modal display.
 - Fixed-window rate limits for sensitive endpoints with explicit `429` payloads and `Retry-After`:
   - generation routes (`tts`, `illustrations`, `characters`, `recaps`, `quizzes`, `pregen`)
-  - chat routes (`character chat`, `recap chat`)
+  - chat routes (`character chat`, `recap chat`, `reading-buddy chat`)
+  - reading-buddy proactive checks (`POST /api/reading-buddy/check-comment`) on a **dedicated** buddy-check bucket (not shared with chat)
 - Rate-limit key scope:
   - authenticated requests use principal-scoped keys (`api:<key-hash>` or collaborator session principal)
   - unauthenticated/local-mode traffic falls back to IP-scoped keys
@@ -188,8 +202,10 @@ This inventory reflects implemented behavior in backend controllers/services and
   - `security.public.rate-limit.window-seconds`
   - `security.public.rate-limit.generation-requests`
   - `security.public.rate-limit.chat-requests`
+  - `security.public.rate-limit.buddy-check-requests`
   - `security.public.rate-limit.authenticated-generation-requests`
   - `security.public.rate-limit.authenticated-chat-requests`
+  - `security.public.rate-limit.authenticated-buddy-check-requests`
   - `security.public.rate-limit.max-keys`
 - Session settings:
   - `security.public.session.cookie-name`
@@ -210,3 +226,5 @@ This inventory reflects implemented behavior in backend controllers/services and
   - retry/recovery flows for recap + chat surfaces (`e2e/retry-flows.spec.js`)
   - account register/login/logout and anonymous->account claim-sync flow (`e2e/account-auth.spec.js`)
   - initial library load performance guard for the `Loading library...` state (`e2e/initial-load-performance.spec.js`)
+  - reading buddy smoke: toggle, Talk modal open/close, optional toast path (`e2e/reading-buddy.spec.js`)
+- Reading Buddy spoiler acceptance suite (required before prod flag-on): `ReadingBuddySpoilerAcceptanceTest`

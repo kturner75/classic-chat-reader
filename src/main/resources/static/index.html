@@ -279,6 +279,27 @@
                             <input id="reader-quiz-tab-toggle" type="checkbox" />
                             Quiz tab
                         </label>
+                        <div id="reading-buddy-settings" class="reading-buddy-settings hidden">
+                            <div class="reader-settings-divider"></div>
+                            <p class="reader-settings-title">Reading Buddy</p>
+                            <label class="reader-settings-checkbox">
+                                <input id="reading-buddy-toggle" type="checkbox" />
+                                Enable reading buddy
+                            </label>
+                            <div class="reader-settings-field">
+                                <label for="reading-buddy-frequency">Frequency</label>
+                                <select id="reading-buddy-frequency" class="reader-settings-select">
+                                    <option value="rare">Rare</option>
+                                    <option value="occasional">Occasional</option>
+                                    <option value="chatty">Chatty</option>
+                                </select>
+                            </div>
+                            <p class="reader-settings-note">Persona for this book</p>
+                            <div id="reading-buddy-persona-list" class="reading-buddy-persona-list" role="listbox" aria-label="Reading buddy persona"></div>
+                            <button id="reading-buddy-talk-btn" class="reader-settings-action-btn" type="button" disabled>
+                                Talk to reading buddy&hellip;
+                            </button>
+                        </div>
                         <button id="reader-settings-reset" class="reader-settings-reset" type="button">Reset</button>
                     </div>
                 </div>
@@ -638,6 +659,23 @@
             <button id="character-toast-close" class="character-toast-close">&times;</button>
         </div>
 
+        <!-- Reading Buddy Toast (never auto-opens chat modal) -->
+        <div id="reading-buddy-toast" class="reading-buddy-toast hidden" role="status" aria-live="polite">
+            <div class="reading-buddy-toast-portrait">
+                <img id="reading-buddy-toast-image" alt="Reading buddy portrait" />
+            </div>
+            <div class="reading-buddy-toast-content">
+                <div class="reading-buddy-toast-title">Reading Buddy</div>
+                <div id="reading-buddy-toast-name" class="reading-buddy-toast-name"></div>
+                <div id="reading-buddy-toast-preview" class="reading-buddy-toast-preview"></div>
+                <div class="reading-buddy-toast-actions">
+                    <button id="reading-buddy-toast-open" class="reading-buddy-toast-btn reading-buddy-toast-btn-primary" type="button">Open</button>
+                    <button id="reading-buddy-toast-dismiss" class="reading-buddy-toast-btn" type="button">Dismiss</button>
+                    <button id="reading-buddy-toast-quiet" class="reading-buddy-toast-btn" type="button">Quiet for a while</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Character Browser Modal -->
         <div id="character-browser-modal" class="character-modal hidden">
             <div class="character-modal-backdrop"></div>
@@ -703,6 +741,32 @@
                 <div class="chat-input-container">
                     <textarea id="chat-input" placeholder="Ask a question..." rows="2"></textarea>
                     <button id="chat-send-btn" class="chat-send-btn" title="Send (Enter)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reading Buddy Chat Modal -->
+        <div id="reading-buddy-chat-modal" class="character-modal hidden">
+            <div class="character-modal-backdrop"></div>
+            <div class="character-chat-container reading-buddy-chat-container">
+                <div class="character-chat-header">
+                    <img id="reading-buddy-chat-portrait" class="chat-portrait-small" alt="" />
+                    <h3 id="reading-buddy-chat-name"></h3>
+                    <button id="reading-buddy-clear-history" class="reading-buddy-clear-btn" type="button" title="Clear conversation for this persona">Clear</button>
+                    <button id="reading-buddy-chat-close" class="character-modal-close" type="button" title="Close (Esc)">&times;</button>
+                </div>
+                <div id="reading-buddy-chat-error" class="inline-error hidden" role="status" aria-live="polite">
+                    <span id="reading-buddy-chat-error-message"></span>
+                    <button id="reading-buddy-chat-error-retry" class="inline-error-btn hidden" type="button">Retry</button>
+                </div>
+                <div id="reading-buddy-chat-messages" class="chat-messages"></div>
+                <div class="chat-input-container">
+                    <textarea id="reading-buddy-chat-input" placeholder="Reply to your reading buddy..." rows="2"></textarea>
+                    <button id="reading-buddy-chat-send" class="chat-send-btn" type="button" title="Send (Enter)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
                         </svg>
@@ -811,6 +875,7 @@
     <script src="/js/library-discover.js"></script>
     <script src="/js/citation-utils.js"></script>
     <script src="/js/voice-call-utils.js"></script>
+    <script src="/js/reading-buddy.js"></script>
     <script src="/js/reader.js?v=2"></script>
 </body>
 </html>

@@ -106,7 +106,11 @@ public class XaiLlmProvider implements LlmProvider {
         } catch (LlmProviderException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Failed to generate response from xAI", e);
+            if (LlmProviderException.isTransient(e)) {
+                log.warn("Transient failure calling xAI: {}", e.toString());
+            } else {
+                log.error("Failed to generate response from xAI", e);
+            }
             throw new LlmProviderException("Failed to generate response from xAI", e);
         }
     }

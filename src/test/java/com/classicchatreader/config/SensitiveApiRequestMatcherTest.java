@@ -2,6 +2,7 @@ package com.classicchatreader.config;
 
 import org.junit.jupiter.api.Test;
 
+import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.BUDDY_CHECK;
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.CHAT;
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.GENERATION;
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.ADMIN;
@@ -28,6 +29,15 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/chat"));
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/call-session"));
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/recaps/book/book-1/chat"));
+        assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/reading-buddy/chat"));
+    }
+
+    @Test
+    void classify_marksBuddyCheckSeparatelyFromChat() {
+        assertEquals(BUDDY_CHECK, SensitiveApiRequestMatcher.classify("POST", "/api/reading-buddy/check-comment"));
+        // Chat remains on the shared CHAT bucket
+        assertEquals(CHAT, SensitiveApiRequestMatcher.classify("POST", "/api/reading-buddy/chat"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/check-comment"));
     }
 
     @Test
@@ -45,5 +55,8 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/library/book-1"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/tts/speak/book-1/chapter-2/3"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(null, "/api/pregen/book/book-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/history"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("DELETE", "/api/reading-buddy/history"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/chat"));
     }
 }

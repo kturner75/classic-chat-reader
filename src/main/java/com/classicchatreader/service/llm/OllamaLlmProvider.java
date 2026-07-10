@@ -69,7 +69,11 @@ public class OllamaLlmProvider implements LlmProvider {
             log.error("Ollama API error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new LlmProviderException("Ollama API error: " + e.getStatusCode(), e);
         } catch (Exception e) {
-            log.error("Failed to generate response from Ollama", e);
+            if (LlmProviderException.isTransient(e)) {
+                log.warn("Transient failure calling Ollama: {}", e.toString());
+            } else {
+                log.error("Failed to generate response from Ollama", e);
+            }
             throw new LlmProviderException("Failed to generate response from Ollama", e);
         }
     }

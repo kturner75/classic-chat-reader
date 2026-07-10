@@ -45,7 +45,7 @@ class ClassroomControllerTest {
                 "lit-101",
                 "Literature 101",
                 "Ms. Rivera",
-                new ClassroomFeatureStates(true, false, true, false, true, true, true),
+                new ClassroomFeatureStates(true, false, true, false, true, true, true, true),
                 List.of(
                         new ClassAssignment(
                                 "assign-1",

@@ -28,10 +28,11 @@ public record ClassroomContextResponse(
             boolean illustrationEnabled,
             boolean characterEnabled,
             boolean chatEnabled,
-            boolean speedReadingEnabled
+            boolean speedReadingEnabled,
+            boolean readingBuddyEnabled
     ) {
         public static ClassroomFeatureStates defaults() {
-            return new ClassroomFeatureStates(true, true, true, true, true, true, true);
+            return new ClassroomFeatureStates(true, true, true, true, true, true, true, true);
         }
     }
 
