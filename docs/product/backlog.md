@@ -11,6 +11,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode stack is implemented end-to-end on `feature/reading-buddy` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Local spoiler suite + Playwright smoke are green (2026-07-09).** Prod flag-on remains blocked until merge to `main` and public-mode deploy verification. Default remains `reading-buddy.enabled=false`.
 - Active priority work: Reading Buddy local test / PR review on `feature/reading-buddy`; next P1 discovery candidate remains `BL-025`.
+- 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -225,35 +226,61 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Problem: Current product is reader-centric; it lacks teacher/admin controls needed for classroom deployment.
 - Scope Buckets:
 - Teacher/admin role model (class creation, student roster management, invite/enrollment flow).
-- Classroom-level feature controls (enable/disable recap, quiz, AI features, media generation).
+- Instructor-as-administrator permissions (instructor is the class-level admin; distinct from app-level collaborator/operator auth).
+- Classroom-level feature controls (enable/disable recap, quiz, AI features, media generation), controllable per-class and confirmed independent of each other (for example recap off + quiz on simultaneously, not an all-or-nothing AI toggle).
 - Assignment workflows (assign books/chapters, due dates, required quiz completion).
-- Teacher-authored quiz support (custom question sets, override/generated quiz coexistence).
+- Teacher-authored quiz support: add or override specific quiz questions for a given book/chapter at the class level, coexisting with (not just replacing wholesale) the generated quiz.
 - Classroom progress visibility (student in-progress/completed states, quiz outcomes, activity snapshots).
+- Student usage logging (what was read, chapter/page progress, time spent per session/book).
+- Chat history export/download, available to both the student (their own history) and the teacher (their students' history).
+- Account ownership model at Teacher level and School/Institution level (a school admin can own/see multiple teacher classes).
+- Semester/term-scoped classes: roster changes over time, class tied to a defined term window, historical rosters remain queryable after a term ends.
+- Teacher dashboard with per-student drill-down into activity (readable detail view, not just aggregate class stats).
 - Discovery Questions:
 - Should teachers create student accounts directly, issue invite codes, or both?
+- What does the classroom-ID registration link actually grant (join a specific class only, or also imply a role/account type)? Does it expire, and can it be regenerated/revoked by the instructor?
 - Which features must be controllable at class-level for pilot safety (for example recap off, quiz on)?
-- How should teacher-authored quizzes interact with generated quizzes (replace, merge, or fallback)?
+- Are feature toggles class-wide only, or does a teacher ever need per-student overrides within a class (for example an accommodation)?
+- How should teacher-authored quizzes interact with generated quizzes (replace, merge, or fallback)? Specifically: can a teacher add/edit individual questions within an otherwise-generated quiz, or is authoring all-or-nothing per book/chapter?
+- Do teacher-added/overridden questions need review or regeneration when the underlying generated quiz changes (for example after a recap/content pipeline update)?
 - What minimum reporting is needed for pilot value without overbuilding gradebook integrations?
+- Is "School" a distinct account tier above "Teacher," or is it a v2 concept (single-teacher classes only at launch)?
+- How does a semester/term boundary work operationally: does a new term spawn a new class instance, or does the same class get a new roster snapshot? What happens to a student's history when they roll off a roster?
+- What format(s) should chat history export use (plain text, PDF, CSV), and does a teacher's bulk export differ from a student's single-conversation export?
 - Current Direction (2026-02-15):
 - Prioritize classroom pilot readiness over broad LMS integrations.
 - Treat quiz workflows as classroom-positive and recap as classroom-optional/off by default based on early educator feedback.
 - Sequence work so BL-021 account foundations unblock class roster and assignment capabilities.
+- Current Direction (2026-07-09, after educator partner call):
+- Confirmed requirements from the professor partner to fold into v1 scope: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging (reading + time spent), chat history download (student- and teacher-initiated), Teacher- and School-level account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down.
+- Compliance requirements (FERPA, ADA) are significant enough to track as their own epics rather than buried acceptance criteria: see `BL-043` (FERPA) and `BL-044` (ADA/accessibility for classroom). BL-025 should treat their exit criteria as blocking for any real school pilot, not just polish.
+- Cost/rate-limit planning for classroom AI usage (token usage tracking, cost calculator, subscription tiering) is tracked separately in `BL-042` since it is a pricing/ops concern shared with `BL-038`, not a classroom UI feature per se.
+- Confirmed concrete example from the partner for `BL-025.3`: her pilot class wants recap disabled for students but quiz enabled — validates that feature toggles must be independent, not a single "AI features on/off" switch.
+- Confirmed concrete need for `BL-025.5`: teacher wants to add or override individual quiz questions for a specific book/chapter for her class, on top of (not only instead of) the generated quiz.
 - Exit Criteria for Discovery:
-- Classroom architecture decision (roles, enrollment flow, class ownership boundaries).
+- Classroom architecture decision (roles, enrollment flow, class ownership boundaries, School vs. Teacher account tiers).
 - v1 classroom control matrix (which features are class-configurable).
 - v1 assignment + quiz authoring scope with acceptance criteria for teacher and student flows.
+- Semester/term model decision (how rosters version across terms, retention of past-term data).
+- Decision on classroom-ID join-link lifecycle (issuance, expiration, revocation).
 - Work Tracker:
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-025.1 Classroom Domain Model + Roles | Proposed | Define entities/relationships for teacher, class, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
-| BL-025.2 Teacher Onboarding + Roster Management | Proposed | Build teacher class setup flow and student registration/invite/import patterns (post-account foundation) | Teacher can create class, enroll students, and manage active roster without manual DB operations |
-| BL-025.3 Class Feature Controls | Proposed | Add class-level toggles (quiz/recap/AI/media capabilities) with policy enforcement in UI + API | Teacher settings deterministically govern student feature availability per class |
+| BL-025.1 Classroom Domain Model + Roles | Proposed | Define entities/relationships for teacher (admin), school, class, semester/term, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
+| BL-025.2 Teacher Onboarding + Roster Management | Proposed | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import) | Teacher can create a class, share a join link, and manage an active roster without manual DB operations |
+| BL-025.3 Class Feature Controls | Proposed | Add independent class-level toggles (quiz/recap/AI/media capabilities, each settable on its own — for example recap off + quiz on) with policy enforcement in UI + API | Teacher can set recap off and quiz on (or any other independent combination) and student feature availability matches per class |
 | BL-025.4 Assignment Workflow v1 | Proposed | Support assigning books/chapters, due windows, and required completion/quiz states | Teacher can publish assignments and students see clear due/required states in app |
-| BL-025.5 Teacher-Authored Quiz Authoring | Proposed | Enable teacher custom quiz creation/editing and define coexistence with generated quizzes (override/merge/fallback) | Students receive expected quiz source by class policy and teacher can preview/publish updates |
-| BL-025.6 Classroom Progress + Insights | Proposed | Provide teacher dashboard for assignment completion, in-progress state, and quiz outcomes (pilot-level reporting) | Teacher can quickly identify struggling or incomplete students without external tooling |
+| BL-025.5 Teacher-Authored Quiz Authoring | Proposed | Enable teacher to add/override individual quiz questions for a specific book/chapter for their class, layered on top of the generated quiz (not full replacement-only) | Teacher can add or override specific questions for a book/chapter and students in that class receive the resulting question set |
+| BL-025.6 Student Usage Logging | Proposed | Persist per-student activity events (books/chapters read, progress %, session time spent) scoped to class/term | Usage events are queryable per student and roll up cleanly per class/term |
+| BL-025.7 Chat History Export | Proposed | Add download/export of AI chat history, self-service for students and bulk/per-student for teachers | Student can export their own chat history; teacher can export any enrolled student's history in their class |
+| BL-025.8 School and Teacher Account Tiers | Proposed | Add account ownership model distinguishing School (multi-teacher) and Teacher (single-class-owner) tiers | A school-tier account can view/manage classes across its teachers; a teacher-only account is scoped to its own classes |
+| BL-025.9 Semester/Term-Scoped Rosters | Proposed | Add term boundaries to classes so rosters can change across semesters while preserving historical term data | Teacher can start a new term for a class with a fresh roster without losing prior-term student history/reporting |
+| BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Build teacher dashboard summarizing class activity with a per-student detail view (reading progress, time spent, quiz outcomes, chat activity) | Teacher can select a student from the roster and see that student's individual activity without external tooling |
 - Dependency Notes:
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
+- BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) exit criteria are drafted, since these are exactly the data flows FERPA constrains.
+- BL-042 (token usage/cost calculator) depends on BL-025.6's usage logging for per-student/per-class token attribution.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -582,6 +609,123 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Decision on trigger conditions for building this (see Current Direction).
 - Approved provider interface boundary (what `XaiRealtimeSessionService` becomes an implementation of) and confirmation that WebRTC-based providers fit that interface without a rewrite.
 - Decision on config granularity (global vs. per-book/character) and fallback behavior when a provider is degraded.
+
+### BL-042 - Token Usage Tracking and Classroom Cost Calculator
+- Type: Feature
+- Priority: P1
+- Effort: L
+- Status: Discovery
+- Problem: Classroom deployment needs a way to model AI cost per student/class so a subscription plan and rate limits can be priced responsibly; today there is no per-user token accounting at all.
+- Scope Buckets:
+- Per-user (student) token usage tracking across chat, quiz generation, recap, illustration, and TTS/voice features.
+- Cost calculator: map tracked token/request volume against current model provider pricing to estimate $ cost per student, per class, and per school over a term.
+- Rate limit modeling: derive suggested per-student/per-class daily or monthly usage caps from a target subscription price point and margin.
+- Subscription tier design inputs (not final pricing): what a "class seat" or "school seat" costs to serve at light/typical/heavy usage.
+- Discovery Questions:
+- Which activities need metered token tracking at launch (chat only, or chat + quiz/recap/illustration generation too)?
+- Should token accounting live per-request (raw provider usage) or be normalized into an internal "credit" unit shared with `BL-038`?
+- What provider pricing sources should the calculator use, and how should it stay current as provider prices change?
+- Should rate limits be enforced per-student, per-class, or pooled at the school/subscription level?
+- Is this calculator an internal planning tool only, or does it need a teacher/school-facing usage view (`"your class used X% of its allotment"`)?
+- Current Direction (2026-07-09):
+- Grew directly out of educator partner feedback: before committing to a classroom subscription price, need real cost-per-student modeling based on actual token usage, not guesswork.
+- Reuse `BL-038`'s credit ledger/ threading rather than building a second, separate accounting system if the data shapes are compatible.
+- Start with a planning/reporting tool (internal), then decide whether usage/limit visibility needs to surface to teachers/schools.
+- Exit Criteria for Discovery:
+- Decision on tracked activity scope (which features count toward token usage).
+- Decision on internal accounting unit (raw tokens vs. normalized credits) and its relationship to `BL-038`.
+- v1 cost calculator inputs/outputs defined (usage volume -> estimated cost -> suggested plan tiers/limits).
+- Acceptance Criteria:
+- Token/request usage is attributable to an individual student and rolls up to class and school levels.
+- Cost calculator produces a per-student and per-class cost estimate from tracked usage and current model pricing.
+- Calculator output can suggest a rate limit (for example requests/tokens per day) for a given target subscription price and margin.
+- Dependency Notes:
+- Depends on `BL-025.6` (student usage logging) for per-student activity data to meter.
+- Shares accounting foundations with `BL-038` (Public Character Chat Access and Cost Controls); avoid building a duplicate ledger.
+
+### BL-043 - FERPA Compliance for Classroom Data
+- Type: Tech Debt
+- Priority: P1
+- Effort: L
+- Status: Discovery
+- Problem: Classroom deployment involves minors' and students' education records (reading activity, quiz results, chat history); this data is subject to FERPA and the product currently has no compliance review or controls for it.
+- Scope Buckets:
+- Data classification: identify which stored fields (roster PII, usage logs, chat history, quiz results) qualify as education records under FERPA.
+- Access controls: ensure only the enrolled student, their instructor(s) of record, and authorized school officials can view a student's records.
+- Consent/disclosure model: define what, if anything, requires parental/guardian consent (relevant for K-12 partners vs. college-age students).
+- Data retention and deletion policy for student records after a semester/term ends or a student leaves a class.
+- Audit logging for access to student education records (who viewed/exported what, and when).
+- Discovery Questions:
+- Is the initial partner/pilot audience college-level (FERPA applies, but student is the rights-holder at 18+) or does K-12 need to be supported later (parental consent implications)?
+- What is the minimum data retention window needed for legitimate educational/reporting purposes, and when must data be purged?
+- Does chat history export (`BL-025.7`) need additional access logging or restrictions beyond normal read access?
+- Do we need a signed data processing agreement / district agreement template for school customers?
+- Current Direction (2026-07-09):
+- Raised directly by the educator partner as a hard requirement for any real classroom pilot, not a later nice-to-have.
+- Treat this as blocking for BL-025 slices that touch student-identifiable data (usage logging, dashboard drill-down, chat export) until an access-control and retention model is agreed.
+- Exit Criteria for Discovery:
+- Data classification of which classroom-related fields are FERPA-covered education records.
+- Documented access-control model (who can see/export a given student's data).
+- Retention/deletion policy decision for post-term and post-enrollment student data.
+- Decision on whether an audit log for student-record access is required for v1 or can follow shortly after.
+- Dependency Notes:
+- Gates `BL-025.6` (usage logging), `BL-025.7` (chat export), and `BL-025.10` (dashboard drill-down) — those slices should not ship broadly until this epic's exit criteria are met.
+
+### BL-044 - ADA/Accessibility Compliance for Classroom Deployment
+- Type: Tech Debt
+- Priority: P1
+- Effort: M
+- Status: Discovery
+- Problem: School and institutional customers typically require ADA/WCAG-conformant software as a procurement condition; the general product accessibility pass (`BL-013`) is not scoped or verified against that bar.
+- Scope Buckets:
+- Formal WCAG 2.1/2.2 AA conformance target for classroom-facing surfaces (reader, teacher dashboard, roster/enrollment flows).
+- Screen reader and keyboard-only verification for classroom-specific UI (join-link enrollment, teacher dashboard, student drill-down, assignment views).
+- Documentation deliverable schools typically require during procurement (for example a VPAT-style accessibility conformance statement).
+- Discovery Questions:
+- Is WCAG 2.1 AA sufficient for the target partner/pilot, or does the institution require 2.2 or Section 508 alignment?
+- Does the teacher dashboard (new surface from `BL-025.10`) get built accessibility-first, or audited after v1 ships?
+- Who produces/maintains a VPAT if a school procurement process requires one?
+- Current Direction (2026-07-09):
+- Raised directly by the educator partner alongside FERPA as a pilot-blocking requirement, not general product polish.
+- Scope this specifically to classroom-facing surfaces first (dashboard, roster/enrollment, assignments) rather than re-auditing the entire reader, since `BL-013` already covers general product accessibility.
+- Exit Criteria for Discovery:
+- Target conformance level agreed (for example WCAG 2.1 AA).
+- Decision on whether a formal VPAT/conformance statement is needed for the pilot or can wait for broader school sales.
+- Verification plan for new classroom surfaces (dashboard, join-link flow, drill-down) before they ship broadly.
+- Dependency Notes:
+- Builds on `BL-013` (Accessibility and mobile optimization pass) rather than duplicating it; classroom surfaces introduced by `BL-025` should be verified against this epic's conformance target before wide rollout.
+
+### BL-045 - User Guide and Classroom Onboarding Documentation
+- Type: Feature
+- Priority: P1
+- Effort: M
+- Status: Discovery
+- Problem: The product has no end-user-facing documentation today (only internal `docs/product/*` engineering/product notes). A funded college pilot means real teachers and students will need a reliable, current guide rather than word-of-mouth onboarding.
+- Scope Buckets:
+- General reader user guide: account sign-in, library/navigation, reading features (recap, quiz, chat, TTS, illustrations), settings/preferences.
+- Classroom-specific guide: instructor setup (create class, share classroom-ID join link, configure feature toggles, manage roster/semester), student joining/using a class, teacher dashboard and student drill-down, chat history export, assignment workflow.
+- Keeping the guide current as features ship: a lightweight process so guide updates are part of "done" for classroom-facing feature slices, not a one-off writing pass.
+- Publication surface: where the guide lives and how teachers/students reach it (in-app help link, hosted docs site, or both).
+- Discovery Questions:
+- Should the general and classroom guides be one document with role-based sections, or two separate documents?
+- Where should the guide be hosted/published, and does it need versioning as features change pre- and post-pilot?
+- Does the pilot college need a lightweight printable/PDF version for instructor onboarding, or is a web page sufficient?
+- Who owns keeping the guide updated as classroom features (`BL-025`) ship — is this a checklist item on each classroom slice's Definition of Done?
+- Current Direction (2026-07-09):
+- Driven directly by the funded college pilot: the professor's institution is funding a pilot for a couple of classes, which means real teacher/student onboarding needs to work without hand-holding.
+- Prioritize the classroom-specific guide first since pilot classes are the near-term forcing function; general reader guide can follow or be built in parallel using the same structure.
+- Treat guide accuracy as a rollout gate for classroom features going into the pilot, not a nice-to-have.
+- Exit Criteria for Discovery:
+- Decision on document structure (unified vs. split by audience) and hosting/publication surface.
+- Decision on the update process tying guide maintenance to classroom feature delivery.
+- Acceptance Criteria:
+- A published classroom guide covers instructor class setup, join-link roster enrollment, feature toggle configuration, assignments, teacher dashboard/drill-down, and chat history export.
+- A published general user guide covers account sign-in, core reading features, and settings for non-classroom readers.
+- Guide is reachable from within the app (help link) for the relevant audience.
+- Guide content is verified against the shipped state of `BL-025` slices before the pilot begins, and updates are captured as part of future classroom-facing feature work.
+- Dependency Notes:
+- Sequenced closely with `BL-025` since most of its content depends on classroom features actually existing; classroom guide sections should be drafted/updated as each `BL-025` slice ships rather than written all at once at the end.
+- Should reflect final decisions from `BL-043` (FERPA) and `BL-044` (ADA) where they affect user-facing behavior (for example data retention/export behavior, accessibility features).
 
 ## P0
 
