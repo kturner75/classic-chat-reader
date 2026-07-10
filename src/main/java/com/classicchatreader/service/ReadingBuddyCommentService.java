@@ -10,6 +10,7 @@ import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
+import com.classicchatreader.service.llm.LlmProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -158,15 +159,26 @@ public class ReadingBuddyCommentService {
                         LlmOptions.withTemperatureAndTopP(temperature, 0.9));
             } catch (Exception e) {
                 metricsService.recordCheckFailed();
-                log.error(
-                        "event=buddy_check_failed bookId={} personaId={} ownerKey={} errorType={} errorMessage={}",
-                        book.getId(),
-                        effectivePersonaId,
-                        truncateForLog(ownerKey, 40),
-                        e.getClass().getSimpleName(),
-                        e.getMessage(),
-                        e
-                );
+                if (LlmProviderException.isTransient(e)) {
+                    log.warn(
+                            "event=buddy_check_failed bookId={} personaId={} ownerKey={} errorType={} errorMessage={}",
+                            book.getId(),
+                            effectivePersonaId,
+                            truncateForLog(ownerKey, 40),
+                            e.getClass().getSimpleName(),
+                            e.getMessage()
+                    );
+                } else {
+                    log.error(
+                            "event=buddy_check_failed bookId={} personaId={} ownerKey={} errorType={} errorMessage={}",
+                            book.getId(),
+                            effectivePersonaId,
+                            truncateForLog(ownerKey, 40),
+                            e.getClass().getSimpleName(),
+                            e.getMessage(),
+                            e
+                    );
+                }
                 // Distinct from DECIDED_NONE so clients can retry sooner after outages.
                 long nextMs = Math.min(
                         30_000L,

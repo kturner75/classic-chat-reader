@@ -9,12 +9,14 @@ import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
+import com.classicchatreader.service.llm.LlmProviderException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.net.SocketException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -164,7 +166,9 @@ class ReadingBuddyCommentServiceTest {
                 any(), any(), any(), any(), anyInt(), any(), anyInt(), any(), any(), any()))
                 .thenReturn("PROMPT");
         when(chatProvider.generate(anyString(), any(LlmOptions.class)))
-                .thenThrow(new RuntimeException("timeout"));
+                .thenThrow(new LlmProviderException(
+                        "Failed to generate response from OpenAI",
+                        new SocketException("Connection reset")));
 
         ReadingBuddyCommentService.CheckCommentResult.Silence silence =
                 assertInstanceOf(ReadingBuddyCommentService.CheckCommentResult.Silence.class,
