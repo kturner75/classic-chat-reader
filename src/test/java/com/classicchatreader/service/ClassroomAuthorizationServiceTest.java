@@ -56,6 +56,7 @@ class ClassroomAuthorizationServiceTest {
         when(termRepository.findByIdAndDeletedAtIsNull(termId)).thenReturn(Optional.of(term));
         ClassSectionEntity section = new ClassSectionEntity();
         section.setId(sectionId);
+        section.setStatus("ACTIVE");
         when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
     }
 

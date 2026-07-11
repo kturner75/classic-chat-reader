@@ -52,9 +52,11 @@ public class ClassroomController {
     }
 
     @GetMapping("/context")
-    public ClassroomContextResponse getContext(HttpServletRequest request) {
+    public ClassroomContextResponse getContext(
+            @RequestParam(name = "termId", required = false) String termId,
+            HttpServletRequest request) {
         String userId = resolveUserId(request);
-        return classroomContextService.getContext(userId);
+        return classroomContextService.getContext(userId, termId);
     }
 
     @PostMapping("/classes")

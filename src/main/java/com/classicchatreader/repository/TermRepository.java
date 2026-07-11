@@ -11,6 +11,8 @@ import java.util.Optional;
 public interface TermRepository extends JpaRepository<TermEntity, String> {
     Optional<TermEntity> findByIdAndDeletedAtIsNull(String id);
     List<TermEntity> findByClassSectionIdAndDeletedAtIsNull(String classSectionId);
-    Optional<TermEntity> findByClassSectionIdAndStatusAndDeletedAtIsNull(String classSectionId, String status);
+    List<TermEntity> findByClassSectionIdAndStatusAndDeletedAtIsNullOrderByCreatedAtDesc(
+            String classSectionId, String status);
+
     List<TermEntity> findByIdInAndStatusAndDeletedAtIsNull(List<String> ids, String status);
 }

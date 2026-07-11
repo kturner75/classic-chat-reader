@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -45,7 +46,7 @@ class ClassroomControllerTest {
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
-        when(classroomContextService.getContext(isNull())).thenReturn(ClassroomContextResponse.notEnrolled());
+        when(classroomContextService.getContext(isNull(), isNull())).thenReturn(ClassroomContextResponse.notEnrolled());
 
         mockMvc.perform(get("/api/classroom/context"))
                 .andExpect(status().isOk())
@@ -82,7 +83,7 @@ class ClassroomControllerTest {
                 "term-1",
                 "STUDENT"
         );
-        when(classroomContextService.getContext(isNull())).thenReturn(response);
+        when(classroomContextService.getContext(isNull(), isNull())).thenReturn(response);
 
         mockMvc.perform(get("/api/classroom/context"))
                 .andExpect(status().isOk())
@@ -96,5 +97,16 @@ class ClassroomControllerTest {
                 .andExpect(jsonPath("$.assignments[0].assignmentId").value("assign-1"))
                 .andExpect(jsonPath("$.assignments[0].quizRequired").value(true))
                 .andExpect(jsonPath("$.assignments[0].quizStatus").value("PENDING"));
+    }
+
+    @Test
+    void getContextForwardsTermIdQueryParam() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
+        when(classroomContextService.getContext(isNull(), eq("term-xyz")))
+                .thenReturn(ClassroomContextResponse.notEnrolled());
+
+        mockMvc.perform(get("/api/classroom/context").param("termId", "term-xyz"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(false));
     }
 }

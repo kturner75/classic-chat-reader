@@ -5,8 +5,10 @@ import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.entity.ClassRoleMembershipEntity;
 import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
+import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ClassFeatureSettingsRepository;
 import com.classicchatreader.repository.ClassRoleMembershipRepository;
 import com.classicchatreader.repository.ClassSectionRepository;
@@ -19,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -34,6 +38,7 @@ public class ClassroomAdminService {
     private final InviteLinkService inviteLinkService;
     private final ClassroomAuthorizationService authorizationService;
     private final BookRepository bookRepository;
+    private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
 
     public ClassroomAdminService(
@@ -46,6 +51,7 @@ public class ClassroomAdminService {
             InviteLinkService inviteLinkService,
             ClassroomAuthorizationService authorizationService,
             BookRepository bookRepository,
+            ChapterRepository chapterRepository,
             UserRepository userRepository) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
@@ -56,6 +62,7 @@ public class ClassroomAdminService {
         this.inviteLinkService = inviteLinkService;
         this.authorizationService = authorizationService;
         this.bookRepository = bookRepository;
+        this.chapterRepository = chapterRepository;
         this.userRepository = userRepository;
     }
 
@@ -115,8 +122,12 @@ public class ClassroomAdminService {
         requireUser(ownerUserId);
         return classSectionRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId).stream()
                 .map(section -> {
+                    // Prefer most recently created ACTIVE term if multiple exist (schema allows until transition enforces).
                     Optional<TermEntity> active = termRepository
-                            .findByClassSectionIdAndStatusAndDeletedAtIsNull(section.getId(), "ACTIVE");
+                            .findByClassSectionIdAndStatusAndDeletedAtIsNullOrderByCreatedAtDesc(
+                                    section.getId(), "ACTIVE")
+                            .stream()
+                            .findFirst();
                     return new ClassSummary(
                             section.getId(),
                             section.getName(),
@@ -192,11 +203,21 @@ public class ClassroomAdminService {
         // Students may only see PUBLISHED work; teachers may list drafts when publishedOnly=false.
         boolean teacher = authorizationService.canManageTerm(userId, termId);
         boolean forcePublishedOnly = !teacher || publishedOnly;
+        List<AssignmentEntity> rows;
         if (forcePublishedOnly) {
-            return assignmentRepository
+            rows = assignmentRepository
                     .findByTermIdAndStatusAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId, "PUBLISHED");
+        } else {
+            rows = assignmentRepository.findByTermIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId);
         }
-        return assignmentRepository.findByTermIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId);
+        if (teacher) {
+            return rows;
+        }
+        // Students: honor available_from_date (inclusive open day, UTC calendar).
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        return rows.stream()
+                .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -242,8 +263,18 @@ public class ClassroomAdminService {
         if (request == null || isBlank(request.title()) || isBlank(request.bookId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Title and bookId are required.");
         }
-        if (!bookRepository.existsById(request.bookId().trim())) {
+        String bookId = request.bookId().trim();
+        if (!bookRepository.existsById(bookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
+        }
+        String chapterId = trimToNull(request.chapterId());
+        if (chapterId != null) {
+            Optional<ChapterEntity> chapter = chapterRepository.findByIdWithBook(chapterId);
+            if (chapter.isEmpty() || chapter.get().getBook() == null
+                    || !Objects.equals(bookId, chapter.get().getBook().getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "chapterId must belong to the given bookId.");
+            }
         }
         if (!isBlank(request.status())) {
             String status = request.status().trim().toUpperCase();

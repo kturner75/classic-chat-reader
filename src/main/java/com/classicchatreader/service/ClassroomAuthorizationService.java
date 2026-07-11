@@ -87,7 +87,9 @@ public class ClassroomAuthorizationService {
     }
 
     private boolean hasLiveSection(TermEntity term) {
-        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isPresent();
+        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId())
+                .filter(s -> STATUS_ACTIVE.equals(s.getStatus()))
+                .isPresent();
     }
 
     public static boolean isTeacherLikeRole(String role) {

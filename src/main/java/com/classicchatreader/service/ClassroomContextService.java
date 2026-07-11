@@ -27,6 +27,8 @@ import com.classicchatreader.repository.TermRepository;
 import com.classicchatreader.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -87,10 +89,21 @@ public class ClassroomContextService {
      * demo properties are a fallback when mode allows and no DB membership exists.
      */
     public ClassroomContextResponse getContext(String userId) {
+        return getContext(userId, null);
+    }
+
+    /**
+     * @param preferredTermId optional preferred term when the user has multiple memberships
+     */
+    public ClassroomContextResponse getContext(String userId, String preferredTermId) {
         if (classroomProperties.allowsDatabase() && userId != null && !userId.isBlank()) {
-            Optional<MembershipCandidate> candidate = selectMembership(userId, null);
+            Optional<MembershipCandidate> candidate = selectMembership(userId, preferredTermId);
             if (candidate.isPresent()) {
                 return buildDbContext(userId, candidate.get());
+            }
+            // Explicit term preferred but not a membership → not enrolled for that term (no silent fallback).
+            if (preferredTermId != null && !preferredTermId.isBlank()) {
+                return ClassroomContextResponse.notEnrolled();
             }
             if (classroomProperties.isDatabaseMode()) {
                 return ClassroomContextResponse.notEnrolled();
@@ -105,7 +118,7 @@ public class ClassroomContextService {
     }
 
     public ClassroomContextResponse getContext() {
-        return getContext(null);
+        return getContext(null, null);
     }
 
     private Optional<MembershipCandidate> selectMembership(String userId, String preferredTermId) {
@@ -120,7 +133,7 @@ public class ClassroomContextService {
                             term,
                             ClassroomAuthorizationService.ROLE_STUDENT,
                             enrollment.getJoinedDate() != null
-                                    ? enrollment.getJoinedDate().atStartOfDay()
+                                    ? enrollment.getJoinedDate().atStartOfDay(ZoneOffset.UTC).toLocalDateTime()
                                     : enrollment.getCreatedAt(),
                             enrollment.getCreatedAt()
                     )));
@@ -187,15 +200,18 @@ public class ClassroomContextService {
                         .thenComparing(c -> c.term().getId()));
     }
 
-    /** Membership only counts when the parent class section is not soft-deleted. */
+    /** Membership only counts when the parent class section is live (not soft-deleted, status ACTIVE). */
     private boolean hasLiveSection(TermEntity term) {
-        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isPresent();
+        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId())
+                .filter(s -> "ACTIVE".equals(s.getStatus()))
+                .isPresent();
     }
 
     private ClassroomContextResponse buildDbContext(String userId, MembershipCandidate candidate) {
         TermEntity term = candidate.term();
-        // Section was verified live during candidate selection; re-check for race/soft-delete.
+        // Section was verified live during candidate selection; re-check for race/soft-delete/archive.
         ClassSectionEntity section = classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId())
+                .filter(s -> "ACTIVE".equals(s.getStatus()))
                 .orElse(null);
         if (section == null) {
             return ClassroomContextResponse.notEnrolled();
@@ -255,8 +271,14 @@ public class ClassroomContextService {
     private List<ClassAssignment> buildDbAssignments(String termId, String userId, boolean studentView) {
         List<AssignmentEntity> rows = assignmentRepository
                 .findByTermIdAndStatusAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId, "PUBLISHED");
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
         List<ClassAssignment> resolved = new ArrayList<>();
         for (AssignmentEntity row : rows) {
+            if (studentView
+                    && row.getAvailableFromDate() != null
+                    && row.getAvailableFromDate().isAfter(today)) {
+                continue;
+            }
             ClassAssignment assignment = resolveDbAssignment(row, userId, studentView);
             if (assignment != null) {
                 resolved.add(assignment);

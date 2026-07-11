@@ -99,8 +99,11 @@ public class InviteLinkService {
             return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
         }
         TermEntity term = termOpt.get();
-        if (classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isEmpty()) {
-            // Soft-deleted parent section: treat as non-joinable (same as inactive term for clients).
+        boolean sectionLive = classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId())
+                .filter(s -> "ACTIVE".equals(s.getStatus()))
+                .isPresent();
+        if (!sectionLive) {
+            // Soft-deleted or ARCHIVED parent section: treat as non-joinable.
             return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
         }
 
