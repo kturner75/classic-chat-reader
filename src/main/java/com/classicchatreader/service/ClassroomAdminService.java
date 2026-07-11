@@ -297,7 +297,10 @@ public class ClassroomAdminService {
         if (request == null || isBlank(request.title()) || isBlank(request.bookId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Title and bookId are required.");
         }
-        validateBookAndChapter(request.bookId().trim(), trimToNull(request.chapterId()));
+        validateBookAndChapter(
+                request.bookId().trim(),
+                trimToNull(request.chapterId()),
+                request.chapterIndex());
         validateAssignmentStatus(request.status());
     }
 
@@ -306,16 +309,22 @@ public class ClassroomAdminService {
         String effectiveChapterId = request.chapterId() != null
                 ? trimToNull(request.chapterId())
                 : existing.getChapterId();
+        Integer effectiveChapterIndex = request.chapterIndex() != null
+                ? request.chapterIndex()
+                : existing.getChapterIndex();
+        boolean chapterTargetChanged = request.chapterId() != null
+                || request.chapterIndex() != null
+                || !isBlank(request.bookId());
         if (!isBlank(request.bookId()) && !bookRepository.existsById(effectiveBookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
         }
-        if (request.chapterId() != null || !isBlank(request.bookId())) {
-            validateBookAndChapter(effectiveBookId, effectiveChapterId);
+        if (chapterTargetChanged) {
+            validateBookAndChapter(effectiveBookId, effectiveChapterId, effectiveChapterIndex);
         }
         validateAssignmentStatus(request.status());
     }
 
-    private void validateBookAndChapter(String bookId, String chapterId) {
+    private void validateBookAndChapter(String bookId, String chapterId, Integer chapterIndex) {
         if (!bookRepository.existsById(bookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
         }
@@ -325,6 +334,14 @@ public class ClassroomAdminService {
                     || !Objects.equals(bookId, chapter.get().getBook().getId())) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "chapterId must belong to the given bookId.");
+            }
+            return;
+        }
+        if (chapterIndex != null) {
+            int index = Math.max(0, chapterIndex);
+            if (chapterRepository.findByBookIdAndChapterIndex(bookId, index).isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "chapterIndex does not exist for the given bookId.");
             }
         }
     }

@@ -8,6 +8,7 @@ import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.InviteLinkRepository;
 import com.classicchatreader.repository.TermRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -162,7 +163,19 @@ public class InviteLinkService {
         enrollment.setStatus("ACTIVE");
         enrollment.setJoinedDate(LocalDate.now(ZoneOffset.UTC));
         enrollment.setInviteLinkId(link.getId());
-        enrollmentRepository.save(enrollment);
+        try {
+            enrollmentRepository.saveAndFlush(enrollment);
+        } catch (DataIntegrityViolationException race) {
+            // Parallel redeem: UNIQUE(term_id, user_id) — treat as idempotent when winner is ACTIVE.
+            Optional<EnrollmentEntity> winner =
+                    enrollmentRepository.findByTermIdAndUserId(link.getTermId(), userId);
+            if (winner.isPresent()
+                    && "ACTIVE".equals(winner.get().getStatus())
+                    && winner.get().getDeletedAt() == null) {
+                return new RedeemResult(RedeemStatus.IDEMPOTENT, winner.get().getId(), link.getTermId());
+            }
+            throw race;
+        }
 
         link.setUseCount(link.getUseCount() + 1);
         inviteLinkRepository.save(link);
