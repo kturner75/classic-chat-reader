@@ -129,7 +129,7 @@ class ClassroomContextServiceTest {
 
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
         when(chapterRepository.findByBookIdAndChapterIndex("book-1", 0)).thenReturn(Optional.of(chapter));
-        when(quizAttemptRepository.existsByChapterIdAndPerfectTrue("chapter-1")).thenReturn(true);
+        when(quizAttemptRepository.existsByChapterId("chapter-1")).thenReturn(true);
 
         ClassroomContextResponse context = classroomContextService.getContext();
 
@@ -187,39 +187,19 @@ class ClassroomContextServiceTest {
 
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
         when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
-        when(quizAttemptRepository.existsByChapterIdAndUserIdAndPerfectTrue("chapter-1", "user-1")).thenReturn(true);
+        when(quizAttemptRepository.existsByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(true);
 
         ClassroomContextResponse context = classroomContextService.getContext("user-1");
 
         assertEquals(ClassroomContextResponse.QuizRequirementStatus.COMPLETE, context.assignments().get(0).quizStatus());
-        verify(quizAttemptRepository, never()).existsByChapterIdAndUserId("chapter-1", "user-1");
+        verify(quizAttemptRepository, never()).existsByChapterId("chapter-1");
     }
 
     @Test
-    void failedQuizAttemptDoesNotMarkComplete() {
-        properties.setEnabled(true);
-        ClassroomDemoProperties.Assignment assignment = new ClassroomDemoProperties.Assignment();
-        assignment.setBookId("book-1");
-        assignment.setChapterId("chapter-1");
-        assignment.setQuizRequired(true);
-        properties.setAssignments(List.of(assignment));
-
-        BookEntity book = new BookEntity();
-        book.setId("book-1");
-        book.setTitle("Book");
-        book.setAuthor("Author");
-        ChapterEntity chapter = new ChapterEntity();
-        chapter.setId("chapter-1");
-        chapter.setBook(book);
-        chapter.setChapterIndex(0);
-        chapter.setTitle("Ch 1");
-
-        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
-        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
-        when(quizAttemptRepository.existsByChapterIdAndUserIdAndPerfectTrue("chapter-1", "user-1")).thenReturn(false);
-
-        ClassroomContextResponse context = classroomContextService.getContext("user-1");
-
-        assertEquals(ClassroomContextResponse.QuizRequirementStatus.PENDING, context.assignments().get(0).quizStatus());
+    void formatDueAtIsEndOfUtcDay() {
+        assertEquals(
+                "2026-02-20T23:59:59Z",
+                ClassroomContextService.formatDueAtEndOfDayUtc(java.time.LocalDate.of(2026, 2, 20)));
+        assertEquals(null, ClassroomContextService.formatDueAtEndOfDayUtc(null));
     }
 }

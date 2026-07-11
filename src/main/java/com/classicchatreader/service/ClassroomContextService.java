@@ -308,7 +308,8 @@ public class ClassroomContextService {
             quizStatus = resolveQuizStatus(row.isQuizRequired(), chapterId, userId);
         }
 
-        String dueAt = row.getDueDate() != null ? row.getDueDate().toString() : null;
+        // Inclusive calendar due day: emit end-of-day UTC so FE Date.parse matches design (not UTC midnight).
+        String dueAt = formatDueAtEndOfDayUtc(row.getDueDate());
 
         return new ClassAssignment(
                 row.getId(),
@@ -324,6 +325,14 @@ public class ClassroomContextService {
                 quizStatus,
                 bookOpt.isPresent()
         );
+    }
+
+    /** YYYY-MM-DD DATE → ISO-8601 end of that UTC calendar day for client Date.parse. */
+    static String formatDueAtEndOfDayUtc(LocalDate dueDate) {
+        if (dueDate == null) {
+            return null;
+        }
+        return dueDate.atTime(23, 59, 59).atOffset(ZoneOffset.UTC).toString();
     }
 
     private ClassroomContextResponse buildDemoContext(String userId) {
@@ -430,14 +439,15 @@ public class ClassroomContextService {
         if (chapterId == null || chapterId.isBlank()) {
             return QuizRequirementStatus.UNKNOWN;
         }
-        // COMPLETE requires a perfect attempt (score 100%). Any/failed submissions stay PENDING.
+        // KD-15: COMPLETE = any user-scoped attempt for the chapter (class-agnostic participation).
+        // Perfect score is not required for the chip; trophies remain separate.
         if (userId != null && !userId.isBlank()) {
-            return quizAttemptRepository.existsByChapterIdAndUserIdAndPerfectTrue(chapterId, userId)
+            return quizAttemptRepository.existsByChapterIdAndUserId(chapterId, userId)
                     ? QuizRequirementStatus.COMPLETE
                     : QuizRequirementStatus.PENDING;
         }
-        // Anonymous demo path: still not user-scoped (demo limitation), but require perfect.
-        return quizAttemptRepository.existsByChapterIdAndPerfectTrue(chapterId)
+        // Anonymous demo path: global exists (demo limitation)
+        return quizAttemptRepository.existsByChapterId(chapterId)
                 ? QuizRequirementStatus.COMPLETE
                 : QuizRequirementStatus.PENDING;
     }
