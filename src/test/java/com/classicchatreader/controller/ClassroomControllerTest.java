@@ -4,7 +4,10 @@ import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.model.ClassroomContextResponse.ClassAssignment;
 import com.classicchatreader.model.ClassroomContextResponse.ClassroomFeatureStates;
 import com.classicchatreader.model.ClassroomContextResponse.QuizRequirementStatus;
+import com.classicchatreader.service.AccountAuthService;
+import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomContextService;
+import com.classicchatreader.service.InviteLinkService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -12,7 +15,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,9 +33,19 @@ class ClassroomControllerTest {
     @MockitoBean
     private ClassroomContextService classroomContextService;
 
+    @MockitoBean
+    private ClassroomAdminService classroomAdminService;
+
+    @MockitoBean
+    private InviteLinkService inviteLinkService;
+
+    @MockitoBean
+    private AccountAuthService accountAuthService;
+
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
-        when(classroomContextService.getContext()).thenReturn(ClassroomContextResponse.notEnrolled());
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
+        when(classroomContextService.getContext(isNull())).thenReturn(ClassroomContextResponse.notEnrolled());
 
         mockMvc.perform(get("/api/classroom/context"))
                 .andExpect(status().isOk())
@@ -40,6 +56,7 @@ class ClassroomControllerTest {
 
     @Test
     void getContextReturnsAssignmentsWhenEnrolled() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
         ClassroomContextResponse response = new ClassroomContextResponse(
                 true,
                 "lit-101",
@@ -61,15 +78,19 @@ class ClassroomControllerTest {
                                 QuizRequirementStatus.PENDING,
                                 true
                         )
-                )
+                ),
+                "term-1",
+                "STUDENT"
         );
-        when(classroomContextService.getContext()).thenReturn(response);
+        when(classroomContextService.getContext(isNull())).thenReturn(response);
 
         mockMvc.perform(get("/api/classroom/context"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enrolled").value(true))
                 .andExpect(jsonPath("$.classId").value("lit-101"))
                 .andExpect(jsonPath("$.className").value("Literature 101"))
+                .andExpect(jsonPath("$.termId").value("term-1"))
+                .andExpect(jsonPath("$.role").value("STUDENT"))
                 .andExpect(jsonPath("$.features.quizEnabled").value(true))
                 .andExpect(jsonPath("$.features.recapEnabled").value(false))
                 .andExpect(jsonPath("$.assignments[0].assignmentId").value("assign-1"))

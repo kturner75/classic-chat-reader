@@ -8,8 +8,20 @@ public record ClassroomContextResponse(
         String className,
         String teacherName,
         ClassroomFeatureStates features,
-        List<ClassAssignment> assignments
+        List<ClassAssignment> assignments,
+        String termId,
+        String role
 ) {
+    public ClassroomContextResponse(
+            boolean enrolled,
+            String classId,
+            String className,
+            String teacherName,
+            ClassroomFeatureStates features,
+            List<ClassAssignment> assignments) {
+        this(enrolled, classId, className, teacherName, features, assignments, null, null);
+    }
+
     public static ClassroomContextResponse notEnrolled() {
         return new ClassroomContextResponse(
                 false,
@@ -17,7 +29,9 @@ public record ClassroomContextResponse(
                 null,
                 null,
                 ClassroomFeatureStates.defaults(),
-                List.of()
+                List.of(),
+                null,
+                null
         );
     }
 

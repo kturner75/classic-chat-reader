@@ -1,0 +1,132 @@
+package com.classicchatreader.service;
+
+import com.classicchatreader.entity.EnrollmentEntity;
+import com.classicchatreader.entity.InviteLinkEntity;
+import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.repository.EnrollmentRepository;
+import com.classicchatreader.repository.InviteLinkRepository;
+import com.classicchatreader.repository.TermRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class InviteLinkServiceTest {
+
+    @Mock
+    private InviteLinkRepository inviteLinkRepository;
+
+    @Mock
+    private EnrollmentRepository enrollmentRepository;
+
+    @Mock
+    private TermRepository termRepository;
+
+    private InviteLinkService inviteLinkService;
+
+    @BeforeEach
+    void setUp() {
+        inviteLinkService = new InviteLinkService(inviteLinkRepository, enrollmentRepository, termRepository);
+    }
+
+    @Test
+    void issuePersistsHashNotRawCode() {
+        when(inviteLinkRepository.save(any(InviteLinkEntity.class))).thenAnswer(inv -> {
+            InviteLinkEntity link = inv.getArgument(0);
+            link.setId("link-1");
+            return link;
+        });
+
+        InviteLinkService.IssuedInvite issued = inviteLinkService.issue("term-1", "user-1", "Default", null, null);
+
+        assertNotNull(issued.code());
+        assertEquals("link-1", issued.inviteLinkId());
+        ArgumentCaptor<InviteLinkEntity> captor = ArgumentCaptor.forClass(InviteLinkEntity.class);
+        verify(inviteLinkRepository).save(captor.capture());
+        assertEquals(InviteLinkService.hashCode(issued.code()), captor.getValue().getCodeHash());
+        assertNull(captor.getValue().getRevokedAt());
+    }
+
+    @Test
+    void redeemCreatesEnrollmentAndIncrementsUseCount() {
+        String raw = "test-code-value-xx";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setUseCount(0);
+
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setStatus("ACTIVE");
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "user-1"))
+                .thenReturn(Optional.empty());
+        when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> {
+            EnrollmentEntity e = inv.getArgument(0);
+            e.setId("enr-1");
+            return e;
+        });
+        when(inviteLinkRepository.save(any(InviteLinkEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.SUCCESS, result.status());
+        assertEquals("enr-1", result.enrollmentId());
+        assertEquals(1, link.getUseCount());
+    }
+
+    @Test
+    void redeemIsIdempotentForActiveEnrollment() {
+        String raw = "already-joined";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setUseCount(3);
+
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setStatus("ACTIVE");
+
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setId("enr-1");
+        enrollment.setStatus("ACTIVE");
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "user-1"))
+                .thenReturn(Optional.of(enrollment));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.IDEMPOTENT, result.status());
+        assertEquals(3, link.getUseCount());
+        verify(enrollmentRepository, never()).save(any());
+        verify(inviteLinkRepository, never()).save(eq(link));
+    }
+
+    @Test
+    void redeemRequiresAuth() {
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem("code", null);
+        assertEquals(InviteLinkService.RedeemStatus.UNAUTHENTICATED, result.status());
+    }
+}

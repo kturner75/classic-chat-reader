@@ -1,6 +1,26 @@
 # Product Backlog
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
+
+## Implementation handoff (classroom)
+
+**Active branch (BL-025 foundation):** work lands via PR from `feature/classroom-data-model-design` (or successor). Design: `docs/product/bl-025-classroom-data-model.md`.
+
+**Done in first code slice (safe / additive):**
+- Flyway `V14__classroom_domain.sql` + JPA entities/repos for pilot tables
+- Authz, invite issue/redeem, class bootstrap, feature + assignment APIs, context dual-read (`classroom.mode`)
+- Default behavior unchanged when no DB membership and demo off: `GET /api/classroom/context` still returns not enrolled
+- Additive JSON fields on context: `termId`, `role` (FE may ignore)
+
+**Next when resuming (suggested order):**
+1. Teacher UI: create class, copy invite code, feature toggles, assignment CRUD
+2. Student UI: redeem invite (account required)
+3. Invite redeem rate limits (BL-028 pattern)
+4. `TermTransitionService` + API (PR-4/13)
+5. PR-0 stable quiz question ids → override APIs
+6. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+
+**Not started:** character-chat assignments (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -10,8 +30,10 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode stack is implemented end-to-end on `feature/reading-buddy` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Local spoiler suite + Playwright smoke are green (2026-07-09).** Prod flag-on remains blocked until merge to `main` and public-mode deploy verification. Default remains `reading-buddy.enabled=false`.
-- Active priority work: Reading Buddy local test / PR review on `feature/reading-buddy`; next P1 discovery candidate remains `BL-025`.
+- Active priority work: `BL-025` classroom foundation (schema + APIs). Reading Buddy remains on `feature/reading-buddy` for merge/prod verification.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
+- 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. Character chat is still client-local today; durable completion/export for this use case is deferred.
+- 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -228,7 +250,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Teacher/admin role model (class creation, student roster management, invite/enrollment flow).
 - Instructor-as-administrator permissions (instructor is the class-level admin; distinct from app-level collaborator/operator auth).
 - Classroom-level feature controls (enable/disable recap, quiz, AI features, media generation), controllable per-class and confirmed independent of each other (for example recap off + quiz on simultaneously, not an all-or-nothing AI toggle).
-- Assignment workflows (assign books/chapters, due dates, required quiz completion).
+- Assignment workflows (assign books/chapters, due dates, required quiz completion; later: required character-chat and other non-quiz completion types — see `BL-025.11`).
+- Character-chat assignment activities (partner use case): require or encourage chatting with a book character; optional in-class share of a conversation as a classroom exercise (tracked in `BL-025.11`, not required for BL-025.1 / assignment v1).
 - Teacher-authored quiz support: add or override specific quiz questions for a given book/chapter at the class level, coexisting with (not just replacing wholesale) the generated quiz.
 - Classroom progress visibility (student in-progress/completed states, quiz outcomes, activity snapshots).
 - Student usage logging (what was read, chapter/page progress, time spent per session/book).
@@ -247,6 +270,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Is "School" a distinct account tier above "Teacher," or is it a v2 concept (single-teacher classes only at launch)?
 - How does a semester/term boundary work operationally: does a new term spawn a new class instance, or does the same class get a new roster snapshot? What happens to a student's history when they roll off a roster?
 - What format(s) should chat history export use (plain text, PDF, CSV), and does a teacher's bulk export differ from a student's single-conversation export?
+- For character-chat assignments (`BL-025.11`): is chat **required for completion** or optional/fun only? Any character vs a specific character? Completion = any message, N turns, or teacher-reviewed? Share with whole class, teacher-only, or export file? Must character/chat class feature toggles be on when an assignment requires chat?
 - Current Direction (2026-02-15):
 - Prioritize classroom pilot readiness over broad LMS integrations.
 - Treat quiz workflows as classroom-positive and recap as classroom-optional/off by default based on early educator feedback.
@@ -257,6 +281,10 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Cost/rate-limit planning for classroom AI usage (token usage tracking, cost calculator, subscription tiering) is tracked separately in `BL-042` since it is a pricing/ops concern shared with `BL-038`, not a classroom UI feature per se.
 - Confirmed concrete example from the partner for `BL-025.3`: her pilot class wants recap disabled for students but quiz enabled — validates that feature toggles must be independent, not a single "AI features on/off" switch.
 - Confirmed concrete need for `BL-025.5`: teacher wants to add or override individual quiz questions for a specific book/chapter for her class, on top of (not only instead of) the generated quiz.
+- Current Direction (2026-07-10, partner assignment use case — backlog only, not immediate build):
+- Partner may require students to **chat with a book character** as an assignment exercise, and may have students **share a conversation** they had with a character as a fun in-class activity.
+- Do **not** block BL-025.1 domain model or BL-025.4 assignment v1 (book/chapter/due/quiz) on this. Track as `BL-025.11` after core pilot path.
+- Prerequisites when prioritized: durable character-chat persistence (today character chat is localStorage-only), assignment requirement/completion model beyond quiz, FERPA alignment with `BL-025.7` / `BL-043` if teachers can view or export student–character chats.
 - Exit Criteria for Discovery:
 - Classroom architecture decision (roles, enrollment flow, class ownership boundaries, School vs. Teacher account tiers).
 - v1 classroom control matrix (which features are class-configurable).
@@ -266,21 +294,25 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker:
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-025.1 Classroom Domain Model + Roles | Proposed | Define entities/relationships for teacher (admin), school, class, semester/term, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
-| BL-025.2 Teacher Onboarding + Roster Management | Proposed | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import) | Teacher can create a class, share a join link, and manage an active roster without manual DB operations |
-| BL-025.3 Class Feature Controls | Proposed | Add independent class-level toggles (quiz/recap/AI/media capabilities, each settable on its own — for example recap off + quiz on) with policy enforcement in UI + API | Teacher can set recap off and quiz on (or any other independent combination) and student feature availability matches per class |
-| BL-025.4 Assignment Workflow v1 | Proposed | Support assigning books/chapters, due windows, and required completion/quiz states | Teacher can publish assignments and students see clear due/required states in app |
+| BL-025.1 Classroom Domain Model + Roles | In Progress | Define entities/relationships for teacher (admin), school, class, semester/term, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
+| BL-025.2 Teacher Onboarding + Roster Management | In Progress | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import) | Teacher can create a class, share a join link, and manage an active roster without manual DB operations |
+| BL-025.3 Class Feature Controls | In Progress | Add independent class-level toggles (quiz/recap/AI/media capabilities, each settable on its own — for example recap off + quiz on) with policy enforcement in UI + API | Teacher can set recap off and quiz on (or any other independent combination) and student feature availability matches per class |
+| BL-025.4 Assignment Workflow v1 | In Progress | Support assigning books/chapters, due windows, and required completion/quiz states (quiz-oriented v1; not character-chat requirements) | Teacher can publish assignments and students see clear due/required states in app |
 | BL-025.5 Teacher-Authored Quiz Authoring | Proposed | Enable teacher to add/override individual quiz questions for a specific book/chapter for their class, layered on top of the generated quiz (not full replacement-only) | Teacher can add or override specific questions for a book/chapter and students in that class receive the resulting question set |
 | BL-025.6 Student Usage Logging | Proposed | Persist per-student activity events (books/chapters read, progress %, session time spent) scoped to class/term | Usage events are queryable per student and roll up cleanly per class/term |
 | BL-025.7 Chat History Export | Proposed | Add download/export of AI chat history, self-service for students and bulk/per-student for teachers | Student can export their own chat history; teacher can export any enrolled student's history in their class |
 | BL-025.8 School and Teacher Account Tiers | Proposed | Add account ownership model distinguishing School (multi-teacher) and Teacher (single-class-owner) tiers | A school-tier account can view/manage classes across its teachers; a teacher-only account is scoped to its own classes |
 | BL-025.9 Semester/Term-Scoped Rosters | Proposed | Add term boundaries to classes so rosters can change across semesters while preserving historical term data | Teacher can start a new term for a class with a fresh roster without losing prior-term student history/reporting |
 | BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Build teacher dashboard summarizing class activity with a per-student detail view (reading progress, time spent, quiz outcomes, chat activity) | Teacher can select a student from the roster and see that student's individual activity without external tooling |
+| BL-025.11 Character-Chat Assignments + In-Class Share | Proposed | Partner use case: assignment may **require character chat**; students may **share a character conversation** as a fun in-class activity. Includes requirement/completion modeling and any durable chat/export needed beyond localStorage | Teacher can mark an assignment as requiring character chat (and students/teachers can use shared conversation artifacts for class activity) without relying on ad-hoc screenshots alone — discovery still open on required vs optional and share audience |
 - Dependency Notes:
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
 - BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) exit criteria are drafted, since these are exactly the data flows FERPA constrains.
 - BL-042 (token usage/cost calculator) depends on BL-025.6's usage logging for per-student/per-class token attribution.
+- BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.**
+- Session Log:
+- 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
