@@ -196,10 +196,10 @@ class ClassroomContextServiceTest {
     }
 
     @Test
-    void formatDueAtIsEndOfUtcDay() {
+    void formatDueDateIsCalendarDateOnly() {
         assertEquals(
-                "2026-02-20T23:59:59Z",
-                ClassroomContextService.formatDueAtEndOfDayUtc(java.time.LocalDate.of(2026, 2, 20)));
-        assertEquals(null, ClassroomContextService.formatDueAtEndOfDayUtc(null));
+                "2026-02-20",
+                ClassroomContextService.formatDueDate(java.time.LocalDate.of(2026, 2, 20)));
+        assertEquals(null, ClassroomContextService.formatDueDate(null));
     }
 }

@@ -3760,11 +3760,26 @@
         }
     }
 
+    /**
+     * Parse assignment due values.
+     * - Calendar DATE only (YYYY-MM-DD): inclusive end of local calendar day (23:59:59.999 local).
+     * - Full ISO datetime (demo config): use Date.parse as-is.
+     */
     function parseDueTimestamp(value) {
         if (!value || typeof value !== 'string') {
             return 0;
         }
-        const parsed = Date.parse(value);
+        const trimmed = value.trim();
+        const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+        if (dateOnly) {
+            const year = Number(dateOnly[1]);
+            const month = Number(dateOnly[2]) - 1;
+            const day = Number(dateOnly[3]);
+            const endOfLocalDay = new Date(year, month, day, 23, 59, 59, 999);
+            const ts = endOfLocalDay.getTime();
+            return Number.isFinite(ts) ? ts : 0;
+        }
+        const parsed = Date.parse(trimmed);
         return Number.isFinite(parsed) ? parsed : 0;
     }
 

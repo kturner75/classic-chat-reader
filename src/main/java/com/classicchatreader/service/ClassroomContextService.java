@@ -308,8 +308,8 @@ public class ClassroomContextService {
             quizStatus = resolveQuizStatus(row.isQuizRequired(), chapterId, userId);
         }
 
-        // Inclusive calendar due day: emit end-of-day UTC so FE Date.parse matches design (not UTC midnight).
-        String dueAt = formatDueAtEndOfDayUtc(row.getDueDate());
+        // Calendar DATE only (assignments.due_date is SQL DATE / LocalDate). FE treats date-only as inclusive local due day.
+        String dueAt = formatDueDate(row.getDueDate());
 
         return new ClassAssignment(
                 row.getId(),
@@ -327,12 +327,9 @@ public class ClassroomContextService {
         );
     }
 
-    /** YYYY-MM-DD DATE → ISO-8601 end of that UTC calendar day for client Date.parse. */
-    static String formatDueAtEndOfDayUtc(LocalDate dueDate) {
-        if (dueDate == null) {
-            return null;
-        }
-        return dueDate.atTime(23, 59, 59).atOffset(ZoneOffset.UTC).toString();
+    /** SQL DATE / LocalDate → ISO calendar day {@code YYYY-MM-DD} (not a timestamp). */
+    static String formatDueDate(LocalDate dueDate) {
+        return dueDate == null ? null : dueDate.toString();
     }
 
     private ClassroomContextResponse buildDemoContext(String userId) {

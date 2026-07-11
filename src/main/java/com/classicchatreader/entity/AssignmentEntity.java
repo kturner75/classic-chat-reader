@@ -36,10 +36,12 @@ public class AssignmentEntity {
     @Column(name = "chapter_index")
     private Integer chapterIndex;
 
-    @Column(name = "due_date")
+    /** Calendar day only (SQL DATE); not an instant. */
+    @Column(name = "due_date", columnDefinition = "DATE")
     private LocalDate dueDate;
 
-    @Column(name = "available_from_date")
+    /** Inclusive open calendar day (SQL DATE); not an instant. */
+    @Column(name = "available_from_date", columnDefinition = "DATE")
     private LocalDate availableFromDate;
 
     @Column(name = "quiz_required", nullable = false)
