@@ -31,11 +31,11 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 @Service
 public class ClassroomContextService {
@@ -159,30 +159,26 @@ public class ClassroomContextService {
             return Optional.empty();
         }
 
-        // Prefer teacher role when both exist for same term
-        Set<String> teacherTerms = new HashSet<>();
+        // One candidate per term: prefer teacher membership (with its activity timestamps) over student enrollment.
+        Map<String, MembershipCandidate> byTerm = new HashMap<>();
         for (MembershipCandidate c : candidates) {
-            if (ClassroomAuthorizationService.ROLE_TEACHER.equals(c.role())) {
-                teacherTerms.add(c.term().getId());
-            }
-        }
-        List<MembershipCandidate> collapsed = new ArrayList<>();
-        Set<String> seenTerms = new HashSet<>();
-        for (MembershipCandidate c : candidates) {
-            if (!seenTerms.add(c.term().getId())) {
+            String termId = c.term().getId();
+            MembershipCandidate existing = byTerm.get(termId);
+            if (existing == null) {
+                byTerm.put(termId, c);
                 continue;
             }
-            if (teacherTerms.contains(c.term().getId())) {
-                collapsed.add(new MembershipCandidate(
-                        c.term(),
-                        ClassroomAuthorizationService.ROLE_TEACHER,
-                        c.activityAt(),
-                        c.createdAt()
-                ));
-            } else {
-                collapsed.add(c);
+            boolean candidateTeacher = ClassroomAuthorizationService.ROLE_TEACHER.equals(c.role());
+            boolean existingTeacher = ClassroomAuthorizationService.ROLE_TEACHER.equals(existing.role());
+            if (candidateTeacher && !existingTeacher) {
+                byTerm.put(termId, c);
+            } else if (candidateTeacher == existingTeacher
+                    && c.activityAt() != null
+                    && (existing.activityAt() == null || c.activityAt().isAfter(existing.activityAt()))) {
+                byTerm.put(termId, c);
             }
         }
+        List<MembershipCandidate> collapsed = new ArrayList<>(byTerm.values());
 
         if (preferredTermId != null && !preferredTermId.isBlank()) {
             return collapsed.stream()
