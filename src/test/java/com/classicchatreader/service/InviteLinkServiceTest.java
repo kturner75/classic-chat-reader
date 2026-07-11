@@ -201,6 +201,34 @@ class InviteLinkServiceTest {
     }
 
     @Test
+    void softDeletedActiveEnrollmentIsIdempotentWithoutConsumingUse() {
+        String raw = "active-soft-deleted";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setUseCount(2);
+
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setId("enr-1");
+        enrollment.setStatus("ACTIVE");
+        enrollment.setDeletedAt(java.time.LocalDateTime.now());
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        stubLiveTerm("term-1", "sec-1");
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
+                .thenReturn(Optional.of(enrollment));
+        when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.IDEMPOTENT, result.status());
+        assertNull(enrollment.getDeletedAt());
+        assertEquals(2, link.getUseCount());
+    }
+
+    @Test
     void redeemRejectsWhenParentSectionSoftDeleted() {
         String raw = "deleted-section";
         InviteLinkEntity link = new InviteLinkEntity();

@@ -31,4 +31,11 @@ class ClassroomPropertiesTest {
         properties.setMode("demo");
         assertEquals("demo", properties.getMode());
     }
+
+    @Test
+    void calendarZoneFallsBackOnInvalid() {
+        ClassroomProperties properties = new ClassroomProperties();
+        properties.setCalendarZone("Not/AZone");
+        assertEquals(java.time.ZoneId.systemDefault(), properties.calendarZoneId());
+    }
 }

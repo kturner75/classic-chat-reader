@@ -127,7 +127,13 @@ public class InviteLinkService {
                 enrollmentRepository.findByTermIdAndUserId(link.getTermId(), userId);
         if (existing.isPresent()) {
             EnrollmentEntity enrollment = existing.get();
-            if ("ACTIVE".equals(enrollment.getStatus()) && enrollment.getDeletedAt() == null) {
+            if ("ACTIVE".equals(enrollment.getStatus())) {
+                // Soft-deleted ACTIVE is an inconsistent purge state: restore without consuming max_uses.
+                if (enrollment.getDeletedAt() != null) {
+                    enrollment.setDeletedAt(null);
+                    enrollment.setLeftDate(null);
+                    enrollmentRepository.save(enrollment);
+                }
                 return new RedeemResult(RedeemStatus.IDEMPOTENT, enrollment.getId(), link.getTermId());
             }
             if ("COMPLETED".equals(enrollment.getStatus())) {

@@ -5,6 +5,7 @@ import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.entity.ClassRoleMembershipEntity;
 import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
@@ -21,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,6 +40,7 @@ public class ClassroomAdminService {
     private final BookRepository bookRepository;
     private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
+    private final ClassroomProperties classroomProperties;
 
     public ClassroomAdminService(
             ClassSectionRepository classSectionRepository,
@@ -52,7 +53,8 @@ public class ClassroomAdminService {
             ClassroomAuthorizationService authorizationService,
             BookRepository bookRepository,
             ChapterRepository chapterRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            ClassroomProperties classroomProperties) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
@@ -64,6 +66,7 @@ public class ClassroomAdminService {
         this.bookRepository = bookRepository;
         this.chapterRepository = chapterRepository;
         this.userRepository = userRepository;
+        this.classroomProperties = classroomProperties;
     }
 
     @Transactional
@@ -187,9 +190,15 @@ public class ClassroomAdminService {
 
     @Transactional
     public AssignmentEntity updateAssignment(String userId, String assignmentId, AssignmentWriteRequest request) {
+        if (userId == null || userId.isBlank() || !userRepository.existsById(userId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account sign-in required.");
+        }
+        // Always 404 for missing or unauthorized so assignment UUID existence is not probeable (no 403).
         AssignmentEntity assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found."));
-        requireTeacher(userId, assignment.getTermId());
+        if (!authorizationService.canManageTerm(userId, assignment.getTermId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found.");
+        }
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
@@ -216,8 +225,8 @@ public class ClassroomAdminService {
         if (teacher) {
             return rows;
         }
-        // Students: honor available_from_date (inclusive open day, UTC calendar).
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        // Students: honor available_from_date as inclusive calendar open day (server calendar zone).
+        LocalDate today = classroomProperties.today();
         return rows.stream()
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
                 .toList();

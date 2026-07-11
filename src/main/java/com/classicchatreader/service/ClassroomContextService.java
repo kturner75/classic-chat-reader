@@ -267,7 +267,7 @@ public class ClassroomContextService {
     private List<ClassAssignment> buildDbAssignments(String termId, String userId, boolean studentView) {
         List<AssignmentEntity> rows = assignmentRepository
                 .findByTermIdAndStatusAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId, "PUBLISHED");
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate today = classroomProperties.today();
         List<ClassAssignment> resolved = new ArrayList<>();
         for (AssignmentEntity row : rows) {
             if (studentView
