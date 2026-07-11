@@ -1,7 +1,11 @@
 package com.classicchatreader.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+
+import java.util.Set;
 
 /**
  * Classroom persistence mode (BL-025).
@@ -15,6 +19,9 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "classroom")
 public class ClassroomProperties {
 
+    private static final Logger log = LoggerFactory.getLogger(ClassroomProperties.class);
+    private static final Set<String> VALID_MODES = Set.of("demo", "database", "hybrid");
+
     /**
      * demo | database | hybrid
      */
@@ -25,7 +32,17 @@ public class ClassroomProperties {
     }
 
     public void setMode(String mode) {
-        this.mode = mode == null || mode.isBlank() ? "hybrid" : mode.trim().toLowerCase();
+        if (mode == null || mode.isBlank()) {
+            this.mode = "hybrid";
+            return;
+        }
+        String normalized = mode.trim().toLowerCase();
+        if (!VALID_MODES.contains(normalized)) {
+            log.warn("Invalid classroom.mode='{}'; falling back to hybrid", mode);
+            this.mode = "hybrid";
+            return;
+        }
+        this.mode = normalized;
     }
 
     public boolean isDemoMode() {

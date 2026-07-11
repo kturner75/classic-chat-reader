@@ -176,9 +176,9 @@ public class ClassroomAdminService {
     @Transactional
     public AssignmentEntity createAssignment(String userId, String termId, AssignmentWriteRequest request) {
         requireTeacher(userId, termId);
-        validateAssignment(request);
+        validateAssignmentForCreate(request);
         AssignmentEntity assignment = new AssignmentEntity();
-        applyAssignment(assignment, termId, userId, request);
+        applyAssignmentCreate(assignment, termId, userId, request);
         if (isBlank(assignment.getStatus())) {
             assignment.setStatus("DRAFT");
         }
@@ -190,8 +190,11 @@ public class ClassroomAdminService {
         AssignmentEntity assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found."));
         requireTeacher(userId, assignment.getTermId());
-        validateAssignment(request);
-        applyAssignment(assignment, assignment.getTermId(), userId, request);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
+        }
+        validateAssignmentForUpdate(request, assignment);
+        applyAssignmentUpdate(assignment, userId, request);
         return assignmentRepository.save(assignment);
     }
 
@@ -236,7 +239,8 @@ public class ClassroomAdminService {
                 .toList();
     }
 
-    private void applyAssignment(AssignmentEntity assignment, String termId, String userId, AssignmentWriteRequest request) {
+    private void applyAssignmentCreate(
+            AssignmentEntity assignment, String termId, String userId, AssignmentWriteRequest request) {
         assignment.setTermId(termId);
         assignment.setTitle(request.title().trim());
         assignment.setBookId(request.bookId().trim());
@@ -244,7 +248,37 @@ public class ClassroomAdminService {
         assignment.setChapterIndex(request.chapterIndex());
         assignment.setDueDate(request.dueDate());
         assignment.setAvailableFromDate(request.availableFromDate());
-        // Only update quizRequired when the client sends a value (omit/null leaves existing).
+        assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
+        if (request.sortOrder() != null) {
+            assignment.setSortOrder(request.sortOrder());
+        }
+        if (!isBlank(request.status())) {
+            assignment.setStatus(request.status().trim().toUpperCase());
+        }
+        assignment.setCreatedByUserId(userId);
+    }
+
+    /** Partial update: only non-null / non-blank request fields change existing row. */
+    private void applyAssignmentUpdate(AssignmentEntity assignment, String userId, AssignmentWriteRequest request) {
+        if (!isBlank(request.title())) {
+            assignment.setTitle(request.title().trim());
+        }
+        if (!isBlank(request.bookId())) {
+            assignment.setBookId(request.bookId().trim());
+        }
+        if (request.chapterId() != null) {
+            // Explicit empty string clears chapter link.
+            assignment.setChapterId(trimToNull(request.chapterId()));
+        }
+        if (request.chapterIndex() != null) {
+            assignment.setChapterIndex(request.chapterIndex());
+        }
+        if (request.dueDate() != null) {
+            assignment.setDueDate(request.dueDate());
+        }
+        if (request.availableFromDate() != null) {
+            assignment.setAvailableFromDate(request.availableFromDate());
+        }
         if (request.quizRequired() != null) {
             assignment.setQuizRequired(request.quizRequired());
         }
@@ -259,15 +293,32 @@ public class ClassroomAdminService {
         }
     }
 
-    private void validateAssignment(AssignmentWriteRequest request) {
+    private void validateAssignmentForCreate(AssignmentWriteRequest request) {
         if (request == null || isBlank(request.title()) || isBlank(request.bookId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Title and bookId are required.");
         }
-        String bookId = request.bookId().trim();
+        validateBookAndChapter(request.bookId().trim(), trimToNull(request.chapterId()));
+        validateAssignmentStatus(request.status());
+    }
+
+    private void validateAssignmentForUpdate(AssignmentWriteRequest request, AssignmentEntity existing) {
+        String effectiveBookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
+        String effectiveChapterId = request.chapterId() != null
+                ? trimToNull(request.chapterId())
+                : existing.getChapterId();
+        if (!isBlank(request.bookId()) && !bookRepository.existsById(effectiveBookId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
+        }
+        if (request.chapterId() != null || !isBlank(request.bookId())) {
+            validateBookAndChapter(effectiveBookId, effectiveChapterId);
+        }
+        validateAssignmentStatus(request.status());
+    }
+
+    private void validateBookAndChapter(String bookId, String chapterId) {
         if (!bookRepository.existsById(bookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
         }
-        String chapterId = trimToNull(request.chapterId());
         if (chapterId != null) {
             Optional<ChapterEntity> chapter = chapterRepository.findByIdWithBook(chapterId);
             if (chapter.isEmpty() || chapter.get().getBook() == null
@@ -276,8 +327,11 @@ public class ClassroomAdminService {
                         HttpStatus.BAD_REQUEST, "chapterId must belong to the given bookId.");
             }
         }
-        if (!isBlank(request.status())) {
-            String status = request.status().trim().toUpperCase();
+    }
+
+    private void validateAssignmentStatus(String statusRaw) {
+        if (!isBlank(statusRaw)) {
+            String status = statusRaw.trim().toUpperCase();
             if (!status.equals("DRAFT") && !status.equals("PUBLISHED") && !status.equals("ARCHIVED")) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid assignment status.");
             }

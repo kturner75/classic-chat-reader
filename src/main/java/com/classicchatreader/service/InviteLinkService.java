@@ -3,6 +3,7 @@ package com.classicchatreader.service;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.InviteLinkEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.repository.ClassRoleMembershipRepository;
 import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.InviteLinkRepository;
@@ -35,24 +36,29 @@ public class InviteLinkService {
         MAX_USES,
         UNAUTHENTICATED,
         /** Enrollment exists but cannot rejoin via invite (e.g. COMPLETED after term rollover). */
-        NOT_ELIGIBLE
+        NOT_ELIGIBLE,
+        /** User is already a teacher/TA on the term; invite is student-only (KD-18). */
+        ALREADY_STAFF
     }
 
     private final InviteLinkRepository inviteLinkRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final TermRepository termRepository;
     private final ClassSectionRepository classSectionRepository;
+    private final ClassRoleMembershipRepository classRoleMembershipRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public InviteLinkService(
             InviteLinkRepository inviteLinkRepository,
             EnrollmentRepository enrollmentRepository,
             TermRepository termRepository,
-            ClassSectionRepository classSectionRepository) {
+            ClassSectionRepository classSectionRepository,
+            ClassRoleMembershipRepository classRoleMembershipRepository) {
         this.inviteLinkRepository = inviteLinkRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.termRepository = termRepository;
         this.classSectionRepository = classSectionRepository;
+        this.classRoleMembershipRepository = classRoleMembershipRepository;
     }
 
     public IssuedInvite issue(String termId, String createdByUserId, String label, Integer maxUses, LocalDateTime expiresAt) {
@@ -105,6 +111,14 @@ public class InviteLinkService {
         if (!sectionLive) {
             // Soft-deleted or ARCHIVED parent section: treat as non-joinable.
             return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
+        }
+
+        // KD-18: teachers are not auto-enrolled as students; invite is student-only.
+        boolean isStaff = classRoleMembershipRepository.findByTermIdAndStatus(link.getTermId(), "ACTIVE").stream()
+                .anyMatch(m -> userId.equals(m.getUserId())
+                        && ClassroomAuthorizationService.isTeacherLikeRole(m.getRole()));
+        if (isStaff) {
+            return new RedeemResult(RedeemStatus.ALREADY_STAFF, null, link.getTermId());
         }
 
         // Include soft-deleted rows to honor UNIQUE(term_id, user_id) and design reactivation path.

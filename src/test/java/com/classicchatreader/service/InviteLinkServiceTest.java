@@ -4,6 +4,8 @@ import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.InviteLinkEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.entity.ClassRoleMembershipEntity;
+import com.classicchatreader.repository.ClassRoleMembershipRepository;
 import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.InviteLinkRepository;
@@ -15,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,12 +44,19 @@ class InviteLinkServiceTest {
     @Mock
     private ClassSectionRepository classSectionRepository;
 
+    @Mock
+    private ClassRoleMembershipRepository classRoleMembershipRepository;
+
     private InviteLinkService inviteLinkService;
 
     @BeforeEach
     void setUp() {
         inviteLinkService = new InviteLinkService(
-                inviteLinkRepository, enrollmentRepository, termRepository, classSectionRepository);
+                inviteLinkRepository,
+                enrollmentRepository,
+                termRepository,
+                classSectionRepository,
+                classRoleMembershipRepository);
     }
 
     private void stubLiveTerm(String termId, String sectionId) {
@@ -59,6 +69,7 @@ class InviteLinkServiceTest {
         section.setId(sectionId);
         section.setStatus("ACTIVE");
         when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
+        when(classRoleMembershipRepository.findByTermIdAndStatus(termId, "ACTIVE")).thenReturn(List.of());
     }
 
     @Test
@@ -210,6 +221,31 @@ class InviteLinkServiceTest {
         InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
 
         assertEquals(InviteLinkService.RedeemStatus.TERM_NOT_ACTIVE, result.status());
+        verify(enrollmentRepository, never()).save(any());
+    }
+
+    @Test
+    void redeemRejectsTeacherStaff() {
+        String raw = "teacher-code";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        stubLiveTerm("term-1", "sec-1");
+
+        ClassRoleMembershipEntity membership = new ClassRoleMembershipEntity();
+        membership.setUserId("user-1");
+        membership.setRole("TEACHER");
+        membership.setStatus("ACTIVE");
+        when(classRoleMembershipRepository.findByTermIdAndStatus("term-1", "ACTIVE"))
+                .thenReturn(List.of(membership));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.ALREADY_STAFF, result.status());
         verify(enrollmentRepository, never()).save(any());
     }
 
