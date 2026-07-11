@@ -2,6 +2,7 @@ package com.classicchatreader.service;
 
 import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.repository.ClassRoleMembershipRepository;
+import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.TermRepository;
 import org.springframework.stereotype.Service;
@@ -22,14 +23,17 @@ public class ClassroomAuthorizationService {
     private final EnrollmentRepository enrollmentRepository;
     private final ClassRoleMembershipRepository classRoleMembershipRepository;
     private final TermRepository termRepository;
+    private final ClassSectionRepository classSectionRepository;
 
     public ClassroomAuthorizationService(
             EnrollmentRepository enrollmentRepository,
             ClassRoleMembershipRepository classRoleMembershipRepository,
-            TermRepository termRepository) {
+            TermRepository termRepository,
+            ClassSectionRepository classSectionRepository) {
         this.enrollmentRepository = enrollmentRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
         this.termRepository = termRepository;
+        this.classSectionRepository = classSectionRepository;
     }
 
     public boolean isActiveTeacherOnTerm(String userId, String termId) {
@@ -69,16 +73,21 @@ public class ClassroomAuthorizationService {
     }
 
     /**
-     * Term must exist, not be soft-deleted, and be ACTIVE for live pilot APIs.
+     * Term must exist, not be soft-deleted, be ACTIVE, and belong to a non-deleted class section.
+     * Aligns with {@link ClassroomContextService} membership filtering.
      */
     public boolean isLiveActiveTerm(String termId) {
         if (termId == null) {
             return false;
         }
         return termRepository.findByIdAndDeletedAtIsNull(termId)
-                .map(TermEntity::getStatus)
-                .filter(STATUS_ACTIVE::equals)
+                .filter(t -> STATUS_ACTIVE.equals(t.getStatus()))
+                .filter(this::hasLiveSection)
                 .isPresent();
+    }
+
+    private boolean hasLiveSection(TermEntity term) {
+        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isPresent();
     }
 
     public static boolean isTeacherLikeRole(String role) {

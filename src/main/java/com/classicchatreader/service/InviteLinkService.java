@@ -3,6 +3,7 @@ package com.classicchatreader.service;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.InviteLinkEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.InviteLinkRepository;
 import com.classicchatreader.repository.TermRepository;
@@ -40,15 +41,18 @@ public class InviteLinkService {
     private final InviteLinkRepository inviteLinkRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final TermRepository termRepository;
+    private final ClassSectionRepository classSectionRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public InviteLinkService(
             InviteLinkRepository inviteLinkRepository,
             EnrollmentRepository enrollmentRepository,
-            TermRepository termRepository) {
+            TermRepository termRepository,
+            ClassSectionRepository classSectionRepository) {
         this.inviteLinkRepository = inviteLinkRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.termRepository = termRepository;
+        this.classSectionRepository = classSectionRepository;
     }
 
     public IssuedInvite issue(String termId, String createdByUserId, String label, Integer maxUses, LocalDateTime expiresAt) {
@@ -92,6 +96,11 @@ public class InviteLinkService {
 
         Optional<TermEntity> termOpt = termRepository.findByIdAndDeletedAtIsNull(link.getTermId());
         if (termOpt.isEmpty() || !"ACTIVE".equals(termOpt.get().getStatus())) {
+            return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
+        }
+        TermEntity term = termOpt.get();
+        if (classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isEmpty()) {
+            // Soft-deleted parent section: treat as non-joinable (same as inactive term for clients).
             return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
         }
 

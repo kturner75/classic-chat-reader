@@ -1,8 +1,10 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.InviteLinkEntity;
 import com.classicchatreader.entity.TermEntity;
+import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.InviteLinkRepository;
 import com.classicchatreader.repository.TermRepository;
@@ -36,11 +38,26 @@ class InviteLinkServiceTest {
     @Mock
     private TermRepository termRepository;
 
+    @Mock
+    private ClassSectionRepository classSectionRepository;
+
     private InviteLinkService inviteLinkService;
 
     @BeforeEach
     void setUp() {
-        inviteLinkService = new InviteLinkService(inviteLinkRepository, enrollmentRepository, termRepository);
+        inviteLinkService = new InviteLinkService(
+                inviteLinkRepository, enrollmentRepository, termRepository, classSectionRepository);
+    }
+
+    private void stubLiveTerm(String termId, String sectionId) {
+        TermEntity term = new TermEntity();
+        term.setId(termId);
+        term.setClassSectionId(sectionId);
+        term.setStatus("ACTIVE");
+        when(termRepository.findByIdAndDeletedAtIsNull(termId)).thenReturn(Optional.of(term));
+        ClassSectionEntity section = new ClassSectionEntity();
+        section.setId(sectionId);
+        when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
     }
 
     @Test
@@ -70,13 +87,9 @@ class InviteLinkServiceTest {
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(0);
 
-        TermEntity term = new TermEntity();
-        term.setId("term-1");
-        term.setStatus("ACTIVE");
-
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
-        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        stubLiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.empty());
         when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> {
@@ -102,17 +115,13 @@ class InviteLinkServiceTest {
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(3);
 
-        TermEntity term = new TermEntity();
-        term.setId("term-1");
-        term.setStatus("ACTIVE");
-
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
         enrollment.setStatus("ACTIVE");
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
-        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        stubLiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.of(enrollment));
 
@@ -133,17 +142,13 @@ class InviteLinkServiceTest {
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(1);
 
-        TermEntity term = new TermEntity();
-        term.setId("term-1");
-        term.setStatus("ACTIVE");
-
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
         enrollment.setStatus("COMPLETED");
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
-        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        stubLiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.of(enrollment));
 
@@ -162,10 +167,6 @@ class InviteLinkServiceTest {
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(0);
 
-        TermEntity term = new TermEntity();
-        term.setId("term-1");
-        term.setStatus("ACTIVE");
-
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
         enrollment.setStatus("WITHDRAWN");
@@ -173,7 +174,7 @@ class InviteLinkServiceTest {
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
-        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        stubLiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.of(enrollment));
         when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -185,6 +186,30 @@ class InviteLinkServiceTest {
         assertEquals("ACTIVE", enrollment.getStatus());
         assertNull(enrollment.getDeletedAt());
         assertEquals(1, link.getUseCount());
+    }
+
+    @Test
+    void redeemRejectsWhenParentSectionSoftDeleted() {
+        String raw = "deleted-section";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setClassSectionId("sec-1");
+        term.setStatus("ACTIVE");
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(classSectionRepository.findByIdAndDeletedAtIsNull("sec-1")).thenReturn(Optional.empty());
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.TERM_NOT_ACTIVE, result.status());
+        verify(enrollmentRepository, never()).save(any());
     }
 
     @Test

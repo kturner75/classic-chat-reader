@@ -1,9 +1,11 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.entity.ClassRoleMembershipEntity;
+import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.repository.ClassRoleMembershipRepository;
+import com.classicchatreader.repository.ClassSectionRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.TermRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,24 +34,34 @@ class ClassroomAuthorizationServiceTest {
     @Mock
     private TermRepository termRepository;
 
+    @Mock
+    private ClassSectionRepository classSectionRepository;
+
     private ClassroomAuthorizationService service;
 
     @BeforeEach
     void setUp() {
         service = new ClassroomAuthorizationService(
-                enrollmentRepository, classRoleMembershipRepository, termRepository);
+                enrollmentRepository,
+                classRoleMembershipRepository,
+                termRepository,
+                classSectionRepository);
     }
 
-    private void activeTerm(String termId) {
+    private void liveActiveTerm(String termId, String sectionId) {
         TermEntity term = new TermEntity();
         term.setId(termId);
+        term.setClassSectionId(sectionId);
         term.setStatus("ACTIVE");
         when(termRepository.findByIdAndDeletedAtIsNull(termId)).thenReturn(Optional.of(term));
+        ClassSectionEntity section = new ClassSectionEntity();
+        section.setId(sectionId);
+        when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
     }
 
     @Test
     void teacherCanManageTerm() {
-        activeTerm("term-1");
+        liveActiveTerm("term-1", "sec-1");
         ClassRoleMembershipEntity membership = new ClassRoleMembershipEntity();
         membership.setUserId("t1");
         membership.setRole("TEACHER");
@@ -63,7 +75,7 @@ class ClassroomAuthorizationServiceTest {
 
     @Test
     void studentCanViewButNotManage() {
-        activeTerm("term-1");
+        liveActiveTerm("term-1", "sec-1");
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setUserId("s1");
         enrollment.setStatus("ACTIVE");
@@ -79,7 +91,7 @@ class ClassroomAuthorizationServiceTest {
 
     @Test
     void denyByDefaultForUnrelatedUser() {
-        activeTerm("term-1");
+        liveActiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "x"))
                 .thenReturn(Optional.empty());
         when(classRoleMembershipRepository.findByTermIdAndStatus("term-1", "ACTIVE"))
@@ -93,10 +105,24 @@ class ClassroomAuthorizationServiceTest {
     void endedTermIsNotAuthorized() {
         TermEntity ended = new TermEntity();
         ended.setId("term-1");
+        ended.setClassSectionId("sec-1");
         ended.setStatus("ENDED");
         when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(ended));
 
         assertFalse(service.canManageTerm("t1", "term-1"));
         assertFalse(service.canViewTermContext("s1", "term-1"));
+    }
+
+    @Test
+    void softDeletedSectionIsNotAuthorized() {
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setClassSectionId("sec-1");
+        term.setStatus("ACTIVE");
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(classSectionRepository.findByIdAndDeletedAtIsNull("sec-1")).thenReturn(Optional.empty());
+
+        assertFalse(service.isLiveActiveTerm("term-1"));
+        assertFalse(service.canManageTerm("t1", "term-1"));
     }
 }
