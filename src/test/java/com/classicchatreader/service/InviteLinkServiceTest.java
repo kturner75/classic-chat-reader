@@ -104,7 +104,7 @@ class InviteLinkServiceTest {
         stubLiveTerm("term-1", "sec-1");
         when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.empty());
-        when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> {
+        when(enrollmentRepository.saveAndFlush(any(EnrollmentEntity.class))).thenAnswer(inv -> {
             EnrollmentEntity e = inv.getArgument(0);
             e.setId("enr-1");
             return e;
