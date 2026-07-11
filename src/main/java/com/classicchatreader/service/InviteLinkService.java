@@ -17,9 +17,12 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class InviteLinkService {
+
+    private static final Set<String> REACTIVATABLE_STATUSES = Set.of("WITHDRAWN", "REMOVED");
 
     public enum RedeemStatus {
         SUCCESS,
@@ -29,7 +32,9 @@ public class InviteLinkService {
         REVOKED,
         TERM_NOT_ACTIVE,
         MAX_USES,
-        UNAUTHENTICATED
+        UNAUTHENTICATED,
+        /** Enrollment exists but cannot rejoin via invite (e.g. COMPLETED after term rollover). */
+        NOT_ELIGIBLE
     }
 
     private final InviteLinkRepository inviteLinkRepository;
@@ -90,18 +95,27 @@ public class InviteLinkService {
             return new RedeemResult(RedeemStatus.TERM_NOT_ACTIVE, null, null);
         }
 
+        // Include soft-deleted rows to honor UNIQUE(term_id, user_id) and design reactivation path.
         Optional<EnrollmentEntity> existing =
-                enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull(link.getTermId(), userId);
+                enrollmentRepository.findByTermIdAndUserId(link.getTermId(), userId);
         if (existing.isPresent()) {
             EnrollmentEntity enrollment = existing.get();
-            if ("ACTIVE".equals(enrollment.getStatus())) {
+            if ("ACTIVE".equals(enrollment.getStatus()) && enrollment.getDeletedAt() == null) {
                 return new RedeemResult(RedeemStatus.IDEMPOTENT, enrollment.getId(), link.getTermId());
             }
-            // Reactivate withdrawn/removed
+            if ("COMPLETED".equals(enrollment.getStatus())) {
+                return new RedeemResult(RedeemStatus.NOT_ELIGIBLE, enrollment.getId(), link.getTermId());
+            }
+            boolean reactivatable = REACTIVATABLE_STATUSES.contains(enrollment.getStatus())
+                    || enrollment.getDeletedAt() != null;
+            if (!reactivatable) {
+                return new RedeemResult(RedeemStatus.NOT_ELIGIBLE, enrollment.getId(), link.getTermId());
+            }
             if (link.getMaxUses() != null && link.getUseCount() >= link.getMaxUses()) {
                 return new RedeemResult(RedeemStatus.MAX_USES, null, null);
             }
             enrollment.setStatus("ACTIVE");
+            enrollment.setDeletedAt(null);
             enrollment.setLeftDate(null);
             enrollment.setJoinedDate(LocalDate.now(ZoneOffset.UTC));
             enrollment.setInviteLinkId(link.getId());

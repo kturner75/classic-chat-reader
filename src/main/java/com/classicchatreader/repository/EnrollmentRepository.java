@@ -10,6 +10,10 @@ import java.util.Optional;
 @Repository
 public interface EnrollmentRepository extends JpaRepository<EnrollmentEntity, String> {
     Optional<EnrollmentEntity> findByTermIdAndUserIdAndDeletedAtIsNull(String termId, String userId);
+
+    /** Includes soft-deleted rows (unique on term_id+user_id); used for redeem reactivation. */
+    Optional<EnrollmentEntity> findByTermIdAndUserId(String termId, String userId);
+
     List<EnrollmentEntity> findByUserIdAndStatusAndDeletedAtIsNull(String userId, String status);
     List<EnrollmentEntity> findByTermIdAndStatusAndDeletedAtIsNullOrderByJoinedDateAsc(String termId, String status);
 }

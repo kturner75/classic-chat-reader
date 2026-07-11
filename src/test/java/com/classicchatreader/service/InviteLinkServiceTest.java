@@ -77,7 +77,7 @@ class InviteLinkServiceTest {
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
         when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
-        when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "user-1"))
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.empty());
         when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> {
             EnrollmentEntity e = inv.getArgument(0);
@@ -113,7 +113,7 @@ class InviteLinkServiceTest {
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
         when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
-        when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "user-1"))
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
                 .thenReturn(Optional.of(enrollment));
 
         InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
@@ -122,6 +122,69 @@ class InviteLinkServiceTest {
         assertEquals(3, link.getUseCount());
         verify(enrollmentRepository, never()).save(any());
         verify(inviteLinkRepository, never()).save(eq(link));
+    }
+
+    @Test
+    void redeemDoesNotReactivateCompletedEnrollment() {
+        String raw = "completed-student";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setUseCount(1);
+
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setStatus("ACTIVE");
+
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setId("enr-1");
+        enrollment.setStatus("COMPLETED");
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
+                .thenReturn(Optional.of(enrollment));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.NOT_ELIGIBLE, result.status());
+        verify(enrollmentRepository, never()).save(any());
+    }
+
+    @Test
+    void redeemReactivatesSoftDeletedEnrollment() {
+        String raw = "soft-deleted";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setUseCount(0);
+
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setStatus("ACTIVE");
+
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setId("enr-1");
+        enrollment.setStatus("WITHDRAWN");
+        enrollment.setDeletedAt(java.time.LocalDateTime.now());
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
+                .thenReturn(Optional.of(enrollment));
+        when(enrollmentRepository.save(any(EnrollmentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(inviteLinkRepository.save(any(InviteLinkEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.SUCCESS, result.status());
+        assertEquals("ACTIVE", enrollment.getStatus());
+        assertNull(enrollment.getDeletedAt());
+        assertEquals(1, link.getUseCount());
     }
 
     @Test

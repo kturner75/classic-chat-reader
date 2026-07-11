@@ -164,6 +164,8 @@ public class ClassroomController {
                     .body(Map.of("status", RedeemStatus.TERM_NOT_ACTIVE.name()));
             case MAX_USES -> ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("status", RedeemStatus.MAX_USES.name()));
+            case NOT_ELIGIBLE -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("status", RedeemStatus.NOT_ELIGIBLE.name()));
         };
     }
 

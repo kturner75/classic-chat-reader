@@ -115,6 +115,7 @@ public class ClassroomContextService {
                 enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE")) {
             termRepository.findByIdAndDeletedAtIsNull(enrollment.getTermId())
                     .filter(t -> "ACTIVE".equals(t.getStatus()))
+                    .filter(this::hasLiveSection)
                     .ifPresent(term -> candidates.add(new MembershipCandidate(
                             term,
                             ClassroomAuthorizationService.ROLE_STUDENT,
@@ -132,6 +133,7 @@ public class ClassroomContextService {
             }
             termRepository.findByIdAndDeletedAtIsNull(membership.getTermId())
                     .filter(t -> "ACTIVE".equals(t.getStatus()))
+                    .filter(this::hasLiveSection)
                     .ifPresent(term -> candidates.add(new MembershipCandidate(
                             term,
                             ClassroomAuthorizationService.ROLE_TEACHER,
@@ -185,8 +187,14 @@ public class ClassroomContextService {
                         .thenComparing(c -> c.term().getId()));
     }
 
+    /** Membership only counts when the parent class section is not soft-deleted. */
+    private boolean hasLiveSection(TermEntity term) {
+        return classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId()).isPresent();
+    }
+
     private ClassroomContextResponse buildDbContext(String userId, MembershipCandidate candidate) {
         TermEntity term = candidate.term();
+        // Section was verified live during candidate selection; re-check for race/soft-delete.
         ClassSectionEntity section = classSectionRepository.findByIdAndDeletedAtIsNull(term.getClassSectionId())
                 .orElse(null);
         if (section == null) {

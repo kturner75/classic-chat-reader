@@ -189,7 +189,10 @@ public class ClassroomAdminService {
         if (!authorizationService.canViewTermContext(userId, termId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this term.");
         }
-        if (publishedOnly) {
+        // Students may only see PUBLISHED work; teachers may list drafts when publishedOnly=false.
+        boolean teacher = authorizationService.canManageTerm(userId, termId);
+        boolean forcePublishedOnly = !teacher || publishedOnly;
+        if (forcePublishedOnly) {
             return assignmentRepository
                     .findByTermIdAndStatusAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(termId, "PUBLISHED");
         }
@@ -220,7 +223,10 @@ public class ClassroomAdminService {
         assignment.setChapterIndex(request.chapterIndex());
         assignment.setDueDate(request.dueDate());
         assignment.setAvailableFromDate(request.availableFromDate());
-        assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
+        // Only update quizRequired when the client sends a value (omit/null leaves existing).
+        if (request.quizRequired() != null) {
+            assignment.setQuizRequired(request.quizRequired());
+        }
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }

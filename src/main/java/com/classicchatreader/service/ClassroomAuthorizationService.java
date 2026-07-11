@@ -1,7 +1,9 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.repository.ClassRoleMembershipRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
+import com.classicchatreader.repository.TermRepository;
 import org.springframework.stereotype.Service;
 
 /**
@@ -19,16 +21,19 @@ public class ClassroomAuthorizationService {
 
     private final EnrollmentRepository enrollmentRepository;
     private final ClassRoleMembershipRepository classRoleMembershipRepository;
+    private final TermRepository termRepository;
 
     public ClassroomAuthorizationService(
             EnrollmentRepository enrollmentRepository,
-            ClassRoleMembershipRepository classRoleMembershipRepository) {
+            ClassRoleMembershipRepository classRoleMembershipRepository,
+            TermRepository termRepository) {
         this.enrollmentRepository = enrollmentRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
+        this.termRepository = termRepository;
     }
 
     public boolean isActiveTeacherOnTerm(String userId, String termId) {
-        if (userId == null || termId == null) {
+        if (userId == null || termId == null || !isLiveActiveTerm(termId)) {
             return false;
         }
         return classRoleMembershipRepository.findByTermIdAndStatus(termId, STATUS_ACTIVE).stream()
@@ -36,7 +41,7 @@ public class ClassroomAuthorizationService {
     }
 
     public boolean isActiveStudentOnTerm(String userId, String termId) {
-        if (userId == null || termId == null) {
+        if (userId == null || termId == null || !isLiveActiveTerm(termId)) {
             return false;
         }
         return enrollmentRepository
@@ -61,6 +66,19 @@ public class ClassroomAuthorizationService {
             return ROLE_STUDENT;
         }
         return null;
+    }
+
+    /**
+     * Term must exist, not be soft-deleted, and be ACTIVE for live pilot APIs.
+     */
+    public boolean isLiveActiveTerm(String termId) {
+        if (termId == null) {
+            return false;
+        }
+        return termRepository.findByIdAndDeletedAtIsNull(termId)
+                .map(TermEntity::getStatus)
+                .filter(STATUS_ACTIVE::equals)
+                .isPresent();
     }
 
     public static boolean isTeacherLikeRole(String role) {
