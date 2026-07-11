@@ -430,13 +430,14 @@ public class ClassroomContextService {
         if (chapterId == null || chapterId.isBlank()) {
             return QuizRequirementStatus.UNKNOWN;
         }
+        // COMPLETE requires a perfect attempt (score 100%). Any/failed submissions stay PENDING.
         if (userId != null && !userId.isBlank()) {
-            return quizAttemptRepository.existsByChapterIdAndUserId(chapterId, userId)
+            return quizAttemptRepository.existsByChapterIdAndUserIdAndPerfectTrue(chapterId, userId)
                     ? QuizRequirementStatus.COMPLETE
                     : QuizRequirementStatus.PENDING;
         }
-        // Anonymous demo path: keep historical global exists check (demo limitation)
-        return quizAttemptRepository.existsByChapterId(chapterId)
+        // Anonymous demo path: still not user-scoped (demo limitation), but require perfect.
+        return quizAttemptRepository.existsByChapterIdAndPerfectTrue(chapterId)
                 ? QuizRequirementStatus.COMPLETE
                 : QuizRequirementStatus.PENDING;
     }
