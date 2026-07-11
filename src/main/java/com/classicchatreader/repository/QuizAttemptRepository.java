@@ -34,6 +34,13 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
 
     boolean existsByChapterId(String chapterId);
 
+    boolean existsByChapterIdAndUserId(String chapterId, String userId);
+
+    /** Classroom assignment COMPLETE: require a perfect (100%) attempt for the user. */
+    boolean existsByChapterIdAndUserIdAndPerfectTrue(String chapterId, String userId);
+
+    boolean existsByChapterIdAndPerfectTrue(String chapterId);
+
     @Modifying
     @Query("DELETE FROM QuizAttemptEntity qa WHERE qa.chapter.book.id = :bookId")
     void deleteByBookId(@Param("bookId") String bookId);

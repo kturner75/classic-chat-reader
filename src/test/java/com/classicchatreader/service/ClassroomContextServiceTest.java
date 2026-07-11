@@ -1,12 +1,20 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.config.ClassroomDemoProperties;
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.model.ClassroomContextResponse;
+import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.ClassFeatureSettingsRepository;
+import com.classicchatreader.repository.ClassRoleMembershipRepository;
+import com.classicchatreader.repository.ClassSectionRepository;
+import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.QuizAttemptRepository;
+import com.classicchatreader.repository.TermRepository;
+import com.classicchatreader.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,17 +43,49 @@ class ClassroomContextServiceTest {
     @Mock
     private QuizAttemptRepository quizAttemptRepository;
 
+    @Mock
+    private EnrollmentRepository enrollmentRepository;
+
+    @Mock
+    private ClassRoleMembershipRepository classRoleMembershipRepository;
+
+    @Mock
+    private TermRepository termRepository;
+
+    @Mock
+    private ClassSectionRepository classSectionRepository;
+
+    @Mock
+    private ClassFeatureSettingsRepository classFeatureSettingsRepository;
+
+    @Mock
+    private AssignmentRepository assignmentRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
     private ClassroomDemoProperties properties;
+    private ClassroomProperties classroomProperties;
     private ClassroomContextService classroomContextService;
 
     @BeforeEach
     void setUp() {
         properties = new ClassroomDemoProperties();
+        classroomProperties = new ClassroomProperties();
+        classroomProperties.setMode("hybrid");
         classroomContextService = new ClassroomContextService(
                 properties,
+                classroomProperties,
                 bookRepository,
                 chapterRepository,
-                quizAttemptRepository
+                quizAttemptRepository,
+                enrollmentRepository,
+                classRoleMembershipRepository,
+                termRepository,
+                classSectionRepository,
+                classFeatureSettingsRepository,
+                assignmentRepository,
+                userRepository
         );
     }
 
@@ -124,5 +164,42 @@ class ClassroomContextServiceTest {
         assertEquals(1, context.assignments().size());
         assertEquals(ClassroomContextResponse.QuizRequirementStatus.UNKNOWN, context.assignments().get(0).quizStatus());
         verify(quizAttemptRepository, never()).existsByChapterId(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void getContextUsesUserScopedQuizStatusWhenAuthenticated() {
+        properties.setEnabled(true);
+        ClassroomDemoProperties.Assignment assignment = new ClassroomDemoProperties.Assignment();
+        assignment.setBookId("book-1");
+        assignment.setChapterId("chapter-1");
+        assignment.setQuizRequired(true);
+        properties.setAssignments(List.of(assignment));
+
+        BookEntity book = new BookEntity();
+        book.setId("book-1");
+        book.setTitle("Book");
+        book.setAuthor("Author");
+        ChapterEntity chapter = new ChapterEntity();
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        chapter.setChapterIndex(0);
+        chapter.setTitle("Ch 1");
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(quizAttemptRepository.existsByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(true);
+
+        ClassroomContextResponse context = classroomContextService.getContext("user-1");
+
+        assertEquals(ClassroomContextResponse.QuizRequirementStatus.COMPLETE, context.assignments().get(0).quizStatus());
+        verify(quizAttemptRepository, never()).existsByChapterId("chapter-1");
+    }
+
+    @Test
+    void formatDueDateIsCalendarDateOnly() {
+        assertEquals(
+                "2026-02-20",
+                ClassroomContextService.formatDueDate(java.time.LocalDate.of(2026, 2, 20)));
+        assertEquals(null, ClassroomContextService.formatDueDate(null));
     }
 }
