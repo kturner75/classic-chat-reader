@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 ## Implementation handoff (classroom)
 
@@ -10,15 +10,30 @@ Last updated: 2026-07-11
 - Flyway `V14__classroom_domain.sql` + JPA entities/repos for pilot tables
 - Authz, invite issue/redeem, class bootstrap, feature + assignment APIs, context dual-read (`classroom.mode`)
 - Default behavior unchanged when no DB membership and demo off: `GET /api/classroom/context` still returns not enrolled
-- Additive JSON fields on context: `termId`, `role` (FE may ignore)
+- Additive JSON fields on context: `termId`, `role` (preserved by the frontend normalizer)
 
-**Done (2026-07-11):**
+**Done in classroom UI demo slice (2026-07-13):**
+- Reusable Library/Teaching workspace navigation for signed-in accounts
+- Dedicated `/teacher` workspace with first-class onboarding and class/term selection
+- Teacher UI for class creation, student join-link copy, active roster, independent feature controls, and assignment create/edit/publish/archive
+- Student `Join a class` flow accepts either an invite code or copied join URL and refreshes classroom-aware Library assignments after redeem
+- Roster API returns account email as a teacher-readable label; classroom context frontend now preserves `termId` and `role`
+- Pilot class creation seeds the partner-requested combination `quiz=true`, `recap=false` while retaining independent controls
+- Manual teacher-to-student walkthrough verified class creation, invite redemption, roster visibility, assignment publishing, and published assignment visibility in the student's Library
+
+**Done (2026-07-11 / context reload fix):**
 - Classroom context + Library now reload after account login/logout/register identity changes (`reader.js`), so enrolled students see published assignments without a hard refresh. Playwright coverage in `e2e/account-auth.spec.js`.
+- Partner/grant-facing pilot pitch doc: `docs/product/classroom-pilot-pitch.md`.
+
+**Known demo issues found during walkthrough (2026-07-13):**
+- ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
+- The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
+- Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
 **Next when resuming (suggested order):**
-1. Teacher UI: create class, copy invite code, feature toggles, assignment CRUD
-2. Student UI: redeem invite (account required)
-3. Invite redeem rate limits (BL-028 pattern)
+1. Invite redeem rate limits (BL-028 pattern)
+2. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
+3. Teacher entitlement/capability gate for first-class creation (currently any authenticated account, matching the existing API)
 4. `TermTransitionService` + API (PR-4/13)
 5. PR-0 stable quiz question ids → override APIs
 6. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
@@ -38,6 +53,9 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. Character chat is still client-local today; durable completion/export for this use case is deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
 - 2026-07-11: Fixed classroom context stale-after-login defect: `accountCheckStatus` now reloads classroom context and re-renders Library when account identity changes (login/logout/register), with Playwright regression coverage. Partner/grant-facing pilot pitch doc added at `docs/product/classroom-pilot-pitch.md`.
+- 2026-07-13: Added the classroom demo UI slice: `/teacher` workspace, class setup, invite link, roster, feature controls, assignment management, workspace navigation, and student invite redemption. Full Maven suite green (536 tests); BL-025.2–.4 remain in progress for rate limits, roster removal/import, entitlement, and wider enforcement/polish.
+- 2026-07-13: Added `BL-046` after classroom assignment QA exposed duplicate local editions and incomplete chapter extraction for Pride and Prejudice; investigation covers import identity/de-duplication, parser completeness, safe cleanup, and selector disambiguation.
+- 2026-07-13: Completed a manual teacher-to-student demo walkthrough. Published assignments correctly appear in the enrolled student's Library, but account switching left stale classroom context until hard refresh — that defect is now fixed on this branch ahead of the Thursday educator demo.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -248,7 +266,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature
 - Priority: P1
 - Effort: XL
-- Status: Discovery
+- Status: In Progress
 - Problem: Current product is reader-centric; it lacks teacher/admin controls needed for classroom deployment.
 - Scope Buckets:
 - Teacher/admin role model (class creation, student roster management, invite/enrollment flow).
@@ -317,6 +335,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.**
 - Session Log:
 - 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
+- 2026-07-13: Classroom demo UI implemented and manually verified through the core teacher-to-student path: create class → share/redeem invite → confirm roster → publish assignment → view assignment in the student's Library. Known defect: a student who signs in on an already-loaded reader page must hard-refresh before classroom context and assignments appear. BL-025.2–.4 remain `In Progress` pending the follow-ups documented in the implementation handoff.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -762,6 +781,29 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - Sequenced closely with `BL-025` since most of its content depends on classroom features actually existing; classroom guide sections should be drafted/updated as each `BL-025` slice ships rather than written all at once at the end.
 - Should reflect final decisions from `BL-043` (FERPA) and `BL-044` (ADA) where they affect user-facing behavior (for example data retention/export behavior, accessibility features).
+
+### BL-046 - Imported Book Data Quality and Duplicate Edition Cleanup
+- Type: Tech Debt
+- Priority: P1
+- Effort: M
+- Status: Proposed
+- Problem: Classroom assignment QA found two indistinguishable local copies of **Pride and Prejudice**: one with 3 chapters and another with 59 chapters. The fuller copy should contain 61 chapters and is missing Chapters XXVII and XXVIII. Duplicate titles are currently indistinguishable in book selectors, so teachers can accidentally assign an abbreviated or malformed copy.
+- Investigation Scope:
+- Trace how the 3-chapter copy was created (sample seed, manual import, or interrupted/partial import) and determine whether the same path can affect production data.
+- Re-run Gutenberg source `1342` through the current parser and identify why the fuller copy has 59 rather than 61 chapters.
+- Define canonical import identity and duplicate policy using source + source ID where available, with an explicit policy for manual/alternate editions.
+- Inventory existing duplicate books and chapter-index gaps without mutating data; design a dry-run cleanup/reconciliation path that preserves dependent recaps, quizzes, progress, annotations, and classroom assignments.
+- Add interim selector disambiguation using author/source/chapter count so duplicate editions are visibly different before cleanup is complete.
+- Add parser/import validation for suspicious chapter gaps, implausibly small chapter counts, and partial import failures.
+- Acceptance Criteria:
+- Root causes are documented for both the 3-chapter duplicate and missing Pride and Prejudice chapters XXVII/XXVIII.
+- A regression fixture for Gutenberg `1342` produces all 61 chapters in the correct order.
+- Re-importing the same source identity cannot silently create another duplicate local book.
+- Existing duplicates and malformed imports can be reported and safely reconciled through a dry-run-first workflow.
+- Book selectors clearly distinguish remaining legitimate alternate editions and expose chapter count.
+- Dependency Notes:
+- Coordinate cleanup with `BL-007` library administration and the existing dependent-record deletion safeguards; do not auto-delete or merge books without preserving reader/classroom references.
+- This improves `BL-025.4` assignment reliability but does not block the basic classroom demo flow.
 
 ## P0
 

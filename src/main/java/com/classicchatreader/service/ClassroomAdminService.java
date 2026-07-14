@@ -23,8 +23,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class ClassroomAdminService {
@@ -235,12 +237,21 @@ public class ClassroomAdminService {
     @Transactional(readOnly = true)
     public List<EnrollmentRow> listRoster(String userId, String termId) {
         requireTeacher(userId, termId);
-        return enrollmentRepository
-                .findByTermIdAndStatusAndDeletedAtIsNullOrderByJoinedDateAsc(termId, "ACTIVE")
+        var enrollments = enrollmentRepository
+                .findByTermIdAndStatusAndDeletedAtIsNullOrderByJoinedDateAsc(termId, "ACTIVE");
+        Map<String, String> emailsByUserId = userRepository.findAllById(
+                        enrollments.stream().map(e -> e.getUserId()).toList())
+                .stream()
+                .collect(Collectors.toMap(
+                        user -> user.getId(),
+                        user -> user.getEmail(),
+                        (first, ignored) -> first));
+        return enrollments
                 .stream()
                 .map(e -> new EnrollmentRow(
                         e.getId(),
                         e.getUserId(),
+                        emailsByUserId.get(e.getUserId()),
                         e.getStatus(),
                         e.getJoinedDate(),
                         e.getDisplayNameOverride()
@@ -277,7 +288,11 @@ public class ClassroomAdminService {
         }
         if (request.chapterId() != null) {
             // Explicit empty string clears chapter link.
-            assignment.setChapterId(trimToNull(request.chapterId()));
+            String chapterId = trimToNull(request.chapterId());
+            assignment.setChapterId(chapterId);
+            if (chapterId == null) {
+                assignment.setChapterIndex(null);
+            }
         }
         if (request.chapterIndex() != null) {
             assignment.setChapterIndex(request.chapterIndex());
@@ -467,6 +482,7 @@ public class ClassroomAdminService {
     public record EnrollmentRow(
             String enrollmentId,
             String userId,
+            String email,
             String status,
             LocalDate joinedDate,
             String displayNameOverride
