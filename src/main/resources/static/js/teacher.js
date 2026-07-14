@@ -336,12 +336,30 @@
         populateChapterOptions('', selectedId);
     }
 
-    function populateChapterOptions(selectedChapterId = '', bookId = el['assignment-book'].value) {
+    function populateChapterOptions(
+        selectedChapterId = '',
+        bookId = el['assignment-book'].value,
+        selectedChapterIndex = null
+    ) {
         const book = bookById(bookId);
         el['assignment-chapter'].innerHTML = '<option value="">Whole book</option>' + (book?.chapters || []).map((chapter, index) => (
             `<option value="${escapeHtml(chapter.id)}" data-index="${index}">${escapeHtml(chapter.title)}</option>`
         )).join('');
-        el['assignment-chapter'].value = selectedChapterId || '';
+
+        if (selectedChapterId) {
+            el['assignment-chapter'].value = selectedChapterId;
+            return;
+        }
+        if (Number.isInteger(selectedChapterIndex)) {
+            const match = Array.from(el['assignment-chapter'].options).find(
+                option => option.dataset.index === String(selectedChapterIndex)
+            );
+            if (match) {
+                el['assignment-chapter'].value = match.value;
+                return;
+            }
+        }
+        el['assignment-chapter'].value = '';
     }
 
     function openAssignmentModal(assignment = null) {
@@ -351,7 +369,8 @@
         populateBookOptions(assignment?.bookId || '');
         if (assignment) {
             el['assignment-title'].value = assignment.title || '';
-            populateChapterOptions(assignment.chapterId || '', assignment.bookId);
+            const chapterIndex = Number.isInteger(assignment.chapterIndex) ? assignment.chapterIndex : null;
+            populateChapterOptions(assignment.chapterId || '', assignment.bookId, chapterIndex);
             el['assignment-form'].elements.dueDate.value = assignment.dueDate || '';
             el['assignment-form'].elements.availableFromDate.value = assignment.availableFromDate || '';
             el['assignment-form'].elements.status.value = assignment.status || 'DRAFT';
@@ -372,16 +391,28 @@
         const form = new FormData(el['assignment-form']);
         const chapterOption = el['assignment-chapter'].selectedOptions[0];
         const chapterId = String(form.get('chapterId') || '');
+        const dueDateRaw = String(form.get('dueDate') || '').trim();
+        const availableFromRaw = String(form.get('availableFromDate') || '').trim();
+        const chapterIndex = chapterId
+            ? Number(chapterOption?.dataset.index)
+            : (chapterOption?.dataset.index != null && chapterOption.value
+                ? Number(chapterOption.dataset.index)
+                : null);
         const body = {
             title: String(form.get('title') || '').trim(),
             bookId: String(form.get('bookId') || ''),
             chapterId,
-            chapterIndex: chapterId ? Number(chapterOption?.dataset.index) : null,
-            dueDate: form.get('dueDate') || null,
-            availableFromDate: form.get('availableFromDate') || null,
+            chapterIndex: Number.isInteger(chapterIndex) ? chapterIndex : null,
+            dueDate: dueDateRaw || null,
+            availableFromDate: availableFromRaw || null,
             quizRequired: form.get('quizRequired') === 'on',
             status: String(form.get('status') || 'DRAFT')
         };
+        if (state.editingAssignmentId) {
+            // Null date fields mean "leave unchanged" on the API; explicit clear flags allow removal.
+            body.clearDueDate = !dueDateRaw;
+            body.clearAvailableFromDate = !availableFromRaw;
+        }
         const path = state.editingAssignmentId
             ? `/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}`
             : `/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/assignments`;

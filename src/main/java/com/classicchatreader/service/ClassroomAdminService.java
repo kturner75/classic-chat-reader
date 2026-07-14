@@ -297,10 +297,14 @@ public class ClassroomAdminService {
         if (request.chapterIndex() != null) {
             assignment.setChapterIndex(request.chapterIndex());
         }
-        if (request.dueDate() != null) {
+        if (Boolean.TRUE.equals(request.clearDueDate())) {
+            assignment.setDueDate(null);
+        } else if (request.dueDate() != null) {
             assignment.setDueDate(request.dueDate());
         }
-        if (request.availableFromDate() != null) {
+        if (Boolean.TRUE.equals(request.clearAvailableFromDate())) {
+            assignment.setAvailableFromDate(null);
+        } else if (request.availableFromDate() != null) {
             assignment.setAvailableFromDate(request.availableFromDate());
         }
         if (request.quizRequired() != null) {
@@ -333,9 +337,15 @@ public class ClassroomAdminService {
         String effectiveChapterId = request.chapterId() != null
                 ? trimToNull(request.chapterId())
                 : existing.getChapterId();
-        Integer effectiveChapterIndex = request.chapterIndex() != null
-                ? request.chapterIndex()
-                : existing.getChapterIndex();
+        Integer effectiveChapterIndex;
+        if (request.chapterIndex() != null) {
+            effectiveChapterIndex = request.chapterIndex();
+        } else if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
+            // Explicit empty chapterId means whole-book; do not validate the previous index.
+            effectiveChapterIndex = null;
+        } else {
+            effectiveChapterIndex = existing.getChapterIndex();
+        }
         boolean chapterTargetChanged = request.chapterId() != null
                 || request.chapterIndex() != null
                 || !isBlank(request.bookId());
@@ -455,8 +465,25 @@ public class ClassroomAdminService {
             LocalDate availableFromDate,
             Boolean quizRequired,
             Integer sortOrder,
-            String status
+            String status,
+            /** When true on update, clears dueDate even if dueDate is null. */
+            Boolean clearDueDate,
+            /** When true on update, clears availableFromDate even if availableFromDate is null. */
+            Boolean clearAvailableFromDate
     ) {
+        public AssignmentWriteRequest(
+                String title,
+                String bookId,
+                String chapterId,
+                Integer chapterIndex,
+                LocalDate dueDate,
+                LocalDate availableFromDate,
+                Boolean quizRequired,
+                Integer sortOrder,
+                String status) {
+            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, sortOrder, status, null, null);
+        }
     }
 
     public record CreateClassResult(
