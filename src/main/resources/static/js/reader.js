@@ -2036,8 +2036,27 @@
         }
     }
 
+    async function refreshClassroomContextAfterAccountChange() {
+        await loadClassroomContext();
+        if (elements.libraryView && !elements.libraryView.classList.contains('hidden')) {
+            renderLibrary(state.librarySearchQuery || '');
+        }
+        // Enrollment can change classroom feature gates; refresh gated surfaces.
+        void speedReadingCheckAvailability();
+        void quizCheckAvailability();
+        void recapCheckAvailability();
+        void characterCheckAvailability();
+        void illustrationCheckAvailability();
+        void ttsCheckAvailability();
+        if (readingBuddyController) {
+            void readingBuddyController.checkAvailability();
+        }
+    }
+
     async function accountCheckStatus(options = {}) {
         const { triggerSync = true } = options;
+        const previousAuthenticated = state.accountAuthenticated === true;
+        const previousEmail = state.accountEmail;
         try {
             const response = await nativeFetch('/api/account/status', { cache: 'no-store' });
             if (!response.ok) {
@@ -2060,6 +2079,14 @@
 
             if (triggerSync && state.accountAuthenticated) {
                 await runAccountClaimSync();
+            }
+
+            // Login/logout on an already-open page used to keep stale classroom context
+            // until a hard refresh; reload context + Library when account identity changes.
+            const identityChanged = previousAuthenticated !== state.accountAuthenticated
+                || previousEmail !== state.accountEmail;
+            if (identityChanged) {
+                await refreshClassroomContextAfterAccountChange();
             }
         } catch (error) {
             console.debug('Account status check failed:', error);

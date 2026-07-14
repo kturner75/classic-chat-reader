@@ -25,7 +25,8 @@ async function installApiMocks(page) {
     accountEnabled: true,
     accountAuthenticated: false,
     accountEmail: null,
-    claimSyncRequests: []
+    claimSyncRequests: [],
+    classroomContextRequests: []
   };
 
   await page.route('**/api/**', async (route) => {
@@ -35,6 +36,47 @@ async function installApiMocks(page) {
     const method = request.method();
 
     if (method === 'GET' && path === '/api/classroom/context') {
+      state.classroomContextRequests.push({
+        authenticated: state.accountAuthenticated,
+        email: state.accountEmail
+      });
+      if (state.accountAuthenticated) {
+        return json(route, 200, {
+          enrolled: true,
+          classId: 'class-1',
+          className: 'British Literature',
+          teacherName: 'Prof. Evans',
+          termId: 'term-1',
+          role: 'STUDENT',
+          features: {
+            quizEnabled: true,
+            recapEnabled: false,
+            ttsEnabled: true,
+            illustrationEnabled: true,
+            characterEnabled: true,
+            chatEnabled: true,
+            speedReadingEnabled: true,
+            readingBuddyEnabled: true,
+            citationEnabled: true
+          },
+          assignments: [
+            {
+              assignmentId: 'asg-1',
+              title: 'Pride and Prejudice Ch. 1',
+              bookId: 'book-1',
+              bookTitle: 'Account Flow Test Book',
+              bookAuthor: 'Casey Reader',
+              chapterId: 'ch-1',
+              chapterIndex: 0,
+              chapterTitle: 'Chapter One',
+              dueAt: '2026-07-20',
+              quizRequired: true,
+              quizStatus: 'NOT_STARTED',
+              bookAvailable: true
+            }
+          ]
+        });
+      }
       return json(route, 200, { enrolled: false });
     }
     if (method === 'GET' && path === '/api/library') {
@@ -158,6 +200,13 @@ async function installApiMocks(page) {
         generationAvailable: false
       });
     }
+    if (method === 'GET' && path === '/api/reading-buddy/status') {
+      return json(route, 200, {
+        available: false,
+        enabled: false,
+        providerAvailable: false
+      });
+    }
 
     return json(route, 404, {
       error: `Unhandled API route in account e2e mock: ${method} ${path}`
@@ -224,4 +273,41 @@ test('account register/login/logout flow runs one-time claim sync for anonymous 
 
   await expect.poll(() => mockState.claimSyncRequests.length).toBe(2);
   await expect(page.locator('#account-library-status')).toContainText('Signed in as reader@example.com');
+});
+
+test('account login reloads classroom context and shows published assignment without hard refresh', async ({ page }) => {
+  const mockState = await installApiMocks(page);
+
+  await page.goto('/');
+  await expect(page.locator('#account-toggle-library')).toBeVisible();
+
+  // Initial anonymous page load should request classroom context once as not enrolled.
+  await expect.poll(() => mockState.classroomContextRequests.length).toBeGreaterThanOrEqual(1);
+  const anonymousRequests = mockState.classroomContextRequests.filter((req) => !req.authenticated);
+  expect(anonymousRequests.length).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('#classroom-banner')).toBeHidden();
+
+  await page.click('#account-toggle-library');
+  await page.fill('#account-email', 'student@example.com');
+  await page.fill('#account-password', 'password123');
+  await page.click('#account-signin');
+
+  await expect(page.locator('#account-library-status')).toContainText('Signed in as student@example.com');
+
+  // Login must re-fetch classroom context as the authenticated student.
+  await expect.poll(() => mockState.classroomContextRequests.some((req) => req.authenticated === true)).toBe(true);
+  await expect(page.locator('#classroom-banner')).toBeVisible();
+  await expect(page.locator('#classroom-banner')).toContainText('British Literature');
+  await expect(page.locator('#classroom-assignments')).toBeVisible();
+  await expect(page.locator('#classroom-assignments-list')).toContainText('Pride and Prejudice Ch. 1');
+
+  await page.click('#account-toggle-library');
+  await page.click('#account-signout');
+  await expect(page.locator('#account-library-status')).toBeHidden();
+
+  // Logout must clear classroom landing without hard refresh.
+  await expect.poll(() => mockState.classroomContextRequests.some((req) => req.authenticated === false
+    && mockState.classroomContextRequests.indexOf(req) > 0)).toBe(true);
+  await expect(page.locator('#classroom-banner')).toBeHidden();
+  await expect(page.locator('#classroom-assignments')).toBeHidden();
 });
