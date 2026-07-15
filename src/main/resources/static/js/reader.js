@@ -154,6 +154,8 @@
         favoriteBookOrder: [],
         classroomContext: null,
         classroomAssignments: [],
+        classroomCanTeach: false,
+        classroomCanCreateClass: false,
         achievementsLoading: false,
         achievementsLoaded: false,
         achievementsSummary: '',
@@ -2063,6 +2065,27 @@
         }
     }
 
+    async function loadClassroomCapabilities() {
+        if (!state.accountAuthenticated) {
+            state.classroomCanTeach = false;
+            state.classroomCanCreateClass = false;
+            return;
+        }
+        try {
+            const response = await nativeFetch('/api/classroom/capabilities', { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error(`Classroom capabilities request failed with status ${response.status}`);
+            }
+            const capabilities = await response.json();
+            state.classroomCanTeach = capabilities.canTeach === true;
+            state.classroomCanCreateClass = capabilities.canCreateClass === true;
+        } catch (error) {
+            console.debug('Classroom capabilities check failed:', error);
+            state.classroomCanTeach = false;
+            state.classroomCanCreateClass = false;
+        }
+    }
+
     async function accountCheckStatus(options = {}) {
         const { triggerSync = true } = options;
         const previousAuthenticated = state.accountAuthenticated === true;
@@ -2085,6 +2108,7 @@
             if (!state.accountAuthenticated) {
                 state.accountClaimSyncedFor = null;
             }
+            await loadClassroomCapabilities();
             updateAccountUi();
 
             refreshClassroomWorkspaceActions();
@@ -2111,9 +2135,10 @@
             elements.joinClassButton.classList.toggle('hidden', !state.accountAuthenticated);
         }
         if (elements.teacherWorkspaceLink) {
-            // Class creation is currently an authenticated-account capability. When a dedicated
-            // teacher entitlement lands, this visibility check should consume that capability.
-            elements.teacherWorkspaceLink.classList.toggle('hidden', !state.accountAuthenticated);
+            elements.teacherWorkspaceLink.classList.toggle(
+                'hidden',
+                !state.accountAuthenticated || !state.classroomCanTeach
+            );
         }
     }
 

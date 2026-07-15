@@ -3,6 +3,7 @@
 
     const state = {
         account: null,
+        capabilities: null,
         classes: [],
         selectedClass: null,
         books: [],
@@ -51,6 +52,7 @@
     function setPageState(name, message = '') {
         show(el['loading-state'], name === 'loading');
         show(el['signed-out-state'], name === 'signed-out');
+        show(el['access-denied-state'], name === 'access-denied');
         show(el['error-state'], name === 'error');
         show(el['teacher-app'], name === 'ready');
         if (message) el['error-message'].textContent = message;
@@ -82,16 +84,22 @@
     async function initialize() {
         setPageState('loading');
         try {
-            const [account, books] = await Promise.all([
+            const [account, capabilities, books] = await Promise.all([
                 api('/api/account/status'),
+                api('/api/classroom/capabilities'),
                 api('/api/library').catch(() => [])
             ]);
             state.account = account;
+            state.capabilities = capabilities || {};
             state.books = Array.isArray(books) ? books : [];
             el['account-email'].textContent = account?.authenticated ? account.email || 'Signed in' : '';
             show(el['sign-out'], account?.authenticated === true);
             if (!account?.authenticated) {
                 setPageState('signed-out');
+                return;
+            }
+            if (state.capabilities.canTeach !== true) {
+                setPageState('access-denied');
                 return;
             }
             state.classes = await api('/api/classroom/classes');
@@ -120,10 +128,20 @@
 
     function renderNoClasses() {
         el['workspace-title'].textContent = 'Your classrooms';
-        el['workspace-subtitle'].textContent = 'Create a class and invite students to begin.';
+        const canCreateClass = state.capabilities?.canCreateClass === true;
+        el['workspace-subtitle'].textContent = canCreateClass
+            ? 'Create a class and invite students to begin.'
+            : 'No classrooms are currently assigned to this account.';
+        el['empty-class-state'].querySelector('h2').textContent = canCreateClass
+            ? 'Create your first classroom'
+            : 'No classrooms available';
+        el['empty-class-state'].querySelector('.onboarding-copy p:last-child').textContent = canCreateClass
+            ? 'Create a semester workspace, choose the reading features available to students, and share one secure join link.'
+            : 'Ask a classroom administrator to add you to a teaching term.';
         show(el['empty-class-state'], true);
         show(el['classroom-content'], false);
         show(el['new-class-button'], false);
+        show(el['empty-create-button'], canCreateClass);
     }
 
     async function selectClass(classId) {
@@ -136,7 +154,7 @@
         el['class-selector'].value = selected.classId;
         show(el['empty-class-state'], false);
         show(el['classroom-content'], true);
-        show(el['new-class-button'], true);
+        show(el['new-class-button'], state.capabilities?.canCreateClass === true);
         el['workspace-title'].textContent = selected.className;
         el['workspace-subtitle'].textContent = `${selected.activeTermName || 'Current term'} · Classroom management`;
         el['class-name'].textContent = selected.className;

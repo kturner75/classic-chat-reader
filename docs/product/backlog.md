@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Implementation handoff (classroom)
 
@@ -25,6 +25,12 @@ Last updated: 2026-07-13
 - Classroom context + Library now reload after account login/logout/register identity changes (`reader.js`), so enrolled students see published assignments without a hard refresh. Playwright coverage in `e2e/account-auth.spec.js`.
 - Partner/grant-facing pilot pitch doc: `docs/product/classroom-pilot-pitch.md`.
 
+**Done (2026-07-14 / teacher capability gate):**
+- Flyway V15 adds durable account-level capabilities, keeping global `CREATE_CLASSROOM` authorization separate from contextual term teacher memberships.
+- `GET /api/classroom/capabilities` drives Library/Teaching surfaces; students no longer see Teaching navigation and direct `/teacher` access shows a clear denial state.
+- Class creation is enforced server-side before any classroom data is written. Existing active teacher-like memberships retain workspace access but do not independently grant creation of additional classes.
+- `scripts/manage_teacher_access.sh grant|revoke|status <email>` provisions existing demo accounts without storing email addresses in source or deployment properties.
+
 **Known demo issues found during walkthrough (2026-07-13):**
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
@@ -33,10 +39,9 @@ Last updated: 2026-07-13
 **Next when resuming (suggested order):**
 1. Invite redeem rate limits (BL-028 pattern)
 2. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-3. Teacher entitlement/capability gate for first-class creation (currently any authenticated account, matching the existing API)
-4. `TermTransitionService` + API (PR-4/13)
-5. PR-0 stable quiz question ids → override APIs
-6. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+3. `TermTransitionService` + API (PR-4/13)
+4. PR-0 stable quiz question ids → override APIs
+5. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
 
 **Not started:** character-chat assignments (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
 
@@ -56,6 +61,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-13: Added the classroom demo UI slice: `/teacher` workspace, class setup, invite link, roster, feature controls, assignment management, workspace navigation, and student invite redemption. Full Maven suite green (536 tests); BL-025.2–.4 remain in progress for rate limits, roster removal/import, entitlement, and wider enforcement/polish.
 - 2026-07-13: Added `BL-046` after classroom assignment QA exposed duplicate local editions and incomplete chapter extraction for Pride and Prejudice; investigation covers import identity/de-duplication, parser completeness, safe cleanup, and selector disambiguation.
 - 2026-07-13: Completed a manual teacher-to-student demo walkthrough. Published assignments correctly appear in the enrolled student's Library, but account switching left stale classroom context until hard refresh — that defect is now fixed on this branch ahead of the Thursday educator demo.
+- 2026-07-14: Added the database-backed teacher capability gate ahead of the educator demo: durable `CREATE_CLASSROOM` grants, capability-aware navigation/direct-access handling, backend enforcement, and operator provisioning by existing account email.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -336,6 +342,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
 - 2026-07-13: Classroom demo UI implemented and manually verified through the core teacher-to-student path: create class → share/redeem invite → confirm roster → publish assignment → view assignment in the student's Library. Known defect: a student who signs in on an already-loaded reader page must hard-refresh before classroom context and assignments appear. BL-025.2–.4 remain `In Progress` pending the follow-ups documented in the implementation handoff.
+- 2026-07-14: Teacher access moved from “any authenticated account” to a durable capability model. V15 stores `CREATE_CLASSROOM`; the capability endpoint gates Library/Teaching UI, direct student access is denied, and class creation requires the capability server-side. Existing teacher memberships still grant access to their Teaching workspace.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature

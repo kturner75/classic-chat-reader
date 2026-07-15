@@ -7,6 +7,7 @@ import com.classicchatreader.model.ClassroomContextResponse.QuizRequirementStatu
 import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomContextService;
+import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.service.InviteLinkService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,9 @@ class ClassroomControllerTest {
 
     @MockitoBean
     private AccountAuthService accountAuthService;
+
+    @MockitoBean
+    private ClassroomTeacherCapabilityService teacherCapabilityService;
 
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
@@ -109,6 +113,31 @@ class ClassroomControllerTest {
         mockMvc.perform(get("/api/classroom/context").param("termId", "term-xyz"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enrolled").value(false));
+    }
+
+    @Test
+    void capabilitiesAreDisabledForSignedOutReader() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
+        when(teacherCapabilityService.getCapabilities(isNull()))
+                .thenReturn(ClassroomTeacherCapabilityService.TeacherCapabilities.none());
+
+        mockMvc.perform(get("/api/classroom/capabilities"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canTeach").value(false))
+                .andExpect(jsonPath("$.canCreateClass").value(false));
+    }
+
+    @Test
+    void capabilitiesReflectAuthenticatedTeacher() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(teacherCapabilityService.getCapabilities("teacher-1"))
+                .thenReturn(new ClassroomTeacherCapabilityService.TeacherCapabilities(true, true));
+
+        mockMvc.perform(get("/api/classroom/capabilities"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canTeach").value(true))
+                .andExpect(jsonPath("$.canCreateClass").value(true));
     }
 
     @Test

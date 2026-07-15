@@ -48,14 +48,26 @@ Non-Negotiables
   - optional Spaces sync for binary assets
   - remote DB promotion over SSH for cache metadata (`--transfer-feature all` by default)
 - `scripts/deploy_remote.sh`: deploy helper that mirrors the current jar deployment flow:
+  - create and verify a portable production PostgreSQL backup
   - `mvn clean package`
   - `scp` jar to server
-  - `ssh` and run remote deploy command (default: `/root/deploy.sh`)
+  - `ssh` and run remote deploy command (default: `/root/deploy_noninteractive.sh`)
 - `scripts/pregen_quizzes_book.sh`: queue + poll quiz generation for every chapter in a book.
 - `scripts/pregen_quizzes_top20.sh`: import + pre-generate quizzes for the top-20 Gutenberg set.
+- `scripts/backup_production_db.sh`: create a TLS-protected, custom-format production PostgreSQL dump, validate it with `pg_restore`, and write a SHA-256 checksum without persisting database credentials.
+- `scripts/manage_teacher_access.sh`: grant, revoke, or inspect the durable classroom-creation capability for an existing account by email.
 
 Runbook:
 - `docs/operations/pre-generation-runbook.md`: end-to-end generation + transfer workflow.
+- `docs/operations/production-database-backups.md`: logical backup, restore testing, deployment gate, and DigitalOcean PITR guidance.
+
+Pilot teacher provisioning (the account must already be registered):
+
+```bash
+scripts/manage_teacher_access.sh grant teacher@example.edu
+scripts/manage_teacher_access.sh status teacher@example.edu
+scripts/manage_teacher_access.sh revoke teacher@example.edu
+```
 
 Example:
 

@@ -46,6 +46,8 @@ build/
 
 ### Database ###
 /data/
+*.dump
+*.dump.sha256
 
 ### Environment files ###
 .env
