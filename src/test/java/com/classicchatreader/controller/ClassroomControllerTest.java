@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -108,5 +109,27 @@ class ClassroomControllerTest {
         mockMvc.perform(get("/api/classroom/context").param("termId", "term-xyz"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enrolled").value(false));
+    }
+
+    @Test
+    void rosterIncludesStudentEmailForTeacherDisplay() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(classroomAdminService.listRoster("teacher-1", "term-1")).thenReturn(List.of(
+                new ClassroomAdminService.EnrollmentRow(
+                        "enrollment-1",
+                        "student-1",
+                        "student@example.test",
+                        "ACTIVE",
+                        LocalDate.of(2026, 8, 24),
+                        "Alex Rivera"
+                )
+        ));
+
+        mockMvc.perform(get("/api/classroom/terms/term-1/roster"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].displayNameOverride").value("Alex Rivera"))
+                .andExpect(jsonPath("$[0].email").value("student@example.test"))
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"));
     }
 }

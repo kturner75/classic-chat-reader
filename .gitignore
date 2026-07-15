@@ -41,6 +41,9 @@ build/
 ### Mac OS ###
 .DS_Store
 
+### Obsidian (markdown vault metadata; may appear under any folder) ###
+.obsidian/
+
 ### Database ###
 /data/
 

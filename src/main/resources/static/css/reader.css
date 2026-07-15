@@ -89,6 +89,41 @@ html, body {
     margin-bottom: 0.35rem;
 }
 
+.library-workspace-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    width: fit-content;
+    margin: 0.55rem auto 1.4rem;
+    padding: 0.24rem;
+    border-radius: 999px;
+    background: #efede7;
+}
+
+.library-workspace-link {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.28rem 0.75rem;
+    color: #77736b;
+    background: transparent;
+    font-family: var(--font-serif);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.library-workspace-link:hover {
+    color: var(--text-color);
+}
+
+.library-workspace-link.active {
+    color: var(--text-color);
+    background: #fff;
+    box-shadow: 0 1px 5px rgba(61, 49, 32, 0.1);
+}
+
 .library-wordmark {
     font-size: clamp(1.8rem, 5.2vw, 3rem);
     font-weight: 600;

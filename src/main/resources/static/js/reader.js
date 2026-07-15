@@ -184,6 +184,16 @@
         classroomAssignmentsLabel: document.getElementById('classroom-assignments-label'),
         classroomAssignmentsList: document.getElementById('classroom-assignments-list'),
         classroomAssignmentsEmpty: document.getElementById('classroom-assignments-empty'),
+        teacherWorkspaceLink: document.getElementById('teacher-workspace-link'),
+        joinClassButton: document.getElementById('join-class-button'),
+        joinClassModal: document.getElementById('join-class-modal'),
+        joinClassBackdrop: document.getElementById('join-class-backdrop'),
+        joinClassForm: document.getElementById('join-class-form'),
+        joinClassClose: document.getElementById('join-class-close'),
+        joinClassCancel: document.getElementById('join-class-cancel'),
+        joinClassCode: document.getElementById('join-class-code'),
+        joinClassStatus: document.getElementById('join-class-status'),
+        joinClassSubmit: document.getElementById('join-class-submit'),
         achievementsShelf: document.getElementById('achievements-shelf'),
         achievementsSummary: document.getElementById('achievements-summary'),
         achievementsList: document.getElementById('achievements-list'),
@@ -2036,8 +2046,27 @@
         }
     }
 
+    async function refreshClassroomContextAfterAccountChange() {
+        await loadClassroomContext();
+        if (elements.libraryView && !elements.libraryView.classList.contains('hidden')) {
+            renderLibrary(state.librarySearchQuery || '');
+        }
+        // Enrollment can change classroom feature gates; refresh gated surfaces.
+        void speedReadingCheckAvailability();
+        void quizCheckAvailability();
+        void recapCheckAvailability();
+        void characterCheckAvailability();
+        void illustrationCheckAvailability();
+        void ttsCheckAvailability();
+        if (readingBuddyController) {
+            void readingBuddyController.checkAvailability();
+        }
+    }
+
     async function accountCheckStatus(options = {}) {
         const { triggerSync = true } = options;
+        const previousAuthenticated = state.accountAuthenticated === true;
+        const previousEmail = state.accountEmail;
         try {
             const response = await nativeFetch('/api/account/status', { cache: 'no-store' });
             if (!response.ok) {
@@ -2058,11 +2087,122 @@
             }
             updateAccountUi();
 
+            refreshClassroomWorkspaceActions();
+
             if (triggerSync && state.accountAuthenticated) {
                 await runAccountClaimSync();
             }
+
+            // Login/logout on an already-open page used to keep stale classroom context
+            // until a hard refresh; reload context + Library when account identity changes.
+            const identityChanged = previousAuthenticated !== state.accountAuthenticated
+                || previousEmail !== state.accountEmail;
+            if (identityChanged) {
+                await refreshClassroomContextAfterAccountChange();
+            }
+            consumeJoinClassLink();
         } catch (error) {
             console.debug('Account status check failed:', error);
+        }
+    }
+
+    function refreshClassroomWorkspaceActions() {
+        if (elements.joinClassButton) {
+            elements.joinClassButton.classList.toggle('hidden', !state.accountAuthenticated);
+        }
+        if (elements.teacherWorkspaceLink) {
+            // Class creation is currently an authenticated-account capability. When a dedicated
+            // teacher entitlement lands, this visibility check should consume that capability.
+            elements.teacherWorkspaceLink.classList.toggle('hidden', !state.accountAuthenticated);
+        }
+    }
+
+    function inviteCodeFromValue(value) {
+        const trimmed = (value || '').trim();
+        if (!trimmed) return '';
+        try {
+            const url = new URL(trimmed, window.location.origin);
+            return (url.searchParams.get('join') || trimmed).trim();
+        } catch (_error) {
+            return trimmed;
+        }
+    }
+
+    function openJoinClassModal(code = '') {
+        if (!state.accountAuthenticated) {
+            openAccountModal('Sign in before joining a classroom. Your invitation will stay in this page.');
+            return;
+        }
+        if (!elements.joinClassModal) return;
+        elements.joinClassCode.value = code || '';
+        elements.joinClassStatus.textContent = '';
+        elements.joinClassModal.classList.remove('hidden');
+        window.setTimeout(() => elements.joinClassCode.focus(), 0);
+    }
+
+    function closeJoinClassModal() {
+        if (elements.joinClassModal) elements.joinClassModal.classList.add('hidden');
+    }
+
+    function isJoinClassModalVisible() {
+        return !!elements.joinClassModal && !elements.joinClassModal.classList.contains('hidden');
+    }
+
+    function consumeJoinClassLink() {
+        const url = new URL(window.location.href);
+        const code = (url.searchParams.get('join') || '').trim();
+        if (!code) return;
+        if (!state.accountAuthenticated) {
+            openAccountModal('Sign in to accept your classroom invitation.');
+            return;
+        }
+        openJoinClassModal(code);
+    }
+
+    async function submitJoinClass(event) {
+        event.preventDefault();
+        const code = inviteCodeFromValue(elements.joinClassCode.value);
+        if (!code) {
+            elements.joinClassStatus.textContent = 'Enter an invitation code or link.';
+            return;
+        }
+        elements.joinClassSubmit.disabled = true;
+        elements.joinClassSubmit.textContent = 'Joining…';
+        elements.joinClassStatus.textContent = '';
+        try {
+            const response = await nativeFetch('/api/classroom/invites/redeem', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const messages = {
+                    INVALID_CODE: 'That invitation was not found.',
+                    EXPIRED: 'That invitation has expired.',
+                    REVOKED: 'That invitation is no longer active.',
+                    TERM_NOT_ACTIVE: 'That classroom term is not currently active.',
+                    MAX_USES: 'That invitation has reached its enrollment limit.',
+                    ALREADY_STAFF: 'Teacher accounts do not need to join their own class.'
+                };
+                throw new Error(messages[payload.status] || 'Unable to join this classroom.');
+            }
+            const url = new URL(window.location.href);
+            url.searchParams.delete('join');
+            window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+            closeJoinClassModal();
+            await loadClassroomContext();
+            renderLibrary();
+            showAppToast({
+                title: payload.status === 'IDEMPOTENT' ? 'Already enrolled' : 'Classroom joined',
+                message: 'Your classroom assignments are now available in the Library.',
+                autoDismissMs: 4200
+            });
+        } catch (error) {
+            elements.joinClassStatus.textContent = error.message;
+        } finally {
+            elements.joinClassSubmit.disabled = false;
+            elements.joinClassSubmit.textContent = 'Join class';
         }
     }
 
@@ -2627,7 +2767,9 @@
                 className: null,
                 teacherName: null,
                 features: { ...DEFAULT_CLASSROOM_FEATURES },
-                assignments: []
+                assignments: [],
+                termId: null,
+                role: null
             };
         }
 
@@ -2662,7 +2804,9 @@
             className: typeof payload?.className === 'string' ? payload.className.trim() : null,
             teacherName: typeof payload?.teacherName === 'string' ? payload.teacherName.trim() : null,
             features: normalizeClassroomFeatures(payload?.features),
-            assignments
+            assignments,
+            termId: typeof payload?.termId === 'string' ? payload.termId.trim() : null,
+            role: typeof payload?.role === 'string' ? payload.role.trim() : null
         };
     }
 
@@ -9149,6 +9293,15 @@
                 openAccountModal();
             });
         }
+        if (elements.joinClassButton) {
+            elements.joinClassButton.addEventListener('click', () => openJoinClassModal());
+        }
+        if (elements.joinClassForm) {
+            elements.joinClassForm.addEventListener('submit', submitJoinClass);
+        }
+        [elements.joinClassClose, elements.joinClassCancel, elements.joinClassBackdrop]
+            .filter(Boolean)
+            .forEach(node => node.addEventListener('click', closeJoinClassModal));
         if (elements.accountModalClose) {
             elements.accountModalClose.addEventListener('click', closeAccountModal);
         }
@@ -9624,6 +9777,14 @@
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
+            if (isJoinClassModalVisible()) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeJoinClassModal();
+                }
+                return;
+            }
+
             if (isAccountModalVisible()) {
                 if (e.key === 'Escape') {
                     e.preventDefault();

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teaching · ClassicChatReader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/teacher.css">
+</head>
+<body>
+    <header class="workspace-header">
+        <a class="workspace-brand" href="/" aria-label="ClassicChatReader Library">
+            <img src="/images/site-logo-mark.png?v=2" alt="" />
+            <span>ClassicChatReader</span>
+        </a>
+        <nav class="workspace-nav" aria-label="Workspaces">
+            <a href="/">Library</a>
+            <a class="active" href="/teacher" aria-current="page">Teaching</a>
+        </nav>
+        <div class="workspace-account">
+            <span id="account-email"></span>
+            <button id="sign-out" class="text-button hidden" type="button">Sign out</button>
+        </div>
+    </header>
+
+    <main class="teacher-shell">
+        <section id="loading-state" class="center-state" aria-live="polite">
+            <div class="spinner"></div>
+            <p>Opening your teaching workspace…</p>
+        </section>
+
+        <section id="signed-out-state" class="center-state hidden">
+            <p class="eyebrow">Teaching workspace</p>
+            <h1>Sign in to manage your classes.</h1>
+            <p>Your classroom settings, assignments, and roster are tied to your reader account.</p>
+            <a class="primary-button" href="/">Sign in from the Library</a>
+        </section>
+
+        <section id="error-state" class="center-state hidden" role="alert">
+            <p class="eyebrow">Unable to load</p>
+            <h1>We couldn’t open your teaching workspace.</h1>
+            <p id="error-message">Please try again.</p>
+            <button id="retry-load" class="primary-button" type="button">Try again</button>
+        </section>
+
+        <section id="teacher-app" class="hidden">
+            <div class="teacher-heading">
+                <div>
+                    <p class="eyebrow">Teaching workspace</p>
+                    <h1 id="workspace-title">Your classrooms</h1>
+                    <p id="workspace-subtitle">Set up a class and invite students to begin.</p>
+                </div>
+                <div class="teacher-heading-actions">
+                    <label id="class-selector-label" class="select-label hidden" for="class-selector">
+                        Classroom
+                        <select id="class-selector"></select>
+                    </label>
+                    <button id="new-class-button" class="secondary-button" type="button">New class</button>
+                </div>
+            </div>
+
+            <section id="empty-class-state" class="onboarding-card hidden">
+                <div class="onboarding-copy">
+                    <p class="eyebrow">Start here</p>
+                    <h2>Create your first classroom</h2>
+                    <p>Create a semester workspace, choose the reading features available to students, and share one secure join link.</p>
+                </div>
+                <button id="empty-create-button" class="primary-button" type="button">Create a classroom</button>
+            </section>
+
+            <div id="classroom-content" class="hidden">
+                <nav class="section-nav" aria-label="Classroom sections">
+                    <a href="#overview">Overview</a>
+                    <a href="#roster">Roster</a>
+                    <a href="#assignments">Assignments</a>
+                    <a href="#features">Features</a>
+                </nav>
+
+                <section id="overview" class="teacher-section">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Overview</p>
+                            <h2 id="class-name">Classroom</h2>
+                            <p id="term-name" class="section-description"></p>
+                        </div>
+                        <span class="status-pill">Active term</span>
+                    </div>
+                    <div class="overview-grid">
+                        <article class="summary-card invite-card">
+                            <span class="card-label">Student invitation</span>
+                            <strong>Share a secure join link</strong>
+                            <p id="invite-help">Generate a link for students to join this term with their reader accounts.</p>
+                            <div id="invite-value-row" class="copy-row hidden">
+                                <input id="invite-link" type="text" readonly aria-label="Student join link" />
+                                <button id="copy-invite" class="secondary-button" type="button">Copy</button>
+                            </div>
+                            <button id="generate-invite" class="primary-button compact" type="button">Generate join link</button>
+                        </article>
+                        <article class="summary-card metric-card">
+                            <span class="card-label">Students</span>
+                            <strong id="student-count" class="metric">0</strong>
+                            <p>currently enrolled</p>
+                        </article>
+                        <article class="summary-card metric-card">
+                            <span class="card-label">Published work</span>
+                            <strong id="published-count" class="metric">0</strong>
+                            <p>active assignments</p>
+                        </article>
+                    </div>
+                </section>
+
+                <section id="roster" class="teacher-section">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Roster</p>
+                            <h2>Students</h2>
+                            <p class="section-description">Students appear here after they use this term’s join link.</p>
+                        </div>
+                        <button id="roster-invite-button" class="secondary-button" type="button">Invite students</button>
+                    </div>
+                    <div class="table-card">
+                        <div id="roster-empty" class="empty-row">No students have joined yet.</div>
+                        <table id="roster-table" class="hidden">
+                            <thead><tr><th>Student</th><th>Joined</th><th>Status</th></tr></thead>
+                            <tbody id="roster-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="assignments" class="teacher-section">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Assignments</p>
+                            <h2>Reading work</h2>
+                            <p class="section-description">Assign a whole book or a specific chapter and optionally require its quiz.</p>
+                        </div>
+                        <button id="new-assignment-button" class="primary-button" type="button">New assignment</button>
+                    </div>
+                    <div id="assignment-list" class="assignment-list"></div>
+                    <div id="assignments-empty" class="empty-card">No assignments yet. Create one to give students a clear next step.</div>
+                </section>
+
+                <section id="features" class="teacher-section">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Features</p>
+                            <h2>Student reading tools</h2>
+                            <p class="section-description">Each control is independent and applies to students in this term.</p>
+                        </div>
+                        <span id="feature-save-status" class="save-status" aria-live="polite"></span>
+                    </div>
+                    <form id="features-form" class="feature-grid">
+                        <label class="feature-control"><span><strong>Quizzes</strong><small>Chapter comprehension quizzes</small></span><input name="quizEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Chapter recaps</strong><small>AI-generated chapter summaries</small></span><input name="recapEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Read aloud</strong><small>Text-to-speech playback</small></span><input name="ttsEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Illustrations</strong><small>Generated chapter artwork</small></span><input name="illustrationEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Characters</strong><small>Character discovery and profiles</small></span><input name="characterEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>AI chat</strong><small>Conversation features in the reader</small></span><input name="chatEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Speed reading</strong><small>Focused rapid-reading mode</small></span><input name="speedReadingEnabled" type="checkbox"><i></i></label>
+                        <label class="feature-control"><span><strong>Reading Buddy</strong><small>AI reading companion</small></span><input name="readingBuddyEnabled" type="checkbox"><i></i></label>
+                    </form>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <div id="class-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="class-modal-title">
+        <button class="modal-backdrop" type="button" data-close-modal aria-label="Close"></button>
+        <form id="class-form" class="modal-card">
+            <div class="modal-heading"><div><p class="eyebrow">Class setup</p><h2 id="class-modal-title">Create a classroom</h2></div><button class="close-button" type="button" data-close-modal>&times;</button></div>
+            <label>Class name<input id="create-class-name" name="name" required placeholder="Literature 101"></label>
+            <div class="form-grid">
+                <label>Term name<input id="create-term-name" name="termName" required placeholder="Fall 2026"></label>
+                <label>Class code <span>(optional)</span><input id="create-class-code" name="code" placeholder="LIT-101"></label>
+                <label>Start date <span>(optional)</span><input name="startDate" type="date"></label>
+                <label>End date <span>(optional)</span><input name="endDate" type="date"></label>
+            </div>
+            <p id="class-form-error" class="form-error hidden" role="alert"></p>
+            <div class="modal-actions"><button class="text-button" type="button" data-close-modal>Cancel</button><button id="create-class-submit" class="primary-button" type="submit">Create classroom</button></div>
+        </form>
+    </div>
+
+    <div id="assignment-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
+        <button class="modal-backdrop" type="button" data-close-assignment aria-label="Close"></button>
+        <form id="assignment-form" class="modal-card wide">
+            <div class="modal-heading"><div><p class="eyebrow">Reading work</p><h2 id="assignment-modal-title">New assignment</h2></div><button class="close-button" type="button" data-close-assignment>&times;</button></div>
+            <label>Assignment title<input id="assignment-title" name="title" required placeholder="Read Chapter 1"></label>
+            <div class="form-grid">
+                <label>Book<select id="assignment-book" name="bookId" required><option value="">Choose a book</option></select></label>
+                <label>Chapter<select id="assignment-chapter" name="chapterId"><option value="">Whole book</option></select></label>
+                <label>Available from <span>(optional)</span><input name="availableFromDate" type="date"></label>
+                <label>Due date <span>(optional)</span><input name="dueDate" type="date"></label>
+                <label>Status<select name="status"><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="ARCHIVED">Archived</option></select></label>
+                <label class="check-label"><input name="quizRequired" type="checkbox"> Require chapter quiz</label>
+            </div>
+            <p id="assignment-form-error" class="form-error hidden" role="alert"></p>
+            <div class="modal-actions"><button class="text-button" type="button" data-close-assignment>Cancel</button><button id="assignment-submit" class="primary-button" type="submit">Save assignment</button></div>
+        </form>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <script src="/js/teacher.js"></script>
+</body>
+</html>

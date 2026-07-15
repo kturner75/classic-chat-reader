@@ -23,6 +23,11 @@
                 />
                 <span class="site-wordmark library-wordmark">ClassicChatReader.com</span>
             </div>
+            <nav class="library-workspace-nav" aria-label="Workspaces and classroom actions">
+                <a class="library-workspace-link active" href="/" aria-current="page">Library</a>
+                <a id="teacher-workspace-link" class="library-workspace-link hidden" href="/teacher">Teaching</a>
+                <button id="join-class-button" class="library-workspace-link library-workspace-button hidden" type="button">Join a class</button>
+            </nav>
             <h1 class="library-title">Library</h1>
             <p class="library-subtitle">Pick up where you left off, or discover your next read.</p>
             <div class="library-account-row">
@@ -867,6 +872,25 @@
                 <button id="account-signin" class="chapter-recap-btn chapter-recap-btn-primary">Sign In</button>
             </div>
         </div>
+    </div>
+
+    <!-- Join Classroom Modal -->
+    <div id="join-class-modal" class="auth-modal hidden">
+        <div id="join-class-backdrop" class="auth-modal-backdrop"></div>
+        <form id="join-class-form" class="auth-modal-card">
+            <div class="auth-modal-header">
+                <h3>Join a classroom</h3>
+                <button id="join-class-close" class="auth-modal-close" type="button" title="Close (Esc)">&times;</button>
+            </div>
+            <p class="auth-modal-help">Paste the invitation code or link shared by your teacher.</p>
+            <p id="join-class-status" class="auth-modal-status" role="status" aria-live="polite"></p>
+            <label for="join-class-code" class="auth-modal-label">Invitation code or link</label>
+            <input id="join-class-code" class="auth-modal-input" type="text" autocomplete="off" required />
+            <div class="auth-modal-actions">
+                <button id="join-class-cancel" class="chapter-recap-btn chapter-recap-btn-secondary" type="button">Cancel</button>
+                <button id="join-class-submit" class="chapter-recap-btn chapter-recap-btn-primary" type="submit">Join class</button>
+            </div>
+        </form>
     </div>
     <div id="app-toast-region" class="app-toast-region" aria-live="polite" aria-atomic="false"></div>
 
