@@ -79,6 +79,13 @@ async function installApiMocks(page) {
       }
       return json(route, 200, { enrolled: false });
     }
+    if (method === 'GET' && path === '/api/classroom/capabilities') {
+      const canTeach = state.accountAuthenticated && state.accountEmail === 'teacher@example.com';
+      return json(route, 200, {
+        canTeach,
+        canCreateClass: canTeach
+      });
+    }
     if (method === 'GET' && path === '/api/library') {
       return json(route, 200, [TEST_BOOK]);
     }
@@ -258,6 +265,7 @@ test('account register/login/logout flow runs one-time claim sync for anonymous 
   expect(mockState.claimSyncRequests[0]?.state?.favoriteBookIds).toEqual(['book-1']);
 
   await expect(page.locator('#account-library-status')).toContainText('Signed in as reader@example.com');
+  await expect(page.locator('#teacher-workspace-link')).toBeHidden();
   const favoritesAfterRegister = await page.evaluate(() => localStorage.getItem('reader_favoriteBooks'));
   expect(favoritesAfterRegister).toBe(JSON.stringify(['book-1']));
 
@@ -273,6 +281,22 @@ test('account register/login/logout flow runs one-time claim sync for anonymous 
 
   await expect.poll(() => mockState.claimSyncRequests.length).toBe(2);
   await expect(page.locator('#account-library-status')).toContainText('Signed in as reader@example.com');
+  await expect(page.locator('#teacher-workspace-link')).toBeHidden();
+});
+
+test('Teaching navigation appears only for a teacher-capable account', async ({ page }) => {
+  await installApiMocks(page);
+
+  await page.goto('/');
+  await expect(page.locator('#teacher-workspace-link')).toBeHidden();
+
+  await page.click('#account-toggle-library');
+  await page.fill('#account-email', 'teacher@example.com');
+  await page.fill('#account-password', 'password123');
+  await page.click('#account-signin');
+
+  await expect(page.locator('#account-library-status')).toContainText('Signed in as teacher@example.com');
+  await expect(page.locator('#teacher-workspace-link')).toBeVisible();
 });
 
 test('account login reloads classroom context and shows published assignment without hard refresh', async ({ page }) => {

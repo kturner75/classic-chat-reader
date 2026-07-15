@@ -76,6 +76,8 @@ This inventory reflects implemented behavior in backend controllers/services and
 - Landing search has visible in-flight/loading state, a status message, and retry affordance on failures.
 - Search mode hides classroom/personalized rails and shows query-driven catalog results.
 - Classroom-aware mode is available through `GET /api/classroom/context` and can switch landing to assignment-first behavior with teacher-controlled feature states.
+- Teaching access is capability-aware: `GET /api/classroom/capabilities` exposes `canTeach`/`canCreateClass`, `CREATE_CLASSROOM` is stored durably in `account_capabilities`, and existing teacher-like term memberships retain workspace access without granting new-class creation.
+- Student accounts do not see Teaching navigation and receive an access-denied state if they navigate directly to `/teacher`; class creation is also enforced server-side.
 - Classroom setup/config details are documented in `classroom-landing-usage.md`.
 
 ## Search

@@ -12,6 +12,8 @@ import com.classicchatreader.service.ClassroomAdminService.CreateClassResult;
 import com.classicchatreader.service.ClassroomAdminService.EnrollmentRow;
 import com.classicchatreader.service.ClassroomAdminService.FeatureUpdateRequest;
 import com.classicchatreader.service.ClassroomContextService;
+import com.classicchatreader.service.ClassroomTeacherCapabilityService;
+import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCapabilities;
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.InviteLinkService.RedeemResult;
 import com.classicchatreader.service.InviteLinkService.RedeemStatus;
@@ -39,16 +41,19 @@ public class ClassroomController {
     private final ClassroomAdminService classroomAdminService;
     private final InviteLinkService inviteLinkService;
     private final AccountAuthService accountAuthService;
+    private final ClassroomTeacherCapabilityService teacherCapabilityService;
 
     public ClassroomController(
             ClassroomContextService classroomContextService,
             ClassroomAdminService classroomAdminService,
             InviteLinkService inviteLinkService,
-            AccountAuthService accountAuthService) {
+            AccountAuthService accountAuthService,
+            ClassroomTeacherCapabilityService teacherCapabilityService) {
         this.classroomContextService = classroomContextService;
         this.classroomAdminService = classroomAdminService;
         this.inviteLinkService = inviteLinkService;
         this.accountAuthService = accountAuthService;
+        this.teacherCapabilityService = teacherCapabilityService;
     }
 
     @GetMapping("/context")
@@ -57,6 +62,11 @@ public class ClassroomController {
             HttpServletRequest request) {
         String userId = resolveUserId(request);
         return classroomContextService.getContext(userId, termId);
+    }
+
+    @GetMapping("/capabilities")
+    public TeacherCapabilities getCapabilities(HttpServletRequest request) {
+        return teacherCapabilityService.getCapabilities(resolveUserId(request));
     }
 
     @PostMapping("/classes")

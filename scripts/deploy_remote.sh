@@ -10,7 +10,10 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/kevin}"
 JAR_PATH="${JAR_PATH:-${ROOT_DIR}/target/classic-chat-reader-1.0-SNAPSHOT.jar}"
 REMOTE_JAR_PATH="${REMOTE_JAR_PATH:-~/classic-chat-reader-1.0-SNAPSHOT.jar}"
 REMOTE_DEPLOY_CMD="${REMOTE_DEPLOY_CMD:-/root/deploy_noninteractive.sh}"
+BACKUP_SCRIPT="${BACKUP_SCRIPT:-${ROOT_DIR}/scripts/backup_production_db.sh}"
+BACKUP_OUTPUT_DIR="${PDR_BACKUP_DIR:-}"
 
+SKIP_BACKUP=false
 SKIP_BUILD=false
 SKIP_UPLOAD=false
 SKIP_REMOTE_DEPLOY=false
@@ -21,9 +24,10 @@ Usage:
   scripts/deploy_remote.sh [options]
 
 Default flow:
-  1) Build JAR with: mvn clean package
-  2) Upload JAR with: scp -i ~/.ssh/kevin target/classic-chat-reader-1.0-SNAPSHOT.jar pdr:~/
-  3) Run remote deploy script: ssh pdr /root/deploy.sh
+  1) Create and verify a production PostgreSQL backup
+  2) Build JAR with: mvn clean package
+  3) Upload JAR with: scp -i ~/.ssh/kevin target/classic-chat-reader-1.0-SNAPSHOT.jar pdr:~/
+  4) Run remote deploy script: ssh pdr ${REMOTE_DEPLOY_CMD}
 
 Options:
   --ssh-target <host-or-alias>     SSH target (default: ${SSH_TARGET})
@@ -32,6 +36,8 @@ Options:
   --jar-path <path>                Local JAR path (default: ${JAR_PATH})
   --remote-jar-path <path>         Remote upload path (default: ${REMOTE_JAR_PATH})
   --remote-deploy-cmd "<cmd>"      Remote deploy command (default: ${REMOTE_DEPLOY_CMD})
+  --backup-output-dir <path>       Local directory for verified database backups
+  --skip-backup                    Skip the pre-deploy database backup (requires explicit opt-out)
   --skip-build                     Skip mvn clean package
   --skip-upload                    Skip scp upload
   --skip-remote-deploy             Skip remote deploy command
@@ -87,6 +93,15 @@ while [[ $# -gt 0 ]]; do
       REMOTE_DEPLOY_CMD="$2"
       shift 2
       ;;
+    --backup-output-dir)
+      [[ $# -ge 2 ]] || fail "--backup-output-dir requires a value"
+      BACKUP_OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --skip-backup)
+      SKIP_BACKUP=true
+      shift
+      ;;
     --skip-build)
       SKIP_BUILD=true
       shift
@@ -115,6 +130,10 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
   require_command "${MAVEN_BIN}"
 fi
 
+if [[ "${SKIP_BACKUP}" == "false" ]]; then
+  [[ -x "${BACKUP_SCRIPT}" ]] || fail "Backup script is missing or not executable: ${BACKUP_SCRIPT}"
+fi
+
 if [[ -n "${SSH_KEY}" && ! -f "${SSH_KEY}" ]]; then
   fail "SSH key not found: ${SSH_KEY}"
 fi
@@ -125,22 +144,35 @@ echo "  local jar   : ${JAR_PATH}"
 echo "  remote jar  : ${REMOTE_JAR_PATH}"
 echo "  remote cmd  : ${REMOTE_DEPLOY_CMD}"
 
+if [[ "${SKIP_BACKUP}" == "false" ]]; then
+  echo ""
+  echo "[1/4] Creating verified production database backup..."
+  BACKUP_ARGS=(--ssh-target "${SSH_TARGET}" --ssh-key "${SSH_KEY}")
+  if [[ -n "${BACKUP_OUTPUT_DIR}" ]]; then
+    BACKUP_ARGS+=(--output-dir "${BACKUP_OUTPUT_DIR}")
+  fi
+  "${BACKUP_SCRIPT}" "${BACKUP_ARGS[@]}"
+else
+  echo ""
+  echo "[1/4] Skipped production database backup (--skip-backup)"
+fi
+
 if [[ "${SKIP_BUILD}" == "false" ]]; then
   echo ""
-  echo "[1/3] Building application JAR..."
+  echo "[2/4] Building application JAR..."
   (
     cd "${ROOT_DIR}"
     "${MAVEN_BIN}" clean package
   )
 else
   echo ""
-  echo "[1/3] Skipped build (--skip-build)"
+  echo "[2/4] Skipped build (--skip-build)"
 fi
 
 if [[ "${SKIP_UPLOAD}" == "false" ]]; then
   [[ -f "${JAR_PATH}" ]] || fail "JAR not found: ${JAR_PATH}"
   echo ""
-  echo "[2/3] Uploading JAR to remote host..."
+  echo "[3/4] Uploading JAR to remote host..."
   if [[ -n "${SSH_KEY}" ]]; then
     scp -i "${SSH_KEY}" "${JAR_PATH}" "${SSH_TARGET}:${REMOTE_JAR_PATH}"
   else
@@ -148,12 +180,12 @@ if [[ "${SKIP_UPLOAD}" == "false" ]]; then
   fi
 else
   echo ""
-  echo "[2/3] Skipped upload (--skip-upload)"
+  echo "[3/4] Skipped upload (--skip-upload)"
 fi
 
 if [[ "${SKIP_REMOTE_DEPLOY}" == "false" ]]; then
   echo ""
-  echo "[3/3] Running remote deploy command..."
+  echo "[4/4] Running remote deploy command..."
   if [[ -n "${SSH_KEY}" ]]; then
     ssh -i "${SSH_KEY}" "${SSH_TARGET}" "${REMOTE_DEPLOY_CMD}"
   else
@@ -161,7 +193,7 @@ if [[ "${SKIP_REMOTE_DEPLOY}" == "false" ]]; then
   fi
 else
   echo ""
-  echo "[3/3] Skipped remote deploy (--skip-remote-deploy)"
+  echo "[4/4] Skipped remote deploy (--skip-remote-deploy)"
 fi
 
 echo ""

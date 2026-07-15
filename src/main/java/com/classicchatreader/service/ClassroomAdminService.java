@@ -43,6 +43,7 @@ public class ClassroomAdminService {
     private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
     private final ClassroomProperties classroomProperties;
+    private final ClassroomTeacherCapabilityService teacherCapabilityService;
 
     public ClassroomAdminService(
             ClassSectionRepository classSectionRepository,
@@ -56,7 +57,8 @@ public class ClassroomAdminService {
             BookRepository bookRepository,
             ChapterRepository chapterRepository,
             UserRepository userRepository,
-            ClassroomProperties classroomProperties) {
+            ClassroomProperties classroomProperties,
+            ClassroomTeacherCapabilityService teacherCapabilityService) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
@@ -69,11 +71,13 @@ public class ClassroomAdminService {
         this.chapterRepository = chapterRepository;
         this.userRepository = userRepository;
         this.classroomProperties = classroomProperties;
+        this.teacherCapabilityService = teacherCapabilityService;
     }
 
     @Transactional
     public CreateClassResult createClass(String ownerUserId, CreateClassRequest request) {
         requireUser(ownerUserId);
+        teacherCapabilityService.requireCanCreateClass(ownerUserId);
         if (request == null || isBlank(request.name())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Class name is required.");
         }

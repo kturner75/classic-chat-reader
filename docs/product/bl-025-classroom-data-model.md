@@ -108,6 +108,7 @@ Educator partner (college professor, 2026-07-09) requires real roster + invite l
 | KD-17 | **Membership uniqueness is update-in-place**: one row per `(school_id,user_id,role)` / `(term_id,user_id,role)`; re-invite = status ACTIVE + clear `revoked_at`. | Avoids unique-constraint dead ends after REVOKED. |
 | KD-18 | **Teachers are not auto-enrolled as students.** Roster is students only; teacher presence is `class_role_memberships`. Optional later: “teacher also reads as student” product feature. | Cleaner roster counts. |
 | KD-19 | **Co-teachers in pilot**: teacher (owner) adds by **email** of existing account (no elevated invite link). Invite links never grant teacher. | Schema already supports multi teacher rows; grant path is API-only. |
+| KD-20 | **Global product capabilities are separate from contextual classroom roles.** `account_capabilities.CREATE_CLASSROOM` bootstraps first-class creation; `class_role_memberships` continues to authorize management of a specific term. Teaching navigation is available with either the global capability or an active teacher-like membership, while creating another class requires the global capability. | A deployment property allow-list would make authorization environment-specific. A durable capability is auditable, survives deployments, and leaves room for future account-tier capabilities without pretending a user has one global classroom role everywhere. |
 
 ---
 
@@ -951,3 +952,4 @@ PR-1 ─┼─► PR-2 ─► PR-5 ─► PR-6 ─► PR-7
 | 2026-07-10 | Enrollment roster join/leave: `joined_date`/`left_date` as DATE (same category as term bounds); row audit stays on `created_at`/`updated_at` TIMESTAMP |
 | 2026-07-10 | Rename `join_links` → `invite_links` (and `invite_link_id`, `InviteLinkService`) for clarity vs SQL JOIN |
 | 2026-07-10 | **Implementation slice 1 (API/schema):** V14 migration, JPA entities/repos, `ClassroomAuthorizationService`, `InviteLinkService`, `ClassroomAdminService`, context dual-read + `classroom.mode`, feature/assignment/roster APIs. No FE. Pickup checklist: see `docs/product/backlog.md` → Implementation handoff (classroom). |
+| 2026-07-14 | **Teacher capability slice:** V15 `account_capabilities`, durable `CREATE_CLASSROOM` grants, capability API, backend creation enforcement, role-aware Library/Teaching UI, direct-access denial for students, and operator grant/revoke/status tooling by account email. |

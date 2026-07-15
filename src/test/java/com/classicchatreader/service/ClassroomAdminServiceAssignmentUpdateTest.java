@@ -17,14 +17,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,6 +47,7 @@ class ClassroomAdminServiceAssignmentUpdateTest {
     @Mock private ChapterRepository chapterRepository;
     @Mock private UserRepository userRepository;
     @Mock private ClassroomProperties classroomProperties;
+    @Mock private ClassroomTeacherCapabilityService teacherCapabilityService;
 
     private ClassroomAdminService service;
 
@@ -59,8 +65,28 @@ class ClassroomAdminServiceAssignmentUpdateTest {
                 bookRepository,
                 chapterRepository,
                 userRepository,
-                classroomProperties
+                classroomProperties,
+                teacherCapabilityService
         );
+    }
+
+    @Test
+    void createClassRequiresAccountCapabilityBeforeWritingClassroomData() {
+        when(userRepository.existsById("student-1")).thenReturn(true);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Teaching access is not enabled for this account."))
+                .when(teacherCapabilityService).requireCanCreateClass("student-1");
+
+        ClassroomAdminService.CreateClassRequest request = new ClassroomAdminService.CreateClassRequest(
+                "Literature 101", null, "Fall 2026", null, null, null
+        );
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.createClass("student-1", request)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+        verifyNoInteractions(classSectionRepository, termRepository, classRoleMembershipRepository);
     }
 
     @Test
