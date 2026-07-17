@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-14
+Last updated: 2026-07-16
 
 ## Implementation handoff (classroom)
 
@@ -31,19 +31,29 @@ Last updated: 2026-07-14
 - Class creation is enforced server-side before any classroom data is written. Existing active teacher-like memberships retain workspace access but do not independently grant creation of additional classes.
 - `scripts/manage_teacher_access.sh grant|revoke|status <email>` provisions existing demo accounts without storing email addresses in source or deployment properties.
 
-**Known demo issues found during walkthrough (2026-07-13):**
+**Known demo issues found during walkthrough (2026-07-13 / 2026-07-16 partner call):**
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
+- ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
-**Next when resuming (suggested order):**
-1. Invite redeem rate limits (BL-028 pattern)
-2. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-3. `TermTransitionService` + API (PR-4/13)
-4. PR-0 stable quiz question ids → override APIs
-5. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+**Partner feedback (2026-07-16 educator call — Jessica):**
+- Classroom setup + assignments landed well; partner was impressed with the demo path.
+- **Bug confirmed in local demo:** assignment open could land on the wrong chapter when the student already had progress in the book (e.g. assigned Chapter 1 of Pride and Prejudice, opened Chapter II via resume). Fix above.
+- **Product ask (elevates BL-025.11):** optionally **require character chat** on an assignment for classroom **show-and-tell**; students need a **downloadable conversation artifact** (text/Markdown export) so they can bring the chat to class without screenshots. Prefer student self-serve download first; teacher bulk view can follow FERPA path.
+- Continue fleshing the pilot path; first-pass demo slice is the right track.
+- **Broader demo interest:** another teacher + an AI-committee administrator want to meet for a demo later. Kevin will **not** set a multi-person demo date until classroom is more fully fleshed and known bugs are fixed. Next 1:1 partner check-in: **Tuesday 6pm** (America/Chicago) after the 2026-07-16 call (not Thursday that week).
 
-**Not started:** character-chat assignments (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
+**Next when resuming (suggested order):**
+1. Ship assignment-open-chapter fix (this branch) + retest Pride and Prejudice Ch.1 with existing local progress
+2. Invite redeem rate limits (BL-028 pattern)
+3. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
+4. Prioritize discovery for BL-025.11: assignment `characterChatRequired` flag + student download of character chat transcript (local-first export may unblock show-and-tell before server persistence)
+5. `TermTransitionService` + API (PR-4/13)
+6. PR-0 stable quiz question ids → override APIs
+7. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+
+**Not started:** full character-chat assignment completion tracking (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -62,6 +72,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-13: Added `BL-046` after classroom assignment QA exposed duplicate local editions and incomplete chapter extraction for Pride and Prejudice; investigation covers import identity/de-duplication, parser completeness, safe cleanup, and selector disambiguation.
 - 2026-07-13: Completed a manual teacher-to-student demo walkthrough. Published assignments correctly appear in the enrolled student's Library, but account switching left stale classroom context until hard refresh — that defect is now fixed on this branch ahead of the Thursday educator demo.
 - 2026-07-14: Added the database-backed teacher capability gate ahead of the educator demo: durable `CREATE_CLASSROOM` grants, capability-aware navigation/direct-access handling, backend enforcement, and operator provisioning by existing account email.
+- 2026-07-16: Educator partner call (Jessica) went well — classroom setup and assignments impressed. Captured assignment open-chapter bug (Library used resume progress, so students with prior reading landed on the wrong chapter) and elevated BL-025.11 with optional character-chat requirement + student downloadable transcript for in-class show-and-tell.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -332,7 +343,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | BL-025.8 School and Teacher Account Tiers | Proposed | Add account ownership model distinguishing School (multi-teacher) and Teacher (single-class-owner) tiers | A school-tier account can view/manage classes across its teachers; a teacher-only account is scoped to its own classes |
 | BL-025.9 Semester/Term-Scoped Rosters | Proposed | Add term boundaries to classes so rosters can change across semesters while preserving historical term data | Teacher can start a new term for a class with a fresh roster without losing prior-term student history/reporting |
 | BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Build teacher dashboard summarizing class activity with a per-student detail view (reading progress, time spent, quiz outcomes, chat activity) | Teacher can select a student from the roster and see that student's individual activity without external tooling |
-| BL-025.11 Character-Chat Assignments + In-Class Share | Proposed | Partner use case: assignment may **require character chat**; students may **share a character conversation** as a fun in-class activity. Includes requirement/completion modeling and any durable chat/export needed beyond localStorage | Teacher can mark an assignment as requiring character chat (and students/teachers can use shared conversation artifacts for class activity) without relying on ad-hoc screenshots alone — discovery still open on required vs optional and share audience |
+| BL-025.11 Character-Chat Assignments + In-Class Share | Proposed | Partner use case (Jessica, 2026-07-16 call confirmed): assignment may **optionally require character chat** for classroom **show-and-tell**; students need a **downloadable conversation artifact** (text/Markdown). Includes requirement/completion modeling and export; student self-serve download first, teacher access behind FERPA. Local-first export can unblock pilot before full server persistence. | Teacher can optionally require character chat; student can download their conversation for class without screenshots; completion/export model agreed — discovery still open on specific character vs any, N-turn completion, and teacher bulk visibility |
 - Dependency Notes:
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
@@ -343,6 +354,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
 - 2026-07-13: Classroom demo UI implemented and manually verified through the core teacher-to-student path: create class → share/redeem invite → confirm roster → publish assignment → view assignment in the student's Library. Known defect: a student who signs in on an already-loaded reader page must hard-refresh before classroom context and assignments appear. BL-025.2–.4 remain `In Progress` pending the follow-ups documented in the implementation handoff.
 - 2026-07-14: Teacher access moved from “any authenticated account” to a durable capability model. V15 stores `CREATE_CLASSROOM`; the capability endpoint gates Library/Teaching UI, direct student access is denied, and class creation requires the capability server-side. Existing teacher memberships still grant access to their Teaching workspace.
+- 2026-07-16: Partner call confirmed assignment/chapter open bug under real progress (resume path). Product: optional character-chat requirement + downloadable student transcript for show-and-tell elevates BL-025.11.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature

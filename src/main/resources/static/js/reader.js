@@ -3312,6 +3312,64 @@
         await selectBook(book, resume.chapterIndex, resume.pageIndex);
     }
 
+    function resolveAssignmentChapterIndex(book, assignment) {
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        if (chapters.length === 0) {
+            return 0;
+        }
+        if (assignment?.chapterId) {
+            const byId = chapters.findIndex((chapter) => chapter && chapter.id === assignment.chapterId);
+            if (byId >= 0) {
+                return byId;
+            }
+        }
+        if (Number.isInteger(assignment?.chapterIndex) && assignment.chapterIndex >= 0) {
+            return clampInteger(assignment.chapterIndex, 0, chapters.length - 1);
+        }
+        return 0;
+    }
+
+    async function resolveBookForAssignment(assignment) {
+        const bookId = typeof assignment?.bookId === 'string' ? assignment.bookId.trim() : '';
+        if (!bookId) {
+            return null;
+        }
+        const localBook = (state.localBooks || []).find((book) => book && book.id === bookId);
+        if (localBook) {
+            return localBook;
+        }
+        try {
+            const response = await fetch(`/api/library/${encodeURIComponent(bookId)}`);
+            if (!response.ok) {
+                return null;
+            }
+            const book = await response.json();
+            if (book?.id && !(state.localBooks || []).find((item) => item && item.id === book.id)) {
+                state.localBooks = [...(state.localBooks || []), book];
+            }
+            return book?.id ? book : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    async function openClassroomAssignment(assignment) {
+        if (!assignment?.bookId) {
+            return;
+        }
+        const book = await resolveBookForAssignment(assignment);
+        if (!book) {
+            showAppToast({
+                title: 'Assignment unavailable',
+                message: 'That assigned book is not available in this library yet.'
+            });
+            return;
+        }
+        // Assignments must open the teacher-targeted chapter, not the student's resume position.
+        const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
+        await selectBook(book, chapterIndex, 0);
+    }
+
     function persistCurrentBookActivity() {
         if (!state.currentBook?.id || !Array.isArray(state.chapters) || state.chapters.length === 0) {
             return;
@@ -4033,11 +4091,21 @@
             `
             : '<span class="book-progress-chip book-progress-chip-status status-not-started">Not Started</span>';
 
-        const bookIdAttr = localEntry?.book?.id
-            ? ` data-book-id="${escapeHtml(localEntry.book.id)}"`
+        const bookId = localEntry?.book?.id || assignment.bookId || '';
+        const bookIdAttr = bookId
+            ? ` data-book-id="${escapeHtml(bookId)}"`
+            : '';
+        const assignmentIdAttr = assignment.assignmentId
+            ? ` data-assignment-id="${escapeHtml(assignment.assignmentId)}"`
+            : '';
+        const chapterIdAttr = assignment.chapterId
+            ? ` data-chapter-id="${escapeHtml(assignment.chapterId)}"`
+            : '';
+        const chapterIndexAttr = Number.isInteger(assignment.chapterIndex)
+            ? ` data-chapter-index="${assignment.chapterIndex}"`
             : '';
         return `
-            <div class="book-item"${bookIdAttr}>
+            <div class="book-item"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
                 <div class="book-item-title-row">
                     <div class="book-item-title">${escapeHtml(title)}</div>
                 </div>
@@ -8949,6 +9017,20 @@
                 return;
             }
             const bookId = bookItem.dataset.bookId;
+            if (bookItem.dataset.assignmentId) {
+                const assignment = (state.classroomAssignments || []).find(
+                    (item) => item && item.assignmentId === bookItem.dataset.assignmentId
+                ) || {
+                    assignmentId: bookItem.dataset.assignmentId,
+                    bookId,
+                    chapterId: bookItem.dataset.chapterId || null,
+                    chapterIndex: Number.isInteger(Number.parseInt(bookItem.dataset.chapterIndex, 10))
+                        ? Number.parseInt(bookItem.dataset.chapterIndex, 10)
+                        : null
+                };
+                await openClassroomAssignment(assignment);
+                return;
+            }
             const book = state.localBooks.find(b => b.id === bookId);
             if (book) {
                 await selectBookWithResume(book);
@@ -8996,6 +9078,20 @@
             const localBookItem = e.target.closest('.book-item[data-book-id]');
             if (localBookItem && elements.libraryView.contains(localBookItem)) {
                 e.preventDefault();
+                if (localBookItem.dataset.assignmentId) {
+                    const assignment = (state.classroomAssignments || []).find(
+                        (item) => item && item.assignmentId === localBookItem.dataset.assignmentId
+                    ) || {
+                        assignmentId: localBookItem.dataset.assignmentId,
+                        bookId: localBookItem.dataset.bookId,
+                        chapterId: localBookItem.dataset.chapterId || null,
+                        chapterIndex: Number.isInteger(Number.parseInt(localBookItem.dataset.chapterIndex, 10))
+                            ? Number.parseInt(localBookItem.dataset.chapterIndex, 10)
+                            : null
+                    };
+                    await openClassroomAssignment(assignment);
+                    return;
+                }
                 const book = state.localBooks.find(b => b.id === localBookItem.dataset.bookId);
                 if (book) {
                     await selectBookWithResume(book);
