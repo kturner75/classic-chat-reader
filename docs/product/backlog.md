@@ -42,6 +42,7 @@ Last updated: 2026-07-16
 - **Bug confirmed in local demo:** assignment open could land on the wrong chapter when the student already had progress in the book (e.g. assigned Chapter 1 of Pride and Prejudice, opened Chapter II via resume). Fix above.
 - **Product ask (elevates BL-025.11):** optionally **require character chat** on an assignment for classroom **show-and-tell**; students need a **downloadable conversation artifact** (text/Markdown export) so they can bring the chat to class without screenshots. Prefer student self-serve download first; teacher bulk view can follow FERPA path.
 - Continue fleshing the pilot path; first-pass demo slice is the right track.
+- **Broader demo interest:** another teacher + an AI-committee administrator want to meet for a demo later. Kevin will **not** set a multi-person demo date until classroom is more fully fleshed and known bugs are fixed. Next 1:1 partner check-in: **Tuesday 6pm** (America/Chicago) after the 2026-07-16 call (not Thursday that week).
 
 **Next when resuming (suggested order):**
 1. Ship assignment-open-chapter fix (this branch) + retest Pride and Prejudice Ch.1 with existing local progress
