@@ -56,12 +56,11 @@ Last updated: 2026-07-16
 4. Roster display name + email; BL-025.10 v1 student drill-down/progress.
 5. Invite redeem rate limits (BL-028 pattern)
 6. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-4. Prioritize discovery for BL-025.11: assignment `characterChatRequired` flag + student download of character chat transcript (local-first export may unblock show-and-tell before server persistence)
-5. `TermTransitionService` + API (PR-4/13)
-6. PR-0 stable quiz question ids → override APIs
-7. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+7. `TermTransitionService` + API (PR-4/13)
+8. PR-0 stable quiz question ids → override APIs
+9. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
 
-**Not started:** full character-chat assignment completion tracking (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
+**Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
