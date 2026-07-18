@@ -159,6 +159,7 @@ public class ClassroomAdminService {
         requireTeacher(userId, termId);
         ClassFeatureSettingsEntity features = classFeatureSettingsRepository.findById(termId)
                 .orElseGet(() -> defaultFeatures(termId, userId, null));
+        validateFeatureUpdate(termId, request);
         if (request != null) {
             if (request.quizEnabled() != null) features.setQuizEnabled(request.quizEnabled());
             if (request.recapEnabled() != null) features.setRecapEnabled(request.recapEnabled());
@@ -171,6 +172,21 @@ public class ClassroomAdminService {
         }
         features.setUpdatedByUserId(userId);
         return classFeatureSettingsRepository.save(features);
+    }
+
+    private void validateFeatureUpdate(String termId, FeatureUpdateRequest request) {
+        if (request == null
+                || (!Boolean.FALSE.equals(request.characterEnabled())
+                        && !Boolean.FALSE.equals(request.chatEnabled()))) {
+            return;
+        }
+        if (assignmentRepository.existsByTermIdAndCharacterChatRequiredTrueAndDeletedAtIsNull(termId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Characters and AI chat cannot be disabled while assignments require character chat. "
+                            + "Remove the requirement from those assignments first."
+            );
+        }
     }
 
     @Transactional(readOnly = true)
