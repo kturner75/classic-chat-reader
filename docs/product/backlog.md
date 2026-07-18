@@ -54,15 +54,19 @@ Last updated: 2026-07-16
 - Teacher assignment modal checkbox; rejected when class character/chat features are off.
 - Student Library chip: **Character chat required** (soft; pairs with Download for show-and-tell).
 
+**Done (2026-07-18 / assignment progress UX):**
+- Classroom assignment cards no longer show whole-book % / Chapter X/Y book progress.
+- Status is assignment-scoped: **Not started / In progress / Complete** with `N/M complete` checklist (reading, quiz, character chat).
+- Chapter-targeted work completes when the student reaches the assigned chapter (or quiz is complete); whole-book assignments still require full-book completion.
+
 **Next when resuming (suggested order):**
-1. ~~Assignment open-chapter fix~~ merged PR #68; ~~character-chat download (Slice A)~~ merged PR #69; ~~characterChatRequired (Slice B)~~ this branch.
-2. Assignment progress UX (assignment-scoped status vs whole-book %).
-3. Roster display name + email; BL-025.10 v1 student drill-down/progress.
-4. Invite redeem rate limits (BL-028 pattern)
-5. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-6. `TermTransitionService` + API (PR-4/13)
-7. PR-0 stable quiz question ids → override APIs
-8. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+1. ~~Assignment open-chapter / chat download / characterChatRequired / assignment progress UX~~ shipped or this branch.
+2. Roster display name + email; BL-025.10 v1 student drill-down/progress.
+3. Invite redeem rate limits (BL-028 pattern)
+4. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
+5. `TermTransitionService` + API (PR-4/13)
+6. PR-0 stable quiz question ids → override APIs
+7. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
 
 **Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
 

@@ -353,6 +353,18 @@ html, body {
     background: #f4eefb;
 }
 
+.book-progress-chip.assignment-character-chat-started {
+    border-color: #9cc3a8;
+    color: #2f6f44;
+    background: #eef7ef;
+}
+
+.book-progress-chip.assignment-progress-summary {
+    border-color: #c2c7cd;
+    color: #44515c;
+    background: #f5f7f9;
+}
+
 .book-progress-chip.assignment-quiz-complete {
     border-color: #9cc3a8;
     color: #2f6f44;
