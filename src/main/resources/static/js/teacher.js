@@ -225,6 +225,7 @@
             const details = [assignmentTarget(item)];
             if (item.dueDate) details.push(`Due ${formatDate(item.dueDate)}`);
             if (item.quizRequired) details.push('Quiz required');
+            if (item.characterChatRequired) details.push('Character chat required');
             return `<article class="assignment-card">
                 <div>
                     <h3>${escapeHtml(item.title)}</h3>
@@ -393,6 +394,7 @@
             el['assignment-form'].elements.availableFromDate.value = assignment.availableFromDate || '';
             el['assignment-form'].elements.status.value = assignment.status || 'DRAFT';
             el['assignment-form'].elements.quizRequired.checked = assignment.quizRequired === true;
+            el['assignment-form'].elements.characterChatRequired.checked = assignment.characterChatRequired === true;
         }
         show(el['assignment-form-error'], false);
         show(el['assignment-modal'], true);
@@ -424,6 +426,7 @@
             dueDate: dueDateRaw || null,
             availableFromDate: availableFromRaw || null,
             quizRequired: form.get('quizRequired') === 'on',
+            characterChatRequired: form.get('characterChatRequired') === 'on',
             status: String(form.get('status') || 'DRAFT')
         };
         if (state.editingAssignmentId) {

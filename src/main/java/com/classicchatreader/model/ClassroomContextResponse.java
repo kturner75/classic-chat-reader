@@ -62,8 +62,39 @@ public record ClassroomContextResponse(
             String dueAt,
             boolean quizRequired,
             QuizRequirementStatus quizStatus,
+            boolean characterChatRequired,
             boolean bookAvailable
     ) {
+        /** Backward-compatible constructor without character-chat requirement. */
+        public ClassAssignment(
+                String assignmentId,
+                String title,
+                String bookId,
+                String bookTitle,
+                String bookAuthor,
+                String chapterId,
+                Integer chapterIndex,
+                String chapterTitle,
+                String dueAt,
+                boolean quizRequired,
+                QuizRequirementStatus quizStatus,
+                boolean bookAvailable) {
+            this(
+                    assignmentId,
+                    title,
+                    bookId,
+                    bookTitle,
+                    bookAuthor,
+                    chapterId,
+                    chapterIndex,
+                    chapterTitle,
+                    dueAt,
+                    quizRequired,
+                    quizStatus,
+                    false,
+                    bookAvailable
+            );
+        }
     }
 
     public enum QuizRequirementStatus {

@@ -13,4 +13,5 @@ public interface AssignmentRepository extends JpaRepository<AssignmentEntity, St
             String termId, String status);
     List<AssignmentEntity> findByTermIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(String termId);
     Optional<AssignmentEntity> findByIdAndDeletedAtIsNull(String id);
+    boolean existsByTermIdAndCharacterChatRequiredTrueAndDeletedAtIsNull(String termId);
 }
