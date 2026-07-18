@@ -83,6 +83,47 @@ test('assignment progress is not started with no activity', () => {
     assert.equal(snapshot.summaryLabel, '0/2 complete');
 });
 
+test('default lastChapterIndex 0 without real activity is not reading-complete', () => {
+    // normalizeBookActivity() supplies lastChapterIndex: 0 for unread local books.
+    const snapshot = buildAssignmentProgressSnapshot({
+        assignment: {
+            chapterIndex: 0,
+            chapterTitle: 'Chapter I.',
+            quizRequired: false,
+            quizStatus: 'NOT_REQUIRED',
+            characterChatRequired: false
+        },
+        activity: {
+            chapterCount: 59,
+            lastChapterIndex: 0,
+            lastPage: 0,
+            maxProgressRatio: 0,
+            progressRatio: 0
+        }
+    });
+    assert.equal(snapshot.statusClass, 'not-started');
+    assert.equal(snapshot.readingComplete, false);
+    assert.equal(snapshot.readingStarted, false);
+    assert.equal(snapshot.summaryLabel, '0/1 complete');
+});
+
+test('chapter 0 assignment becomes reading-complete only after real progress', () => {
+    const snapshot = buildAssignmentProgressSnapshot({
+        assignment: {
+            chapterIndex: 0,
+            quizRequired: false,
+            quizStatus: 'NOT_REQUIRED'
+        },
+        activity: {
+            lastChapterIndex: 0,
+            maxProgressRatio: 0.01,
+            lastReadAt: '2026-07-18T12:00:00.000Z'
+        }
+    });
+    assert.equal(snapshot.readingComplete, true);
+    assert.equal(snapshot.statusClass, 'completed');
+});
+
 test('assignment complete when chapter reached and quiz done (not whole-book %)', () => {
     // Partner case: finished Ch.1 quiz on a long book; whole-book % was ~27% and looked incomplete.
     const snapshot = buildAssignmentProgressSnapshot({

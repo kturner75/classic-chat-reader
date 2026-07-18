@@ -60,13 +60,15 @@
         if (activity.lastReadAt || activity.lastOpenedAt) {
             return true;
         }
-        const progress = toFiniteNumber(activity.maxProgressRatio, 0);
+        const progress = Math.max(
+            toFiniteNumber(activity.maxProgressRatio, 0),
+            toFiniteNumber(activity.progressRatio, 0)
+        );
         if (progress > 0) {
             return true;
         }
-        if (activity.lastChapterIndex != null && Number.isFinite(Number(activity.lastChapterIndex))) {
-            return Number(activity.lastChapterIndex) >= 0;
-        }
+        // Do NOT treat default lastChapterIndex: 0 from normalizeBookActivity as real activity.
+        // Unread local books often get chapter 0 with 0% progress and no timestamps.
         return false;
     }
 
@@ -76,6 +78,11 @@
         }
         if (activity.completed || toFiniteNumber(activity.maxProgressRatio, 0) >= 0.999) {
             return true;
+        }
+
+        // Unread / never-opened books must not count as having reached chapter 0.
+        if (!hasBookActivity(activity)) {
+            return false;
         }
 
         const targetIndex = Number.isInteger(assignment?.chapterIndex)
