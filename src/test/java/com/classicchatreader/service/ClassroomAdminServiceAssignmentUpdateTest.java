@@ -2,6 +2,7 @@ package com.classicchatreader.service;
 
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentEntity;
+import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -102,6 +104,7 @@ class ClassroomAdminServiceAssignmentUpdateTest {
 
         ClassroomAdminService.AssignmentWriteRequest request =
                 new ClassroomAdminService.AssignmentWriteRequest(
+                        null,
                         null,
                         null,
                         null,
@@ -230,5 +233,55 @@ class ClassroomAdminServiceAssignmentUpdateTest {
         assignment.setBookId("book-1");
         assignment.setStatus("DRAFT");
         return assignment;
+    }
+
+    @Test
+    void updateAssignment_setsCharacterChatRequiredWhenFeaturesAllow() {
+        AssignmentEntity existing = baseAssignment();
+        ClassFeatureSettingsEntity features = new ClassFeatureSettingsEntity();
+        features.setTermId("term-1");
+        features.setCharacterEnabled(true);
+        features.setChatEnabled(true);
+
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(classFeatureSettingsRepository.findById("term-1")).thenReturn(Optional.of(features));
+        when(assignmentRepository.save(any(AssignmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ClassroomAdminService.AssignmentWriteRequest request =
+                new ClassroomAdminService.AssignmentWriteRequest(
+                        null, null, null, null, null, null,
+                        null, true, null, null
+                );
+
+        AssignmentEntity updated = service.updateAssignment("teacher-1", "assign-1", request);
+        assertTrue(updated.isCharacterChatRequired());
+    }
+
+    @Test
+    void updateAssignment_rejectsCharacterChatRequiredWhenFeaturesDisabled() {
+        AssignmentEntity existing = baseAssignment();
+        ClassFeatureSettingsEntity features = new ClassFeatureSettingsEntity();
+        features.setTermId("term-1");
+        features.setCharacterEnabled(false);
+        features.setChatEnabled(true);
+
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(classFeatureSettingsRepository.findById("term-1")).thenReturn(Optional.of(features));
+
+        ClassroomAdminService.AssignmentWriteRequest request =
+                new ClassroomAdminService.AssignmentWriteRequest(
+                        null, null, null, null, null, null,
+                        null, true, null, null
+                );
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.updateAssignment("teacher-1", "assign-1", request)
+        );
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
     }
 }

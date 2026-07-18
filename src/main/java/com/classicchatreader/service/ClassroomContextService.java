@@ -323,6 +323,7 @@ public class ClassroomContextService {
                 dueAt,
                 row.isQuizRequired(),
                 quizStatus,
+                row.isCharacterChatRequired(),
                 bookOpt.isPresent()
         );
     }
@@ -411,6 +412,7 @@ public class ClassroomContextService {
                 dueAt,
                 quizRequired,
                 quizStatus,
+                false,
                 bookOpt.isPresent()
         );
     }

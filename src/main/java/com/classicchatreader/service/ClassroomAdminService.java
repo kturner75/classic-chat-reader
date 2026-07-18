@@ -186,6 +186,9 @@ public class ClassroomAdminService {
     public AssignmentEntity createAssignment(String userId, String termId, AssignmentWriteRequest request) {
         requireTeacher(userId, termId);
         validateAssignmentForCreate(request);
+        validateCharacterChatRequirement(
+                termId,
+                Boolean.TRUE.equals(request != null ? request.characterChatRequired() : null));
         AssignmentEntity assignment = new AssignmentEntity();
         applyAssignmentCreate(assignment, termId, userId, request);
         if (isBlank(assignment.getStatus())) {
@@ -209,6 +212,10 @@ public class ClassroomAdminService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
         validateAssignmentForUpdate(request, assignment);
+        boolean effectiveCharacterChatRequired = request.characterChatRequired() != null
+                ? request.characterChatRequired()
+                : assignment.isCharacterChatRequired();
+        validateCharacterChatRequirement(assignment.getTermId(), effectiveCharacterChatRequired);
         applyAssignmentUpdate(assignment, userId, request);
         return assignmentRepository.save(assignment);
     }
@@ -273,6 +280,7 @@ public class ClassroomAdminService {
         assignment.setDueDate(request.dueDate());
         assignment.setAvailableFromDate(request.availableFromDate());
         assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
+        assignment.setCharacterChatRequired(Boolean.TRUE.equals(request.characterChatRequired()));
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -313,6 +321,9 @@ public class ClassroomAdminService {
         }
         if (request.quizRequired() != null) {
             assignment.setQuizRequired(request.quizRequired());
+        }
+        if (request.characterChatRequired() != null) {
+            assignment.setCharacterChatRequired(request.characterChatRequired());
         }
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
@@ -393,6 +404,20 @@ public class ClassroomAdminService {
         }
     }
 
+    private void validateCharacterChatRequirement(String termId, boolean characterChatRequired) {
+        if (!characterChatRequired) {
+            return;
+        }
+        ClassFeatureSettingsEntity features = classFeatureSettingsRepository.findById(termId)
+                .orElseGet(() -> defaultFeatures(termId, null, null));
+        if (!features.isCharacterEnabled() || !features.isChatEnabled()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Character chat cannot be required while character or chat features are disabled for this class."
+            );
+        }
+    }
+
     private ClassFeatureSettingsEntity defaultFeatures(String termId, String userId, FeatureUpdateRequest override) {
         ClassFeatureSettingsEntity features = new ClassFeatureSettingsEntity();
         features.setTermId(termId);
@@ -468,6 +493,7 @@ public class ClassroomAdminService {
             LocalDate dueDate,
             LocalDate availableFromDate,
             Boolean quizRequired,
+            Boolean characterChatRequired,
             Integer sortOrder,
             String status,
             /** When true on update, clears dueDate even if dueDate is null. */
@@ -486,7 +512,22 @@ public class ClassroomAdminService {
                 Integer sortOrder,
                 String status) {
             this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, sortOrder, status, null, null);
+                    quizRequired, null, sortOrder, status, null, null);
+        }
+
+        public AssignmentWriteRequest(
+                String title,
+                String bookId,
+                String chapterId,
+                Integer chapterIndex,
+                LocalDate dueDate,
+                LocalDate availableFromDate,
+                Boolean quizRequired,
+                Boolean characterChatRequired,
+                Integer sortOrder,
+                String status) {
+            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, characterChatRequired, sortOrder, status, null, null);
         }
     }
 

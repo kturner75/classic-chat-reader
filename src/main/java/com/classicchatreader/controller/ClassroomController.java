@@ -208,6 +208,7 @@ public class ClassroomController {
                 a.getDueDate() != null ? a.getDueDate().toString() : null,
                 a.getAvailableFromDate() != null ? a.getAvailableFromDate().toString() : null,
                 a.isQuizRequired(),
+                a.isCharacterChatRequired(),
                 a.getSortOrder(),
                 a.getStatus()
         );
@@ -256,6 +257,7 @@ public class ClassroomController {
             String dueDate,
             String availableFromDate,
             boolean quizRequired,
+            boolean characterChatRequired,
             int sortOrder,
             String status
     ) {

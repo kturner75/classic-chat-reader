@@ -347,6 +347,12 @@ html, body {
     background: #fdecea;
 }
 
+.book-progress-chip.assignment-character-chat-required {
+    border-color: #b7a6cf;
+    color: #5b457a;
+    background: #f4eefb;
+}
+
 .book-progress-chip.assignment-quiz-complete {
     border-color: #9cc3a8;
     color: #2f6f44;

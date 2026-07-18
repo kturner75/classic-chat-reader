@@ -2825,6 +2825,7 @@
                         ? item.dueAt.trim()
                         : null,
                     quizRequired: item.quizRequired === true,
+                    characterChatRequired: item.characterChatRequired === true,
                     quizStatus: typeof item.quizStatus === 'string' ? item.quizStatus : 'UNKNOWN',
                     bookAvailable: item.bookAvailable !== false
                 }))
@@ -4084,6 +4085,11 @@
             quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
         }
 
+        let characterChatChip = '';
+        if (assignment.characterChatRequired) {
+            characterChatChip = '<span class="book-progress-chip assignment-character-chat-required">Character chat required</span>';
+        }
+
         const assignmentLabel = assignment.title
             ? `<div class="book-item-assignment-label">${escapeHtml(assignment.title)}</div>`
             : '';
@@ -4122,6 +4128,7 @@
                     ${chapterLabel}
                     ${dueChip}
                     ${quizChip}
+                    ${characterChatChip}
                 </div>
                 <div class="book-item-progress">
                     ${progressChips}

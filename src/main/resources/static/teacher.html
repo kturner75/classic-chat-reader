@@ -201,7 +201,9 @@
                 <label>Due date <span>(optional)</span><input name="dueDate" type="date"></label>
                 <label>Status<select name="status"><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="ARCHIVED">Archived</option></select></label>
                 <label class="check-label"><input name="quizRequired" type="checkbox"> Require chapter quiz</label>
+                <label class="check-label"><input name="characterChatRequired" type="checkbox"> Require character chat (show-and-tell)</label>
             </div>
+            <p class="form-help muted">Character chat requirement is soft in this pilot: students download their conversation for class. Character and chat class features must be on.</p>
             <p id="assignment-form-error" class="form-error hidden" role="alert"></p>
             <div class="modal-actions"><button class="text-button" type="button" data-close-assignment>Cancel</button><button id="assignment-submit" class="primary-button" type="submit">Save assignment</button></div>
         </form>

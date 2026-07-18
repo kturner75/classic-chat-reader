@@ -47,6 +47,9 @@ public class AssignmentEntity {
     @Column(name = "quiz_required", nullable = false)
     private boolean quizRequired = false;
 
+    @Column(name = "character_chat_required", nullable = false)
+    private boolean characterChatRequired = false;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -95,6 +98,10 @@ public class AssignmentEntity {
     public void setAvailableFromDate(LocalDate availableFromDate) { this.availableFromDate = availableFromDate; }
     public boolean isQuizRequired() { return quizRequired; }
     public void setQuizRequired(boolean quizRequired) { this.quizRequired = quizRequired; }
+    public boolean isCharacterChatRequired() { return characterChatRequired; }
+    public void setCharacterChatRequired(boolean characterChatRequired) {
+        this.characterChatRequired = characterChatRequired;
+    }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getStatus() { return status; }

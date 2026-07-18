@@ -49,16 +49,20 @@ Last updated: 2026-07-16
 - Empty history keeps Download disabled; helper module + Node frontend unit tests in `character-chat-export.js` / `character-chat-export.test.cjs`.
 - Show-and-tell path no longer depends on screenshots for the student-held artifact. Teacher consent/view and `characterChatRequired` remain follow-on slices.
 
+**Done (2026-07-17 / BL-025.11 Slice B — characterChatRequired):**
+- Flyway `V16__assignment_character_chat_required.sql` + entity/API/context field `characterChatRequired`.
+- Teacher assignment modal checkbox; rejected when class character/chat features are off.
+- Student Library chip: **Character chat required** (soft; pairs with Download for show-and-tell).
+
 **Next when resuming (suggested order):**
-1. ~~Assignment open-chapter fix~~ merged PR #68; ~~character-chat download (Slice A)~~ this branch.
-2. BL-025.11 Slice B: assignment `characterChatRequired` flag (schema + teacher checkbox + student chip).
-3. Assignment progress UX (assignment-scoped status vs whole-book %).
-4. Roster display name + email; BL-025.10 v1 student drill-down/progress.
-5. Invite redeem rate limits (BL-028 pattern)
-6. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-7. `TermTransitionService` + API (PR-4/13)
-8. PR-0 stable quiz question ids → override APIs
-9. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+1. ~~Assignment open-chapter fix~~ merged PR #68; ~~character-chat download (Slice A)~~ merged PR #69; ~~characterChatRequired (Slice B)~~ this branch.
+2. Assignment progress UX (assignment-scoped status vs whole-book %).
+3. Roster display name + email; BL-025.10 v1 student drill-down/progress.
+4. Invite redeem rate limits (BL-028 pattern)
+5. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
+6. `TermTransitionService` + API (PR-4/13)
+7. PR-0 stable quiz question ids → override APIs
+8. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
 
 **Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
 
