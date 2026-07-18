@@ -230,3 +230,22 @@ test('whole-book assignment only completes when book is finished', () => {
     assert.equal(finished.statusClass, 'completed');
     assert.equal(finished.readingComplete, true);
 });
+
+test('assignment reading stays complete after student resumes an earlier chapter', () => {
+    // Student reached chapter 5 (maxProgress high), then reopened chapter 1 (lastChapterIndex=0).
+    const snapshot = buildAssignmentProgressSnapshot({
+        assignment: {
+            chapterIndex: 5,
+            quizRequired: false,
+            quizStatus: 'NOT_REQUIRED'
+        },
+        activity: {
+            chapterCount: 20,
+            lastChapterIndex: 0,
+            maxProgressRatio: (5 + 0.5) / 20,
+            lastReadAt: '2026-07-18T15:00:00.000Z'
+        }
+    });
+    assert.equal(snapshot.readingComplete, true);
+    assert.equal(snapshot.statusClass, 'completed');
+});

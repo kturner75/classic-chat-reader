@@ -93,13 +93,42 @@
             return false;
         }
 
-        const lastChapterIndex = activity.lastChapterIndex;
-        if (lastChapterIndex == null || !Number.isFinite(Number(lastChapterIndex))) {
+        const reachedChapterIndex = maxReachedChapterIndex(activity);
+        if (reachedChapterIndex == null) {
             return false;
         }
         // Reaching or passing the assigned chapter counts as reading complete for chapter work.
         // Quiz COMPLETE is a strong secondary signal handled by the caller for overall status.
-        return Number(lastChapterIndex) >= targetIndex;
+        return reachedChapterIndex >= targetIndex;
+    }
+
+    /**
+     * Furthest chapter the student has reached (not merely the current resume chapter).
+     * Uses maxProgressRatio (monotonic) and falls back to lastChapterIndex.
+     * Inverse of computeProgressRatio roughly: ratio = (chapter + pageFrac) / chapterCount.
+     */
+    function maxReachedChapterIndex(activity) {
+        if (!activity || !hasBookActivity(activity)) {
+            return null;
+        }
+        const chapterCount = Math.max(1, clampInteger(activity.chapterCount, 1, Number.MAX_SAFE_INTEGER));
+        const maxProgress = clampNumber(toFiniteNumber(activity.maxProgressRatio, 0), 0, 1);
+        let fromProgress = -1;
+        if (maxProgress > 0) {
+            // ceil(progress * n) - 1 maps:
+            //  - first page of chapter k  -> k
+            //  - last page of chapter k   -> k
+            // without treating unfinished prior chapters as the next chapter.
+            fromProgress = Math.min(
+                chapterCount - 1,
+                Math.max(0, Math.ceil(maxProgress * chapterCount - 1e-9) - 1)
+            );
+        }
+        const last = Number.isFinite(Number(activity.lastChapterIndex))
+            ? Number(activity.lastChapterIndex)
+            : -1;
+        const reached = Math.max(fromProgress, last);
+        return reached >= 0 ? reached : null;
     }
 
     function isQuizSatisfied(assignment) {
