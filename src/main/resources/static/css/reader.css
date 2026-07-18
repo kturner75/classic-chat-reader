@@ -3896,6 +3896,26 @@ kbd {
     margin: 0;
 }
 
+.character-chat-download-btn {
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-color);
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.character-chat-download-btn:hover:not(:disabled) {
+    background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+.character-chat-download-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* Chat Messages */
 .chat-messages {
     flex: 1;

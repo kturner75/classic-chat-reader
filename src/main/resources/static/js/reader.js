@@ -406,6 +406,7 @@
         characterChatBtn: document.getElementById('character-chat-btn'),
         characterChatModal: document.getElementById('character-chat-modal'),
         characterChatClose: document.getElementById('character-chat-close'),
+        characterChatDownload: document.getElementById('character-chat-download'),
         chatCharacterPortrait: document.getElementById('chat-character-portrait'),
         chatCharacterName: document.getElementById('chat-character-name'),
         chatError: document.getElementById('chat-error'),
@@ -650,6 +651,12 @@
         && globalThis.LibraryProgress
         && typeof globalThis.LibraryProgress.buildBookProgressSnapshot === 'function')
         ? globalThis.LibraryProgress
+        : null;
+    const characterChatExportHelpers = (typeof globalThis !== 'undefined'
+        && globalThis.CharacterChatExport
+        && typeof globalThis.CharacterChatExport.formatCharacterChatMarkdown === 'function'
+        && typeof globalThis.CharacterChatExport.downloadTextFile === 'function')
+        ? globalThis.CharacterChatExport
         : null;
     const libraryRankingHelpers = (typeof globalThis !== 'undefined'
         && globalThis.LibraryRanking
@@ -8320,6 +8327,8 @@
                 !(state.voiceCallAvailable && browserSupportsCalls && character.characterType === 'PRIMARY'));
         }
 
+        updateCharacterChatDownloadButton();
+
         // Close browser, open chat (skip audio resume since chat modal keeps it paused)
         closeCharacterBrowser(true);
         elements.characterChatModal.classList.remove('hidden');
@@ -8341,6 +8350,7 @@
         clearCharacterChatError();
         elements.chatMessages.innerHTML = '';
         elements.chatInput.value = '';
+        updateCharacterChatDownloadButton();
         ttsResumeAfterModal();
     }
 
@@ -8357,6 +8367,70 @@
         localStorage.setItem(key, JSON.stringify(limited));
     }
 
+    function updateCharacterChatDownloadButton() {
+        if (!elements.characterChatDownload) {
+            return;
+        }
+        const canDownload = Boolean(
+            characterChatExportHelpers
+            && characterChatExportHelpers.hasDownloadableTranscript(state.chatHistory)
+        );
+        elements.characterChatDownload.disabled = !canDownload;
+        elements.characterChatDownload.title = canDownload
+            ? 'Download conversation for class'
+            : 'Chat a bit first, then download for class';
+    }
+
+    function downloadCharacterChatConversation() {
+        if (!characterChatExportHelpers) {
+            showAppToast({
+                title: 'Download unavailable',
+                message: 'Conversation download is not available right now.'
+            });
+            return;
+        }
+        if (!characterChatExportHelpers.hasDownloadableTranscript(state.chatHistory)) {
+            showAppToast({
+                title: 'Nothing to download yet',
+                message: 'Chat a bit first, then download the conversation for class.'
+            });
+            return;
+        }
+
+        const characterName = state.chatCharacter?.name
+            || elements.chatCharacterName?.textContent
+            || 'Character';
+        const bookTitle = state.currentBook?.title || 'Book';
+        const bookAuthor = state.currentBook?.author || '';
+        const chapter = Array.isArray(state.chapters)
+            ? state.chapters[state.currentChapterIndex]
+            : null;
+        const chapterLabel = chapter?.title
+            || (Number.isInteger(state.currentChapterIndex)
+                ? `Chapter ${state.currentChapterIndex + 1}`
+                : '');
+        const exportedAt = new Date();
+        const markdown = characterChatExportHelpers.formatCharacterChatMarkdown({
+            bookTitle,
+            bookAuthor,
+            characterName,
+            chapterLabel,
+            exportedAt,
+            messages: state.chatHistory
+        });
+        const filename = characterChatExportHelpers.buildCharacterChatFilename({
+            bookTitle,
+            characterName,
+            exportedAt
+        });
+        characterChatExportHelpers.downloadTextFile(filename, markdown, 'text/markdown;charset=utf-8');
+        showAppToast({
+            title: 'Conversation downloaded',
+            message: 'Open the Markdown file for class show-and-tell.',
+            autoDismissMs: 5000
+        });
+    }
+
     function renderChatMessages() {
         elements.chatMessages.innerHTML = state.chatHistory.map(msg => `
             <div class="chat-message ${msg.role}">
@@ -8366,6 +8440,7 @@
 
         // Scroll to bottom
         elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+        updateCharacterChatDownloadButton();
     }
 
     function escapeHtml(text) {
@@ -9867,6 +9942,9 @@
         }
         if (elements.characterChatClose) {
             elements.characterChatClose.addEventListener('click', closeCharacterChat);
+        }
+        if (elements.characterChatDownload) {
+            elements.characterChatDownload.addEventListener('click', downloadCharacterChatConversation);
         }
         if (elements.characterChatModal) {
             elements.characterChatModal.querySelector('.character-modal-backdrop')?.addEventListener('click', closeCharacterChat);
