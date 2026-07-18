@@ -44,16 +44,23 @@ Last updated: 2026-07-16
 - Continue fleshing the pilot path; first-pass demo slice is the right track.
 - **Broader demo interest:** another teacher + an AI-committee administrator want to meet for a demo later. Kevin will **not** set a multi-person demo date until classroom is more fully fleshed and known bugs are fixed. Next 1:1 partner check-in: **Tuesday 6pm** (America/Chicago) after the 2026-07-16 call (not Thursday that week).
 
-**Next when resuming (suggested order):**
-1. Ship assignment-open-chapter fix (this branch) + retest Pride and Prejudice Ch.1 with existing local progress
-2. Invite redeem rate limits (BL-028 pattern)
-3. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-4. Prioritize discovery for BL-025.11: assignment `characterChatRequired` flag + student download of character chat transcript (local-first export may unblock show-and-tell before server persistence)
-5. `TermTransitionService` + API (PR-4/13)
-6. PR-0 stable quiz question ids → override APIs
-7. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+**Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
+- Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
+- Empty history keeps Download disabled; helper module + Node frontend unit tests in `character-chat-export.js` / `character-chat-export.test.cjs`.
+- Show-and-tell path no longer depends on screenshots for the student-held artifact. Teacher consent/view and `characterChatRequired` remain follow-on slices.
 
-**Not started:** full character-chat assignment completion tracking (`BL-025.11`), school-tier admin UI, usage/export/dashboard.
+**Next when resuming (suggested order):**
+1. ~~Assignment open-chapter fix~~ merged PR #68; ~~character-chat download (Slice A)~~ this branch.
+2. BL-025.11 Slice B: assignment `characterChatRequired` flag (schema + teacher checkbox + student chip).
+3. Assignment progress UX (assignment-scoped status vs whole-book %).
+4. Roster display name + email; BL-025.10 v1 student drill-down/progress.
+5. Invite redeem rate limits (BL-028 pattern)
+6. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
+7. `TermTransitionService` + API (PR-4/13)
+8. PR-0 stable quiz question ids → override APIs
+9. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+
+**Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
