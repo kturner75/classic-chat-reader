@@ -21,6 +21,11 @@
 - Keep controllers thin, push business logic into `service` classes, and use `repository` for persistence access.
 - Frontend files live in `src/main/resources/static` and should remain framework-free (vanilla HTML/CSS/JS).
 
+## Frontend UI/UX Principles
+- Selection controls with more than a handful of choices must support type-ahead autocomplete so users can quickly narrow the available options.
+- Sort choices alphabetically by their primary user-visible label by default. Use a different order only when an intentional, task-specific ranking is more useful, and make that behavior clear in the UI and tests.
+- Autocomplete controls must remain usable by keyboard and assistive technology, including clear labels, appropriate combobox/listbox semantics, and an explicit no-results state.
+
 ## Testing Guidelines
 - Tests use Spring Boot’s test starter (JUnit 5).
 - Name tests after the unit under test (e.g., `SearchServiceTest`).
