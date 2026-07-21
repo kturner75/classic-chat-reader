@@ -3631,6 +3631,74 @@
         };
     }
 
+    function hasCharacterChatStartedForBook(bookId) {
+        if (!bookId || typeof localStorage === 'undefined') {
+            return false;
+        }
+        const prefix = STORAGE_KEYS.CHARACTER_CHAT_PREFIX + bookId + '_';
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key || !key.startsWith(prefix)) {
+                    continue;
+                }
+                const raw = localStorage.getItem(key);
+                if (!raw) {
+                    continue;
+                }
+                const history = JSON.parse(raw);
+                if (!Array.isArray(history)) {
+                    continue;
+                }
+                if (history.some((msg) => msg && typeof msg.content === 'string' && msg.content.trim().length > 0)) {
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.warn('Unable to inspect character chat history for assignment progress', error);
+        }
+        return false;
+    }
+
+    function buildAssignmentProgressSnapshot(assignment, activity) {
+        const characterChatStarted = assignment?.characterChatRequired
+            ? hasCharacterChatStartedForBook(assignment.bookId)
+            : false;
+        if (libraryProgressHelpers && typeof libraryProgressHelpers.buildAssignmentProgressSnapshot === 'function') {
+            return libraryProgressHelpers.buildAssignmentProgressSnapshot({
+                assignment,
+                activity,
+                characterChatStarted
+            });
+        }
+        // Minimal fallback if helper module failed to load.
+        const started = Boolean(activity?.maxProgressRatio > 0 || activity?.lastOpenedAt || activity?.lastReadAt);
+        return {
+            statusLabel: started ? 'In progress' : 'Not started',
+            statusClass: started ? 'in-progress' : 'not-started',
+            summaryLabel: started ? 'In progress' : 'Not started',
+            targetLabel: assignment?.chapterTitle || '',
+            requirements: [],
+            percentLabel: null,
+            chapterLabel: null
+        };
+    }
+
+    function formatAssignmentProgressMeta(assignmentSnapshot, bookActivity) {
+        if (assignmentSnapshot.statusClass === 'completed') {
+            const completedAt = formatRelativeActivityTime(
+                bookActivity?.completedAt || bookActivity?.lastReadAt || bookActivity?.lastOpenedAt
+            );
+            return completedAt ? `Assignment complete · last active ${completedAt}` : 'Assignment complete';
+        }
+        if (assignmentSnapshot.statusClass === 'in-progress') {
+            const activeAt = formatRelativeActivityTime(bookActivity?.lastReadAt || bookActivity?.lastOpenedAt);
+            const summary = assignmentSnapshot.summaryLabel || 'In progress';
+            return activeAt ? `${summary} · active ${activeAt}` : summary;
+        }
+        return 'Open the assignment to get started.';
+    }
+
     function formatBookActivityLabel(activity, progressSnapshot) {
         if (progressSnapshot.statusClass === 'completed') {
             const completedAt = formatRelativeActivityTime(activity.completedAt || activity.lastReadAt || activity.lastOpenedAt);
@@ -4067,27 +4135,32 @@
     function renderClassroomAssignmentItem(assignment, localEntry) {
         const title = localEntry?.book?.title || assignment.bookTitle || 'Assigned Book';
         const author = normalizeAuthorName(localEntry?.book?.author || assignment.bookAuthor || '');
-        const progress = localEntry ? buildBookProgressSnapshot(localEntry.activity) : null;
-        const meta = localEntry
-            ? formatBookActivityLabel(localEntry.activity, progress)
-            : (assignment.bookAvailable ? 'Open this book to start reading.' : 'Book not available in this library yet.');
+        const activity = localEntry?.activity || null;
+        const assignmentProgress = buildAssignmentProgressSnapshot(assignment, activity);
+        const meta = localEntry || activity
+            ? formatAssignmentProgressMeta(assignmentProgress, activity)
+            : (assignment.bookAvailable ? 'Open this book to start the assignment.' : 'Book not available in this library yet.');
         const due = formatAssignmentDueLabel(assignment.dueAt);
         const dueChip = due.label
             ? `<span class="book-progress-chip assignment-due${due.overdue ? ' overdue' : ''}">${escapeHtml(due.label)}</span>`
             : '';
 
-        let quizChip = '<span class="book-progress-chip assignment-quiz-unknown">Quiz status unknown</span>';
-        if (assignment.quizStatus === 'NOT_REQUIRED') {
-            quizChip = '<span class="book-progress-chip assignment-quiz-unknown">Reading only</span>';
-        } else if (assignment.quizStatus === 'COMPLETE') {
+        let quizChip = '';
+        if (assignment.quizStatus === 'COMPLETE') {
             quizChip = '<span class="book-progress-chip assignment-quiz-complete">Quiz complete</span>';
         } else if (assignment.quizStatus === 'PENDING') {
             quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
+        } else if (assignment.quizStatus === 'NOT_REQUIRED' || assignment.quizRequired === false) {
+            quizChip = '';
+        } else if (assignment.quizRequired) {
+            quizChip = '<span class="book-progress-chip assignment-quiz-unknown">Quiz status unknown</span>';
         }
 
         let characterChatChip = '';
         if (assignment.characterChatRequired) {
-            characterChatChip = '<span class="book-progress-chip assignment-character-chat-required">Character chat required</span>';
+            characterChatChip = assignmentProgress.characterChatStarted
+                ? '<span class="book-progress-chip assignment-character-chat-started">Character chat started</span>'
+                : '<span class="book-progress-chip assignment-character-chat-required">Character chat required</span>';
         }
 
         const assignmentLabel = assignment.title
@@ -4095,14 +4168,14 @@
             : '';
         const chapterLabel = assignment.chapterTitle
             ? `<span class="book-progress-chip">${escapeHtml(assignment.chapterTitle)}</span>`
-            : '';
-        const progressChips = progress
-            ? `
-                <span class="book-progress-chip book-progress-chip-status status-${progress.statusClass}">${progress.statusLabel}</span>
-                <span class="book-progress-chip">${progress.chapterLabel}</span>
-                <span class="book-progress-chip">${progress.percentLabel}</span>
-            `
-            : '<span class="book-progress-chip book-progress-chip-status status-not-started">Not Started</span>';
+            : (Number.isInteger(assignment.chapterIndex)
+                ? `<span class="book-progress-chip">Chapter ${assignment.chapterIndex + 1}</span>`
+                : '<span class="book-progress-chip">Whole book</span>');
+
+        const progressChips = `
+                <span class="book-progress-chip book-progress-chip-status status-${assignmentProgress.statusClass}">${escapeHtml(assignmentProgress.statusLabel)}</span>
+                <span class="book-progress-chip assignment-progress-summary">${escapeHtml(assignmentProgress.summaryLabel)}</span>
+            `;
 
         const bookId = localEntry?.book?.id || assignment.bookId || '';
         const bookIdAttr = bookId
