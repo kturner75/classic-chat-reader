@@ -11,7 +11,8 @@
         assignments: [],
         features: null,
         editingAssignmentId: null,
-        featureSaveTimer: null
+        featureSaveTimer: null,
+        activeBookOption: -1
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -75,6 +76,25 @@
 
     function bookById(id) {
         return state.books.find(book => book.id === id);
+    }
+
+    function sortedBooks() {
+        return [...state.books].sort((a, b) => {
+            const titleComparison = String(a.title || '').localeCompare(String(b.title || ''), undefined, {
+                sensitivity: 'base',
+                numeric: true
+            });
+            if (titleComparison !== 0) return titleComparison;
+            const authorComparison = String(a.author || '').localeCompare(String(b.author || ''), undefined, {
+                sensitivity: 'base',
+                numeric: true
+            });
+            return authorComparison || String(a.id || '').localeCompare(String(b.id || ''));
+        });
+    }
+
+    function bookDisplayName(book) {
+        return `${book.title || 'Untitled'}${book.author ? ` · ${book.author}` : ''}`;
     }
 
     function classById(id) {
@@ -348,11 +368,65 @@
     }
 
     function populateBookOptions(selectedId = '') {
-        el['assignment-book'].innerHTML = '<option value="">Choose a book</option>' + state.books.map(book => (
-            `<option value="${escapeHtml(book.id)}">${escapeHtml(book.title)}${book.author ? ` · ${escapeHtml(book.author)}` : ''}</option>`
-        )).join('');
+        const selectedBook = bookById(selectedId);
         el['assignment-book'].value = selectedId;
+        el['assignment-book-search'].value = selectedBook ? bookDisplayName(selectedBook) : '';
+        el['assignment-book-search'].setCustomValidity('');
+        closeBookOptions();
         populateChapterOptions('', selectedId);
+    }
+
+    function matchingBooks(query) {
+        const normalizedQuery = String(query || '').trim().toLocaleLowerCase();
+        return sortedBooks().filter(book => (
+            !normalizedQuery
+            || String(book.title || '').toLocaleLowerCase().includes(normalizedQuery)
+            || String(book.author || '').toLocaleLowerCase().includes(normalizedQuery)
+        ));
+    }
+
+    function renderBookOptions() {
+        const books = matchingBooks(el['assignment-book-search'].value);
+        state.activeBookOption = -1;
+        el['assignment-book-options'].innerHTML = books.length > 0
+            ? books.map(book => `<span id="assignment-book-option-${escapeHtml(book.id)}" class="book-option" role="option" data-book-id="${escapeHtml(book.id)}" aria-selected="false"><span class="book-option-title">${escapeHtml(book.title || 'Untitled')}</span>${book.author ? `<span class="book-option-author">${escapeHtml(book.author)}</span>` : ''}</span>`).join('')
+            : '<span class="book-options-empty">No matching books</span>';
+        show(el['assignment-book-options'], true);
+        el['assignment-book-search'].setAttribute('aria-expanded', 'true');
+        el['assignment-book-search'].removeAttribute('aria-activedescendant');
+    }
+
+    function closeBookOptions() {
+        show(el['assignment-book-options'], false);
+        el['assignment-book-search'].setAttribute('aria-expanded', 'false');
+        el['assignment-book-search'].removeAttribute('aria-activedescendant');
+        state.activeBookOption = -1;
+    }
+
+    function selectBook(bookId) {
+        const book = bookById(bookId);
+        if (!book) return;
+        el['assignment-book'].value = book.id;
+        el['assignment-book-search'].value = bookDisplayName(book);
+        el['assignment-book-search'].setCustomValidity('');
+        closeBookOptions();
+        populateChapterOptions('', book.id);
+    }
+
+    function moveActiveBookOption(direction) {
+        const options = Array.from(el['assignment-book-options'].querySelectorAll('[role="option"]'));
+        if (options.length === 0) return;
+        if (el['assignment-book-options'].classList.contains('hidden')) renderBookOptions();
+        state.activeBookOption = (state.activeBookOption + direction + options.length) % options.length;
+        options.forEach((option, index) => {
+            const active = index === state.activeBookOption;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', String(active));
+            if (active) {
+                el['assignment-book-search'].setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
     }
 
     function populateChapterOptions(
@@ -505,7 +579,38 @@
             const assignment = state.assignments.find(item => item.assignmentId === button.dataset.editAssignment);
             if (assignment) openAssignmentModal(assignment);
         });
-        el['assignment-book'].addEventListener('change', () => populateChapterOptions());
+        el['assignment-book-search'].addEventListener('focus', renderBookOptions);
+        el['assignment-book-search'].addEventListener('input', () => {
+            el['assignment-book'].value = '';
+            el['assignment-book-search'].setCustomValidity('Choose a book from the suggestions.');
+            populateChapterOptions();
+            renderBookOptions();
+        });
+        el['assignment-book-search'].addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveBookOption(event.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+            if (event.key === 'Enter' && state.activeBookOption >= 0) {
+                event.preventDefault();
+                const options = el['assignment-book-options'].querySelectorAll('[role="option"]');
+                selectBook(options[state.activeBookOption]?.dataset.bookId);
+                return;
+            }
+            if (event.key === 'Escape' && el['assignment-book-search'].getAttribute('aria-expanded') === 'true') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeBookOptions();
+            }
+        });
+        el['assignment-book-search'].addEventListener('blur', () => window.setTimeout(closeBookOptions, 100));
+        el['assignment-book-options'].addEventListener('mousedown', event => {
+            const option = event.target.closest('[data-book-id]');
+            if (!option) return;
+            event.preventDefault();
+            selectBook(option.dataset.bookId);
+        });
         el['assignment-form'].addEventListener('submit', saveAssignment);
         document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignmentModal));
         el['features-form'].addEventListener('change', saveFeatures);
