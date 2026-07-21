@@ -195,7 +195,14 @@
             <div class="modal-heading"><div><p class="eyebrow">Reading work</p><h2 id="assignment-modal-title">New assignment</h2></div><button class="close-button" type="button" data-close-assignment>&times;</button></div>
             <label>Assignment title<input id="assignment-title" name="title" required placeholder="Read Chapter 1"></label>
             <div class="form-grid">
-                <label>Book<select id="assignment-book" name="bookId" required><option value="">Choose a book</option></select></label>
+                <div class="book-field">
+                    <label for="assignment-book-search">Book</label>
+                    <span class="book-combobox">
+                        <input id="assignment-book-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="assignment-book-options" aria-expanded="false" autocomplete="off" placeholder="Search by title or author" required>
+                        <input id="assignment-book" name="bookId" type="hidden">
+                        <span id="assignment-book-options" class="book-options hidden" role="listbox"></span>
+                    </span>
+                </div>
                 <label>Chapter<select id="assignment-chapter" name="chapterId"><option value="">Whole book</option></select></label>
                 <label>Available from <span>(optional)</span><input name="availableFromDate" type="date"></label>
                 <label>Due date <span>(optional)</span><input name="dueDate" type="date"></label>
