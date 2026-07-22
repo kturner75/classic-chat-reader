@@ -220,8 +220,10 @@ public class AccountChatHistoryService {
             throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content must be at most 4000 characters.");
         }
         String requestKey = validateIdempotencyKey(idempotencyKey);
+        // Serialize concurrent continues for the same session so a second in-flight
+        // request with the same Idempotency-Key waits, then replays instead of double-calling the model.
         CharacterChatConversationEntity session = conversationRepository
-                .findByIdAndUserId(sessionId, ownerUserId)
+                .findByIdAndUserIdForUpdate(sessionId, ownerUserId)
                 .orElse(null);
         if (session == null) return null;
         CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId()).orElse(null);
