@@ -2,8 +2,9 @@ package com.classicchatreader.service;
 
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.CharacterChatConversationEntity;
 import com.classicchatreader.entity.CharacterChatMessageEntity;
-import com.classicchatreader.entity.CharacterChatSessionEntity;
+import com.classicchatreader.entity.CharacterChatMessageRole;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.model.ClassroomContextResponse;
@@ -187,8 +188,8 @@ class AccountChatHistoryServiceTest {
         Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE.plusMinutes(2));
         fixture.character().setStatus(CharacterStatus.FAILED);
         entityManager.merge(fixture.character());
-        addMessage(fixture.session(), "CHARACTER", "Second", BASE.plusMinutes(2));
         addMessage(fixture.session(), "USER", "First", BASE.plusMinutes(1));
+        addMessage(fixture.session(), "CHARACTER", "Second", BASE.plusMinutes(2));
         flushAndClear();
 
         assertThat(service.get("other-owner", fixture.session().getId())).isNull();
@@ -249,17 +250,32 @@ class AccountChatHistoryServiceTest {
         var continued = service.continueConversation(
                 "owner",
                 fixture.session().getId(),
-                new com.classicchatreader.model.AccountChatModels.ContinueRequest("New question", null));
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("New question", null),
+                "request-1");
+        var replayed = service.continueConversation(
+                "owner",
+                fixture.session().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("New question", null),
+                "request-1");
         var denied = service.continueConversation(
                 "other-owner",
                 fixture.session().getId(),
-                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Steal", null));
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Steal", null),
+                "request-2");
         flushAndClear();
 
         assertThat(continued.userMessage().content()).isEqualTo("New question");
         assertThat(continued.characterMessage().content()).isEqualTo("New answer");
+        assertThat(replayed.userMessage().messageId()).isEqualTo(continued.userMessage().messageId());
+        assertThat(replayed.characterMessage().messageId()).isEqualTo(continued.characterMessage().messageId());
         assertThat(denied).isNull();
         assertThat(service.get("owner", fixture.session().getId()).messages()).hasSize(4);
+        org.mockito.Mockito.verify(characterChatService, org.mockito.Mockito.times(1)).chat(
+                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
+                org.mockito.ArgumentMatchers.eq("New question"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(3));
     }
 
     private void assertInvalid(AccountChatHistoryService.ListRequest request) {
@@ -298,20 +314,14 @@ class AccountChatHistoryServiceTest {
         character.setPortraitFilename(characterName + ".png");
         entityManager.persist(character);
 
-        CharacterChatSessionEntity session = new CharacterChatSessionEntity();
-        session.setOwnerUserId(owner);
-        session.setBook(book);
-        session.setCharacter(character);
-        session.setBookTitleSnapshot(title);
-        session.setBookAuthorSnapshot(author);
-        session.setCharacterNameSnapshot(characterName);
-        session.setPortraitAvailableSnapshot(true);
-        session.setContextChapter(chapter);
+        CharacterChatConversationEntity session = new CharacterChatConversationEntity();
+        session.setUserId(owner);
+        session.setCharacterId(character.getId());
+        session.setContextChapterId(chapter.getId());
         session.setContextChapterIndex(0);
         session.setContextChapterTitle("Chapter One");
         session.setContextParagraphIndex(3);
         session.setCreatedAt(lastMessageAt.minusMinutes(1));
-        session.setLastMessageAt(lastMessageAt);
         session.setUpdatedAt(lastMessageAt);
         entityManager.persist(session);
         return new Fixture(book, chapter, character, session);
@@ -331,13 +341,21 @@ class AccountChatHistoryServiceTest {
     }
 
     private void addMessage(
-            CharacterChatSessionEntity session,
+            CharacterChatConversationEntity session,
             String role,
             String content,
             LocalDateTime createdAt) {
+        Long sequenceNumber = entityManager.createQuery("""
+                        SELECT COUNT(message) FROM CharacterChatMessageEntity message
+                        WHERE message.conversationId = :conversationId
+                        """, Long.class)
+                .setParameter("conversationId", session.getId())
+                .getSingleResult();
         CharacterChatMessageEntity message = new CharacterChatMessageEntity();
-        message.setSession(session);
-        message.setRole(role);
+        message.setConversationId(session.getId());
+        message.setUserId(session.getUserId());
+        message.setSequenceNumber(sequenceNumber);
+        message.setRole(CharacterChatMessageRole.valueOf(role));
         message.setContent(content);
         message.setCreatedAt(createdAt);
         entityManager.persist(message);
@@ -366,7 +384,7 @@ class AccountChatHistoryServiceTest {
             BookEntity book,
             ChapterEntity chapter,
             CharacterEntity character,
-            CharacterChatSessionEntity session
+            CharacterChatConversationEntity session
     ) {
     }
 }

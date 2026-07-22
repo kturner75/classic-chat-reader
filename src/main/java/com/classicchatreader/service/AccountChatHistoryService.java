@@ -1,7 +1,8 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.CharacterChatConversationEntity;
 import com.classicchatreader.entity.CharacterChatMessageEntity;
-import com.classicchatreader.entity.CharacterChatSessionEntity;
+import com.classicchatreader.entity.CharacterChatMessageRole;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.model.AccountChatModels.BookIdentity;
@@ -18,8 +19,8 @@ import com.classicchatreader.model.AccountChatModels.SessionListResponse;
 import com.classicchatreader.model.AccountChatModels.SessionSummary;
 import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.model.ChatMessage;
+import com.classicchatreader.repository.CharacterChatConversationRepository;
 import com.classicchatreader.repository.CharacterChatMessageRepository;
-import com.classicchatreader.repository.CharacterChatSessionRepository;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,7 +60,7 @@ public class AccountChatHistoryService {
     private static final byte CURSOR_VERSION = 1;
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
-    private final CharacterChatSessionRepository sessionRepository;
+    private final CharacterChatConversationRepository conversationRepository;
     private final CharacterChatMessageRepository messageRepository;
     private final CharacterRepository characterRepository;
     private final ChapterRepository chapterRepository;
@@ -70,7 +71,7 @@ public class AccountChatHistoryService {
     private final byte[] cursorKey;
 
     public AccountChatHistoryService(
-            CharacterChatSessionRepository sessionRepository,
+            CharacterChatConversationRepository conversationRepository,
             CharacterChatMessageRepository messageRepository,
             CharacterRepository characterRepository,
             ChapterRepository chapterRepository,
@@ -79,7 +80,7 @@ public class AccountChatHistoryService {
             @Value("${ai.chat.enabled:false}") boolean chatEnabled,
             @Value("${character.enabled:true}") boolean characterEnabled,
             @Value("${account.chat.cursor-secret:}") String configuredCursorSecret) {
-        this.sessionRepository = sessionRepository;
+        this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.characterRepository = characterRepository;
         this.chapterRepository = chapterRepository;
@@ -96,7 +97,7 @@ public class AccountChatHistoryService {
         ValidatedListRequest valid = validate(ownerUserId, request == null ? ListRequest.empty() : request);
         CursorPosition cursor = decodeCursor(valid.cursor(), valid.fingerprint());
 
-        List<CharacterChatSessionEntity> fetched = sessionRepository.findVisiblePage(
+        List<CharacterChatConversationEntity> fetched = conversationRepository.findVisiblePage(
                 ownerUserId,
                 valid.queryPattern(),
                 valid.bookId(),
@@ -109,7 +110,7 @@ public class AccountChatHistoryService {
         );
 
         boolean hasMore = fetched.size() > valid.limit();
-        List<CharacterChatSessionEntity> sessions = hasMore
+        List<CharacterChatConversationEntity> sessions = hasMore
                 ? new ArrayList<>(fetched.subList(0, valid.limit()))
                 : new ArrayList<>(fetched);
         Map<String, MessageStats> messageStats = loadMessageStats(sessions);
@@ -126,25 +127,28 @@ public class AccountChatHistoryService {
     public SessionDetailResponse get(String ownerUserId, String sessionId) {
         Objects.requireNonNull(ownerUserId, "ownerUserId");
         if (sessionId == null || sessionId.isBlank()) return null;
-        CharacterChatSessionEntity session = sessionRepository
-                .findByIdAndOwnerUserIdAndDeletedFalse(sessionId, ownerUserId)
+        CharacterChatConversationEntity session = conversationRepository
+                .findByIdAndUserId(sessionId, ownerUserId)
                 .orElse(null);
         if (session == null) return null;
 
-        List<CharacterChatMessageEntity> entities = messageRepository.findOwnedTranscript(sessionId, ownerUserId);
-        if (entities.stream().noneMatch(m -> CharacterChatMessageEntity.ROLE_USER.equals(m.getRole()))) return null;
+        List<CharacterChatMessageEntity> entities = messageRepository
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(sessionId, ownerUserId);
+        if (entities.stream().noneMatch(m -> m.getRole() == CharacterChatMessageRole.USER)) return null;
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId()).orElse(null);
+        if (character == null) return null;
         ClassroomContextResponse classroom = classroomContextService.getContext(ownerUserId);
         SessionDetail detail = new SessionDetail(
                 session.getId(),
-                characterIdentity(session),
-                bookIdentity(session),
+                characterIdentity(character),
+                bookIdentity(character),
                 toInstant(session.getCreatedAt()),
-                toInstant(session.getLastMessageAt()),
-                context(session),
-                resume(session, classroom)
+                toInstant(session.getUpdatedAt()),
+                context(session, character),
+                resume(session, character, classroom)
         );
         List<Message> messages = entities.stream()
-                .map(m -> new Message(m.getId(), m.getRole(), m.getContent(), toInstant(m.getCreatedAt())))
+                .map(m -> new Message(m.getId(), m.getRole().name(), m.getContent(), toInstant(m.getCreatedAt())))
                 .toList();
         return new SessionDetailResponse(detail, messages);
     }
@@ -164,98 +168,149 @@ public class AccountChatHistoryService {
         var chapter = chapterRepository.findByBookIdAndChapterIndex(book.getId(), chapterIndex).orElse(null);
         if (chapter == null) return null;
 
-        CharacterChatSessionEntity session = sessionRepository
-                .findByOwnerUserIdAndBookIdAndCharacterIdAndDeletedFalse(ownerUserId, book.getId(), characterId)
-                .orElseGet(CharacterChatSessionEntity::new);
+        List<CharacterChatConversationEntity> existing = conversationRepository
+                .findByUserIdAndCharacterIdOrderByUpdatedAtDescCreatedAtDesc(ownerUserId, characterId);
+        CharacterChatConversationEntity session = existing.isEmpty()
+                ? new CharacterChatConversationEntity()
+                : existing.get(0);
         if (session.getId() == null) {
-            session.setOwnerUserId(ownerUserId);
-            session.setBook(book);
-            session.setCharacter(character);
-            session.setBookTitleSnapshot(book.getTitle());
-            session.setBookAuthorSnapshot(book.getAuthor());
-            session.setCharacterNameSnapshot(character.getName());
-            session.setPortraitAvailableSnapshot(character.getPortraitFilename() != null);
-            session.setDeleted(false);
+            session.setUserId(ownerUserId);
+            session.setCharacterId(characterId);
         }
         updateContext(session, chapter, paragraphIndex);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        session.setLastMessageAt(now);
-        sessionRepository.save(session);
+        session.setUpdatedAt(now.plusNanos(1));
+        conversationRepository.save(session);
+        List<CharacterChatMessageEntity> transcript = messageRepository
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(session.getId(), ownerUserId);
+        long nextSequence = transcript.isEmpty() ? 0 : transcript.get(transcript.size() - 1).getSequenceNumber() + 1;
         messageRepository.saveAll(List.of(
-                messageEntity(session, CharacterChatMessageEntity.ROLE_USER, userContent, now),
-                messageEntity(session, CharacterChatMessageEntity.ROLE_CHARACTER, characterContent, now.plusNanos(1))
+                messageEntity(session, nextSequence, CharacterChatMessageRole.USER, userContent, null, now),
+                messageEntity(session, nextSequence + 1, CharacterChatMessageRole.CHARACTER,
+                        characterContent, null, now.plusNanos(1))
         ));
         return session.getId();
     }
 
     @Transactional
-    public ContinueResponse continueConversation(String ownerUserId, String sessionId, ContinueRequest request) {
+    public ContinueResponse continueConversation(
+            String ownerUserId,
+            String sessionId,
+            ContinueRequest request,
+            String idempotencyKey) {
         String content = request == null ? null : normalizeMessage(request.content());
         if (content == null) throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content is required.");
         if (content.codePointCount(0, content.length()) > 4000) {
             throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content must be at most 4000 characters.");
         }
-        CharacterChatSessionEntity session = sessionRepository
-                .findByIdAndOwnerUserIdAndDeletedFalse(sessionId, ownerUserId)
+        String requestKey = validateIdempotencyKey(idempotencyKey);
+        CharacterChatConversationEntity session = conversationRepository
+                .findByIdAndUserId(sessionId, ownerUserId)
                 .orElse(null);
         if (session == null) return null;
-        if (!resume(session, classroomContextService.getContext(ownerUserId)).available()) {
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId()).orElse(null);
+        if (character == null) return null;
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
 
-        List<CharacterChatMessageEntity> transcript = messageRepository.findOwnedTranscript(sessionId, ownerUserId);
+        List<CharacterChatMessageEntity> transcript = messageRepository
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(sessionId, ownerUserId);
+        if (requestKey != null) {
+            ContinueResponse replay = replayExistingExchange(session, character, transcript, requestKey);
+            if (replay != null) return replay;
+        }
         List<ChatMessage> history = transcript.stream()
                 .map(message -> new ChatMessage(
-                        CharacterChatMessageEntity.ROLE_USER.equals(message.getRole()) ? "user" : "character",
+                        message.getRole() == CharacterChatMessageRole.USER ? "user" : "character",
                         message.getContent(),
                         toInstant(message.getCreatedAt()).toEpochMilli()))
                 .toList();
+        ChatContext chatContext = context(session, character);
         String reply = characterChatService.chat(
-                session.getCharacter().getId(),
+                session.getCharacterId(),
                 content,
                 history,
-                session.getContextChapterIndex(),
-                session.getContextParagraphIndex()
+                chatContext.chapterIndex(),
+                chatContext.paragraphIndex()
         );
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        long nextSequence = transcript.isEmpty() ? 0 : transcript.get(transcript.size() - 1).getSequenceNumber() + 1;
         CharacterChatMessageEntity userMessage = messageEntity(
-                session, CharacterChatMessageEntity.ROLE_USER, content, now);
+                session, nextSequence, CharacterChatMessageRole.USER, content, requestKey, now);
         CharacterChatMessageEntity characterMessage = messageEntity(
-                session, CharacterChatMessageEntity.ROLE_CHARACTER, reply, now.plusNanos(1));
+                session, nextSequence + 1, CharacterChatMessageRole.CHARACTER, reply, null, now.plusNanos(1));
         messageRepository.saveAll(List.of(userMessage, characterMessage));
-        session.setLastMessageAt(characterMessage.getCreatedAt());
-        sessionRepository.save(session);
+        session.setUpdatedAt(characterMessage.getCreatedAt());
+        conversationRepository.save(session);
         return new ContinueResponse(
                 toMessage(userMessage),
                 toMessage(characterMessage),
-                context(session),
-                toInstant(session.getLastMessageAt())
+                chatContext,
+                toInstant(session.getUpdatedAt())
         );
     }
 
-    private void updateContext(CharacterChatSessionEntity session, com.classicchatreader.entity.ChapterEntity chapter,
+    private void updateContext(CharacterChatConversationEntity session, com.classicchatreader.entity.ChapterEntity chapter,
                                int paragraphIndex) {
-        session.setContextChapter(chapter);
+        session.setContextChapterId(chapter.getId());
         session.setContextChapterIndex(chapter.getChapterIndex());
         session.setContextChapterTitle(chapter.getTitle());
         session.setContextParagraphIndex(Math.max(0, paragraphIndex));
     }
 
     private CharacterChatMessageEntity messageEntity(
-            CharacterChatSessionEntity session,
-            String role,
+            CharacterChatConversationEntity session,
+            long sequenceNumber,
+            CharacterChatMessageRole role,
             String content,
+            String clientMessageId,
             LocalDateTime createdAt) {
         CharacterChatMessageEntity message = new CharacterChatMessageEntity();
-        message.setSession(session);
+        message.setConversationId(session.getId());
+        message.setUserId(session.getUserId());
+        message.setSequenceNumber(sequenceNumber);
         message.setRole(role);
         message.setContent(content);
+        message.setClientMessageId(clientMessageId);
         message.setCreatedAt(createdAt);
         return message;
     }
 
     private Message toMessage(CharacterChatMessageEntity message) {
-        return new Message(message.getId(), message.getRole(), message.getContent(), toInstant(message.getCreatedAt()));
+        return new Message(message.getId(), message.getRole().name(), message.getContent(), toInstant(message.getCreatedAt()));
+    }
+
+    private ContinueResponse replayExistingExchange(
+            CharacterChatConversationEntity session,
+            CharacterEntity character,
+            List<CharacterChatMessageEntity> transcript,
+            String requestKey) {
+        CharacterChatMessageEntity userMessage = transcript.stream()
+                .filter(message -> requestKey.equals(message.getClientMessageId()))
+                .findFirst()
+                .orElse(null);
+        if (userMessage == null) return null;
+        CharacterChatMessageEntity characterMessage = transcript.stream()
+                .filter(message -> message.getSequenceNumber() == userMessage.getSequenceNumber() + 1)
+                .filter(message -> message.getRole() == CharacterChatMessageRole.CHARACTER)
+                .findFirst()
+                .orElse(null);
+        if (characterMessage == null) return null;
+        return new ContinueResponse(
+                toMessage(userMessage),
+                toMessage(characterMessage),
+                context(session, character),
+                toInstant(session.getUpdatedAt())
+        );
+    }
+
+    private String validateIdempotencyKey(String value) {
+        String normalized = blankToNull(value);
+        if (normalized != null && normalized.length() > 255) {
+            throw new ChatHistoryValidationException("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long.");
+        }
+        return normalized;
     }
 
     private ValidatedListRequest validate(String ownerUserId, ListRequest request) {
@@ -334,73 +389,85 @@ public class AccountChatHistoryService {
         }
     }
 
-    private Map<String, MessageStats> loadMessageStats(List<CharacterChatSessionEntity> sessions) {
+    private Map<String, MessageStats> loadMessageStats(List<CharacterChatConversationEntity> sessions) {
         if (sessions.isEmpty()) return Map.of();
-        List<String> ids = sessions.stream().map(CharacterChatSessionEntity::getId).toList();
+        List<String> ids = sessions.stream().map(CharacterChatConversationEntity::getId).toList();
         Map<String, MessageStats> stats = new HashMap<>();
-        for (CharacterChatMessageRepository.SessionMessageCount count : messageRepository.countForSessions(ids)) {
-            stats.put(count.getSessionId(), new MessageStats(count.getMessageCount(), null));
+        for (CharacterChatMessageRepository.ConversationMessageCount count
+                : messageRepository.countForConversations(ids)) {
+            stats.put(count.getConversationId(), new MessageStats(count.getMessageCount(), null));
         }
-        for (CharacterChatMessageEntity preview : messageRepository.findNewestNonblankForSessions(ids)) {
-            MessageStats current = stats.getOrDefault(preview.getSession().getId(), MessageStats.empty());
-            stats.put(preview.getSession().getId(), new MessageStats(current.messageCount(), preview));
+        for (CharacterChatMessageEntity preview : messageRepository.findNewestNonblankForConversations(ids)) {
+            MessageStats current = stats.getOrDefault(preview.getConversationId(), MessageStats.empty());
+            stats.put(preview.getConversationId(), new MessageStats(current.messageCount(), preview));
         }
         return stats;
     }
 
     private SessionSummary toSummary(
-            CharacterChatSessionEntity session,
+            CharacterChatConversationEntity session,
             MessageStats stats,
             ClassroomContextResponse classroom) {
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId())
+                .orElseThrow(() -> new IllegalStateException("Conversation character no longer exists."));
         CharacterChatMessageEntity preview = stats.preview();
         return new SessionSummary(
                 session.getId(),
-                characterIdentity(session),
-                bookIdentity(session),
+                characterIdentity(character),
+                bookIdentity(character),
                 preview == null ? "" : preview(preview.getContent()),
-                preview == null ? null : preview.getRole(),
+                preview == null ? null : preview.getRole().name(),
                 Math.toIntExact(stats.messageCount()),
                 toInstant(session.getCreatedAt()),
-                toInstant(session.getLastMessageAt()),
                 toInstant(session.getUpdatedAt()),
-                context(session),
-                resume(session, classroom)
+                toInstant(session.getUpdatedAt()),
+                context(session, character),
+                resume(session, character, classroom)
         );
     }
 
-    private CharacterIdentity characterIdentity(CharacterChatSessionEntity session) {
-        String portraitUrl = session.isPortraitAvailableSnapshot()
-                ? "/api/characters/" + session.getCharacter().getId() + "/portrait"
+    private CharacterIdentity characterIdentity(CharacterEntity character) {
+        String portraitUrl = character.getPortraitFilename() != null
+                ? "/api/characters/" + character.getId() + "/portrait"
                 : null;
         return new CharacterIdentity(
-                session.getCharacter().getId(),
-                session.getCharacterNameSnapshot(),
+                character.getId(),
+                character.getName(),
                 portraitUrl
         );
     }
 
-    private BookIdentity bookIdentity(CharacterChatSessionEntity session) {
+    private BookIdentity bookIdentity(CharacterEntity character) {
+        var book = character.getBook();
         return new BookIdentity(
-                session.getBook().getId(),
-                session.getBookTitleSnapshot(),
-                session.getBookAuthorSnapshot()
+                book.getId(),
+                book.getTitle(),
+                book.getAuthor()
         );
     }
 
-    private ChatContext context(CharacterChatSessionEntity session) {
+    private ChatContext context(CharacterChatConversationEntity session, CharacterEntity character) {
+        var fallbackChapter = character.getFirstChapter();
         return new ChatContext(
-                session.getContextChapter().getId(),
-                session.getContextChapterIndex(),
-                session.getContextChapterTitle(),
-                session.getContextParagraphIndex()
+                session.getContextChapterId() == null ? fallbackChapter.getId() : session.getContextChapterId(),
+                session.getContextChapterIndex() == null
+                        ? fallbackChapter.getChapterIndex()
+                        : session.getContextChapterIndex(),
+                session.getContextChapterTitle() == null
+                        ? fallbackChapter.getTitle()
+                        : session.getContextChapterTitle(),
+                session.getContextParagraphIndex() == null ? 0 : session.getContextParagraphIndex()
         );
     }
 
-    private Resume resume(CharacterChatSessionEntity session, ClassroomContextResponse classroom) {
+    private Resume resume(
+            CharacterChatConversationEntity session,
+            CharacterEntity character,
+            ClassroomContextResponse classroom) {
         String reason = null;
         if (!chatEnabled) reason = "CHAT_DISABLED";
-        else if (!characterEnabled || !Boolean.TRUE.equals(session.getBook().getCharacterEnabled())) reason = "BOOK_DISABLED";
-        else if (session.getCharacter().getStatus() != CharacterStatus.COMPLETED) reason = "CHARACTER_UNAVAILABLE";
+        else if (!characterEnabled || !Boolean.TRUE.equals(character.getBook().getCharacterEnabled())) reason = "BOOK_DISABLED";
+        else if (character.getStatus() != CharacterStatus.COMPLETED) reason = "CHARACTER_UNAVAILABLE";
         else if (classroom != null && classroom.enrolled()
                 && (!classroom.features().characterEnabled() || !classroom.features().chatEnabled())) {
             reason = "CLASSROOM_POLICY";
@@ -415,12 +482,12 @@ public class AccountChatHistoryService {
         return oneLine.substring(0, oneLine.offsetByCodePoints(0, MAX_PREVIEW_CODE_POINTS));
     }
 
-    private String encodeCursor(CharacterChatSessionEntity session, String fingerprint) {
+    private String encodeCursor(CharacterChatConversationEntity session, String fingerprint) {
         try {
             ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream();
             try (DataOutputStream out = new DataOutputStream(payloadBytes)) {
                 out.writeByte(CURSOR_VERSION);
-                Instant lastMessageAt = toInstant(session.getLastMessageAt());
+                Instant lastMessageAt = toInstant(session.getUpdatedAt());
                 out.writeLong(lastMessageAt.getEpochSecond());
                 out.writeInt(lastMessageAt.getNano());
                 out.writeUTF(session.getId());

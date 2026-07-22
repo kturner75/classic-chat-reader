@@ -227,7 +227,10 @@ async function installApiMocks(page) {
 
 async function openReaderForTestBook(page) {
   await page.goto('/');
+  const firstChapterLoaded = page.waitForResponse((response) =>
+    response.url().includes('/api/library/book-1/chapters/ch-1') && response.ok());
   await page.click(`#continue-reading-list .book-item[data-book-id="${TEST_BOOK.id}"]`);
+  await firstChapterLoaded;
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#book-title')).toHaveText(TEST_BOOK.title);
 }

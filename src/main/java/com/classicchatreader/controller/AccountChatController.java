@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -77,12 +78,14 @@ public class AccountChatController {
     @PostMapping("/{sessionId}/messages")
     public ResponseEntity<?> continueConversation(
             @PathVariable String sessionId,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) ContinueRequest body,
             HttpServletRequest request) {
         var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
         if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
         try {
-            ContinueResponse response = chatHistoryService.continueConversation(principal.get().userId(), sessionId, body);
+            ContinueResponse response = chatHistoryService.continueConversation(
+                    principal.get().userId(), sessionId, body, idempotencyKey);
             if (response == null) {
                 return error(HttpStatus.NOT_FOUND, "CHAT_NOT_FOUND", "Chat session not found.");
             }

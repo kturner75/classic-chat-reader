@@ -129,10 +129,11 @@ class AccountChatControllerTest {
                 new Message("message-character", "CHARACTER", "Welcome back", now.plusMillis(1)),
                 new ChatContext("chapter-1", 0, "Chapter One", 4),
                 now.plusMillis(1));
-        when(chatHistoryService.continueConversation(eq("user-1"), eq("chat-1"), any()))
+        when(chatHistoryService.continueConversation(eq("user-1"), eq("chat-1"), any(), eq("request-1")))
                 .thenReturn(response);
 
         mockMvc.perform(post("/api/account/chats/chat-1/messages")
+                        .header("Idempotency-Key", "request-1")
                         .contentType("application/json")
                         .content("""
                                 {"content":"Hello again","context":{"chapterId":"chapter-1","chapterIndex":0,"chapterTitle":"Chapter One","paragraphIndex":4}}
@@ -142,13 +143,13 @@ class AccountChatControllerTest {
                 .andExpect(jsonPath("$.userMessage.content", is("Hello again")))
                 .andExpect(jsonPath("$.characterMessage.content", is("Welcome back")));
 
-        verify(chatHistoryService).continueConversation(eq("user-1"), eq("chat-1"), any());
+        verify(chatHistoryService).continueConversation(eq("user-1"), eq("chat-1"), any(), eq("request-1"));
     }
 
     @Test
     void continueConversationDoesNotRevealAnotherUsersSession() throws Exception {
         authenticate("user-1");
-        when(chatHistoryService.continueConversation(eq("user-1"), eq("other-users-chat"), any()))
+        when(chatHistoryService.continueConversation(eq("user-1"), eq("other-users-chat"), any(), any()))
                 .thenReturn(null);
 
         mockMvc.perform(post("/api/account/chats/other-users-chat/messages")
