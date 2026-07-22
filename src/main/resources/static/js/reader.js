@@ -5220,12 +5220,14 @@
         return -1;
     }
 
-    function nextParagraph() {
+    function nextParagraph(options = {}) {
         const paragraphIndex = state.currentParagraphIndex;
         const lastParagraphIndex = state.paragraphs.length - 1;
 
         // Finish remaining fragments of the current paragraph before advancing index/chapter.
-        const nextFragmentPage = findNextPageForParagraph(paragraphIndex, state.currentPage);
+        const nextFragmentPage = options.skipCurrentFragments
+            ? -1
+            : findNextPageForParagraph(paragraphIndex, state.currentPage);
         if (nextFragmentPage >= 0) {
             state.currentPage = nextFragmentPage;
             state.currentParagraphIndex = paragraphIndex;
@@ -6784,7 +6786,8 @@
             // Keep TTS chapter transitions uninterrupted by recap overlay.
             goToNextChapter(false);
         } else {
-            nextParagraph();
+            // TTS reads the full paragraph at once, so continuation pages must not replay it.
+            nextParagraph({ skipCurrentFragments: true });
             ttsSpeakCurrent();
         }
     }

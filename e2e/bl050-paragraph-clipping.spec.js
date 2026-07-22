@@ -339,6 +339,43 @@ test('BL-050 next paragraph keeps split final paragraph before chapter change', 
 
 test('BL-050 next paragraph keeps split middle paragraph before advancing', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  await context.addInitScript(() => {
+    let currentUtterance = null;
+
+    class MockSpeechSynthesisUtterance {
+      constructor(text) {
+        this.text = text;
+        this.rate = 1;
+        this.voice = null;
+        this.onend = null;
+        this.onerror = null;
+      }
+    }
+
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance
+    });
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        cancel() {},
+        getVoices() {
+          return [];
+        },
+        speak(utterance) {
+          currentUtterance = utterance;
+          window.__spokenParagraphs.push(utterance.text);
+        }
+      }
+    });
+    window.__spokenParagraphs = [];
+    window.__finishCurrentSpeech = () => {
+      const utterance = currentUtterance;
+      currentUtterance = null;
+      utterance?.onend?.();
+    };
+  });
   const page = await context.newPage();
 
   const shortLead = {
@@ -368,7 +405,7 @@ test('BL-050 next paragraph keeps split middle paragraph before advancing', asyn
       return json(route, 200, { enrolled: false });
     }
     if (method === 'GET' && path === '/api/library') {
-      return json(route, 200, [TEST_BOOK]);
+      return json(route, 200, [{ ...TEST_BOOK, ttsEnabled: true }]);
     }
     if (method === 'GET' && path === '/api/import/popular') {
       return json(route, 200, []);
@@ -405,6 +442,7 @@ test('BL-050 next paragraph keeps split middle paragraph before advancing', asyn
     const indicator = document.getElementById('page-indicator')?.textContent || '';
     const match = indicator.match(/Page (\d+) of (\d+)/);
     return {
+      page: Number(match?.[1] || 0),
       totalPages: Number(match?.[2] || 0),
       visibleIndexes: [...document.querySelectorAll('.column .paragraph')].map((node) => Number(node.dataset.index))
     };
@@ -448,5 +486,31 @@ test('BL-050 next paragraph keeps split middle paragraph before advancing', asyn
     page.locator('.paragraph.highlighted').first().getAttribute('data-index')
   ).toBe('2');
   await expect(page.locator('#chapter-title')).toHaveText('Chapter One');
+
+  // Return to the first middle fragment and verify TTS advances by paragraph, not fragment page.
+  for (let guard = 0; guard < 80; guard += 1) {
+    const position = await page.evaluate(() => {
+      const indicator = document.getElementById('page-indicator')?.textContent || '';
+      return {
+        page: Number(indicator.match(/Page (\d+)/)?.[1] || 0),
+        highlightedIndex: Number(document.querySelector('.paragraph.highlighted')?.dataset.index ?? -1)
+      };
+    });
+    if (position.page === initial.page && position.highlightedIndex === 1) break;
+    await page.keyboard.press('k');
+  }
+
+  await expect(page.locator('#tts-toggle')).toBeVisible();
+  await page.click('#tts-toggle');
+  await expect.poll(() => page.evaluate(() => window.__spokenParagraphs)).toEqual([tallMiddle.content]);
+
+  await page.evaluate(() => window.__finishCurrentSpeech());
+  await expect.poll(() => page.evaluate(() => window.__spokenParagraphs)).toEqual([
+    tallMiddle.content,
+    shortTrail.content
+  ]);
+  await expect.poll(async () =>
+    page.locator('.paragraph.highlighted').first().getAttribute('data-index')
+  ).toBe('2');
   await context.close();
 });
