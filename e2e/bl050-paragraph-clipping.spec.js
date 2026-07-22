@@ -80,6 +80,7 @@ async function installApiMocks(page) {
 
 async function openFixture(page) {
   await page.goto('/');
+  await page.evaluate(() => document.fonts.ready);
   await expect(page.locator('#library-search-status')).toBeHidden();
   await page.click('#continue-reading-list .book-item[data-book-id="bl050-book"]');
   await expect(page.locator('#reader-view')).toBeVisible();
@@ -87,11 +88,44 @@ async function openFixture(page) {
 }
 
 async function setFontSize(page, fontSize) {
-  await page.locator('#reader-font-size').evaluate((input, value) => {
-    input.value = value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }, fontSize.toFixed(2));
+  const input = page.locator('#reader-font-size');
+  if (!await input.isVisible()) {
+    if (await page.locator('#reader-settings-toggle').isVisible()) {
+      await page.click('#reader-settings-toggle');
+    } else {
+      await page.click('#mobile-header-menu-toggle');
+      await page.click('#mobile-menu-reader-settings');
+    }
+    await expect(page.locator('#reader-settings-panel')).toBeVisible();
+  }
+  const stepsFromCurrent = await input.evaluate((element, value) =>
+    Math.round((value - Number(element.value)) / Number(element.step)), fontSize
+  );
+  await input.focus();
+  const direction = stepsFromCurrent < 0 ? 'ArrowLeft' : 'ArrowRight';
+  for (let step = 0; step < Math.abs(stepsFromCurrent); step += 1) {
+    await input.press(direction);
+  }
+  await expect.poll(async () => Number(await input.inputValue())).toBe(fontSize);
   await expect(page.locator('#reader-font-size-value')).toHaveText(`${fontSize.toFixed(2)}rem`);
+  await expect.poll(() => page.evaluate(() =>
+    JSON.parse(localStorage.getItem('reader_readerPreferences')).fontSize
+  )).toBe(fontSize);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#reader-settings-panel')).toBeHidden();
+}
+
+async function supportedFontSizes(page) {
+  return page.locator('#reader-font-size').evaluate((input) => {
+    const minimum = Number(input.min);
+    const maximum = Number(input.max);
+    const step = Number(input.step);
+    const values = [];
+    for (let value = minimum; value <= maximum + (step / 2); value += step) {
+      values.push(Number(value.toFixed(2)));
+    }
+    return values;
+  });
 }
 
 async function clippedParagraphs(page) {
@@ -157,14 +191,18 @@ for (const viewport of [
     await installApiMocks(page);
     await openFixture(page);
 
-    for (const fontSize of [1.00, 1.10, 1.20, 1.30, 1.40, 1.50]) {
-      await setFontSize(page, fontSize);
-      await expect.poll(() => clippedParagraphs(page)).toEqual([]);
-
-      for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
-        await page.click(viewport.next);
+    const fontSizes = await supportedFontSizes(page);
+    expect(fontSizes).toEqual([1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50]);
+    for (const fontSize of fontSizes) {
+      await test.step(`${fontSize.toFixed(2)}rem remains selected and unclipped`, async () => {
+        await setFontSize(page, fontSize);
         await expect.poll(() => clippedParagraphs(page)).toEqual([]);
-      }
+
+        for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
+          await page.click(viewport.next);
+          await expect.poll(() => clippedParagraphs(page)).toEqual([]);
+        }
+      });
     }
 
     const preferences = await page.evaluate(() => localStorage.getItem('reader_readerPreferences'));
@@ -184,3 +222,117 @@ for (const viewport of [
     await context.close();
   });
 }
+
+test('BL-050 next paragraph keeps split final paragraph before chapter change', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await context.newPage();
+
+  const shortLead = {
+    content: 'A short opening paragraph keeps the chapter non-empty before the tall final passage.'
+  };
+  const tallFinal = {
+    content: Array.from({ length: 80 }, (_, index) =>
+      `Continuation sentence ${index + 1} keeps this closing paragraph taller than one column so fragments spill across pages.`
+    ).join(' ')
+  };
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+
+    if (method === 'GET' && path === '/api/auth/status') {
+      return json(route, 200, { publicMode: false, authRequired: false, authenticated: false, canAccessSensitive: true });
+    }
+    if (method === 'GET' && path === '/api/account/status') {
+      return json(route, 200, { accountAuthEnabled: false, authenticated: false, rolloutMode: 'disabled', accountRequired: false });
+    }
+    if (method === 'GET' && path === '/api/classroom/context') {
+      return json(route, 200, { enrolled: false });
+    }
+    if (method === 'GET' && path === '/api/library') {
+      return json(route, 200, [TEST_BOOK]);
+    }
+    if (method === 'GET' && path === '/api/import/popular') {
+      return json(route, 200, []);
+    }
+    if (method === 'GET' && path === '/api/features') {
+      return json(route, 200, { speedReadingEnabled: false });
+    }
+    if (method === 'GET' && path === '/api/library/bl050-book/chapters/bl050-chapter-1') {
+      return json(route, 200, { chapterId: 'bl050-chapter-1', paragraphs: [shortLead, tallFinal] });
+    }
+    if (method === 'GET' && path === '/api/library/bl050-book/chapters/bl050-chapter-2') {
+      return json(route, 200, {
+        chapterId: 'bl050-chapter-2',
+        paragraphs: [{ content: 'Chapter two proves the navigator left the split final paragraph too early.' }]
+      });
+    }
+    if (method === 'GET' && (path.endsWith('/annotations') || path.endsWith('/bookmarks'))) {
+      return json(route, 200, []);
+    }
+    if (method === 'GET' && path.endsWith('/status')) {
+      return json(route, 200, { enabled: false, available: false, cacheOnly: true });
+    }
+    if (method === 'POST') {
+      return json(route, 202, {});
+    }
+    return json(route, 404, { error: `Unhandled BL-050 fixture route: ${method} ${path}` });
+  });
+
+  await openFixture(page);
+  await setFontSize(page, 1.40);
+
+  const initial = await page.evaluate(() => {
+    const indicator = document.getElementById('page-indicator')?.textContent || '';
+    const match = indicator.match(/Page (\d+) of (\d+)/);
+    return {
+      page: Number(match?.[1] || 0),
+      totalPages: Number(match?.[2] || 0),
+      chapterTitle: document.getElementById('chapter-title')?.textContent || '',
+      highlightedIndex: Number(document.querySelector('.paragraph.highlighted')?.dataset.index ?? -1),
+      visibleIndexes: [...document.querySelectorAll('.column .paragraph')].map((node) => Number(node.dataset.index))
+    };
+  });
+
+  expect(initial.totalPages).toBeGreaterThan(1);
+  expect(initial.visibleIndexes).toContain(1);
+
+  // Jump highlight to the final paragraph without leaving its first fragment page.
+  await page.locator('.column .paragraph[data-index="1"]').first().click();
+  await expect.poll(async () =>
+    page.locator('.paragraph.highlighted').first().getAttribute('data-index')
+  ).toBe('1');
+
+  const beforeNext = await page.locator('#page-indicator').textContent();
+  await page.keyboard.press('j');
+
+  const afterFirstJ = await page.evaluate(() => {
+    const indicator = document.getElementById('page-indicator')?.textContent || '';
+    const match = indicator.match(/Page (\d+) of (\d+)/);
+    return {
+      page: Number(match?.[1] || 0),
+      totalPages: Number(match?.[2] || 0),
+      chapterTitle: document.getElementById('chapter-title')?.textContent || '',
+      highlightedIndex: Number(document.querySelector('.paragraph.highlighted')?.dataset.index ?? -1),
+      visibleIndexes: [...document.querySelectorAll('.column .paragraph')].map((node) => Number(node.dataset.index)),
+      indicator
+    };
+  });
+
+  expect(afterFirstJ.chapterTitle).toBe(initial.chapterTitle);
+  expect(afterFirstJ.highlightedIndex).toBe(1);
+  expect(afterFirstJ.visibleIndexes).toContain(1);
+  expect(afterFirstJ.page).toBeGreaterThan(Number(beforeNext.match(/Page (\d+)/)?.[1] || 0));
+  expect(afterFirstJ.chapterTitle).toBe('Chapter One');
+
+  // Exhaust remaining final-paragraph pages, then j should advance chapters.
+  for (let guard = 0; guard < 40; guard += 1) {
+    const chapterTitle = await page.locator('#chapter-title').textContent();
+    if (chapterTitle === 'Chapter Two') break;
+    await page.keyboard.press('j');
+  }
+
+  await expect.poll(async () => page.locator('#chapter-title').textContent()).toBe('Chapter Two');
+  await context.close();
+});

@@ -5183,21 +5183,61 @@
         }
     }
 
+    function pageContainsParagraph(pageData, paragraphIndex) {
+        return !!pageData
+            && paragraphIndex >= pageData.startParagraph
+            && paragraphIndex <= pageData.endParagraph;
+    }
+
+    function findPageForParagraph(paragraphIndex, options = {}) {
+        const preferLast = options.preferLast === true;
+        if (preferLast) {
+            for (let i = state.pagesData.length - 1; i >= 0; i--) {
+                if (pageContainsParagraph(state.pagesData[i], paragraphIndex)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        return state.pagesData.findIndex((page) => pageContainsParagraph(page, paragraphIndex));
+    }
+
     function nextParagraph() {
-        if (state.currentParagraphIndex < state.paragraphs.length - 1) {
+        const lastParagraphIndex = state.paragraphs.length - 1;
+
+        if (state.currentParagraphIndex < lastParagraphIndex) {
             state.currentParagraphIndex++;
 
-            // Check if we need to change page
+            // Move to the page that holds the target paragraph (first fragment if split).
             const pageData = state.pagesData[state.currentPage];
-            if (state.currentParagraphIndex > pageData.endParagraph) {
-                nextPage();
-            } else {
-                renderPage();
+            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
+                const targetPage = findPageForParagraph(state.currentParagraphIndex);
+                if (targetPage >= 0) {
+                    state.currentPage = targetPage;
+                } else if (state.currentPage < state.totalPages - 1) {
+                    state.currentPage++;
+                }
             }
+            renderPage();
             if (readingBuddyController) {
                 readingBuddyController.onParagraphAdvanced();
             }
-        } else if (state.currentChapterIndex < state.chapters.length - 1) {
+            return;
+        }
+
+        // Final paragraph may still have continuation fragments on later pages.
+        // Do not treat "last paragraph index" as chapter-complete until those are shown.
+        if (state.currentPage < state.totalPages - 1) {
+            state.currentPage++;
+            state.currentParagraphIndex = lastParagraphIndex;
+            renderPage();
+            if (readingBuddyController) {
+                readingBuddyController.onParagraphAdvanced();
+            }
+            return;
+        }
+
+        if (state.currentChapterIndex < state.chapters.length - 1) {
             goToNextChapter(true);
         }
     }
@@ -5206,16 +5246,29 @@
         if (state.currentParagraphIndex > 0) {
             state.currentParagraphIndex--;
 
-            // Check if we need to change page
             const pageData = state.pagesData[state.currentPage];
-            if (state.currentParagraphIndex < pageData.startParagraph) {
-                prevPage();
-                state.currentParagraphIndex = state.pagesData[state.currentPage].endParagraph;
-                renderPage();
-            } else {
-                renderPage();
+            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
+                // Prefer the last page that still contains this paragraph (end of a split).
+                const targetPage = findPageForParagraph(state.currentParagraphIndex, { preferLast: true });
+                if (targetPage >= 0) {
+                    state.currentPage = targetPage;
+                } else if (state.currentPage > 0) {
+                    state.currentPage--;
+                }
             }
-        } else if (state.currentChapterIndex > 0) {
+            renderPage();
+            return;
+        }
+
+        // First paragraph may still have earlier fragments on previous pages.
+        if (state.currentPage > 0) {
+            state.currentPage--;
+            state.currentParagraphIndex = 0;
+            renderPage();
+            return;
+        }
+
+        if (state.currentChapterIndex > 0) {
             // Go to previous chapter, last paragraph
             loadChapter(state.currentChapterIndex - 1).then(applied => {
                 if (!applied) return;
