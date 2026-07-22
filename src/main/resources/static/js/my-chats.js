@@ -285,6 +285,27 @@
         return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
+    function toReaderParagraphParam(paragraphIndex) {
+        const parsed = Number.isInteger(paragraphIndex)
+            ? paragraphIndex
+            : Number.parseInt(paragraphIndex, 10);
+        const zeroBased = Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+        // reader.js treats ?paragraph as one-based and subtracts 1.
+        return String(zeroBased + 1);
+    }
+
+    function buildOpenBookUrl(session) {
+        if (!session?.context?.chapterId || !session?.book?.id) {
+            return null;
+        }
+        const params = new URLSearchParams({
+            book: session.book.id,
+            chapter: session.context.chapterId,
+            paragraph: toReaderParagraphParam(session.context.paragraphIndex)
+        });
+        return `/?${params.toString()}`;
+    }
+
     function createElement(documentRef, tag, className, text) {
         const element = documentRef.createElement(tag);
         if (className) element.className = className;
@@ -616,12 +637,7 @@
             renderConversationMessages(documentRef, messagesElement, detail.messages, characterName);
 
             if (session?.context?.chapterId && session?.book?.id) {
-                const params = new URLSearchParams({
-                    book: session.book.id,
-                    chapter: session.context.chapterId,
-                    paragraph: String(session.context.paragraphIndex || 0)
-                });
-                openBook.href = `/?${params.toString()}`;
+                openBook.href = buildOpenBookUrl(session);
                 openBook.classList.remove('hidden');
             } else {
                 openBook.classList.add('hidden');
@@ -827,6 +843,7 @@
     return {
         buildFilterOptions,
         buildListRequestUrl,
+        buildOpenBookUrl,
         catalogFromSessionItems,
         createInitialListState,
         formatRelativeTime,
@@ -837,6 +854,7 @@
         normalizeFilters,
         reduceListState,
         safeResumeUrl,
+        toReaderParagraphParam,
         unavailableReason
     };
 });

@@ -7,6 +7,7 @@ import com.classicchatreader.entity.CharacterChatMessageEntity;
 import com.classicchatreader.entity.CharacterChatMessageRole;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterStatus;
+import com.classicchatreader.entity.CharacterType;
 import com.classicchatreader.model.ClassroomContextResponse;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -224,6 +225,32 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void secondaryCharactersRemainReadableButCannotContinue() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Minor Character", BASE.plusMinutes(2));
+        fixture.character().setCharacterType(CharacterType.SECONDARY);
+        entityManager.merge(fixture.character());
+        addMessage(fixture.session(), "USER", "Earlier", BASE.plusMinutes(1));
+        addMessage(fixture.session(), "CHARACTER", "Reply", BASE.plusMinutes(2));
+        flushAndClear();
+
+        var detail = service.get("owner", fixture.session().getId());
+        assertThat(detail).isNotNull();
+        assertThat(detail.messages()).hasSize(2);
+        assertThat(detail.session().resume().available()).isFalse();
+        assertThat(detail.session().resume().unavailableReason()).isEqualTo("CHARACTER_UNAVAILABLE");
+
+        assertThatThrownBy(() -> service.continueConversation(
+                "owner",
+                fixture.session().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Try again", null),
+                "request-secondary"))
+                .isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(characterChatService);
+    }
+
+    @Test
     void previewIsNormalizedAndTruncatedByUnicodeCodePoint() {
         Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
         String content = "  hello\n\tworld  " + "😀".repeat(200);
@@ -333,6 +360,7 @@ class AccountChatHistoryServiceTest {
 
         CharacterEntity character = new CharacterEntity(book, characterName, "Description", chapter, 0);
         character.setStatus(CharacterStatus.COMPLETED);
+        character.setCharacterType(CharacterType.PRIMARY);
         character.setPortraitFilename(characterName + ".png");
         entityManager.persist(character);
 

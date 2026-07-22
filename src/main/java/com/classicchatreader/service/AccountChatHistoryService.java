@@ -5,6 +5,7 @@ import com.classicchatreader.entity.CharacterChatMessageEntity;
 import com.classicchatreader.entity.CharacterChatMessageRole;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.entity.CharacterEntity;
+import com.classicchatreader.entity.CharacterType;
 import com.classicchatreader.model.AccountChatModels.BookIdentity;
 import com.classicchatreader.model.AccountChatModels.CharacterFilterOption;
 import com.classicchatreader.model.AccountChatModels.ChatContext;
@@ -482,7 +483,10 @@ public class AccountChatHistoryService {
         String reason = null;
         if (!chatEnabled) reason = "CHAT_DISABLED";
         else if (!characterEnabled || !Boolean.TRUE.equals(character.getBook().getCharacterEnabled())) reason = "BOOK_DISABLED";
-        else if (character.getStatus() != CharacterStatus.COMPLETED) reason = "CHARACTER_UNAVAILABLE";
+        else if (character.getStatus() != CharacterStatus.COMPLETED
+                || character.getCharacterType() != CharacterType.PRIMARY) {
+            reason = "CHARACTER_UNAVAILABLE";
+        }
         else if (classroom != null && classroom.enrolled()
                 && (!classroom.features().characterEnabled() || !classroom.features().chatEnabled())) {
             reason = "CLASSROOM_POLICY";

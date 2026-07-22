@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 const {
     buildListRequestUrl,
     buildFilterOptions,
+    buildOpenBookUrl,
     createInitialListState,
     getListViewModel,
     reduceListState,
-    safeResumeUrl
+    safeResumeUrl,
+    toReaderParagraphParam
 } = require('../../main/resources/static/js/my-chats.js');
 
 function chat(overrides = {}) {
@@ -163,4 +165,19 @@ test('unsafe, missing, and unavailable resume targets are rejected', () => {
     assert.equal(safeResumeUrl(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), null);
     assert.equal(safeResumeUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), null);
     assert.equal(safeResumeUrl(chat({ resume: { available: true, url: '/my-chats?session=server-owned-id' } })), '/my-chats?session=server-owned-id');
+});
+
+test('open-book URL converts zero-based paragraph indexes to the one-based reader route', () => {
+    assert.equal(toReaderParagraphParam(0), '1');
+    assert.equal(toReaderParagraphParam(4), '5');
+    assert.equal(toReaderParagraphParam(undefined), '1');
+
+    const url = buildOpenBookUrl({
+        book: { id: 'book-1' },
+        context: { chapterId: 'chapter-1', paragraphIndex: 4 }
+    });
+    const parsed = new URL(url, 'https://classicchatreader.test');
+    assert.equal(parsed.searchParams.get('book'), 'book-1');
+    assert.equal(parsed.searchParams.get('chapter'), 'chapter-1');
+    assert.equal(parsed.searchParams.get('paragraph'), '5');
 });
