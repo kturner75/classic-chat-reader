@@ -5,10 +5,12 @@ const {
     buildListRequestUrl,
     buildFilterOptions,
     buildOpenBookUrl,
+    canContinueChat,
     createInitialListState,
     getListViewModel,
     reduceListState,
     safeResumeUrl,
+    safeSessionUrl,
     toReaderParagraphParam
 } = require('../../main/resources/static/js/my-chats.js');
 
@@ -161,10 +163,14 @@ test('filter catalog can include options beyond the currently loaded page items'
     assert.deepEqual(options.characters.map(option => option.id), ['character-old', 'character-1']);
 });
 
-test('unsafe, missing, and unavailable resume targets are rejected', () => {
+test('unsafe and missing session targets are rejected, but read-only chats keep a view URL', () => {
     assert.equal(safeResumeUrl(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), null);
+    assert.equal(safeSessionUrl(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), '/my-chats?session=session-1');
+    assert.equal(canContinueChat(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), false);
     assert.equal(safeResumeUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), null);
+    assert.equal(safeSessionUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), null);
     assert.equal(safeResumeUrl(chat({ resume: { available: true, url: '/my-chats?session=server-owned-id' } })), '/my-chats?session=server-owned-id');
+    assert.equal(canContinueChat(chat({ resume: { available: true, url: '/my-chats?session=server-owned-id' } })), true);
 });
 
 test('open-book URL converts zero-based paragraph indexes to the one-based reader route', () => {

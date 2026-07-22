@@ -246,24 +246,37 @@
         };
     }
 
+    function safeSessionUrl(item) {
+        const candidates = [
+            typeof item?.resume?.url === 'string' ? item.resume.url : '',
+            item?.sessionId ? `/my-chats?session=${item.sessionId}` : ''
+        ];
+        for (const candidate of candidates) {
+            const value = candidate.trim();
+            if (!/^\/my-chats\?/.test(value)) {
+                continue;
+            }
+            try {
+                const parsed = new URL(value, 'https://classicchatreader.invalid');
+                if (parsed.origin === 'https://classicchatreader.invalid'
+                        && parsed.pathname === '/my-chats'
+                        && parsed.searchParams.has('session')) {
+                    return `${parsed.pathname}${parsed.search}`;
+                }
+            } catch (_error) {
+                // try next candidate
+            }
+        }
+        return null;
+    }
+
+    function canContinueChat(item) {
+        return item?.resume?.available === true && !!safeSessionUrl(item);
+    }
+
+    /** @deprecated Prefer safeSessionUrl + canContinueChat; kept for existing tests/callers. */
     function safeResumeUrl(item) {
-        if (item?.resume?.available !== true || typeof item.resume.url !== 'string') {
-            return null;
-        }
-        const value = item.resume.url.trim();
-        if (!/^\/my-chats\?/.test(value)) {
-            return null;
-        }
-        try {
-            const parsed = new URL(value, 'https://classicchatreader.invalid');
-            return parsed.origin === 'https://classicchatreader.invalid'
-                && parsed.pathname === '/my-chats'
-                && parsed.searchParams.has('session')
-                ? `${parsed.pathname}${parsed.search}`
-                : null;
-        } catch (_error) {
-            return null;
-        }
+        return canContinueChat(item) ? safeSessionUrl(item) : null;
     }
 
     function unavailableReason(reason) {
@@ -409,12 +422,18 @@
             content.appendChild(time);
 
             const actions = createElement(documentRef, 'div', 'my-chat-card-actions');
-            const target = safeResumeUrl(item);
+            const target = safeSessionUrl(item);
             if (target) {
-                const resume = createElement(documentRef, 'a', 'my-chat-primary-action', 'Resume chat');
-                resume.href = target;
-                actions.appendChild(resume);
-            } else {
+                const open = createElement(
+                    documentRef,
+                    'a',
+                    canContinueChat(item) ? 'my-chat-primary-action' : 'my-chat-secondary-action',
+                    canContinueChat(item) ? 'Resume chat' : 'View chat'
+                );
+                open.href = target;
+                actions.appendChild(open);
+            }
+            if (!canContinueChat(item)) {
                 const reason = createElement(
                     documentRef,
                     'p',
@@ -844,6 +863,7 @@
         buildFilterOptions,
         buildListRequestUrl,
         buildOpenBookUrl,
+        canContinueChat,
         catalogFromSessionItems,
         createInitialListState,
         formatRelativeTime,
@@ -854,6 +874,7 @@
         normalizeFilters,
         reduceListState,
         safeResumeUrl,
+        safeSessionUrl,
         toReaderParagraphParam,
         unavailableReason
     };
