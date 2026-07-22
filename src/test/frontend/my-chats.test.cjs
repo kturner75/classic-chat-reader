@@ -127,17 +127,36 @@ test('request URL includes normalized filters and resets cursor when filters cha
 });
 
 test('filter choices are alphabetized and characters are constrained by book', () => {
-    const options = buildFilterOptions([
-        chat({
-            sessionId: 'session-2',
-            character: { id: 'character-2', name: 'Zaphod', portraitUrl: null },
-            book: { id: 'book-2', title: 'The Hitchhiker’s Guide', author: 'Douglas Adams' }
-        }),
-        chat()
-    ], 'book-1');
+    const options = buildFilterOptions({
+        books: [
+            { id: 'book-2', label: 'The Hitchhiker’s Guide' },
+            { id: 'book-1', label: 'Pride and Prejudice' }
+        ],
+        characters: [
+            { id: 'character-2', label: 'Zaphod', bookId: 'book-2' },
+            { id: 'character-1', label: 'Elizabeth Bennet', bookId: 'book-1' }
+        ]
+    }, 'book-1');
 
     assert.deepEqual(options.books.map(option => option.label), ['Pride and Prejudice', 'The Hitchhiker’s Guide']);
     assert.deepEqual(options.characters.map(option => option.label), ['Elizabeth Bennet']);
+});
+
+test('filter catalog can include options beyond the currently loaded page items', () => {
+    const catalog = {
+        books: [
+            { id: 'book-1', label: 'Pride and Prejudice' },
+            { id: 'book-old', label: 'Moby-Dick' }
+        ],
+        characters: [
+            { id: 'character-1', label: 'Elizabeth Bennet', bookId: 'book-1' },
+            { id: 'character-old', label: 'Ahab', bookId: 'book-old' }
+        ]
+    };
+    const options = buildFilterOptions(catalog, '');
+
+    assert.deepEqual(options.books.map(option => option.id), ['book-old', 'book-1']);
+    assert.deepEqual(options.characters.map(option => option.id), ['character-old', 'character-1']);
 });
 
 test('unsafe, missing, and unavailable resume targets are rejected', () => {

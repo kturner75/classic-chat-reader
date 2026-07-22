@@ -45,6 +45,15 @@ public final class AccountChatModels {
     public record SessionListResponse(List<SessionSummary> items, PageInfo page) {
     }
 
+    public record FilterOption(String id, String label) {
+    }
+
+    public record CharacterFilterOption(String id, String label, String bookId) {
+    }
+
+    public record FilterOptionsResponse(List<FilterOption> books, List<CharacterFilterOption> characters) {
+    }
+
     public record SessionDetail(
             String sessionId,
             CharacterIdentity character,

@@ -178,15 +178,36 @@
         return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
     }
 
-    function buildFilterOptions(items, selectedBookId) {
+    function buildFilterOptions(catalog, selectedBookId) {
+        const source = catalog && typeof catalog === 'object' ? catalog : {};
+        const books = Array.isArray(source.books)
+            ? [...source.books]
+                .filter(option => option?.id && option?.label)
+                .map(option => ({ id: option.id, label: option.label }))
+                .sort(compareLabels)
+            : [];
+        const characters = Array.isArray(source.characters)
+            ? [...source.characters]
+                .filter(option => option?.id && option?.label
+                    && (!selectedBookId || option.bookId === selectedBookId))
+                .map(option => ({
+                    id: option.id,
+                    label: option.label,
+                    bookId: option.bookId || ''
+                }))
+                .sort(compareLabels)
+            : [];
+        return { books, characters };
+    }
+
+    function catalogFromSessionItems(items) {
         const books = new Map();
         const characters = new Map();
         (Array.isArray(items) ? items : []).forEach((item) => {
             if (item?.book?.id && item.book.title) {
                 books.set(item.book.id, { id: item.book.id, label: item.book.title });
             }
-            if (item?.character?.id && item.character.name
-                    && (!selectedBookId || item?.book?.id === selectedBookId)) {
+            if (item?.character?.id && item.character.name) {
                 characters.set(item.character.id, {
                     id: item.character.id,
                     label: item.character.name,
@@ -195,8 +216,33 @@
             }
         });
         return {
-            books: [...books.values()].sort(compareLabels),
-            characters: [...characters.values()].sort(compareLabels)
+            books: [...books.values()],
+            characters: [...characters.values()]
+        };
+    }
+
+    function mergeFilterCatalog(primary, fallback) {
+        const books = new Map();
+        const characters = new Map();
+        [primary, fallback].forEach((catalog) => {
+            (catalog?.books || []).forEach((option) => {
+                if (option?.id && option?.label) {
+                    books.set(option.id, { id: option.id, label: option.label });
+                }
+            });
+            (catalog?.characters || []).forEach((option) => {
+                if (option?.id && option?.label) {
+                    characters.set(option.id, {
+                        id: option.id,
+                        label: option.label,
+                        bookId: option.bookId || ''
+                    });
+                }
+            });
+        });
+        return {
+            books: [...books.values()],
+            characters: [...characters.values()]
         };
     }
 
@@ -285,7 +331,7 @@
         const characterOptionsElement = documentRef.getElementById('my-chats-character-options');
         const filterNoResults = documentRef.getElementById('my-chats-filter-no-results');
         let state = createInitialListState();
-        let knownItems = [];
+        let filterCatalog = { books: [], characters: [] };
         let filterOptions = { books: [], characters: [] };
         let debounceTimer = null;
         let requestSequence = 0;
@@ -302,7 +348,7 @@
 
         function updateFilterOptions() {
             const selectedBookId = resolveChoiceId(bookInput.value, filterOptions.books);
-            filterOptions = buildFilterOptions(knownItems, selectedBookId);
+            filterOptions = buildFilterOptions(filterCatalog, selectedBookId);
             renderOptions(bookOptionsElement, filterOptions.books);
             renderOptions(characterOptionsElement, filterOptions.characters);
         }
@@ -410,7 +456,7 @@
 
         function currentFilters() {
             const bookId = resolveChoiceId(bookInput.value, filterOptions.books);
-            const scopedOptions = buildFilterOptions(knownItems, bookId).characters;
+            const scopedOptions = buildFilterOptions(filterCatalog, bookId).characters;
             const characterId = resolveChoiceId(characterInput.value, scopedOptions);
             const invalidChoice = (bookInput.value && !bookId) || (characterInput.value && !characterId);
             filterNoResults.classList.toggle('hidden', !invalidChoice);
@@ -422,6 +468,26 @@
                 activeAfter: afterInput.value,
                 activeBefore: beforeInput.value
             });
+        }
+
+        async function loadFilterCatalog() {
+            try {
+                const response = await fetchRef('/api/account/chats/filters', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                const payload = await readJson(response);
+                if (!response.ok) {
+                    throw new Error(readErrorMessage(payload, 'Could not load filter options.'));
+                }
+                filterCatalog = {
+                    books: Array.isArray(payload?.books) ? payload.books : [],
+                    characters: Array.isArray(payload?.characters) ? payload.characters : []
+                };
+            } catch (_error) {
+                // Keep whatever catalog we already have; list pages can still enrich it.
+            }
+            updateFilterOptions();
         }
 
         async function loadPage(append) {
@@ -441,9 +507,7 @@
                 }
                 if (sequence !== requestSequence) return;
                 state = reduceListState(state, { type: 'LOAD_SUCCEEDED', payload });
-                const byId = new Map(knownItems.map(item => [item.sessionId, item]));
-                state.items.forEach(item => byId.set(item.sessionId, item));
-                knownItems = [...byId.values()];
+                filterCatalog = mergeFilterCatalog(filterCatalog, catalogFromSessionItems(state.items));
                 updateFilterOptions();
             } catch (error) {
                 if (sequence !== requestSequence) return;
@@ -487,7 +551,10 @@
         loadMore.addEventListener('click', () => void loadPage(true));
         loadMoreRetry.addEventListener('click', () => void loadPage(true));
         render();
-        void loadPage(false);
+        void (async () => {
+            await loadFilterCatalog();
+            await loadPage(false);
+        })();
     }
 
     function renderConversationMessages(documentRef, container, messages, characterName) {
@@ -760,11 +827,13 @@
     return {
         buildFilterOptions,
         buildListRequestUrl,
+        catalogFromSessionItems,
         createInitialListState,
         formatRelativeTime,
         getListViewModel,
         hasFilters,
         init,
+        mergeFilterCatalog,
         normalizeFilters,
         reduceListState,
         safeResumeUrl,

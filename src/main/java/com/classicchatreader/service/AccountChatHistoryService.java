@@ -6,10 +6,13 @@ import com.classicchatreader.entity.CharacterChatMessageRole;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.model.AccountChatModels.BookIdentity;
+import com.classicchatreader.model.AccountChatModels.CharacterFilterOption;
 import com.classicchatreader.model.AccountChatModels.ChatContext;
 import com.classicchatreader.model.AccountChatModels.CharacterIdentity;
 import com.classicchatreader.model.AccountChatModels.ContinueRequest;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
+import com.classicchatreader.model.AccountChatModels.FilterOption;
+import com.classicchatreader.model.AccountChatModels.FilterOptionsResponse;
 import com.classicchatreader.model.AccountChatModels.Message;
 import com.classicchatreader.model.AccountChatModels.PageInfo;
 import com.classicchatreader.model.AccountChatModels.Resume;
@@ -121,6 +124,18 @@ public class AccountChatHistoryService {
                 .toList();
         String nextCursor = hasMore ? encodeCursor(sessions.get(sessions.size() - 1), valid.fingerprint()) : null;
         return new SessionListResponse(items, new PageInfo(valid.limit(), nextCursor, hasMore));
+    }
+
+    @Transactional(readOnly = true)
+    public FilterOptionsResponse filterOptions(String ownerUserId) {
+        Objects.requireNonNull(ownerUserId, "ownerUserId");
+        List<FilterOption> books = conversationRepository.findVisibleFilterBooks(ownerUserId).stream()
+                .map(row -> new FilterOption(row.getId(), row.getTitle()))
+                .toList();
+        List<CharacterFilterOption> characters = conversationRepository.findVisibleFilterCharacters(ownerUserId).stream()
+                .map(row -> new CharacterFilterOption(row.getId(), row.getName(), row.getBookId()))
+                .toList();
+        return new FilterOptionsResponse(books, characters);
     }
 
     @Transactional(readOnly = true)

@@ -60,4 +60,43 @@ public interface CharacterChatConversationRepository extends JpaRepository<Chara
             @Param("cursorId") String cursorId,
             Pageable pageable
     );
+
+    @Query("""
+            SELECT DISTINCT book.id AS id, book.title AS title
+            FROM CharacterChatConversationEntity conversation
+            JOIN CharacterEntity character ON character.id = conversation.characterId
+            JOIN character.book book
+            WHERE conversation.userId = :userId
+              AND EXISTS (SELECT userMessage.id FROM CharacterChatMessageEntity userMessage
+                          WHERE userMessage.conversationId = conversation.id
+                            AND userMessage.userId = :userId
+                            AND userMessage.role = com.classicchatreader.entity.CharacterChatMessageRole.USER)
+            ORDER BY book.title ASC
+            """)
+    List<BookFilterRow> findVisibleFilterBooks(@Param("userId") String userId);
+
+    @Query("""
+            SELECT DISTINCT character.id AS id, character.name AS name, book.id AS bookId
+            FROM CharacterChatConversationEntity conversation
+            JOIN CharacterEntity character ON character.id = conversation.characterId
+            JOIN character.book book
+            WHERE conversation.userId = :userId
+              AND EXISTS (SELECT userMessage.id FROM CharacterChatMessageEntity userMessage
+                          WHERE userMessage.conversationId = conversation.id
+                            AND userMessage.userId = :userId
+                            AND userMessage.role = com.classicchatreader.entity.CharacterChatMessageRole.USER)
+            ORDER BY character.name ASC
+            """)
+    List<CharacterFilterRow> findVisibleFilterCharacters(@Param("userId") String userId);
+
+    interface BookFilterRow {
+        String getId();
+        String getTitle();
+    }
+
+    interface CharacterFilterRow {
+        String getId();
+        String getName();
+        String getBookId();
+    }
 }

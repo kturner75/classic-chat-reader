@@ -96,6 +96,29 @@ class AccountChatControllerTest {
     }
 
     @Test
+    void filtersUsesAuthenticatedUserAndReturnsCompleteCatalog() throws Exception {
+        authenticate("user-1");
+        when(chatHistoryService.filterOptions("user-1")).thenReturn(
+                new com.classicchatreader.model.AccountChatModels.FilterOptionsResponse(
+                        List.of(new com.classicchatreader.model.AccountChatModels.FilterOption(
+                                "book-1", "Pride and Prejudice")),
+                        List.of(new com.classicchatreader.model.AccountChatModels.CharacterFilterOption(
+                                "character-1", "Elizabeth", "book-1"))
+                )
+        );
+
+        mockMvc.perform(get("/api/account/chats/filters"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.books[0].id", is("book-1")))
+                .andExpect(jsonPath("$.books[0].label", is("Pride and Prejudice")))
+                .andExpect(jsonPath("$.characters[0].id", is("character-1")))
+                .andExpect(jsonPath("$.characters[0].bookId", is("book-1")));
+
+        verify(chatHistoryService).filterOptions("user-1");
+    }
+
+    @Test
     void malformedParametersUseDocumentedErrorEnvelope() throws Exception {
         authenticate("user-1");
         when(chatHistoryService.list(eq("user-1"), any()))

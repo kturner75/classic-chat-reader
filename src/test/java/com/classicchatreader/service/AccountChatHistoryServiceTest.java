@@ -80,6 +80,28 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void filterOptions_returnsDistinctOwnedBooksAndCharactersIncludingBeyondFirstPage() {
+        Fixture pride = sessionWithUserMessage("owner", "Pride and Prejudice", "Jane Austen", "Elizabeth", BASE.plusMinutes(5));
+        Fixture moby = sessionWithUserMessage("owner", "Moby-Dick", "Herman Melville", "Ahab", BASE.plusMinutes(1));
+        Fixture otherOwner = sessionWithUserMessage("other", "Secret Book", "Author", "Hidden", BASE.plusMinutes(4));
+        Fixture empty = createSession("owner", "Empty Book", "Author", "Nobody", BASE.plusMinutes(3));
+        addMessage(empty.session(), "CHARACTER", "greeting only", BASE.plusMinutes(3));
+        flushAndClear();
+
+        var filters = service.filterOptions("owner");
+
+        assertThat(filters.books()).extracting(option -> option.label())
+                .containsExactly("Moby-Dick", "Pride and Prejudice");
+        assertThat(filters.characters()).extracting(option -> option.label())
+                .containsExactly("Ahab", "Elizabeth");
+        assertThat(filters.characters()).extracting(option -> option.bookId())
+                .containsExactlyInAnyOrder(moby.book().getId(), pride.book().getId());
+        assertThat(filters.books()).extracting(option -> option.id()).doesNotContain(otherOwner.book().getId());
+        assertThat(filters.characters()).extracting(option -> option.id())
+                .doesNotContain(otherOwner.character().getId(), empty.character().getId());
+    }
+
+    @Test
     void list_emptyOwnerReturnsEmptyPageWithRequestedLimit() {
         var result = service.list("owner-with-no-chats", request("50", null, null, null, null, null, null, null));
 

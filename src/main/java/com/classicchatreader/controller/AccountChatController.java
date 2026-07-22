@@ -4,6 +4,7 @@ import com.classicchatreader.model.AccountChatModels.ApiError;
 import com.classicchatreader.model.AccountChatModels.ContinueRequest;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
 import com.classicchatreader.model.AccountChatModels.ErrorEnvelope;
+import com.classicchatreader.model.AccountChatModels.FilterOptionsResponse;
 import com.classicchatreader.model.AccountChatModels.SessionDetailResponse;
 import com.classicchatreader.model.AccountChatModels.SessionListResponse;
 import com.classicchatreader.service.AccountAuthService;
@@ -62,6 +63,14 @@ public class AccountChatController {
         } catch (ChatHistoryValidationException ex) {
             return error(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage());
         }
+    }
+
+    @GetMapping("/filters")
+    public ResponseEntity<?> filters(HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
+        FilterOptionsResponse response = chatHistoryService.filterOptions(principal.get().userId());
+        return ok(response);
     }
 
     @GetMapping("/{sessionId}")
