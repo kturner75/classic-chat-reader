@@ -36,7 +36,7 @@ class CharacterChatMigrationTest {
         flyway.clean();
         flyway.migrate();
         flyway.validate();
-        assertEquals("18", flyway.info().current().getVersion().getVersion());
+        assertEquals("19", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "");
              Statement statement = connection.createStatement()) {
@@ -139,17 +139,20 @@ class CharacterChatMigrationTest {
 
             ScriptUtils.executeSqlScript(
                     connection,
+                    new ClassPathResource("db/rollback/U18__character_chat_resume_context.sql"));
+            ScriptUtils.executeSqlScript(
+                    connection,
                     new ClassPathResource("db/rollback/U17__character_chat_persistence.sql"));
             assertFalse(tableExists(connection, "CHARACTER_CHAT_MESSAGES"));
             assertFalse(tableExists(connection, "CHARACTER_CHAT_CONVERSATIONS"));
             statement.executeUpdate("""
-                    DELETE FROM "flyway_schema_history" WHERE "version" IN ('17', '18')
+                    DELETE FROM "flyway_schema_history" WHERE "version" IN ('17', '18', '19')
                     """);
         }
 
         flyway.migrate();
         flyway.validate();
-        assertEquals("18", flyway.info().current().getVersion().getVersion());
+        assertEquals("19", flyway.info().current().getVersion().getVersion());
         try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
             assertTrue(tableExists(connection, "CHARACTER_CHAT_MESSAGES"));
             assertTrue(tableExists(connection, "CHARACTER_CHAT_CONVERSATIONS"));

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>My Chats · ClassicChatReader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/my-chats.css">
+</head>
+<body>
+    <header class="my-chats-site-header">
+        <a class="my-chats-brand" href="/" aria-label="ClassicChatReader Library">
+            <img src="/images/site-logo-mark.png?v=2" alt="" width="48" height="48">
+            <span>ClassicChatReader.com</span>
+        </a>
+        <a class="my-chats-library-link" href="/">Library</a>
+    </header>
+
+    <main class="my-chats-main">
+        <section id="my-chats-auth-shell" class="my-chats-auth-shell" aria-labelledby="my-chats-auth-title">
+            <h1 id="my-chats-auth-title">My Chats</h1>
+            <div id="my-chats-auth-loading" class="my-chats-auth-loading" role="status" aria-live="polite">
+                <span class="my-chats-spinner" aria-hidden="true"></span>
+                Checking your account…
+            </div>
+            <div id="my-chats-auth-error" class="my-chats-callout hidden" role="alert">
+                <span>Unable to check your account.</span>
+                <button id="my-chats-auth-retry" class="my-chat-secondary-action" type="button">Retry</button>
+            </div>
+            <div id="my-chats-sign-in" class="my-chats-sign-in hidden">
+                <h2>Sign in to view My Chats</h2>
+                <p>Your saved character conversations are private to your reader account.</p>
+                <button id="my-chats-google-sign-in" class="my-chat-secondary-action hidden" type="button">Sign in with Google</button>
+                <form id="my-chats-sign-in-form">
+                    <label for="my-chats-email">Email</label>
+                    <input id="my-chats-email" name="email" type="email" autocomplete="email" required>
+                    <label for="my-chats-password">Password</label>
+                    <input id="my-chats-password" name="password" type="password" autocomplete="current-password" required>
+                    <p id="my-chats-sign-in-status" class="my-chats-form-status" role="status" aria-live="polite"></p>
+                    <div class="my-chats-form-actions">
+                        <button id="my-chats-register" class="my-chat-secondary-action" type="button">Register</button>
+                        <button id="my-chats-login" class="my-chat-primary-action" type="submit">Sign in</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <div id="my-chats-app" class="hidden">
+            <section id="my-chats-list-page" aria-labelledby="my-chats-heading">
+                <div class="my-chats-heading-row">
+                    <div>
+                        <p class="my-chats-eyebrow">Your conversations</p>
+                        <h1 id="my-chats-heading">My Chats</h1>
+                        <p class="my-chats-intro">Find a character conversation and continue where you left off.</p>
+                    </div>
+                </div>
+
+                <form id="my-chats-filters" class="my-chats-filters" role="search">
+                    <div class="my-chats-search-field">
+                        <label for="my-chats-search">Search My Chats</label>
+                        <div class="my-chats-search-row">
+                            <input id="my-chats-search" name="q" type="search" maxlength="100" placeholder="Character, book, author, or message">
+                            <button class="my-chat-primary-action" type="submit">Search</button>
+                        </div>
+                    </div>
+                    <div class="my-chats-filter-grid">
+                        <div class="my-chats-field">
+                            <label for="my-chats-book">Book</label>
+                            <input id="my-chats-book" type="text" list="my-chats-book-options" autocomplete="off" placeholder="All books" aria-describedby="my-chats-filter-no-results">
+                            <datalist id="my-chats-book-options"></datalist>
+                        </div>
+                        <div class="my-chats-field">
+                            <label for="my-chats-character">Character</label>
+                            <input id="my-chats-character" type="text" list="my-chats-character-options" autocomplete="off" placeholder="All characters" aria-describedby="my-chats-filter-no-results">
+                            <datalist id="my-chats-character-options"></datalist>
+                        </div>
+                        <div class="my-chats-field">
+                            <label for="my-chats-after">Active on or after</label>
+                            <input id="my-chats-after" type="date">
+                        </div>
+                        <div class="my-chats-field">
+                            <label for="my-chats-before">Active on or before</label>
+                            <input id="my-chats-before" type="date">
+                        </div>
+                    </div>
+                    <div class="my-chats-filter-footer">
+                        <p id="my-chats-filter-no-results" class="my-chats-filter-message hidden" role="status" aria-live="polite"></p>
+                        <button id="my-chats-clear" class="my-chat-text-action" type="button">Clear filters</button>
+                    </div>
+                </form>
+
+                <p id="my-chats-status" class="sr-only" role="status" aria-live="polite"></p>
+                <div id="my-chats-state" class="my-chats-state"></div>
+                <div id="my-chats-list" class="my-chats-list hidden" aria-label="Saved character chats"></div>
+                <div class="my-chats-pagination">
+                    <button id="my-chats-load-more" class="my-chat-secondary-action hidden" type="button">Load more</button>
+                    <div id="my-chats-load-more-error" class="my-chats-inline-error hidden" role="status">
+                        <span></span>
+                        <button id="my-chats-load-more-retry" class="my-chat-text-action" type="button">Retry</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="my-chat-conversation" class="hidden" aria-labelledby="my-chat-conversation-title">
+                <a class="my-chat-back-link" href="/my-chats">← Back to My Chats</a>
+                <div id="my-chat-conversation-loading" class="my-chats-conversation-loading" role="status" aria-live="polite">
+                    <span class="my-chats-spinner" aria-hidden="true"></span>
+                    Loading conversation…
+                </div>
+                <div id="my-chat-conversation-error" class="my-chats-callout hidden" role="alert">
+                    <span>This conversation couldn’t load.</span>
+                    <button id="my-chat-conversation-retry" class="my-chat-secondary-action" type="button">Retry</button>
+                </div>
+                <div class="my-chat-conversation-heading">
+                    <p class="my-chats-eyebrow">Character conversation</p>
+                    <h1 id="my-chat-conversation-title" tabindex="-1"></h1>
+                    <p id="my-chat-conversation-book" class="my-chat-conversation-book"></p>
+                    <p id="my-chat-conversation-context" class="my-chat-conversation-context"></p>
+                    <div class="my-chat-conversation-actions">
+                        <a id="my-chat-open-book" class="my-chat-secondary-action hidden" href="/">Open book</a>
+                        <button id="my-chat-download" class="my-chat-secondary-action" type="button">Download</button>
+                    </div>
+                </div>
+                <div id="my-chat-messages" class="my-chat-messages" aria-label="Conversation messages"></div>
+                <p id="my-chat-conversation-unavailable" class="my-chats-callout hidden" role="status"></p>
+                <form id="my-chat-send-form" class="my-chat-send-form hidden">
+                    <label for="my-chat-composer">Message</label>
+                    <textarea id="my-chat-composer" rows="3" required></textarea>
+                    <p id="my-chat-send-status" class="my-chats-form-status" role="status" aria-live="polite"></p>
+                    <button id="my-chat-send" class="my-chat-primary-action" type="submit">Send message</button>
+                </form>
+            </section>
+        </div>
+    </main>
+
+    <script src="/js/character-chat-export.js"></script>
+    <script src="/js/my-chats.js"></script>
+    <script>MyChats.init();</script>
+</body>
+</html>

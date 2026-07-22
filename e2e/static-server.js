@@ -40,6 +40,8 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/') {
     pathname = '/index.html';
+  } else if (pathname === '/my-chats') {
+    pathname = '/my-chats.html';
   }
 
   const resolvedPath = safeResolve(pathname.slice(1));

@@ -41,6 +41,18 @@ public class CharacterChatConversationEntity {
     @Column(name = "character_id", nullable = false)
     private String characterId;
 
+    @Column(name = "context_chapter_id")
+    private String contextChapterId;
+
+    @Column(name = "context_chapter_index")
+    private Integer contextChapterIndex;
+
+    @Column(name = "context_chapter_title")
+    private String contextChapterTitle;
+
+    @Column(name = "context_paragraph_index")
+    private Integer contextParagraphIndex;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -85,6 +97,38 @@ public class CharacterChatConversationEntity {
 
     public void setCharacterId(String characterId) {
         this.characterId = characterId;
+    }
+
+    public String getContextChapterId() {
+        return contextChapterId;
+    }
+
+    public void setContextChapterId(String contextChapterId) {
+        this.contextChapterId = contextChapterId;
+    }
+
+    public Integer getContextChapterIndex() {
+        return contextChapterIndex;
+    }
+
+    public void setContextChapterIndex(Integer contextChapterIndex) {
+        this.contextChapterIndex = contextChapterIndex;
+    }
+
+    public String getContextChapterTitle() {
+        return contextChapterTitle;
+    }
+
+    public void setContextChapterTitle(String contextChapterTitle) {
+        this.contextChapterTitle = contextChapterTitle;
+    }
+
+    public Integer getContextParagraphIndex() {
+        return contextParagraphIndex;
+    }
+
+    public void setContextParagraphIndex(Integer contextParagraphIndex) {
+        this.contextParagraphIndex = contextParagraphIndex;
     }
 
     public LocalDateTime getCreatedAt() {

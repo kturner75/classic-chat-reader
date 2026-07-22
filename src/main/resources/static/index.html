@@ -69,6 +69,15 @@
                 <p id="achievements-summary" class="achievements-summary"></p>
                 <div id="achievements-list" class="achievements-list"></div>
             </section>
+            <section id="my-chats-shelf" class="library-section my-chats-shelf hidden" aria-labelledby="my-chats-title">
+                <div class="section-title-row">
+                    <h2 id="my-chats-title" class="section-title">My Chats</h2>
+                    <a id="my-chats-view-all" class="achievements-view-all my-chats-view-all hidden" href="/my-chats">View all</a>
+                </div>
+                <p id="my-chats-status" class="my-chats-status" role="status" aria-live="polite"></p>
+                <div id="my-chats-list" class="my-chats-list"></div>
+                <button id="my-chats-retry" class="inline-error-btn my-chats-retry hidden" type="button">Retry</button>
+            </section>
             <section id="continue-reading" class="library-section hidden">
                 <h2 class="section-title">Continue Reading</h2>
                 <div id="continue-reading-list" class="book-list"></div>
@@ -903,6 +912,7 @@
     <script src="/js/library-discover.js"></script>
     <script src="/js/citation-utils.js"></script>
     <script src="/js/character-chat-export.js"></script>
+    <script src="/js/my-chats-landing.js"></script>
     <script src="/js/voice-call-utils.js"></script>
     <script src="/js/reading-buddy.js"></script>
     <script src="/js/reader.js?v=2"></script>
