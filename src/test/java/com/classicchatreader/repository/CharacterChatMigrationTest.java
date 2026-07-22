@@ -10,7 +10,10 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CharacterChatMigrationTest {
 
     @Test
-    void migrationAppliesEnforcesOwnershipAndOrderAndRollsBack() throws Exception {
+    void migrationAppliesEnforcesRelationshipsAndOrderRollsBackAndReapplies() throws Exception {
         String url = "jdbc:h2:mem:character-chat-migration-" + UUID.randomUUID()
                 + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         Flyway flyway = Flyway.configure()
@@ -32,7 +35,8 @@ class CharacterChatMigrationTest {
 
         flyway.clean();
         flyway.migrate();
-        assertEquals("18", flyway.info().current().getVersion().getVersion());
+        flyway.validate();
+        assertEquals("19", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "");
              Statement statement = connection.createStatement()) {
@@ -64,7 +68,9 @@ class CharacterChatMigrationTest {
                         (id, conversation_id, user_id, sequence_number, role, content, created_at)
                     VALUES
                         ('message-2', 'conversation-1', 'user-a', 2, 'CHARACTER', 'Second', CURRENT_TIMESTAMP),
-                        ('message-1', 'conversation-1', 'user-a', 1, 'USER', 'First', CURRENT_TIMESTAMP)
+                        ('message-1', 'conversation-1', 'user-a', 1, 'USER', 'First', CURRENT_TIMESTAMP),
+                        ('message-user-cascade', 'conversation-3', 'user-b', 0, 'USER', 'Delete with user', CURRENT_TIMESTAMP),
+                        ('message-character-cascade', 'conversation-2', 'user-a', 0, 'USER', 'Delete with character', CURRENT_TIMESTAMP)
                     """);
 
             try (ResultSet rows = statement.executeQuery("""
@@ -82,15 +88,53 @@ class CharacterChatMigrationTest {
             assertTrue(indexExists(
                     connection,
                     "CHARACTER_CHAT_CONVERSATIONS",
-                    "IDX_CCC_USER_CHARACTER_UPDATED"));
+                    "IDX_CCC_USER_CHARACTER_ACTIVITY"));
             assertTrue(indexExists(
                     connection,
                     "CHARACTER_CHAT_MESSAGES",
                     "IDX_CCM_CONVERSATION_USER_SEQUENCE"));
+            assertEquals(
+                    List.of("USER_ID", "CHARACTER_ID", "UPDATED_AT", "CREATED_AT"),
+                    indexColumns(
+                            connection,
+                            "CHARACTER_CHAT_CONVERSATIONS",
+                            "IDX_CCC_USER_CHARACTER_ACTIVITY"));
+            assertEquals(
+                    List.of("CONVERSATION_ID", "USER_ID", "SEQUENCE_NUMBER"),
+                    indexColumns(
+                            connection,
+                            "CHARACTER_CHAT_MESSAGES",
+                            "IDX_CCM_CONVERSATION_USER_SEQUENCE"));
+            assertFalse(queryPlan(statement, """
+                    SELECT * FROM character_chat_conversations
+                    WHERE user_id = 'user-a' AND character_id = 'character-1'
+                    ORDER BY updated_at DESC, created_at DESC
+                    """).isBlank());
+            assertFalse(queryPlan(statement, """
+                    SELECT * FROM character_chat_messages
+                    WHERE conversation_id = 'conversation-1' AND user_id = 'user-a'
+                    ORDER BY sequence_number
+                    """).isBlank());
 
             statement.executeUpdate("DELETE FROM character_chat_conversations WHERE id = 'conversation-1'");
             assertEquals(0, count(statement, """
                     SELECT COUNT(*) FROM character_chat_messages WHERE conversation_id = 'conversation-1'
+                    """));
+
+            statement.executeUpdate("DELETE FROM users WHERE id = 'user-b'");
+            assertEquals(0, count(statement, """
+                    SELECT COUNT(*) FROM character_chat_conversations WHERE id = 'conversation-3'
+                    """));
+            assertEquals(0, count(statement, """
+                    SELECT COUNT(*) FROM character_chat_messages WHERE id = 'message-user-cascade'
+                    """));
+
+            statement.executeUpdate("DELETE FROM characters WHERE id = 'character-1'");
+            assertEquals(0, count(statement, """
+                    SELECT COUNT(*) FROM character_chat_conversations WHERE character_id = 'character-1'
+                    """));
+            assertEquals(0, count(statement, """
+                    SELECT COUNT(*) FROM character_chat_messages WHERE id = 'message-character-cascade'
                     """));
 
             ScriptUtils.executeSqlScript(
@@ -101,6 +145,23 @@ class CharacterChatMigrationTest {
                     new ClassPathResource("db/rollback/U17__character_chat_persistence.sql"));
             assertFalse(tableExists(connection, "CHARACTER_CHAT_MESSAGES"));
             assertFalse(tableExists(connection, "CHARACTER_CHAT_CONVERSATIONS"));
+            statement.executeUpdate("""
+                    DELETE FROM "flyway_schema_history" WHERE "version" IN ('17', '18', '19')
+                    """);
+        }
+
+        flyway.migrate();
+        flyway.validate();
+        assertEquals("19", flyway.info().current().getVersion().getVersion());
+        try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+            assertTrue(tableExists(connection, "CHARACTER_CHAT_MESSAGES"));
+            assertTrue(tableExists(connection, "CHARACTER_CHAT_CONVERSATIONS"));
+            assertEquals(
+                    List.of("USER_ID", "CHARACTER_ID", "UPDATED_AT", "CREATED_AT"),
+                    indexColumns(
+                            connection,
+                            "CHARACTER_CHAT_CONVERSATIONS",
+                            "IDX_CCC_USER_CHARACTER_ACTIVITY"));
         }
     }
 
@@ -146,6 +207,29 @@ class CharacterChatMigrationTest {
             }
         }
         return false;
+    }
+
+    private List<String> indexColumns(Connection connection, String tableName, String indexName) throws SQLException {
+        Map<Short, String> columnsByPosition = new TreeMap<>();
+        try (ResultSet indexes = connection.getMetaData()
+                .getIndexInfo(null, null, tableName, false, false)) {
+            while (indexes.next()) {
+                String actual = indexes.getString("INDEX_NAME");
+                if (actual != null && indexName.equals(actual.toUpperCase(Locale.ROOT))) {
+                    columnsByPosition.put(
+                            indexes.getShort("ORDINAL_POSITION"),
+                            indexes.getString("COLUMN_NAME").toUpperCase(Locale.ROOT));
+                }
+            }
+        }
+        return List.copyOf(columnsByPosition.values());
+    }
+
+    private String queryPlan(Statement statement, String sql) throws SQLException {
+        try (ResultSet result = statement.executeQuery("EXPLAIN " + sql)) {
+            result.next();
+            return result.getString(1).toUpperCase(Locale.ROOT);
+        }
     }
 
     private boolean tableExists(Connection connection, String tableName) throws SQLException {
