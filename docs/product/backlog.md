@@ -51,6 +51,7 @@ Last updated: 2026-07-22
 - **My Chats surface:** wants a **My Chats** entry on the signed-in landing near **Achievements** — either a recent-chats list or a link to a dedicated My Chats page. Elevates `BL-039` / `BL-032` (use product name **My Chats**).
 - **Cross-device chat:** character chats must be **server-persisted** so students can resume regardless of device. Today remains localStorage-only. New epic `BL-049` (prerequisite for durable assignment completion + teacher export path).
 - **Bug:** increasing **font size** in reader preferences updates text but **paragraph content can clip**. New bug `BL-050` (regression on `BL-006` preferences/re-pagination).
+- **Multi-teacher demo readiness:** Jessica believes with this round (including My Chats + server chat persistence + font-clip fix) the product is **good enough to show other teachers**. Target: next 1:1 **Tuesday 2026-07-28 6pm America/Chicago**, with those items addressed if possible before she coordinates the broader teacher demo.
 
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
