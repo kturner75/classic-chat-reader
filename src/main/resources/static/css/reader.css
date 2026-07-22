@@ -4132,6 +4132,17 @@ kbd {
     gap: 0.75rem;
 }
 
+.chat-sync-status {
+    margin: auto;
+    color: var(--muted-color);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.chat-empty-state {
+    max-width: 22rem;
+}
+
 .chat-message {
     max-width: 85%;
     padding: 0.75rem 1rem;

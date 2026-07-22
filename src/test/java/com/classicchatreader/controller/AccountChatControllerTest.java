@@ -2,6 +2,8 @@ package com.classicchatreader.controller;
 
 import com.classicchatreader.model.AccountChatModels.BookIdentity;
 import com.classicchatreader.model.AccountChatModels.ChatContext;
+import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterIdentity;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
 import com.classicchatreader.model.AccountChatModels.Message;
@@ -63,6 +65,66 @@ class AccountChatControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "private, no-store"))
                 .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
+    }
+
+    @Test
+    void characterConversationEndpointsRequireAuthenticatedAccount() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/account/chats/characters/character-1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
+
+        mockMvc.perform(post("/api/account/chats/characters/character-1/messages")
+                        .header("Idempotency-Key", "request-1")
+                        .contentType("application/json")
+                        .content("{\"content\":\"Hello\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
+    }
+
+    @Test
+    void characterConversationReturnsEmptyTranscriptForAuthenticatedOwner() throws Exception {
+        authenticate("user-1");
+        when(chatHistoryService.getLatestForCharacter("user-1", "character-1"))
+                .thenReturn(new CharacterConversationResponse(null, List.of()));
+
+        mockMvc.perform(get("/api/account/chats/characters/character-1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.session").doesNotExist())
+                .andExpect(jsonPath("$.messages").isEmpty());
+
+        verify(chatHistoryService).getLatestForCharacter("user-1", "character-1");
+    }
+
+    @Test
+    void sendToCharacterUsesAuthenticatedOwnerAndStableRequestKey() throws Exception {
+        authenticate("user-1");
+        Instant now = Instant.parse("2026-07-21T12:00:00Z");
+        CharacterExchangeResponse response = new CharacterExchangeResponse(
+                "chat-1",
+                new Message("message-user", "USER", "Hello", now),
+                new Message("message-character", "CHARACTER", "Welcome", now.plusMillis(1)),
+                new ChatContext("chapter-1", 0, "Chapter One", 4),
+                now.plusMillis(1));
+        when(chatHistoryService.sendToCharacter(eq("user-1"), eq("character-1"), any(), eq("request-1")))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/account/chats/characters/character-1/messages")
+                        .header("Idempotency-Key", "request-1")
+                        .contentType("application/json")
+                        .content("""
+                                {"content":"Hello","context":{"chapterId":"chapter-1","chapterIndex":0,"chapterTitle":"Untrusted","paragraphIndex":4}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.sessionId", is("chat-1")))
+                .andExpect(jsonPath("$.userMessage.messageId", is("message-user")))
+                .andExpect(jsonPath("$.characterMessage.messageId", is("message-character")));
+
+        verify(chatHistoryService).sendToCharacter(eq("user-1"), eq("character-1"), any(), eq("request-1"));
     }
 
     @Test

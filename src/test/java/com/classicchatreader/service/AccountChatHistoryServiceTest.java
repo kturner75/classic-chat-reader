@@ -28,6 +28,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @DataJpaTest
@@ -247,6 +248,14 @@ class AccountChatHistoryServiceTest {
                 .isInstanceOf(ChatHistoryValidationException.class)
                 .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
                 .isEqualTo("CHAT_UNAVAILABLE");
+        assertThatThrownBy(() -> service.sendToCharacter(
+                "owner",
+                fixture.character().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Try again", null),
+                "request-secondary-by-character"))
+                .isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
         org.mockito.Mockito.verifyNoInteractions(characterChatService);
     }
 
@@ -280,6 +289,62 @@ class AccountChatHistoryServiceTest {
         assertThat(result.items().getFirst().sessionId()).isEqualTo(firstSessionId);
         assertThat(result.items().getFirst().messageCount()).isEqualTo(4);
         assertThat(result.items().getFirst().context().paragraphIndex()).isEqualTo(4);
+    }
+
+    @Test
+    void latestCharacterConversationIsEmptyWhenMissingAndNeverLeaksAnotherOwnersTranscript() {
+        Fixture other = createSession("other-owner", "Book", "Author", "Character", BASE);
+        addMessage(other.session(), "USER", "private question", BASE);
+        flushAndClear();
+
+        var empty = service.getLatestForCharacter("owner", other.character().getId());
+        var visible = service.getLatestForCharacter("other-owner", other.character().getId());
+
+        assertThat(empty.session()).isNull();
+        assertThat(empty.messages()).isEmpty();
+        assertThat(visible.session()).isNotNull();
+        assertThat(visible.messages()).extracting(message -> message.content())
+                .containsExactly("private question");
+    }
+
+    @Test
+    void sendToCharacterCreatesOrderedTranscriptAndReplaysRetryWithoutDuplicates() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        entityManager.remove(fixture.session());
+        flushAndClear();
+        when(characterChatService.chat(
+                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
+                org.mockito.ArgumentMatchers.eq("Hello"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(7)))
+                .thenReturn("Welcome");
+        var request = new com.classicchatreader.model.AccountChatModels.ContinueRequest(
+                "Hello",
+                new com.classicchatreader.model.AccountChatModels.ChatContext(
+                        fixture.chapter().getId(), 0, "Client supplied title", 7));
+
+        var created = service.sendToCharacter("owner", fixture.character().getId(), request, "stable-request-1");
+        var replayed = service.sendToCharacter("owner", fixture.character().getId(), request, "stable-request-1");
+        flushAndClear();
+        var loaded = service.getLatestForCharacter("owner", fixture.character().getId());
+
+        assertThat(created).isNotNull();
+        assertThat(replayed.sessionId()).isEqualTo(created.sessionId());
+        assertThat(replayed.userMessage().messageId()).isEqualTo(created.userMessage().messageId());
+        assertThat(replayed.characterMessage().messageId()).isEqualTo(created.characterMessage().messageId());
+        assertThat(loaded.messages()).extracting(message -> message.role())
+                .containsExactly("USER", "CHARACTER");
+        assertThat(loaded.messages()).extracting(message -> message.content())
+                .containsExactly("Hello", "Welcome");
+        assertThat(loaded.session().context().chapterTitle()).isEqualTo("Chapter One");
+        assertThat(loaded.session().context().paragraphIndex()).isEqualTo(7);
+        org.mockito.Mockito.verify(characterChatService, times(1)).chat(
+                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
+                org.mockito.ArgumentMatchers.eq("Hello"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(7));
     }
 
     @Test

@@ -6,20 +6,21 @@ BL-049 introduces account-owned `character_chat_conversations` and ordered
 ## Model assumptions
 
 - A conversation belongs to exactly one authenticated `users` row and one
-  `characters` row. Anonymous chat remains client-local until an API explicitly
-  claims it into an authenticated account.
-- The current reader UI has one local history per book/character. The database
-  deliberately permits multiple conversations for the same user and character
-  so a future My Chats experience can start a new thread without rewriting the
-  schema. The API may initially resume the most recently updated thread.
+  `characters` row. The reader treats the authenticated API as the transcript's
+  source of truth; character-chat history is no longer stored in `localStorage`.
+- The current reader UI resumes the account's most recently updated conversation
+  for a character. The database deliberately permits multiple conversations for
+  the same user and character so a future My Chats experience can start a new
+  thread without rewriting the schema.
 - Book identity is derived from `characters.book_id`; it is not duplicated on a
   conversation, avoiding a character/book mismatch.
 - Messages are immutable transcript events. `sequence_number` is the canonical
   order within a conversation; `created_at` is audit/display metadata and is not
   used to break ordering ties. A unique constraint prevents duplicate sequence
   positions.
-- `client_message_id` is optional. When supplied by the client or a localStorage
-  claim-sync operation, it makes retries idempotent within one conversation.
+- `client_message_id` is optional in the schema. The authenticated reader API
+  requires an idempotency key for each user send, making retries idempotent
+  within one conversation.
 - `user_id` is repeated on messages so the composite foreign key
   `(conversation_id, user_id)` can reject a message attributed to a different
   account than its conversation. Repository reads also require the owner id.
@@ -31,6 +32,18 @@ BL-049 introduces account-owned `character_chat_conversations` and ordered
 - V18 adds nullable chapter and paragraph context to each conversation so My
   Chats can resume the exact reader location. Rows created before V18 fall back
   to the character's first chapter until their next exchange captures context.
+
+## Legacy browser cache decision
+
+Legacy `reader_characterChat_*` entries contain book and character identifiers,
+but no authenticated account identity. A browser can be shared or can sign in as
+a different user after those entries were written, so automatically claiming the
+cache could attach one person's transcript to another person's account. The
+reader therefore does not migrate these entries. After an authenticated history
+request succeeds, it removes all legacy character-chat keys while leaving other
+reader preferences and local state untouched. If the server request fails, the
+cache is left in place until a later successful sync, but it is never rendered or
+used as chat context.
 
 ## Query shape
 

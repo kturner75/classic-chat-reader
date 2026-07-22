@@ -71,10 +71,22 @@ public final class AccountChatModels {
     public record SessionDetailResponse(SessionDetail session, List<Message> messages) {
     }
 
+    public record CharacterConversationResponse(SessionDetail session, List<Message> messages) {
+    }
+
     public record ContinueRequest(String content, ChatContext context) {
     }
 
     public record ContinueResponse(
+            Message userMessage,
+            Message characterMessage,
+            ChatContext context,
+            Instant lastMessageAt
+    ) {
+    }
+
+    public record CharacterExchangeResponse(
+            String sessionId,
             Message userMessage,
             Message characterMessage,
             ChatContext context,

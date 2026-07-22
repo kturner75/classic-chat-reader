@@ -45,7 +45,8 @@ async function installApiMocks(page) {
   const state = {
     recapChapterFetchAttempts: 0,
     recapChatAttempts: 0,
-    characterChatAttempts: 0
+    characterChatAttempts: 0,
+    characterChatRequestIds: []
   };
 
   await page.route('**/api/**', async (route) => {
@@ -60,6 +61,16 @@ async function installApiMocks(page) {
         authRequired: false,
         authenticated: false,
         canAccessSensitive: true
+      });
+    }
+    if (method === 'GET' && path === '/api/account/status') {
+      return json(route, 200, {
+        accountAuthEnabled: true,
+        authenticated: true,
+        email: 'reader@example.test',
+        googleAuthEnabled: false,
+        rolloutMode: 'optional',
+        accountRequired: false
       });
     }
     if (method === 'GET' && path === '/api/library') {
@@ -209,13 +220,29 @@ async function installApiMocks(page) {
     if (method === 'GET' && path === '/api/characters/book/book-1') {
       return json(route, 200, [TEST_CHARACTER]);
     }
-    if (method === 'POST' && path === '/api/characters/char-1/chat') {
+    if (method === 'GET' && path === '/api/account/chats/characters/char-1') {
+      return json(route, 200, { session: null, messages: [] });
+    }
+    if (method === 'POST' && path === '/api/account/chats/characters/char-1/messages') {
       state.characterChatAttempts += 1;
+      state.characterChatRequestIds.push(request.headers()['idempotency-key']);
       if (state.characterChatAttempts === 1) {
-        return json(route, 500, { error: 'Character chat unavailable' });
+        return json(route, 500, { error: { message: 'Character chat unavailable' } });
       }
       return json(route, 200, {
-        response: 'Recovered character chat response.'
+        sessionId: 'session-1',
+        userMessage: {
+          messageId: 'message-user-1',
+          role: 'USER',
+          content: 'Who are you?',
+          createdAt: '2026-07-22T12:00:00Z'
+        },
+        characterMessage: {
+          messageId: 'message-character-1',
+          role: 'CHARACTER',
+          content: 'Recovered character chat response.',
+          createdAt: '2026-07-22T12:00:01Z'
+        }
       });
     }
 
@@ -223,6 +250,8 @@ async function installApiMocks(page) {
       error: `Unhandled API route in e2e mock: ${method} ${path}`
     });
   });
+
+  return state;
 }
 
 async function openReaderForTestBook(page) {
@@ -263,7 +292,7 @@ test('recap overlay and recap chat expose retry and recover', async ({ page }) =
 });
 
 test('character chat exposes retry and recovers without duplicating user message', async ({ page }) => {
-  await installApiMocks(page);
+  const state = await installApiMocks(page);
   await openReaderForTestBook(page);
 
   await expect(page.locator('#character-toggle')).toBeVisible();
@@ -284,4 +313,6 @@ test('character chat exposes retry and recovers without duplicating user message
   await expect(page.locator('#chat-error')).toBeHidden();
   await expect(page.locator('#chat-messages')).toContainText('Recovered character chat response.');
   await expect(page.locator('#chat-messages .chat-message.user')).toHaveCount(1);
+  expect(state.characterChatAttempts).toBe(2);
+  expect(new Set(state.characterChatRequestIds).size).toBe(1);
 });
