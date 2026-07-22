@@ -16,7 +16,7 @@
         currentPage: 0,
         totalPages: 0,
         currentParagraphIndex: 0,
-        pagesData: [],         // Array of { startParagraph, endParagraph } for each page
+        pagesData: [],         // Array of { startParagraph, endParagraph, columns } for each page
         searchChapterFilter: '',
         searchLastQuery: '',
         searchHighlightTerms: [],
@@ -4898,7 +4898,90 @@
         });
     }
 
-    // Calculate which paragraphs fit on each page
+    function createParagraphMeasureContainer(columnWidth) {
+        const container = document.createElement('div');
+        container.style.cssText = `
+            position: fixed;
+            visibility: hidden;
+            pointer-events: none;
+            left: -10000px;
+            top: 0;
+            width: ${columnWidth}px;
+            font-family: var(--font-serif);
+            font-size: var(--font-size-body);
+            line-height: var(--line-height);
+        `;
+        document.body.appendChild(container);
+        return container;
+    }
+
+    function measureParagraphHtml(measureContainer, content, indent) {
+        measureContainer.innerHTML = `<p class="paragraph" style="text-indent: ${indent}; text-align: justify;">${content}</p>`;
+        return measureContainer.firstElementChild.getBoundingClientRect().height;
+    }
+
+    function serializeRange(range) {
+        const wrapper = document.createElement('div');
+        wrapper.appendChild(range.cloneContents());
+        return wrapper.innerHTML;
+    }
+
+    function splitParagraphHtmlToFit(measureContainer, content, indent, maxHeight) {
+        const source = document.createElement('div');
+        source.innerHTML = content;
+        const breakpoints = [];
+        const walker = document.createTreeWalker(source, NodeFilter.SHOW_TEXT);
+        let textNode = walker.nextNode();
+        while (textNode) {
+            const whitespace = /\s+/g;
+            let match = whitespace.exec(textNode.data);
+            while (match) {
+                breakpoints.push({ node: textNode, offset: match.index + match[0].length });
+                match = whitespace.exec(textNode.data);
+            }
+            if (textNode.data.length > 0) {
+                breakpoints.push({ node: textNode, offset: textNode.data.length });
+            }
+            textNode = walker.nextNode();
+        }
+
+        let low = 0;
+        let high = breakpoints.length - 1;
+        let best = null;
+        while (low <= high) {
+            const middle = Math.floor((low + high) / 2);
+            const boundary = breakpoints[middle];
+            const prefixRange = document.createRange();
+            prefixRange.setStart(source, 0);
+            prefixRange.setEnd(boundary.node, boundary.offset);
+            const prefix = serializeRange(prefixRange);
+            const height = measureParagraphHtml(measureContainer, prefix, indent);
+            if (height <= maxHeight - 0.75) {
+                best = { boundary, prefix, height };
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+
+        if (!best || !source.textContent.trim()) {
+            return null;
+        }
+
+        const remainderRange = document.createRange();
+        remainderRange.setStart(best.boundary.node, best.boundary.offset);
+        remainderRange.setEnd(source, source.childNodes.length);
+        const remainder = serializeRange(remainderRange);
+        return {
+            content: best.prefix,
+            remainder: source.textContent.trim() === best.boundary.node.data.slice(0, best.boundary.offset).trim()
+                ? ''
+                : remainder,
+            height: best.height
+        };
+    }
+
+    // Calculate which paragraphs and paragraph fragments fit on each page.
     function calculatePages() {
         state.pagesData = [];
 
@@ -4907,69 +4990,93 @@
             return;
         }
 
-        // Get available height for content
         const contentArea = document.querySelector('.reader-content');
-        const columnHeight = contentArea.clientHeight;
-        const columnWidth = elements.columnLeft.clientWidth;
+        const columnHeight = contentArea.getBoundingClientRect().height;
+        const columnWidth = elements.columnLeft.getBoundingClientRect().width;
+        if (columnHeight <= 0 || columnWidth <= 0) {
+            state.totalPages = 0;
+            return;
+        }
 
-        // In illustration mode and mobile layout, use single reading column.
         const useSecondColumn = !state.illustrationMode && !state.isMobileLayout;
-
-        // Create a temporary measurement container
-        const measureContainer = document.createElement('div');
-        measureContainer.style.cssText = `
-            position: absolute;
-            visibility: hidden;
-            width: ${columnWidth}px;
-            font-family: var(--font-serif);
-            font-size: var(--font-size-body);
-            line-height: var(--line-height);
-        `;
-        document.body.appendChild(measureContainer);
-
-        let currentPageStart = 0;
+        const measureContainer = createParagraphMeasureContainer(columnWidth);
+        let page = { columns: [[], []] };
+        let columnIndex = 0;
         let currentHeight = 0;
-        let columnCount = 0; // 0 = first column, 1 = second column
 
-        for (let i = 0; i < state.paragraphs.length; i++) {
-            const para = state.paragraphs[i];
+        const pageHasContent = () => page.columns.some((column) => column.length > 0);
+        const columnIsEmpty = () => page.columns[columnIndex].length === 0;
+        const finishPage = () => {
+            const segments = page.columns.flat();
+            if (segments.length === 0) return;
+            state.pagesData.push({
+                startParagraph: segments[0].paragraphIndex,
+                endParagraph: segments[segments.length - 1].paragraphIndex,
+                columns: page.columns
+            });
+        };
+        const advanceColumn = () => {
+            if (columnIndex === 0 && useSecondColumn) {
+                columnIndex = 1;
+            } else {
+                finishPage();
+                page = { columns: [[], []] };
+                columnIndex = 0;
+            }
+            currentHeight = 0;
+        };
+        const appendSegment = (paragraphIndex, content, continuation, indent, height) => {
+            page.columns[columnIndex].push({ paragraphIndex, content, continuation, indent });
+            currentHeight += height;
+        };
 
-            // Measure paragraph height
-            measureContainer.innerHTML = `<p class="paragraph" style="text-indent: ${i === currentPageStart || (state.pagesData.length > 0 && i === state.pagesData[state.pagesData.length - 1].startParagraph) ? '0' : '1.5em'}; text-align: justify;">${para.content}</p>`;
-            const paraHeight = measureContainer.firstChild.offsetHeight;
+        for (let paragraphIndex = 0; paragraphIndex < state.paragraphs.length; paragraphIndex++) {
+            let remainingContent = state.paragraphs[paragraphIndex].content;
+            let continuation = false;
 
-            // Check if paragraph fits in current column
-            if (currentHeight + paraHeight > columnHeight) {
-                if (columnCount === 0 && useSecondColumn) {
-                    // Move to second column
-                    columnCount = 1;
-                    currentHeight = paraHeight;
-                } else {
-                    // Ensure we never emit an empty page when the first paragraph exceeds available height.
-                    if (i === currentPageStart) {
-                        currentHeight = paraHeight;
+            while (remainingContent && remainingContent.trim()) {
+                const indent = columnIsEmpty() || continuation ? '0' : '1.5em';
+                const paragraphHeight = measureParagraphHtml(measureContainer, remainingContent, indent);
+                const availableHeight = columnHeight - currentHeight;
+
+                if (paragraphHeight <= availableHeight - 0.75) {
+                    appendSegment(paragraphIndex, remainingContent, continuation, indent, paragraphHeight);
+                    remainingContent = '';
+                    continue;
+                }
+
+                if (paragraphHeight <= columnHeight - 0.75 && !columnIsEmpty()) {
+                    advanceColumn();
+                    continue;
+                }
+
+                const fragment = splitParagraphHtmlToFit(
+                    measureContainer,
+                    remainingContent,
+                    indent,
+                    availableHeight
+                );
+                if (!fragment) {
+                    if (!columnIsEmpty() || pageHasContent()) {
+                        advanceColumn();
                         continue;
                     }
-                    // Start new page
-                    state.pagesData.push({
-                        startParagraph: currentPageStart,
-                        endParagraph: i - 1
-                    });
-                    currentPageStart = i;
-                    columnCount = 0;
-                    currentHeight = paraHeight;
+                    // A single unbroken token may be taller than the viewport; keep it visible via CSS wrapping.
+                    appendSegment(paragraphIndex, remainingContent, continuation, indent, paragraphHeight);
+                    remainingContent = '';
+                    continue;
                 }
-            } else {
-                currentHeight += paraHeight;
+
+                appendSegment(paragraphIndex, fragment.content, continuation, indent, fragment.height);
+                remainingContent = fragment.remainder;
+                continuation = true;
+                if (remainingContent && remainingContent.trim()) {
+                    advanceColumn();
+                }
             }
         }
 
-        // Add final page
-        state.pagesData.push({
-            startParagraph: currentPageStart,
-            endParagraph: state.paragraphs.length - 1
-        });
-
+        finishPage();
         state.totalPages = state.pagesData.length;
         document.body.removeChild(measureContainer);
     }
@@ -4997,39 +5104,11 @@
             return;
         }
 
-        const pageParagraphs = state.paragraphs.slice(pageData.startParagraph, pageData.endParagraph + 1);
-
-        // Get column dimensions
-        const contentArea = document.querySelector('.reader-content');
-        const columnHeight = contentArea.clientHeight;
-        const columnWidth = elements.columnLeft.clientWidth;
-
         // In illustration mode and mobile layout, only use left column.
         const useSecondColumn = !state.illustrationMode && !state.isMobileLayout;
-
-        // Build HTML for both columns
-        let leftHtml = '';
-        let rightHtml = '';
-        let currentHeight = 0;
-        let inRightColumn = false;
         const chapterId = getCurrentChapterId();
-
-        // Temporary container for measurement
-        const measureContainer = document.createElement('div');
-        measureContainer.style.cssText = `
-            position: absolute;
-            visibility: hidden;
-            width: ${columnWidth}px;
-            font-family: var(--font-serif);
-            font-size: var(--font-size-body);
-            line-height: var(--line-height);
-        `;
-        document.body.appendChild(measureContainer);
-
-        for (let i = 0; i < pageParagraphs.length; i++) {
-            const para = pageParagraphs[i];
-            const globalIndex = pageData.startParagraph + i;
-            const isFirst = i === 0 || (inRightColumn && rightHtml === '');
+        const renderSegment = (segment) => {
+            const globalIndex = segment.paragraphIndex;
             const isHighlighted = globalIndex === state.currentParagraphIndex;
             const annotation = getParagraphAnnotation(chapterId, globalIndex);
             const hasNote = !!(annotation && typeof annotation.noteText === 'string' && annotation.noteText.trim().length > 0);
@@ -5046,29 +5125,14 @@
                 classes.push('search-match');
             }
             const paraContent = isSearchHighlighted
-                ? highlightTermsInHtml(para.content, state.searchHighlightTerms)
-                : para.content;
+                ? highlightTermsInHtml(segment.content, state.searchHighlightTerms)
+                : segment.content;
+            const continuationClass = segment.continuation ? ' paragraph-continuation' : '';
+            return `<p class="${classes.join(' ')}${continuationClass}" data-index="${globalIndex}" style="text-indent: ${segment.indent}">${paraContent}</p>`;
+        };
 
-            const paraHtml = `<p class="${classes.join(' ')}" data-index="${globalIndex}" style="text-indent: ${isFirst ? '0' : '1.5em'}">${paraContent}</p>`;
-
-            // Measure
-            measureContainer.innerHTML = `<p class="paragraph" style="text-indent: ${isFirst ? '0' : '1.5em'}; text-align: justify;">${para.content}</p>`;
-            const paraHeight = measureContainer.firstChild.offsetHeight;
-
-            if (!inRightColumn && currentHeight + paraHeight > columnHeight && useSecondColumn) {
-                inRightColumn = true;
-                currentHeight = 0;
-            }
-
-            if (inRightColumn && useSecondColumn) {
-                rightHtml += paraHtml;
-            } else {
-                leftHtml += paraHtml;
-            }
-            currentHeight += paraHeight;
-        }
-
-        document.body.removeChild(measureContainer);
+        const leftHtml = (pageData.columns?.[0] || []).map(renderSegment).join('');
+        const rightHtml = (pageData.columns?.[1] || []).map(renderSegment).join('');
 
         elements.columnLeft.innerHTML = leftHtml || '';
         elements.columnRight.innerHTML = useSecondColumn ? (rightHtml || '') : '';
@@ -5119,21 +5183,61 @@
         }
     }
 
+    function pageContainsParagraph(pageData, paragraphIndex) {
+        return !!pageData
+            && paragraphIndex >= pageData.startParagraph
+            && paragraphIndex <= pageData.endParagraph;
+    }
+
+    function findPageForParagraph(paragraphIndex, options = {}) {
+        const preferLast = options.preferLast === true;
+        if (preferLast) {
+            for (let i = state.pagesData.length - 1; i >= 0; i--) {
+                if (pageContainsParagraph(state.pagesData[i], paragraphIndex)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        return state.pagesData.findIndex((page) => pageContainsParagraph(page, paragraphIndex));
+    }
+
     function nextParagraph() {
-        if (state.currentParagraphIndex < state.paragraphs.length - 1) {
+        const lastParagraphIndex = state.paragraphs.length - 1;
+
+        if (state.currentParagraphIndex < lastParagraphIndex) {
             state.currentParagraphIndex++;
 
-            // Check if we need to change page
+            // Move to the page that holds the target paragraph (first fragment if split).
             const pageData = state.pagesData[state.currentPage];
-            if (state.currentParagraphIndex > pageData.endParagraph) {
-                nextPage();
-            } else {
-                renderPage();
+            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
+                const targetPage = findPageForParagraph(state.currentParagraphIndex);
+                if (targetPage >= 0) {
+                    state.currentPage = targetPage;
+                } else if (state.currentPage < state.totalPages - 1) {
+                    state.currentPage++;
+                }
             }
+            renderPage();
             if (readingBuddyController) {
                 readingBuddyController.onParagraphAdvanced();
             }
-        } else if (state.currentChapterIndex < state.chapters.length - 1) {
+            return;
+        }
+
+        // Final paragraph may still have continuation fragments on later pages.
+        // Do not treat "last paragraph index" as chapter-complete until those are shown.
+        if (state.currentPage < state.totalPages - 1) {
+            state.currentPage++;
+            state.currentParagraphIndex = lastParagraphIndex;
+            renderPage();
+            if (readingBuddyController) {
+                readingBuddyController.onParagraphAdvanced();
+            }
+            return;
+        }
+
+        if (state.currentChapterIndex < state.chapters.length - 1) {
             goToNextChapter(true);
         }
     }
@@ -5142,16 +5246,29 @@
         if (state.currentParagraphIndex > 0) {
             state.currentParagraphIndex--;
 
-            // Check if we need to change page
             const pageData = state.pagesData[state.currentPage];
-            if (state.currentParagraphIndex < pageData.startParagraph) {
-                prevPage();
-                state.currentParagraphIndex = state.pagesData[state.currentPage].endParagraph;
-                renderPage();
-            } else {
-                renderPage();
+            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
+                // Prefer the last page that still contains this paragraph (end of a split).
+                const targetPage = findPageForParagraph(state.currentParagraphIndex, { preferLast: true });
+                if (targetPage >= 0) {
+                    state.currentPage = targetPage;
+                } else if (state.currentPage > 0) {
+                    state.currentPage--;
+                }
             }
-        } else if (state.currentChapterIndex > 0) {
+            renderPage();
+            return;
+        }
+
+        // First paragraph may still have earlier fragments on previous pages.
+        if (state.currentPage > 0) {
+            state.currentPage--;
+            state.currentParagraphIndex = 0;
+            renderPage();
+            return;
+        }
+
+        if (state.currentChapterIndex > 0) {
             // Go to previous chapter, last paragraph
             loadChapter(state.currentChapterIndex - 1).then(applied => {
                 if (!applied) return;

@@ -1926,6 +1926,7 @@ html, body {
     margin-bottom: 0;
     text-align: justify;
     hyphens: auto;
+    overflow-wrap: anywhere;
     cursor: pointer;
     position: relative;
 }
@@ -1938,8 +1939,12 @@ html, body {
     background-color: var(--highlight-color);
     margin-left: -0.5rem;
     margin-right: -0.5rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0 0.5rem;
     border-radius: 2px;
+}
+
+.paragraph.paragraph-continuation {
+    text-indent: 0;
 }
 
 .paragraph.search-match {
