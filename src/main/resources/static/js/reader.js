@@ -5227,22 +5227,35 @@
         return state.pagesData.findIndex((page) => pageContainsParagraph(page, paragraphIndex));
     }
 
-    function nextParagraph() {
+    function findNextPageForParagraph(paragraphIndex, fromPage) {
+        for (let i = fromPage + 1; i < state.pagesData.length; i++) {
+            if (pageContainsParagraph(state.pagesData[i], paragraphIndex)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function findPrevPageForParagraph(paragraphIndex, fromPage) {
+        for (let i = fromPage - 1; i >= 0; i--) {
+            if (pageContainsParagraph(state.pagesData[i], paragraphIndex)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function nextParagraph(options = {}) {
+        const paragraphIndex = state.currentParagraphIndex;
         const lastParagraphIndex = state.paragraphs.length - 1;
 
-        if (state.currentParagraphIndex < lastParagraphIndex) {
-            state.currentParagraphIndex++;
-
-            // Move to the page that holds the target paragraph (first fragment if split).
-            const pageData = state.pagesData[state.currentPage];
-            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
-                const targetPage = findPageForParagraph(state.currentParagraphIndex);
-                if (targetPage >= 0) {
-                    state.currentPage = targetPage;
-                } else if (state.currentPage < state.totalPages - 1) {
-                    state.currentPage++;
-                }
-            }
+        // Finish remaining fragments of the current paragraph before advancing index/chapter.
+        const nextFragmentPage = options.skipCurrentFragments
+            ? -1
+            : findNextPageForParagraph(paragraphIndex, state.currentPage);
+        if (nextFragmentPage >= 0) {
+            state.currentPage = nextFragmentPage;
+            state.currentParagraphIndex = paragraphIndex;
             renderPage();
             if (readingBuddyController) {
                 readingBuddyController.onParagraphAdvanced();
@@ -5250,11 +5263,14 @@
             return;
         }
 
-        // Final paragraph may still have continuation fragments on later pages.
-        // Do not treat "last paragraph index" as chapter-complete until those are shown.
-        if (state.currentPage < state.totalPages - 1) {
-            state.currentPage++;
-            state.currentParagraphIndex = lastParagraphIndex;
+        if (paragraphIndex < lastParagraphIndex) {
+            state.currentParagraphIndex = paragraphIndex + 1;
+            const targetPage = findPageForParagraph(state.currentParagraphIndex);
+            if (targetPage >= 0) {
+                state.currentPage = targetPage;
+            } else if (state.currentPage < state.totalPages - 1) {
+                state.currentPage++;
+            }
             renderPage();
             if (readingBuddyController) {
                 readingBuddyController.onParagraphAdvanced();
@@ -5268,27 +5284,26 @@
     }
 
     function prevParagraph() {
-        if (state.currentParagraphIndex > 0) {
-            state.currentParagraphIndex--;
+        const paragraphIndex = state.currentParagraphIndex;
 
-            const pageData = state.pagesData[state.currentPage];
-            if (!pageContainsParagraph(pageData, state.currentParagraphIndex)) {
-                // Prefer the last page that still contains this paragraph (end of a split).
-                const targetPage = findPageForParagraph(state.currentParagraphIndex, { preferLast: true });
-                if (targetPage >= 0) {
-                    state.currentPage = targetPage;
-                } else if (state.currentPage > 0) {
-                    state.currentPage--;
-                }
-            }
+        // Walk earlier fragments of the current paragraph before moving to the previous one.
+        const prevFragmentPage = findPrevPageForParagraph(paragraphIndex, state.currentPage);
+        if (prevFragmentPage >= 0) {
+            state.currentPage = prevFragmentPage;
+            state.currentParagraphIndex = paragraphIndex;
             renderPage();
             return;
         }
 
-        // First paragraph may still have earlier fragments on previous pages.
-        if (state.currentPage > 0) {
-            state.currentPage--;
-            state.currentParagraphIndex = 0;
+        if (paragraphIndex > 0) {
+            state.currentParagraphIndex = paragraphIndex - 1;
+            // Prefer the last page that still contains the previous paragraph (end of a split).
+            const targetPage = findPageForParagraph(state.currentParagraphIndex, { preferLast: true });
+            if (targetPage >= 0) {
+                state.currentPage = targetPage;
+            } else if (state.currentPage > 0) {
+                state.currentPage--;
+            }
             renderPage();
             return;
         }
@@ -6797,7 +6812,8 @@
             // Keep TTS chapter transitions uninterrupted by recap overlay.
             goToNextChapter(false);
         } else {
-            nextParagraph();
+            // TTS reads the full paragraph at once, so continuation pages must not replay it.
+            nextParagraph({ skipCurrentFragments: true });
             ttsSpeakCurrent();
         }
     }

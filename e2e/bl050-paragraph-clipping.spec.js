@@ -336,3 +336,181 @@ test('BL-050 next paragraph keeps split final paragraph before chapter change', 
   await expect.poll(async () => page.locator('#chapter-title').textContent()).toBe('Chapter Two');
   await context.close();
 });
+
+test('BL-050 next paragraph keeps split middle paragraph before advancing', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  await context.addInitScript(() => {
+    let currentUtterance = null;
+
+    class MockSpeechSynthesisUtterance {
+      constructor(text) {
+        this.text = text;
+        this.rate = 1;
+        this.voice = null;
+        this.onend = null;
+        this.onerror = null;
+      }
+    }
+
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance
+    });
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        cancel() {},
+        getVoices() {
+          return [];
+        },
+        speak(utterance) {
+          currentUtterance = utterance;
+          window.__spokenParagraphs.push(utterance.text);
+        }
+      }
+    });
+    window.__spokenParagraphs = [];
+    window.__finishCurrentSpeech = () => {
+      const utterance = currentUtterance;
+      currentUtterance = null;
+      utterance?.onend?.();
+    };
+  });
+  const page = await context.newPage();
+
+  const shortLead = {
+    content: 'A short opening paragraph keeps the chapter non-empty before the tall middle passage.'
+  };
+  const tallMiddle = {
+    content: Array.from({ length: 160 }, (_, index) =>
+      `Middle sentence ${index + 1} keeps this interior paragraph taller than one column so fragments spill across pages.`
+    ).join(' ')
+  };
+  const shortTrail = {
+    content: 'A short trailing paragraph proves navigation did not skip unread middle fragments.'
+  };
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+
+    if (method === 'GET' && path === '/api/auth/status') {
+      return json(route, 200, { publicMode: false, authRequired: false, authenticated: false, canAccessSensitive: true });
+    }
+    if (method === 'GET' && path === '/api/account/status') {
+      return json(route, 200, { accountAuthEnabled: false, authenticated: false, rolloutMode: 'disabled', accountRequired: false });
+    }
+    if (method === 'GET' && path === '/api/classroom/context') {
+      return json(route, 200, { enrolled: false });
+    }
+    if (method === 'GET' && path === '/api/library') {
+      return json(route, 200, [{ ...TEST_BOOK, ttsEnabled: true }]);
+    }
+    if (method === 'GET' && path === '/api/import/popular') {
+      return json(route, 200, []);
+    }
+    if (method === 'GET' && path === '/api/features') {
+      return json(route, 200, { speedReadingEnabled: false });
+    }
+    if (method === 'GET' && path === '/api/library/bl050-book/chapters/bl050-chapter-1') {
+      return json(route, 200, { chapterId: 'bl050-chapter-1', paragraphs: [shortLead, tallMiddle, shortTrail] });
+    }
+    if (method === 'GET' && path === '/api/library/bl050-book/chapters/bl050-chapter-2') {
+      return json(route, 200, {
+        chapterId: 'bl050-chapter-2',
+        paragraphs: [{ content: 'Chapter two should not be reached while middle fragments remain.' }]
+      });
+    }
+    if (method === 'GET' && (path.endsWith('/annotations') || path.endsWith('/bookmarks'))) {
+      return json(route, 200, []);
+    }
+    if (method === 'GET' && path.endsWith('/status')) {
+      return json(route, 200, { enabled: false, available: false, cacheOnly: true });
+    }
+    if (method === 'POST') {
+      return json(route, 202, {});
+    }
+    return json(route, 404, { error: `Unhandled BL-050 fixture route: ${method} ${path}` });
+  });
+
+  await openFixture(page);
+  await setFontSize(page, 1.40);
+  await page.locator('body').click({ position: { x: 8, y: 8 } });
+
+  const initial = await page.evaluate(() => {
+    const indicator = document.getElementById('page-indicator')?.textContent || '';
+    const match = indicator.match(/Page (\d+) of (\d+)/);
+    return {
+      page: Number(match?.[1] || 0),
+      totalPages: Number(match?.[2] || 0),
+      visibleIndexes: [...document.querySelectorAll('.column .paragraph')].map((node) => Number(node.dataset.index))
+    };
+  });
+  expect(initial.totalPages).toBeGreaterThan(2);
+  expect(initial.visibleIndexes).toContain(1);
+
+  await page.locator('.column .paragraph[data-index="1"]').first().click();
+  await expect.poll(async () =>
+    page.locator('.paragraph.highlighted').first().getAttribute('data-index')
+  ).toBe('1');
+
+  const beforeNext = await page.locator('#page-indicator').textContent();
+  await page.keyboard.press('j');
+
+  const afterFirstJ = await page.evaluate(() => {
+    const indicator = document.getElementById('page-indicator')?.textContent || '';
+    const match = indicator.match(/Page (\d+) of (\d+)/);
+    return {
+      page: Number(match?.[1] || 0),
+      highlightedIndex: Number(document.querySelector('.paragraph.highlighted')?.dataset.index ?? -1),
+      visibleIndexes: [...document.querySelectorAll('.column .paragraph')].map((node) => Number(node.dataset.index)),
+      chapterTitle: document.getElementById('chapter-title')?.textContent || '',
+      activeId: document.activeElement?.id || document.activeElement?.tagName || ''
+    };
+  });
+
+  expect(afterFirstJ.chapterTitle).toBe('Chapter One');
+  expect(afterFirstJ.highlightedIndex).toBe(1);
+  expect(afterFirstJ.visibleIndexes).toEqual([1, 1]);
+  expect(afterFirstJ.page).toBeGreaterThan(Number(beforeNext.match(/Page (\d+)/)?.[1] || 0));
+
+  // After exhausting middle fragments, j should land on the trailing paragraph.
+  for (let guard = 0; guard < 80; guard += 1) {
+    const highlighted = await page.locator('.paragraph.highlighted').first().getAttribute('data-index');
+    if (highlighted === '2') break;
+    await page.keyboard.press('j');
+  }
+
+  await expect.poll(async () =>
+    page.locator('.paragraph.highlighted').first().getAttribute('data-index')
+  ).toBe('2');
+  await expect(page.locator('#chapter-title')).toHaveText('Chapter One');
+
+  // Return to the first middle fragment and verify TTS advances by paragraph, not fragment page.
+  for (let guard = 0; guard < 80; guard += 1) {
+    const position = await page.evaluate(() => {
+      const indicator = document.getElementById('page-indicator')?.textContent || '';
+      return {
+        page: Number(indicator.match(/Page (\d+)/)?.[1] || 0),
+        highlightedIndex: Number(document.querySelector('.paragraph.highlighted')?.dataset.index ?? -1)
+      };
+    });
+    if (position.page === initial.page && position.highlightedIndex === 1) break;
+    await page.keyboard.press('k');
+  }
+
+  await expect(page.locator('#tts-toggle')).toBeVisible();
+  await page.click('#tts-toggle');
+  await expect.poll(() => page.evaluate(() => window.__spokenParagraphs)).toEqual([tallMiddle.content]);
+
+  await page.evaluate(() => window.__finishCurrentSpeech());
+  await expect.poll(() => page.evaluate(() => window.__spokenParagraphs)).toEqual([
+    tallMiddle.content,
+    shortTrail.content
+  ]);
+  await expect.poll(async () =>
+    page.locator('.paragraph.highlighted').first().getAttribute('data-index')
+  ).toBe('2');
+  await context.close();
+});
