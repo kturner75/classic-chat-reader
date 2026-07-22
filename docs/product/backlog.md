@@ -72,8 +72,8 @@ Last updated: 2026-07-22
 1. ~~Assignment open-chapter / chat download / characterChatRequired / assignment progress UX~~ shipped (`main`).
 2. `BL-047` stale assignment quiz completion rerender; `BL-048` Reading Buddy classroom toggle vs global flag.
 3. `BL-050` font-size preference paragraph clipping (partner-reported reader bug).
-4. `BL-049` character chat server persistence (unlocks cross-device My Chats + durable classroom completion).
-5. `BL-039` / `BL-032` **My Chats** landing surface near Achievements (depends on `BL-049` for multi-device truth).
+4. ~~`BL-049` character chat server persistence~~ shipped on `main` (PR #82; cross-device history and database synchronization).
+5. ~~`BL-039` / `BL-032` **My Chats** recent-chat landing slice + dedicated page~~ shipped on `main` (PR #78).
 6. Roster display name + email; BL-025.10 v1 student drill-down/progress.
 7. Invite redeem rate limits (BL-028 pattern)
 8. FERPA-gated: usage events, teacher chat export, dashboard (after BL-043 draft)
@@ -438,7 +438,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature
 - Priority: P1
 - Effort: L
-- Status: Discovery
+- Status: Done (v1 shipped on `main`, PR #78)
 - Problem: Character chat exists today, but it is still a book-adjacent interaction rather than a first-class destination for signed-in readers. Partner (Jessica, 2026-07-22) explicitly asked for a **My Chats** surface students can find without reopening a book.
 - Scope Buckets:
 - Signed-in **My Chats** hub listing recent and resumable character conversations.
@@ -456,6 +456,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Treat a chat hub as the bridge between account value and a fuller conversational reading experience.
 - Keep spoiler guardrails explicit and tied to reading progress.
 - **Depends on `BL-049`** for truthful multi-device history; localStorage-only hub is a temporary demo bridge at best.
+- v1 behavior, session identity, resume semantics, privacy boundaries, and shared landing/dedicated-page API contract are defined in [`my-chats-spec.md`](my-chats-spec.md).
+- Delivered (2026-07-22): authenticated `/my-chats` history, search/filtering, cursor pagination, full-page transcript/resume, unavailable-character handling, and owner-isolation coverage.
 - Exit Criteria for Discovery:
 - Approved chat hub IA and full-page chat entry flow.
 - Decision on v1 history model and spoiler-context UX.
@@ -619,7 +621,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Improvement
 - Priority: P1
 - Effort: M
-- Status: Discovery
+- Status: In Progress (recent-chat landing slice shipped on `main`, PR #78)
 - Problem: Character chat is compelling, but the library/home experience does not yet make it obvious, resumable, or easy for new users to try. Partner (Jessica, 2026-07-22) asked for **My Chats** near **Achievements** on the landing page (recent list and/or link to dedicated page).
 - Scope Buckets:
 - **My Chats** shelf or module with character portraits, book context, last-message snippet, and `Continue chat` action — placement toward the top of signed-in landing near Achievements.
@@ -639,6 +641,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - For signed-in/readers with history, prioritize resumable recent chats and discovered characters.
 - For new/anonymous readers, show a small curated try-chat surface that demonstrates the feature quickly.
 - Full multi-device truth requires `BL-049`; landing can prototype from local history only as a short-lived bridge.
+- Delivered (2026-07-22): signed-in **My Chats** shelf near Achievements with up to four server-backed recent conversations, retry/empty/unavailable states, and a link to the dedicated page. Curated first-run discovery and `Characters You've Met` remain future slices.
 - Exit Criteria for Discovery:
 - Approved home-page placement and priority order for chat modules.
 - Decision on data requirements for recent chats, discovered characters, and starter prompt curation.
@@ -905,7 +908,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature
 - Priority: P1
 - Effort: L
-- Status: Proposed
+- Status: Done (shipped on `main`, PR #82)
 - Problem: Character chat (and related show-and-tell completion signals) are **localStorage-only**. Students cannot resume conversations on another device/browser, and classroom completion/export cannot rely on durable history. Partner (Jessica, 2026-07-22) explicitly needs chats accessible regardless of device.
 - Scope Buckets:
 - Account-scoped server schema for character conversation threads + messages (book + character keys; timestamps; role/content).
@@ -926,6 +929,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Unblocks truthful **My Chats** (`BL-039`/`BL-032`) and durable `BL-025.11` completion beyond local heuristics.
 - Align retention/access notes with `BL-043` before any non-student consumers.
 - Reading Buddy already has server message persistence patterns to reuse conceptually (do not couple schemas).
+- Delivered (2026-07-22): authenticated owner-scoped load/send APIs, database-backed client synchronization, retry-safe idempotency, cross-device restoration, and isolation/order/rollback regression coverage. Legacy account-less localStorage transcripts are discarded rather than automatically claimed because ownership cannot be established safely.
 
 ### BL-050 - Reader Font Size Preference Clips Paragraph Text
 - Type: Bug

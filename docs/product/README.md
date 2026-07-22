@@ -10,6 +10,7 @@ This folder is the source of truth for product scope and planning.
 - `bl-021-auth-architecture-adr.md`: auth and security decision record for user registration/account rollout.
 - `landing-ranking.md`: deterministic ranking rules for personalized landing queues.
 - `discover-affinity.md`: deterministic recommendation model for the `Discover` rail.
+- `my-chats-spec.md`: implemented behavior, privacy rules, resume semantics, and API contract for **My Chats** (`BL-032`, `BL-039`, `BL-049`).
 - `classroom-landing-usage.md`: setup and usage guide for classroom-aware landing mode (`BL-018.6`).
 - `classroom-pilot-pitch.md`: partner/grant-facing classroom pilot pitch and demo storyboard (Jessica Evans / multi-class pilot).
 - `reading-buddy-mode.md`: design document for Reading Buddy Mode (canned personas, sparse commentary, memory, PR plan).
