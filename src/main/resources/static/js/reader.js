@@ -117,7 +117,13 @@
         characterChatOpen: false,
         chatCharacterId: null,
         chatCharacter: null,              // Current character being chatted with
-        chatHistory: [],                  // Loaded from localStorage
+        chatHistory: [],                  // Authenticated, server-owned transcript
+        chatHistoryLoading: false,
+        chatHistoryLoadFailed: false,
+        chatLoadSequence: 0,
+        chatSessionId: null,
+        chatPendingRequest: null,
+        persistedCharacterChatBookIds: new Set(),
         chatLoading: false,
         // Character voice call state
         voiceCallAvailable: false,
@@ -503,7 +509,6 @@
         READER_PREFERENCES_UPDATED_AT: 'reader_readerPreferencesUpdatedAt',
         RECAP_OPTOUT_PREFIX: 'reader_recapOptOut_',
         RECAP_CHAT_PREFIX: 'reader_recapChat_',
-        CHARACTER_CHAT_PREFIX: 'reader_characterChat_',
         DISCOVERED_CHARACTERS_PREFIX: 'reader_discoveredCharacters_',
         DISCOVERED_CHARACTER_DETAILS_PREFIX: 'reader_discoveredCharacterDetails_'
     };
@@ -692,6 +697,16 @@
         && typeof globalThis.CharacterChatExport.formatCharacterChatMarkdown === 'function'
         && typeof globalThis.CharacterChatExport.downloadTextFile === 'function')
         ? globalThis.CharacterChatExport
+        : null;
+    const characterChatSyncHelpers = (typeof globalThis !== 'undefined'
+        && globalThis.CharacterChatSync
+        && typeof globalThis.CharacterChatSync.createCharacterChatClient === 'function')
+        ? globalThis.CharacterChatSync
+        : null;
+    const characterChatClient = characterChatSyncHelpers
+        ? characterChatSyncHelpers.createCharacterChatClient({
+            fetchImpl: (...args) => fetch(...args)
+        })
         : null;
     const libraryRankingHelpers = (typeof globalThis !== 'undefined'
         && globalThis.LibraryRanking
@@ -3673,38 +3688,10 @@
         };
     }
 
-    function hasCharacterChatStartedForBook(bookId) {
-        if (!bookId || typeof localStorage === 'undefined') {
-            return false;
-        }
-        const prefix = STORAGE_KEYS.CHARACTER_CHAT_PREFIX + bookId + '_';
-        try {
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (!key || !key.startsWith(prefix)) {
-                    continue;
-                }
-                const raw = localStorage.getItem(key);
-                if (!raw) {
-                    continue;
-                }
-                const history = JSON.parse(raw);
-                if (!Array.isArray(history)) {
-                    continue;
-                }
-                if (history.some((msg) => msg && typeof msg.content === 'string' && msg.content.trim().length > 0)) {
-                    return true;
-                }
-            }
-        } catch (error) {
-            console.warn('Unable to inspect character chat history for assignment progress', error);
-        }
-        return false;
-    }
-
     function buildAssignmentProgressSnapshot(assignment, activity) {
         const characterChatStarted = assignment?.characterChatRequired
-            ? hasCharacterChatStartedForBook(assignment.bookId)
+            ? (assignment.characterChatStarted === true
+                || state.persistedCharacterChatBookIds.has(assignment.bookId))
             : false;
         if (libraryProgressHelpers && typeof libraryProgressHelpers.buildAssignmentProgressSnapshot === 'function') {
             return libraryProgressHelpers.buildAssignmentProgressSnapshot({
@@ -8548,10 +8535,13 @@
 
         state.chatCharacterId = characterId;
         state.chatCharacter = character;
+        state.chatSessionId = null;
+        state.chatPendingRequest = null;
+        state.chatHistory = [];
+        state.chatHistoryLoading = true;
+        state.chatHistoryLoadFailed = false;
+        const loadSequence = ++state.chatLoadSequence;
         clearCharacterChatError();
-
-        // Load chat history from localStorage
-        state.chatHistory = loadChatHistory(characterId);
 
         // Update UI
         elements.chatCharacterName.textContent = character.name;
@@ -8559,7 +8549,7 @@
             elements.chatCharacterPortrait.src = `/api/characters/${characterId}/portrait`;
         }
 
-        // Render existing messages
+        // Render loading state before waiting on the authenticated transcript.
         renderChatMessages();
 
         // Voice call button: needs backend availability plus browser audio support
@@ -8575,9 +8565,43 @@
         closeCharacterBrowser(true);
         elements.characterChatModal.classList.remove('hidden');
         state.characterChatOpen = true;
+        updateCharacterChatInputState();
 
-        // Focus input
-        elements.chatInput.focus();
+        try {
+            if (!characterChatClient) {
+                throw new Error('Character chat synchronization is unavailable.');
+            }
+            const loaded = await characterChatClient.load(characterId);
+            if (loadSequence !== state.chatLoadSequence || state.chatCharacterId !== characterId) return;
+            state.chatSessionId = loaded.session?.sessionId || null;
+            state.chatHistory = loaded.messages;
+            if (state.chatHistory.length > 0 && state.currentBook?.id) {
+                state.persistedCharacterChatBookIds.add(state.currentBook.id);
+            }
+            // Legacy keys contain no account identity, so claiming them could leak a shared
+            // browser's transcript into the wrong account. Discard only after server load succeeds.
+            characterChatSyncHelpers.discardLegacyCharacterChatCache(localStorage);
+        } catch (error) {
+            if (loadSequence !== state.chatLoadSequence || state.chatCharacterId !== characterId) return;
+            state.chatHistoryLoadFailed = true;
+            console.error('Character chat history load failed:', error);
+            const mapped = mapChatError({
+                status: error?.status,
+                message: error?.message,
+                network: !error?.status
+            });
+            setCharacterChatError(
+                error?.status === 401 ? 'Sign in to load and continue this conversation.' : mapped.message,
+                error?.status === 401 ? null : () => openCharacterChat(characterId)
+            );
+        } finally {
+            if (loadSequence === state.chatLoadSequence && state.chatCharacterId === characterId) {
+                state.chatHistoryLoading = false;
+                renderChatMessages();
+                updateCharacterChatInputState();
+                if (!elements.chatInput.disabled) elements.chatInput.focus();
+            }
+        }
     }
 
     function closeCharacterChat() {
@@ -8586,9 +8610,14 @@
         }
         elements.characterChatModal.classList.add('hidden');
         state.characterChatOpen = false;
+        state.chatLoadSequence += 1;
         state.chatCharacterId = null;
         state.chatCharacter = null;
         state.chatHistory = [];
+        state.chatHistoryLoading = false;
+        state.chatHistoryLoadFailed = false;
+        state.chatSessionId = null;
+        state.chatPendingRequest = null;
         clearCharacterChatError();
         elements.chatMessages.innerHTML = '';
         elements.chatInput.value = '';
@@ -8596,17 +8625,13 @@
         ttsResumeAfterModal();
     }
 
-    function loadChatHistory(characterId) {
-        const key = STORAGE_KEYS.CHARACTER_CHAT_PREFIX + state.currentBook.id + '_' + characterId;
-        const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : [];
-    }
-
-    function saveChatHistory(characterId, history) {
-        const key = STORAGE_KEYS.CHARACTER_CHAT_PREFIX + state.currentBook.id + '_' + characterId;
-        // Limit history to last 50 messages
-        const limited = history.slice(-50);
-        localStorage.setItem(key, JSON.stringify(limited));
+    function updateCharacterChatInputState() {
+        const disabled = state.chatHistoryLoading || state.chatHistoryLoadFailed
+            || state.chatLoading || Boolean(state.chatPendingRequest) || !characterChatClient;
+        if (elements.chatInput) elements.chatInput.disabled = disabled;
+        if (elements.chatSendBtn) {
+            elements.chatSendBtn.disabled = disabled;
+        }
     }
 
     function updateCharacterChatDownloadButton() {
@@ -8674,6 +8699,20 @@
     }
 
     function renderChatMessages() {
+        if (state.chatHistoryLoading) {
+            elements.chatMessages.innerHTML = '<div class="chat-sync-status" role="status">Loading conversation…</div>';
+            return;
+        }
+        if (state.chatHistoryLoadFailed) {
+            elements.chatMessages.innerHTML = '<div class="chat-sync-status" role="status">Conversation unavailable until synchronization succeeds.</div>';
+            updateCharacterChatDownloadButton();
+            return;
+        }
+        if (state.chatHistory.length === 0) {
+            elements.chatMessages.innerHTML = '<div class="chat-sync-status chat-empty-state">Start the conversation by asking a question.</div>';
+            updateCharacterChatDownloadButton();
+            return;
+        }
         elements.chatMessages.innerHTML = state.chatHistory.map(msg => `
             <div class="chat-message ${msg.role}">
                 ${escapeHtml(msg.content)}
@@ -8695,13 +8734,20 @@
         const retryMessage = typeof options.retryMessage === 'string' ? options.retryMessage : '';
         const appendUserMessage = options.appendUser !== false;
         const message = (retryMessage || elements.chatInput.value || '').trim();
-        if (!message || state.chatLoading || !state.chatCharacterId) return;
+        if (!message || state.chatLoading || state.chatHistoryLoading
+                || !state.chatCharacterId || !characterChatClient) return;
         clearCharacterChatError();
 
+        const characterId = state.chatCharacterId;
+        const sendSequence = state.chatLoadSequence;
+        const requestId = options.requestId
+            || state.chatPendingRequest?.requestId
+            || characterChatClient.createRequestId();
+
         if (appendUserMessage) {
-            // Add user message to history
-            const userMsg = { role: 'user', content: message, timestamp: Date.now() };
+            const userMsg = characterChatSyncHelpers.createPendingUserMessage(message, requestId);
             state.chatHistory.push(userMsg);
+            state.chatPendingRequest = { requestId, message };
             renderChatMessages();
         }
 
@@ -8712,7 +8758,7 @@
 
         // Show loading
         state.chatLoading = true;
-        elements.chatSendBtn.disabled = true;
+        updateCharacterChatInputState();
 
         // Add loading message
         const loadingDiv = document.createElement('div');
@@ -8722,65 +8768,50 @@
         elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 
         try {
-            const response = await fetch(`/api/characters/${state.chatCharacterId}/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: message,
-                    conversationHistory: state.chatHistory.slice(-10),
-                    readerChapterIndex: state.currentChapterIndex,
-                    readerParagraphIndex: state.currentParagraphIndex
-                })
-            });
-
-            if (!response.ok) {
-                const payload = await readErrorPayload(response);
-                const mapped = mapChatError({
-                    status: response.status,
-                    message: firstMessageFromPayload(payload)
-                });
-                loadingDiv.remove();
-                setCharacterChatError(
-                    mapped.message,
-                    mapped.retryable
-                        ? () => sendChatMessage({ retryMessage: message, appendUser: false })
-                        : null
-                );
-                return;
-            }
-
-            const data = await response.json().catch(() => ({}));
-
-            // Remove loading message
-            loadingDiv.remove();
-
-            // Add character response
-            const reply = (data && typeof data.response === 'string') ? data.response.trim() : '';
-            const charMsg = {
-                role: 'character',
-                content: reply || "I don't have enough context to answer that yet.",
-                timestamp: Date.now()
-            };
-            state.chatHistory.push(charMsg);
+            const chapter = state.chapters[state.currentChapterIndex];
+            const exchange = await characterChatClient.send(characterId, message, {
+                chapterId: chapter?.id || null,
+                chapterIndex: state.currentChapterIndex,
+                chapterTitle: chapter?.title || '',
+                paragraphIndex: state.currentParagraphIndex
+            }, requestId);
+            if (sendSequence !== state.chatLoadSequence || state.chatCharacterId !== characterId) return;
+            state.chatSessionId = exchange.sessionId || state.chatSessionId;
+            state.chatHistory = characterChatSyncHelpers.mergeServerExchange(
+                state.chatHistory, exchange, requestId);
+            state.chatPendingRequest = null;
+            if (state.currentBook?.id) state.persistedCharacterChatBookIds.add(state.currentBook.id);
             renderChatMessages();
 
-            // Save history
-            saveChatHistory(state.chatCharacterId, state.chatHistory);
-
         } catch (error) {
+            if (sendSequence !== state.chatLoadSequence || state.chatCharacterId !== characterId) return;
             console.error('Chat failed:', error);
-            loadingDiv.remove();
-            const mapped = mapChatError({ network: true });
+            const mapped = mapChatError({
+                status: error?.status,
+                message: error?.message,
+                network: !error?.status
+            });
+            const retryable = error?.status !== 400 && error?.status !== 401 && mapped.retryable;
+            if (!retryable) {
+                state.chatHistory = state.chatHistory.filter(
+                    item => !(item?.pending && item.requestId === requestId));
+                state.chatPendingRequest = null;
+                elements.chatInput.value = message;
+                renderChatMessages();
+            }
             setCharacterChatError(
                 mapped.message,
-                mapped.retryable
-                    ? () => sendChatMessage({ retryMessage: message, appendUser: false })
+                retryable
+                    ? () => sendChatMessage({ retryMessage: message, appendUser: false, requestId })
                     : null
             );
         } finally {
+            loadingDiv.remove();
             state.chatLoading = false;
-            elements.chatSendBtn.disabled = false;
-            elements.chatInput.focus();
+            if (sendSequence === state.chatLoadSequence && state.chatCharacterId === characterId) {
+                updateCharacterChatInputState();
+                if (!elements.chatInput.disabled) elements.chatInput.focus();
+            }
         }
     }
 
@@ -8835,7 +8866,6 @@
             state.chatHistory.push(turn);
         }
         renderChatMessages();
-        saveChatHistory(state.chatCharacterId, state.chatHistory);
     }
 
     async function startVoiceCall() {
@@ -10206,7 +10236,7 @@
         }
         if (elements.chatInput) {
             elements.chatInput.addEventListener('input', () => {
-                clearCharacterChatError();
+                if (!state.chatPendingRequest) clearCharacterChatError();
             });
         }
         if (elements.characterCallBtn) {

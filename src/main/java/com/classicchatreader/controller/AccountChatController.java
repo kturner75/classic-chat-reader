@@ -3,6 +3,8 @@ package com.classicchatreader.controller;
 import com.classicchatreader.model.AccountChatModels.ApiError;
 import com.classicchatreader.model.AccountChatModels.ContinueRequest;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
 import com.classicchatreader.model.AccountChatModels.ErrorEnvelope;
 import com.classicchatreader.model.AccountChatModels.FilterOptionsResponse;
 import com.classicchatreader.model.AccountChatModels.SessionDetailResponse;
@@ -71,6 +73,37 @@ public class AccountChatController {
         if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
         FilterOptionsResponse response = chatHistoryService.filterOptions(principal.get().userId());
         return ok(response);
+    }
+
+    @GetMapping("/characters/{characterId}")
+    public ResponseEntity<?> getLatestForCharacter(
+            @PathVariable String characterId,
+            HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
+        CharacterConversationResponse response = chatHistoryService.getLatestForCharacter(
+                principal.get().userId(), characterId);
+        return ok(response);
+    }
+
+    @PostMapping("/characters/{characterId}/messages")
+    public ResponseEntity<?> sendToCharacter(
+            @PathVariable String characterId,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody(required = false) ContinueRequest body,
+            HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
+        try {
+            CharacterExchangeResponse response = chatHistoryService.sendToCharacter(
+                    principal.get().userId(), characterId, body, idempotencyKey);
+            if (response == null) {
+                return error(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "Character not found.");
+            }
+            return ok(response);
+        } catch (ChatHistoryValidationException ex) {
+            return error(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage());
+        }
     }
 
     @GetMapping("/{sessionId}")

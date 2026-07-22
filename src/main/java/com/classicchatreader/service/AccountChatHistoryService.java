@@ -8,6 +8,8 @@ import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterType;
 import com.classicchatreader.model.AccountChatModels.BookIdentity;
 import com.classicchatreader.model.AccountChatModels.CharacterFilterOption;
+import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
 import com.classicchatreader.model.AccountChatModels.ChatContext;
 import com.classicchatreader.model.AccountChatModels.CharacterIdentity;
 import com.classicchatreader.model.AccountChatModels.ContinueRequest;
@@ -27,6 +29,7 @@ import com.classicchatreader.repository.CharacterChatConversationRepository;
 import com.classicchatreader.repository.CharacterChatMessageRepository;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -68,6 +71,7 @@ public class AccountChatHistoryService {
     private final CharacterChatMessageRepository messageRepository;
     private final CharacterRepository characterRepository;
     private final ChapterRepository chapterRepository;
+    private final UserRepository userRepository;
     private final CharacterChatService characterChatService;
     private final ClassroomContextService classroomContextService;
     private final boolean chatEnabled;
@@ -79,6 +83,7 @@ public class AccountChatHistoryService {
             CharacterChatMessageRepository messageRepository,
             CharacterRepository characterRepository,
             ChapterRepository chapterRepository,
+            UserRepository userRepository,
             CharacterChatService characterChatService,
             ClassroomContextService classroomContextService,
             @Value("${ai.chat.enabled:false}") boolean chatEnabled,
@@ -88,6 +93,7 @@ public class AccountChatHistoryService {
         this.messageRepository = messageRepository;
         this.characterRepository = characterRepository;
         this.chapterRepository = chapterRepository;
+        this.userRepository = userRepository;
         this.characterChatService = characterChatService;
         this.classroomContextService = classroomContextService;
         this.chatEnabled = chatEnabled;
@@ -169,6 +175,96 @@ public class AccountChatHistoryService {
         return new SessionDetailResponse(detail, messages);
     }
 
+    @Transactional(readOnly = true)
+    public CharacterConversationResponse getLatestForCharacter(String ownerUserId, String characterId) {
+        Objects.requireNonNull(ownerUserId, "ownerUserId");
+        if (characterId == null || characterId.isBlank()) {
+            return new CharacterConversationResponse(null, List.of());
+        }
+        List<CharacterChatConversationEntity> conversations = conversationRepository
+                .findByUserIdAndCharacterIdOrderByUpdatedAtDescCreatedAtDesc(ownerUserId, characterId);
+        for (CharacterChatConversationEntity conversation : conversations) {
+            SessionDetailResponse detail = get(ownerUserId, conversation.getId());
+            if (detail != null) {
+                return new CharacterConversationResponse(detail.session(), detail.messages());
+            }
+        }
+        return new CharacterConversationResponse(null, List.of());
+    }
+
+    @Transactional
+    public CharacterExchangeResponse sendToCharacter(
+            String ownerUserId,
+            String characterId,
+            ContinueRequest request,
+            String idempotencyKey) {
+        Objects.requireNonNull(ownerUserId, "ownerUserId");
+        String content = validateMessageContent(request);
+        String requestKey = validateRequiredIdempotencyKey(idempotencyKey);
+
+        // Lock the account before selecting or creating its latest character thread. This closes
+        // the no-row race where concurrent first messages could otherwise create two conversations.
+        if (userRepository.findByIdForUpdate(ownerUserId).isEmpty()) return null;
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
+        if (character == null) return null;
+
+        List<CharacterChatConversationEntity> existing = conversationRepository
+                .findByUserIdAndCharacterIdOrderByUpdatedAtDescCreatedAtDesc(ownerUserId, characterId);
+        CharacterChatConversationEntity session;
+        if (existing.isEmpty()) {
+            session = new CharacterChatConversationEntity();
+            session.setUserId(ownerUserId);
+            session.setCharacterId(characterId);
+            session = conversationRepository.saveAndFlush(session);
+        } else {
+            session = conversationRepository
+                    .findByIdAndUserIdForUpdate(existing.getFirst().getId(), ownerUserId)
+                    .orElse(null);
+            if (session == null) return null;
+        }
+
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
+            throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
+        }
+
+        List<CharacterChatMessageEntity> transcript = messageRepository
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(session.getId(), ownerUserId);
+        ContinueResponse replay = replayExistingExchange(session, character, transcript, requestKey);
+        if (replay != null) return exchangeResponse(session.getId(), replay);
+
+        ChatContext chatContext = updateContextFromRequest(
+                session, character, request == null ? null : request.context());
+        List<ChatMessage> history = transcript.stream()
+                .map(message -> new ChatMessage(
+                        message.getRole() == CharacterChatMessageRole.USER ? "user" : "character",
+                        message.getContent(),
+                        toInstant(message.getCreatedAt()).toEpochMilli()))
+                .toList();
+        String reply = characterChatService.chat(
+                characterId,
+                content,
+                history,
+                chatContext.chapterIndex(),
+                chatContext.paragraphIndex()
+        );
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        long nextSequence = transcript.isEmpty() ? 0 : transcript.getLast().getSequenceNumber() + 1;
+        CharacterChatMessageEntity userMessage = messageEntity(
+                session, nextSequence, CharacterChatMessageRole.USER, content, requestKey, now);
+        CharacterChatMessageEntity characterMessage = messageEntity(
+                session, nextSequence + 1, CharacterChatMessageRole.CHARACTER, reply, null, now.plusNanos(1));
+        messageRepository.saveAll(List.of(userMessage, characterMessage));
+        session.setUpdatedAt(characterMessage.getCreatedAt());
+        conversationRepository.save(session);
+        return new CharacterExchangeResponse(
+                session.getId(),
+                toMessage(userMessage),
+                toMessage(characterMessage),
+                chatContext,
+                toInstant(session.getUpdatedAt())
+        );
+    }
+
     @Transactional
     public String recordExchange(
             String ownerUserId,
@@ -214,11 +310,7 @@ public class AccountChatHistoryService {
             String sessionId,
             ContinueRequest request,
             String idempotencyKey) {
-        String content = request == null ? null : normalizeMessage(request.content());
-        if (content == null) throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content is required.");
-        if (content.codePointCount(0, content.length()) > 4000) {
-            throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content must be at most 4000 characters.");
-        }
+        String content = validateMessageContent(request);
         String requestKey = validateIdempotencyKey(idempotencyKey);
         // Serialize concurrent continues for the same session so a second in-flight
         // request with the same Idempotency-Key waits, then replays instead of double-calling the model.
@@ -321,6 +413,73 @@ public class AccountChatHistoryService {
                 context(session, character),
                 toInstant(session.getUpdatedAt())
         );
+    }
+
+    private CharacterExchangeResponse exchangeResponse(String sessionId, ContinueResponse response) {
+        return new CharacterExchangeResponse(
+                sessionId,
+                response.userMessage(),
+                response.characterMessage(),
+                response.context(),
+                response.lastMessageAt()
+        );
+    }
+
+    private ChatContext updateContextFromRequest(
+            CharacterChatConversationEntity session,
+            CharacterEntity character,
+            ChatContext supplied) {
+        var chapter = character.getFirstChapter();
+        int paragraphIndex = 0;
+        if (supplied != null) {
+            if (supplied.paragraphIndex() < 0) {
+                throw new ChatHistoryValidationException("INVALID_CONTEXT", "paragraphIndex must not be negative.");
+            }
+            String suppliedChapterId = blankToNull(supplied.chapterId());
+            if (suppliedChapterId != null) {
+                chapter = chapterRepository.findByIdWithBook(suppliedChapterId).orElse(null);
+                if (chapter == null || !chapter.getBook().getId().equals(character.getBook().getId())) {
+                    throw new ChatHistoryValidationException(
+                            "INVALID_CONTEXT", "chapterId must belong to the character's book.");
+                }
+                if (chapter.getChapterIndex() != supplied.chapterIndex()) {
+                    throw new ChatHistoryValidationException("INVALID_CONTEXT", "chapterIndex must match chapterId.");
+                }
+            } else {
+                chapter = chapterRepository.findByBookIdAndChapterIndex(
+                        character.getBook().getId(), supplied.chapterIndex()).orElse(null);
+                if (chapter == null) {
+                    throw new ChatHistoryValidationException(
+                            "INVALID_CONTEXT", "chapterIndex is not valid for the character's book.");
+                }
+            }
+            paragraphIndex = supplied.paragraphIndex();
+        } else if (session.getContextChapterId() != null) {
+            return context(session, character);
+        }
+        updateContext(session, chapter, paragraphIndex);
+        return context(session, character);
+    }
+
+    private String validateMessageContent(ContinueRequest request) {
+        String content = request == null ? null : normalizeMessage(request.content());
+        if (content == null) {
+            throw new ChatHistoryValidationException("INVALID_MESSAGE", "Message content is required.");
+        }
+        if (content.codePointCount(0, content.length()) > 4000) {
+            throw new ChatHistoryValidationException(
+                    "INVALID_MESSAGE", "Message content must be at most 4000 characters.");
+        }
+        return content;
+    }
+
+    private String validateRequiredIdempotencyKey(String value) {
+        String normalized = validateIdempotencyKey(value);
+        if (normalized == null) {
+            throw new ChatHistoryValidationException(
+                    "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is required.");
+        }
+        return normalized;
     }
 
     private String validateIdempotencyKey(String value) {
