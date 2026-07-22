@@ -23,8 +23,8 @@ import java.time.ZoneOffset;
         ),
         indexes = {
                 @Index(
-                        name = "idx_ccc_user_character_updated",
-                        columnList = "user_id, character_id, updated_at"
+                        name = "idx_ccc_user_character_activity",
+                        columnList = "user_id, character_id, updated_at, created_at"
                 ),
                 @Index(name = "idx_ccc_user_updated", columnList = "user_id, updated_at")
         }

@@ -31,23 +31,29 @@ BL-049 introduces account-owned `character_chat_conversations` and ordered
 
 ## Query shape
 
-The index `(user_id, character_id, updated_at)` selects a user's threads for a
-character. The index `(conversation_id, user_id, sequence_number)` then returns
-the selected transcript in deterministic order. `(user_id, updated_at)` supports
-a paged recent-thread list across characters.
+The V18 index `idx_ccc_user_character_activity` on `(user_id, character_id,
+updated_at, created_at)` selects a user's threads for a character and covers the
+repository's `updated_at DESC, created_at DESC` ordering. It is additive so the
+checksum of the released V17 migration remains stable. The index
+`(conversation_id, user_id, sequence_number)` then returns the selected
+transcript in deterministic order. `(user_id, updated_at)` supports a paged
+recent-thread list across characters.
 
 ## Migration and rollback
 
-Flyway applies `db/migration/V17__character_chat_persistence.sql`. Flyway
-Community does not run undo migrations, so rollback is an explicit operator
-step after a database backup:
+Flyway applies `db/migration/V17__character_chat_persistence.sql` followed by
+`db/migration/V18__character_chat_query_indexes.sql`. Flyway Community does not
+run undo migrations, so rollback is an explicit operator step after a database
+backup:
 
 1. Stop application writes.
 2. Back up/export the two character chat tables if they contain data.
 3. Execute `db/rollback/U17__character_chat_persistence.sql`.
-4. Remove or repair the V17 row in `flyway_schema_history` only as part of the
-   coordinated deployment rollback; do not edit migration history on a live
-   forward-moving deployment.
+4. Remove or repair the V18 and V17 rows in `flyway_schema_history` only as part
+   of the coordinated deployment rollback; do not edit migration history on a
+   live forward-moving deployment. The table drops also remove V18's index.
 
-The migration integration test executes both scripts against H2 and verifies
-ownership, ordering, indexes, cascade behavior, and table removal.
+The migration integration test executes the migrations and rollback against H2,
+removes the coordinated V18/V17 history entries, and re-applies the migrations.
+It verifies ownership, ordering, exact index columns, cascade behavior, table
+removal, and successful re-application.
