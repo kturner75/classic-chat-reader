@@ -9,6 +9,8 @@ import com.classicchatreader.model.ChatMessage;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.service.CharacterChatService;
+import com.classicchatreader.service.AccountAuthService;
+import com.classicchatreader.service.AccountChatHistoryService;
 import com.classicchatreader.service.CharacterExtractionService;
 import com.classicchatreader.service.CharacterPrefetchService;
 import com.classicchatreader.service.CharacterService;
@@ -16,6 +18,7 @@ import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.llm.LlmProviderException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,6 +63,8 @@ public class CharacterController {
     private final CdnAssetService cdnAssetService;
     private final BookRepository bookRepository;
     private final ChapterRepository chapterRepository;
+    private final AccountAuthService accountAuthService;
+    private final AccountChatHistoryService accountChatHistoryService;
 
     public CharacterController(
             CharacterService characterService,
@@ -70,7 +75,9 @@ public class CharacterController {
             ComfyUIService comfyUIService,
             CdnAssetService cdnAssetService,
             BookRepository bookRepository,
-            ChapterRepository chapterRepository) {
+            ChapterRepository chapterRepository,
+            AccountAuthService accountAuthService,
+            AccountChatHistoryService accountChatHistoryService) {
         this.characterService = characterService;
         this.chatService = chatService;
         this.voiceCallService = voiceCallService;
@@ -80,6 +87,8 @@ public class CharacterController {
         this.cdnAssetService = cdnAssetService;
         this.bookRepository = bookRepository;
         this.chapterRepository = chapterRepository;
+        this.accountAuthService = accountAuthService;
+        this.accountChatHistoryService = accountChatHistoryService;
     }
 
     @GetMapping("/status")
@@ -279,7 +288,8 @@ public class CharacterController {
     @PostMapping("/{characterId}/chat")
     public ResponseEntity<ChatResponse> chat(
             @PathVariable String characterId,
-            @RequestBody ChatRequest request) {
+            @RequestBody ChatRequest request,
+            HttpServletRequest servletRequest) {
 
         if (!characterEnabled) {
             return ResponseEntity.status(403).build();
@@ -322,10 +332,21 @@ public class CharacterController {
                 request.readerParagraphIndex()
         );
 
+        String sessionId = accountAuthService.resolveAuthenticatedPrincipal(servletRequest)
+                .map(principal -> accountChatHistoryService.recordExchange(
+                        principal.userId(),
+                        characterId,
+                        request.message(),
+                        response,
+                        request.readerChapterIndex(),
+                        request.readerParagraphIndex()))
+                .orElse(null);
+
         return ResponseEntity.ok(new ChatResponse(
                 response,
                 characterId,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                sessionId
         ));
     }
 
@@ -388,8 +409,13 @@ public class CharacterController {
     public record ChatResponse(
             String response,
             String characterId,
-            long timestamp
-    ) {}
+            long timestamp,
+            String sessionId
+    ) {
+        public ChatResponse(String response, String characterId, long timestamp) {
+            this(response, characterId, timestamp, null);
+        }
+    }
 
     private void requireCharacterEnabledBook(String bookId) {
         if (!characterEnabled) {

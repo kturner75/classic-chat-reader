@@ -32,7 +32,7 @@ class CharacterChatMigrationTest {
 
         flyway.clean();
         flyway.migrate();
-        assertEquals("17", flyway.info().current().getVersion().getVersion());
+        assertEquals("18", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "");
              Statement statement = connection.createStatement()) {
@@ -93,6 +93,9 @@ class CharacterChatMigrationTest {
                     SELECT COUNT(*) FROM character_chat_messages WHERE conversation_id = 'conversation-1'
                     """));
 
+            ScriptUtils.executeSqlScript(
+                    connection,
+                    new ClassPathResource("db/rollback/U18__character_chat_resume_context.sql"));
             ScriptUtils.executeSqlScript(
                     connection,
                     new ClassPathResource("db/rollback/U17__character_chat_persistence.sql"));

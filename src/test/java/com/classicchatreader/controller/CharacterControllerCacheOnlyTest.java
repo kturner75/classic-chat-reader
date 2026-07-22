@@ -5,6 +5,8 @@ import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterType;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.service.AccountAuthService;
+import com.classicchatreader.service.AccountChatHistoryService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.CharacterChatService;
 import com.classicchatreader.service.CharacterExtractionService;
@@ -66,6 +68,12 @@ class CharacterControllerCacheOnlyTest {
 
     @MockitoBean
     private ChapterRepository chapterRepository;
+
+    @MockitoBean
+    private AccountAuthService accountAuthService;
+
+    @MockitoBean
+    private AccountChatHistoryService accountChatHistoryService;
 
     @Test
     void getStatus_cacheOnlyMode_keepsCharacterChatEnabledFlag() throws Exception {

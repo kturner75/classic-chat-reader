@@ -28,6 +28,9 @@ BL-049 introduces account-owned `character_chat_conversations` and ordered
   introduced in this schema.
 - Application timestamps are written in UTC. Services that append a message
   must also advance the parent conversation's `updated_at`.
+- V18 adds nullable chapter and paragraph context to each conversation so My
+  Chats can resume the exact reader location. Rows created before V18 fall back
+  to the character's first chapter until their next exchange captures context.
 
 ## Query shape
 
@@ -38,16 +41,18 @@ a paged recent-thread list across characters.
 
 ## Migration and rollback
 
-Flyway applies `db/migration/V17__character_chat_persistence.sql`. Flyway
+Flyway applies `db/migration/V17__character_chat_persistence.sql` followed by
+`db/migration/V18__character_chat_resume_context.sql`. Flyway
 Community does not run undo migrations, so rollback is an explicit operator
 step after a database backup:
 
 1. Stop application writes.
 2. Back up/export the two character chat tables if they contain data.
-3. Execute `db/rollback/U17__character_chat_persistence.sql`.
-4. Remove or repair the V17 row in `flyway_schema_history` only as part of the
-   coordinated deployment rollback; do not edit migration history on a live
-   forward-moving deployment.
+3. Execute `db/rollback/U18__character_chat_resume_context.sql`, then
+   `db/rollback/U17__character_chat_persistence.sql`.
+4. Remove or repair the V18 and V17 rows in `flyway_schema_history` only as
+   part of the coordinated deployment rollback; do not edit migration history
+   on a live forward-moving deployment.
 
 The migration integration test executes both scripts against H2 and verifies
 ownership, ordering, indexes, cascade behavior, and table removal.

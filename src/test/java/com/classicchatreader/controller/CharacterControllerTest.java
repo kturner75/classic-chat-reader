@@ -6,6 +6,8 @@ import com.classicchatreader.entity.CharacterType;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.service.AccountAuthService;
+import com.classicchatreader.service.AccountChatHistoryService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.CharacterChatService;
 import com.classicchatreader.service.CharacterExtractionService;
@@ -69,6 +71,12 @@ class CharacterControllerTest {
 
     @MockitoBean
     private ChapterRepository chapterRepository;
+
+    @MockitoBean
+    private AccountAuthService accountAuthService;
+
+    @MockitoBean
+    private AccountChatHistoryService accountChatHistoryService;
 
     @Test
     void getCharactersForBook_missingBook_returnsNotFound() throws Exception {
@@ -136,6 +144,46 @@ class CharacterControllerTest {
                 org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void chat_authenticatedReaderPersistsExchangeAndReturnsSessionId() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(chatService.chat(
+                org.mockito.ArgumentMatchers.eq("character-1"),
+                org.mockito.ArgumentMatchers.eq("Who are you?"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(2)))
+                .thenReturn("I am your guide.");
+        when(accountAuthService.resolveAuthenticatedPrincipal(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountChatHistoryService.recordExchange(
+                "user-1", "character-1", "Who are you?", "I am your guide.", 0, 2))
+                .thenReturn("session-1");
+
+        mockMvc.perform(post("/api/characters/character-1/chat")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "message": "Who are you?",
+                                  "conversationHistory": [],
+                                  "readerChapterIndex": 0,
+                                  "readerParagraphIndex": 2
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response", is("I am your guide.")))
+                .andExpect(jsonPath("$.sessionId", is("session-1")));
+
+        verify(accountChatHistoryService).recordExchange(
+                "user-1", "character-1", "Who are you?", "I am your guide.", 0, 2);
     }
 
     @Test
