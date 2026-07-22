@@ -234,6 +234,7 @@
         mobileHeaderMenuPanel: document.getElementById('mobile-header-menu-panel'),
         mobileMenuSearchInput: document.getElementById('mobile-menu-search-input'),
         mobileMenuSearchSubmit: document.getElementById('mobile-menu-search-submit'),
+        mobileMenuChapters: document.getElementById('mobile-menu-chapters'),
         mobileMenuTtsToggle: document.getElementById('mobile-menu-tts-toggle'),
         mobileMenuTtsSpeed: document.getElementById('mobile-menu-tts-speed'),
         mobileMenuTtsSpeedValue: document.getElementById('mobile-menu-tts-speed-value'),
@@ -1486,6 +1487,11 @@
             elements.mobileMenuCharacterToggle.disabled = !state.characterAvailable;
         }
         const hasBook = !!state.currentBook;
+        if (elements.mobileMenuChapters) {
+            elements.mobileMenuChapters.disabled = !hasBook
+                || !Array.isArray(state.chapters)
+                || state.chapters.length === 0;
+        }
         const hasCurrentParagraph = hasBook
             && Array.isArray(state.paragraphs)
             && state.paragraphs.length > 0
@@ -9380,6 +9386,9 @@
                 closeMobileHeaderMenu();
                 ttsToggle();
             });
+        }
+        if (elements.mobileMenuChapters) {
+            elements.mobileMenuChapters.addEventListener('click', showChapterList);
         }
         if (elements.mobileMenuTtsSpeed) {
             elements.mobileMenuTtsSpeed.addEventListener('click', () => {
