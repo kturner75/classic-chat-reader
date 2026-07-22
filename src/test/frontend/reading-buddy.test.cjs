@@ -108,6 +108,7 @@ function createFakeHost(overrides = {}) {
         isSpeedReadingActive: () => speed,
         getClassroomContext: () => ({ enrolled: false }),
         isClassroomAllowed: () => true,
+        onDiagnostic: overrides.onDiagnostic || (() => {}),
         mapChatError: () => ({ message: 'err', retryable: true }),
         escapeHtml,
         ttsPauseForModal: () => {},
@@ -217,6 +218,36 @@ test('isFeatureAvailable honors status and classroom kill-switch', () => {
         { available: true },
         { enrolled: true, features: { chatEnabled: true, readingBuddyEnabled: false } }
     ), false);
+});
+
+test('controller diagnostics explain unavailable status without logging reader text', async () => {
+    const diagnostics = [];
+    const host = createFakeHost({
+        onDiagnostic: (event, details) => diagnostics.push({ event, details }),
+        fetch: async () => ({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            json: async () => ({
+                available: false,
+                enabled: false,
+                providerAvailable: true,
+                chatEnabled: true
+            })
+        })
+    });
+    const controller = createController(host);
+
+    await controller.checkAvailability();
+    controller.onPageRendered();
+
+    assert.deepEqual(diagnostics.map(item => item.event), [
+        'availability',
+        'proactive_skipped'
+    ]);
+    assert.equal(diagnostics[0].details.serverEnabled, false);
+    assert.equal(diagnostics[1].details.reason, 'status_unavailable');
+    assert.equal(JSON.stringify(diagnostics).includes('x'.repeat(40)), false);
 });
 
 test('quiet default is 45 minutes', () => {

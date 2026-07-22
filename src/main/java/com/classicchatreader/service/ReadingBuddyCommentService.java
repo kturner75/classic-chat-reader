@@ -127,6 +127,15 @@ public class ReadingBuddyCommentService {
             ReadingBuddyTriggerPolicy.TriggerDecision decision = triggerPolicy.evaluate(triggerContext);
             if (decision instanceof ReadingBuddyTriggerPolicy.TriggerDecision.Silence silence) {
                 metricsService.recordCheckSilence();
+                logCheckOutcome(
+                        "silence",
+                        silence.reason().name(),
+                        ownerKey,
+                        book.getId(),
+                        effectivePersonaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        silence.nextEligibleAfterMs());
                 return CheckCommentResult.silence(
                         silence.reason(),
                         silence.nextEligibleAfterMs(),
@@ -183,6 +192,15 @@ public class ReadingBuddyCommentService {
                 long nextMs = Math.min(
                         30_000L,
                         Math.max(5_000L, properties.minCooldownMsFor(frequency) / 6));
+                logCheckOutcome(
+                        "silence",
+                        ReadingBuddyTriggerPolicy.SilenceReason.PROVIDER_ERROR.name(),
+                        ownerKey,
+                        book.getId(),
+                        effectivePersonaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        nextMs);
                 return CheckCommentResult.silence(
                         ReadingBuddyTriggerPolicy.SilenceReason.PROVIDER_ERROR,
                         nextMs,
@@ -195,6 +213,15 @@ public class ReadingBuddyCommentService {
             if (parsed.action() != ParsedAction.COMMENT) {
                 metricsService.recordCheckSilence();
                 long nextMs = Math.max(0L, properties.minCooldownMsFor(frequency));
+                logCheckOutcome(
+                        "silence",
+                        ReadingBuddyTriggerPolicy.SilenceReason.DECIDED_NONE.name(),
+                        ownerKey,
+                        book.getId(),
+                        effectivePersonaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        nextMs);
                 return CheckCommentResult.silence(
                         ReadingBuddyTriggerPolicy.SilenceReason.DECIDED_NONE,
                         nextMs,
@@ -208,6 +235,15 @@ public class ReadingBuddyCommentService {
             if (truncated.isBlank()) {
                 metricsService.recordCheckSilence();
                 long nextMs = Math.max(0L, properties.minCooldownMsFor(frequency));
+                logCheckOutcome(
+                        "silence",
+                        ReadingBuddyTriggerPolicy.SilenceReason.DECIDED_NONE.name(),
+                        ownerKey,
+                        book.getId(),
+                        effectivePersonaId,
+                        readerChapterIndex,
+                        readerParagraphIndex,
+                        nextMs);
                 return CheckCommentResult.silence(
                         ReadingBuddyTriggerPolicy.SilenceReason.DECIDED_NONE,
                         nextMs,
@@ -236,12 +272,14 @@ public class ReadingBuddyCommentService {
                 // Concurrent winner already stored — do not double-count COMMENT metrics.
                 // Still return the first row so the client can show the same toast text.
                 metricsService.recordCheckSilence();
-                log.debug(
-                        "event=buddy_check_race_existing bookId={} personaId={} chapter={} paragraph={} messageId={}",
+                log.info(
+                        "event=buddy_check_outcome outcome=comment source=race_existing bookId={} personaId={} ownerKey={} chapter={} paragraph={} nextEligibleAfterMs={} messageId={}",
                         book.getId(),
                         effectivePersonaId,
+                        truncateForLog(ownerKey, 40),
                         readerChapterIndex,
                         readerParagraphIndex,
+                        nextEligible,
                         saved.getId()
                 );
                 return CheckCommentResult.comment(
@@ -255,12 +293,14 @@ public class ReadingBuddyCommentService {
             }
 
             metricsService.recordCheckComment();
-            log.debug(
-                    "event=buddy_check_comment bookId={} personaId={} chapter={} paragraph={} chars={}",
+            log.info(
+                    "event=buddy_check_outcome outcome=comment source=generated bookId={} personaId={} ownerKey={} chapter={} paragraph={} nextEligibleAfterMs={} chars={}",
                     book.getId(),
                     effectivePersonaId,
+                    truncateForLog(ownerKey, 40),
                     readerChapterIndex,
                     readerParagraphIndex,
+                    nextEligible,
                     truncated.length()
             );
 
@@ -275,6 +315,27 @@ public class ReadingBuddyCommentService {
         } finally {
             metricsService.recordCheckLatency(System.currentTimeMillis() - started);
         }
+    }
+
+    private void logCheckOutcome(
+            String outcome,
+            String reason,
+            String ownerKey,
+            String bookId,
+            String personaId,
+            int chapterIndex,
+            int paragraphIndex,
+            long nextEligibleAfterMs) {
+        log.info(
+                "event=buddy_check_outcome outcome={} reason={} bookId={} personaId={} ownerKey={} chapter={} paragraph={} nextEligibleAfterMs={}",
+                outcome,
+                reason,
+                bookId,
+                personaId,
+                truncateForLog(ownerKey, 40),
+                chapterIndex,
+                paragraphIndex,
+                nextEligibleAfterMs);
     }
 
     private ReadingBuddyPersona resolvePersona(String personaId) {

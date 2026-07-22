@@ -227,8 +227,25 @@
             chatRetryHandler: null,
             prefsLoadedForBook: null,
             renderSettled: false,
-            enabledEverAdvanced: false
+            enabledEverAdvanced: false,
+            diagnosticDedupeKeys: {}
         };
+
+        function diagnostic(event, details = {}, options = {}) {
+            const payload = details && typeof details === 'object' ? details : {};
+            const dedupeKey = options.dedupeKey || null;
+            if (dedupeKey && state.diagnosticDedupeKeys[event] === dedupeKey) {
+                return;
+            }
+            if (dedupeKey) {
+                state.diagnosticDedupeKeys[event] = dedupeKey;
+            }
+            if (typeof host.onDiagnostic === 'function') {
+                host.onDiagnostic(event, payload);
+                return;
+            }
+            console.debug(`[ReadingBuddy] ${event}`, payload);
+        }
 
         /**
          * Cancel dwell + in-flight check-comment applicability.
@@ -382,10 +399,20 @@
                     state.statusAvailable = isFeatureAvailable(status, host.getClassroomContext
                         ? host.getClassroomContext()
                         : null);
+                    diagnostic('availability', {
+                        available: state.statusAvailable,
+                        serverEnabled: status && status.enabled === true,
+                        providerAvailable: status && status.providerAvailable === true,
+                        chatEnabled: status && status.chatEnabled === true,
+                        classroomAllowed: classroomAllowed()
+                    }, { dedupeKey: `availability:${state.statusAvailable}:${status && status.enabled}:${classroomAllowed()}` });
                 }
             } catch (error) {
                 console.debug('Reading buddy status check failed:', error);
                 state.statusAvailable = false;
+                diagnostic('availability_error', {
+                    message: error && error.message ? error.message : String(error)
+                });
             }
             syncSettingsPanel();
             return state.statusAvailable;
@@ -492,6 +519,10 @@
             }
 
             if (!state.statusAvailable || !state.prefs.enabled) {
+                if (positionChanged) {
+                    const reason = !state.statusAvailable ? 'status_unavailable' : 'prefs_disabled';
+                    diagnostic('proactive_skipped', { reason }, { dedupeKey: `proactive_skipped:${reason}` });
+                }
                 return;
             }
 
@@ -554,6 +585,14 @@
                 classroomAllowed: classroomAllowed()
             });
             if (!gates.ok) {
+                diagnostic('proactive_skipped', {
+                    reason: gates.reason,
+                    bookId: requestBookId,
+                    chapterIndex: pos.chapterIndex,
+                    paragraphIndex: pos.paragraphIndex,
+                    frequency: state.prefs.frequency,
+                    advancesSinceSample: state.advancesSinceSample
+                }, { dedupeKey: `proactive_skipped:${gates.reason}` });
                 return;
             }
 
@@ -564,6 +603,14 @@
             const personaId = effectivePersonaId();
             const chapterIndex = pos.chapterIndex;
             const paragraphIndex = pos.paragraphIndex;
+
+            diagnostic('check_requested', {
+                bookId: requestBookId,
+                personaId,
+                chapterIndex,
+                paragraphIndex,
+                frequency: state.prefs.frequency
+            });
 
             try {
                 const response = await host.fetch('/api/reading-buddy/check-comment', {
@@ -596,6 +643,12 @@
                 }
 
                 if (!response.ok) {
+                    diagnostic('check_http_error', {
+                        status: response.status,
+                        bookId: requestBookId,
+                        chapterIndex,
+                        paragraphIndex
+                    });
                     if (response.status === 429) {
                         const retryAfter = Number(response.headers.get('Retry-After'));
                         if (Number.isFinite(retryAfter) && retryAfter > 0) {
@@ -622,6 +675,15 @@
                     state.clientCooldownUntilMs = Date.now() + data.nextEligibleAfterMs;
                 }
 
+                diagnostic('check_result', {
+                    action: data.action || null,
+                    reason: data.reason || null,
+                    nextEligibleAfterMs: data.nextEligibleAfterMs || 0,
+                    bookId: requestBookId,
+                    chapterIndex,
+                    paragraphIndex
+                });
+
                 if (data.action === 'COMMENT' && typeof data.text === 'string' && data.text.trim()) {
                     // Never auto-open modal — toast only
                     showToast({
@@ -636,6 +698,12 @@
                 }
             } catch (error) {
                 console.debug('Reading buddy check-comment failed:', error);
+                diagnostic('check_network_error', {
+                    message: error && error.message ? error.message : String(error),
+                    bookId: requestBookId,
+                    chapterIndex,
+                    paragraphIndex
+                });
             }
         }
 
