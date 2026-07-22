@@ -205,6 +205,11 @@
         achievementsModalClose: document.getElementById('achievements-modal-close'),
         achievementsModalSummary: document.getElementById('achievements-modal-summary'),
         achievementsModalList: document.getElementById('achievements-modal-list'),
+        myChatsShelf: document.getElementById('my-chats-shelf'),
+        myChatsList: document.getElementById('my-chats-list'),
+        myChatsStatus: document.getElementById('my-chats-status'),
+        myChatsViewAll: document.getElementById('my-chats-view-all'),
+        myChatsRetry: document.getElementById('my-chats-retry'),
         continueReading: document.getElementById('continue-reading'),
         continueReadingList: document.getElementById('continue-reading-list'),
         upNext: document.getElementById('up-next'),
@@ -504,6 +509,35 @@
     };
 
     let readingBuddyController = null;
+    let myChatsLandingController = null;
+
+    function initMyChatsLandingController() {
+        const api = typeof globalThis !== 'undefined' ? globalThis.MyChatsLanding : null;
+        if (!api || typeof api.createController !== 'function') {
+            console.debug('My Chats landing module not loaded');
+            return null;
+        }
+        return api.createController({
+            section: elements.myChatsShelf,
+            list: elements.myChatsList,
+            status: elements.myChatsStatus,
+            viewAll: elements.myChatsViewAll,
+            retry: elements.myChatsRetry,
+            fetchImpl: nativeFetch,
+            onError: error => console.debug('My Chats landing request failed:', error)
+        });
+    }
+
+    function refreshMyChatsLanding(force = false) {
+        if (!myChatsLandingController) return;
+        const libraryVisible = elements.libraryView && !elements.libraryView.classList.contains('hidden');
+        const searchActive = !!(state.librarySearchQuery || '').trim();
+        void myChatsLandingController.sync({
+            authenticated: state.accountAuthenticated,
+            visible: libraryVisible && !searchActive,
+            force
+        });
+    }
 
     function isReadingBuddyModalVisible() {
         return elements.readingBuddyChatModal
@@ -2123,6 +2157,9 @@
             }
             await loadClassroomCapabilities();
             updateAccountUi();
+            const identityChanged = previousAuthenticated !== state.accountAuthenticated
+                || previousEmail !== state.accountEmail;
+            refreshMyChatsLanding(identityChanged);
 
             refreshClassroomWorkspaceActions();
 
@@ -2132,8 +2169,6 @@
 
             // Login/logout on an already-open page used to keep stale classroom context
             // until a hard refresh; reload context + Library when account identity changes.
-            const identityChanged = previousAuthenticated !== state.accountAuthenticated
-                || previousEmail !== state.accountEmail;
             if (identityChanged) {
                 await refreshClassroomContextAfterAccountChange();
             }
@@ -2630,6 +2665,7 @@
         applyReaderPreferences();
         syncReaderPreferencesControls();
         readingBuddyController = initReadingBuddyController();
+        myChatsLandingController = initMyChatsLandingController();
         if (readingBuddyController) {
             readingBuddyController.bindEvents();
         }
@@ -4360,11 +4396,13 @@
             hideClassroomLandingSections();
             hideAchievementsShelf();
             hidePersonalizedSections();
+            refreshMyChatsLanding();
         } else {
             renderClassroomLandingSections();
             renderAchievementsShelf();
             void loadAchievementsShelf();
             renderPersonalizedSections();
+            refreshMyChatsLanding();
         }
 
         const discoverCatalog = searchTerm ? state.catalogBooks : getDiscoverCatalogEntries();
@@ -6233,6 +6271,7 @@
         state.achievementsLoaded = false;
         state.achievementsAllItems = [];
         renderLibrary();
+        refreshMyChatsLanding(true);
         void loadClassroomContext().then(() => {
             if (!state.currentBook && elements.libraryView && !elements.libraryView.classList.contains('hidden')) {
                 renderLibrary();

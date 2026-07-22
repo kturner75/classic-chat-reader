@@ -456,6 +456,189 @@ html, body {
     border-color: var(--muted-color);
 }
 
+.my-chats-view-all {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.my-chats-status {
+    min-height: 1.15rem;
+    margin: 0 0 0.58rem;
+    color: var(--muted-color);
+    font-size: 0.86rem;
+}
+
+.my-chats-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.my-chat-card {
+    display: grid;
+    grid-template-columns: 3.2rem minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    gap: 0.2rem 0.7rem;
+    min-width: 0;
+    min-height: 7.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    padding: 0.72rem;
+    text-decoration: none;
+    transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+a.my-chat-card:hover,
+a.my-chat-card:focus-visible {
+    border-color: #b89e62;
+    background: var(--highlight-color);
+    transform: translateY(-1px);
+}
+
+a.my-chat-card:focus-visible,
+.my-chats-empty-action:focus-visible,
+.my-chats-view-all:focus-visible,
+.my-chats-retry:focus-visible {
+    outline: 2px solid var(--text-color);
+    outline-offset: 3px;
+}
+
+.my-chat-portrait {
+    position: relative;
+    grid-row: 1 / span 2;
+    width: 3.2rem;
+    height: 3.2rem;
+    overflow: hidden;
+    border-radius: 50%;
+    background: #e8dfca;
+}
+
+.my-chat-portrait-placeholder,
+.my-chat-portrait img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.my-chat-portrait-placeholder {
+    display: grid;
+    place-items: center;
+    color: #6b5b37;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.my-chat-portrait img {
+    object-fit: cover;
+}
+
+.my-chat-card-content {
+    display: block;
+    min-width: 0;
+}
+
+.my-chat-character,
+.my-chat-book,
+.my-chat-preview,
+.my-chat-time {
+    display: block;
+}
+
+.my-chat-character {
+    overflow: hidden;
+    font-size: 1rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.my-chat-book {
+    overflow: hidden;
+    margin-top: 0.08rem;
+    color: #6b5b37;
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.my-chat-preview {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-top: 0.3rem;
+    color: var(--muted-color);
+    font-size: 0.82rem;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.my-chat-time {
+    margin-top: 0.28rem;
+    color: var(--muted-color);
+    font-size: 0.7rem;
+}
+
+.my-chat-card-action {
+    grid-column: 2;
+    color: #6b5b37;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.my-chat-card-unavailable {
+    opacity: 0.75;
+}
+
+.my-chats-empty-action {
+    display: inline-block;
+    color: #6b5b37;
+    font-weight: 600;
+}
+
+.my-chats-retry {
+    margin-top: 0.2rem;
+}
+
+.my-chat-card-skeleton {
+    pointer-events: none;
+}
+
+.my-chat-skeleton-portrait,
+.my-chat-skeleton-lines span {
+    background: linear-gradient(90deg, #ebe6dc 25%, #f6f2e9 50%, #ebe6dc 75%);
+    background-size: 200% 100%;
+    animation: myChatsSkeleton 1.4s ease-in-out infinite;
+}
+
+.my-chat-skeleton-portrait {
+    grid-row: 1 / span 2;
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+}
+
+.my-chat-skeleton-lines {
+    display: grid;
+    gap: 0.5rem;
+    padding-top: 0.15rem;
+}
+
+.my-chat-skeleton-lines span {
+    height: 0.7rem;
+    border-radius: 999px;
+}
+
+.my-chat-skeleton-lines span:nth-child(2) { width: 72%; }
+.my-chat-skeleton-lines span:nth-child(3) { width: 88%; }
+
+@keyframes myChatsSkeleton {
+    to { background-position: -200% 0; }
+}
+
 .achievement-title {
     display: block;
     font-size: 0.82rem;
@@ -4379,6 +4562,18 @@ kbd {
     .achievements-view-all {
         font-size: 0.64rem;
         padding: 0.12rem 0.44rem;
+    }
+
+    .my-chats-status {
+        font-size: 0.82rem;
+    }
+
+    .my-chats-list {
+        grid-template-columns: 1fr;
+    }
+
+    .my-chat-card {
+        min-height: 6.6rem;
     }
 
     #reader-view {
