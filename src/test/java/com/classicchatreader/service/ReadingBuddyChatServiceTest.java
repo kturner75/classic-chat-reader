@@ -7,6 +7,7 @@ import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +53,9 @@ class ReadingBuddyChatServiceTest {
     @Mock
     private ChapterRepository chapterRepository;
 
+    @Mock
+    private ParagraphRepository paragraphRepository;
+
     private ReadingBuddyProperties properties;
     private ReadingBuddyPersonaCatalog catalog;
     private ReadingBuddyChatService chatService;
@@ -70,7 +74,8 @@ class ReadingBuddyChatServiceTest {
                 properties,
                 metricsService,
                 bookRepository,
-                chapterRepository
+                chapterRepository,
+                paragraphRepository
         );
     }
 
@@ -81,7 +86,9 @@ class ReadingBuddyChatServiceTest {
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
 
         ChapterEntity chapter = new ChapterEntity(3, "Chapter IV");
+        chapter.setId("chapter-3");
         when(chapterRepository.findByBookIdAndChapterIndex("book-1", 3)).thenReturn(Optional.of(chapter));
+        when(paragraphRepository.existsByChapterIdAndParagraphIndex("chapter-3", 12)).thenReturn(true);
 
         List<ReadingBuddyPositionedMessage> recent = List.of(
                 new ReadingBuddyPositionedMessage("user", "prior", "chat", 2, 0)
@@ -145,7 +152,7 @@ class ReadingBuddyChatServiceTest {
         properties.setUserMessageMaxChars(10);
         chatService = new ReadingBuddyChatService(
                 chatProvider, promptBuilder, memoryService, catalog, properties,
-                metricsService, bookRepository, chapterRepository);
+                metricsService, bookRepository, chapterRepository, paragraphRepository);
 
         ReadingBuddyChatService.ValidationException ex = assertThrows(
                 ReadingBuddyChatService.ValidationException.class,
@@ -169,11 +176,47 @@ class ReadingBuddyChatServiceTest {
     }
 
     @Test
+    void chat_missingChapter_throwsInvalidPositionBeforeLlm() {
+        BookEntity book = new BookEntity("Title", "Author", "manual");
+        book.setId("book-1");
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(chapterRepository.findByBookIdAndChapterIndex("book-1", 9)).thenReturn(Optional.empty());
+
+        ReadingBuddyChatService.ValidationException ex = assertThrows(
+                ReadingBuddyChatService.ValidationException.class,
+                () -> chatService.chat("owner-A", "book-1", "humorist", "hi", 9, 0));
+
+        assertEquals("INVALID_POSITION", ex.getErrorCode());
+        verify(chatProvider, never()).generate(anyString(), any(LlmOptions.class));
+    }
+
+    @Test
+    void chat_missingParagraph_throwsInvalidPositionBeforeLlm() {
+        BookEntity book = new BookEntity("Title", "Author", "manual");
+        book.setId("book-1");
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        ChapterEntity chapter = new ChapterEntity(1, "One");
+        chapter.setId("chapter-1");
+        when(chapterRepository.findByBookIdAndChapterIndex("book-1", 1)).thenReturn(Optional.of(chapter));
+        when(paragraphRepository.existsByChapterIdAndParagraphIndex("chapter-1", 99)).thenReturn(false);
+
+        ReadingBuddyChatService.ValidationException ex = assertThrows(
+                ReadingBuddyChatService.ValidationException.class,
+                () -> chatService.chat("owner-A", "book-1", "humorist", "hi", 1, 99));
+
+        assertEquals("INVALID_POSITION", ex.getErrorCode());
+        verify(chatProvider, never()).generate(anyString(), any(LlmOptions.class));
+    }
+
+    @Test
     void chat_llmFailure_recordsFailedAndDoesNotPersistFallback() {
         BookEntity book = new BookEntity("Title", "Author", "manual");
         book.setId("book-1");
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
-        when(chapterRepository.findByBookIdAndChapterIndex(any(), anyInt())).thenReturn(Optional.empty());
+        ChapterEntity chapter = new ChapterEntity(0, "One");
+        chapter.setId("chapter-0");
+        when(chapterRepository.findByBookIdAndChapterIndex("book-1", 0)).thenReturn(Optional.of(chapter));
+        when(paragraphRepository.existsByChapterIdAndParagraphIndex("chapter-0", 0)).thenReturn(true);
         when(memoryService.loadRecentMessagesForPrompt(any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of());
         when(memoryService.getMemorySnapshot(any(), any(), any()))

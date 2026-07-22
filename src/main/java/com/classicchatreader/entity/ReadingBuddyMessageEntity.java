@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Entity
 @Table(
@@ -26,6 +27,8 @@ import java.util.HexFormat;
         }
 )
 public class ReadingBuddyMessageEntity {
+
+    private static final AtomicLong LAST_CHRONOLOGY_SEQUENCE = new AtomicLong();
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -69,6 +72,14 @@ public class ReadingBuddyMessageEntity {
     private LocalDateTime createdAt;
 
     /**
+     * Application-monotonic insertion key used to break database timestamp ties.
+     * The wall-clock component keeps values increasing across ordinary process restarts;
+     * the atomic increment preserves order for multiple messages created in one millisecond.
+     */
+    @Column(name = "chronology_sequence", nullable = false)
+    private long chronologySequence;
+
+    /**
      * SHA-256 lowercase hex of UTF-8 {@code role + "\n" + kind + "\n" + content}.
      * No trailing newline after content.
      */
@@ -98,6 +109,15 @@ public class ReadingBuddyMessageEntity {
         if (contentHash == null || contentHash.isBlank()) {
             contentHash = computeContentHash(role, kind, content);
         }
+        if (chronologySequence <= 0) {
+            chronologySequence = nextChronologySequence();
+        }
+    }
+
+    public static long nextChronologySequence() {
+        long wallClockFloor = System.currentTimeMillis() * 1_000_000L;
+        return LAST_CHRONOLOGY_SEQUENCE.updateAndGet(previous ->
+                Math.max(previous + 1, wallClockFloor));
     }
 
     public String getId() {
@@ -194,5 +214,13 @@ public class ReadingBuddyMessageEntity {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public long getChronologySequence() {
+        return chronologySequence;
+    }
+
+    public void setChronologySequence(long chronologySequence) {
+        this.chronologySequence = chronologySequence;
     }
 }

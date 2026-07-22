@@ -35,6 +35,10 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern READING_BUDDY_CHAT_PATH = Pattern.compile("^/api/reading-buddy/chat$");
     private static final Pattern READING_BUDDY_CHECK_COMMENT_PATH =
             Pattern.compile("^/api/reading-buddy/check-comment$");
+    private static final Pattern READING_BUDDY_PREFERENCES_PATH =
+            Pattern.compile("^/api/reading-buddy/preferences$");
+    private static final Pattern READING_BUDDY_HISTORY_PATH =
+            Pattern.compile("^/api/reading-buddy/history$");
 
     private static final Pattern QUIZ_GENERATE_PATH = Pattern.compile("^/api/quizzes/chapter/[^/]+/generate$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
@@ -109,8 +113,16 @@ public final class SensitiveApiRequestMatcher {
             return EndpointType.ADMIN;
         }
 
+        if ("PUT".equals(method) && READING_BUDDY_PREFERENCES_PATH.matcher(path).matches()) {
+            return EndpointType.CHAT;
+        }
+
         if ("DELETE".equals(method) && PREGEN_JOB_STATUS_PATH.matcher(path).matches()) {
             return EndpointType.GENERATION;
+        }
+
+        if ("DELETE".equals(method) && READING_BUDDY_HISTORY_PATH.matcher(path).matches()) {
+            return EndpointType.CHAT;
         }
 
         if ("DELETE".equals(method)

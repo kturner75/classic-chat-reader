@@ -4,6 +4,7 @@ import com.classicchatreader.config.ReadingBuddyProperties;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ReadingBuddyMessageEntity;
 import com.classicchatreader.repository.BookRepository;
+import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
@@ -16,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -71,6 +73,9 @@ class ReadingBuddyProactivePersistIntegrationTest {
     private ReadingBuddyMessageRepository messageRepository;
 
     @Autowired
+    private ReadingBuddyMemoryRepository memoryRepository;
+
+    @Autowired
     private BookRepository bookRepository;
 
     @Test
@@ -91,6 +96,32 @@ class ReadingBuddyProactivePersistIntegrationTest {
         long count = messageRepository.countByOwnerKeyAndBookIdAndPersonaId(
                 "owner-A", book.getId(), "humorist");
         assertEquals(1, count);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void chatTurn_equalTimestamps_ordersUserBeforeBuddyByChronologySequence() {
+        BookEntity book = bookRepository.saveAndFlush(new BookEntity("Mansfield Park", "Austen", "manual"));
+        ReadingBuddyMemoryService.ChatTurn turn = memoryService.persistChatTurn(
+                "owner-chronology",
+                book.getId(),
+                "close_reader",
+                "reader message",
+                "buddy reply",
+                1,
+                2);
+
+        LocalDateTime tiedTimestamp = LocalDateTime.of(2026, 7, 22, 8, 0);
+        turn.userMessage().setCreatedAt(tiedTimestamp);
+        turn.buddyMessage().setCreatedAt(tiedTimestamp);
+        messageRepository.saveAllAndFlush(List.of(turn.buddyMessage(), turn.userMessage()));
+
+        List<ReadingBuddyMessageEntity> ordered = messageRepository
+                .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(
+                        "owner-chronology", book.getId(), "close_reader");
+
+        assertEquals(List.of("user", "buddy"),
+                ordered.stream().map(ReadingBuddyMessageEntity::getRole).toList());
     }
 
     @Test
@@ -141,5 +172,46 @@ class ReadingBuddyProactivePersistIntegrationTest {
                 .findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc("owner-B", bookId, "humorist");
         assertEquals(1, all.size());
         assertEquals("1:5", all.getFirst().getProactivePositionKey());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void concurrentFirstMessages_differentPositions_recoverMemoryRowRace() throws Exception {
+        BookEntity book = bookRepository.saveAndFlush(new BookEntity("Persuasion", "Austen", "manual"));
+        String bookId = book.getId();
+
+        int threads = 4;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<ReadingBuddyMemoryService.ProactivePersistResult>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            final int paragraphIndex = i;
+            futures.add(pool.submit(() -> {
+                ready.countDown();
+                go.await(5, TimeUnit.SECONDS);
+                return memoryService.persistProactiveComment(
+                        "owner-memory-race",
+                        bookId,
+                        "close_reader",
+                        "comment-" + paragraphIndex,
+                        1,
+                        paragraphIndex);
+            }));
+        }
+
+        assertTrue(ready.await(5, TimeUnit.SECONDS));
+        go.countDown();
+
+        for (Future<ReadingBuddyMemoryService.ProactivePersistResult> future : futures) {
+            assertTrue(future.get(10, TimeUnit.SECONDS).inserted());
+        }
+        pool.shutdownNow();
+
+        assertEquals(threads, messageRepository.countByOwnerKeyAndBookIdAndPersonaId(
+                "owner-memory-race", bookId, "close_reader"));
+        assertTrue(memoryRepository.findByOwnerKeyAndBookIdAndPersonaId(
+                "owner-memory-race", bookId, "close_reader").isPresent());
     }
 }

@@ -91,6 +91,30 @@ class PublicApiBuddyRoutesPublicModeTest {
     }
 
     @Test
+    void preferencesUpdate_withoutAuth_returns401() throws Exception {
+        when(request.getMethod()).thenReturn("PUT");
+        when(request.getRequestURI()).thenReturn("/api/reading-buddy/preferences");
+        when(request.getHeader("X-API-Key")).thenReturn(null);
+
+        assertFalse(interceptor.preHandle(request, response, new Object()));
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        assertTrue(responseBody.toString().contains("Authentication required"));
+        verify(rateLimiter, never()).tryConsume(anyString(), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    void historyDelete_withoutAuth_returns401() throws Exception {
+        when(request.getMethod()).thenReturn("DELETE");
+        when(request.getRequestURI()).thenReturn("/api/reading-buddy/history");
+        when(request.getHeader("X-API-Key")).thenReturn(null);
+
+        assertFalse(interceptor.preHandle(request, response, new Object()));
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        assertTrue(responseBody.toString().contains("Authentication required"));
+        verify(rateLimiter, never()).tryConsume(anyString(), anyInt(), any(Duration.class));
+    }
+
+    @Test
     void authenticated_chatAndCheckComment_useDistinctBuckets() throws Exception {
         when(request.getMethod()).thenReturn("POST");
         when(request.getHeader("X-API-Key")).thenReturn("test-api-key");
