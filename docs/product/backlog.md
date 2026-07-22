@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## Implementation handoff (classroom)
 
@@ -34,6 +34,8 @@ Last updated: 2026-07-16
 **Known demo issues found during walkthrough (2026-07-13 / 2026-07-16 partner call):**
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
 - ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position.
+- Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat. Returning to the book and Library a second time corrects it to **3/3 complete**; tracked in `BL-047` as a stale classroom-context rerender bug.
+- The teacher workspace can save **Reading Buddy enabled** while the deployment-wide `reading-buddy.enabled` rollout flag is off. Students then receive no proactive checks even though the class configuration says the feature is enabled; tracked in `BL-048` as a misleading availability-state bug.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
@@ -43,6 +45,12 @@ Last updated: 2026-07-16
 - **Product ask (elevates BL-025.11):** optionally **require character chat** on an assignment for classroom **show-and-tell**; students need a **downloadable conversation artifact** (text/Markdown export) so they can bring the chat to class without screenshots. Prefer student self-serve download first; teacher bulk view can follow FERPA path.
 - Continue fleshing the pilot path; first-pass demo slice is the right track.
 - **Broader demo interest:** another teacher + an AI-committee administrator want to meet for a demo later. Kevin will **not** set a multi-person demo date until classroom is more fully fleshed and known bugs are fixed. Next 1:1 partner check-in: **Tuesday 6pm** (America/Chicago) after the 2026-07-16 call (not Thursday that week).
+
+**Partner feedback (2026-07-22 educator call — Jessica):**
+- Demo path (require character chat + transcript download + assignment progress) landed well enough to continue pilot conversation.
+- **My Chats surface:** wants a **My Chats** entry on the signed-in landing near **Achievements** — either a recent-chats list or a link to a dedicated My Chats page. Elevates `BL-039` / `BL-032` (use product name **My Chats**).
+- **Cross-device chat:** character chats must be **server-persisted** so students can resume regardless of device. Today remains localStorage-only. New epic `BL-049` (prerequisite for durable assignment completion + teacher export path).
+- **Bug:** increasing **font size** in reader preferences updates text but **paragraph content can clip**. New bug `BL-050` (regression on `BL-006` preferences/re-pagination).
 
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
@@ -60,13 +68,14 @@ Last updated: 2026-07-16
 - Chapter-targeted work completes when the student reaches the assigned chapter (or quiz is complete); whole-book assignments still require full-book completion.
 
 **Next when resuming (suggested order):**
-1. ~~Assignment open-chapter / chat download / characterChatRequired / assignment progress UX~~ shipped or this branch.
-2. Roster display name + email; BL-025.10 v1 student drill-down/progress.
-3. Invite redeem rate limits (BL-028 pattern)
-4. Roster actions beyond self-enrollment (remove/withdraw; CSV import remains optional)
-5. `TermTransitionService` + API (PR-4/13)
-6. PR-0 stable quiz question ids → override APIs
-7. FERPA-gated: usage events, Reading Buddy export, dashboard (after BL-043 draft)
+1. ~~Assignment open-chapter / chat download / characterChatRequired / assignment progress UX~~ shipped (`main`).
+2. `BL-047` stale assignment quiz completion rerender; `BL-048` Reading Buddy classroom toggle vs global flag.
+3. `BL-050` font-size preference paragraph clipping (partner-reported reader bug).
+4. `BL-049` character chat server persistence (unlocks cross-device My Chats + durable classroom completion).
+5. `BL-039` / `BL-032` **My Chats** landing surface near Achievements (depends on `BL-049` for multi-device truth).
+6. Roster display name + email; BL-025.10 v1 student drill-down/progress.
+7. Invite redeem rate limits (BL-028 pattern)
+8. FERPA-gated: usage events, teacher chat export, dashboard (after BL-043 draft)
 
 **Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
 
@@ -88,6 +97,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-13: Completed a manual teacher-to-student demo walkthrough. Published assignments correctly appear in the enrolled student's Library, but account switching left stale classroom context until hard refresh — that defect is now fixed on this branch ahead of the Thursday educator demo.
 - 2026-07-14: Added the database-backed teacher capability gate ahead of the educator demo: durable `CREATE_CLASSROOM` grants, capability-aware navigation/direct-access handling, backend enforcement, and operator provisioning by existing account email.
 - 2026-07-16: Educator partner call (Jessica) went well — classroom setup and assignments impressed. Captured assignment open-chapter bug (Library used resume progress, so students with prior reading landed on the wrong chapter) and elevated BL-025.11 with optional character-chat requirement + student downloadable transcript for in-class show-and-tell.
+- 2026-07-22: Educator partner call (Jessica) — positive on require-chat + download demo path. New asks: **My Chats** landing surface near Achievements (`BL-039`/`BL-032`), **server-persisted character chat** for cross-device access (`BL-049`), and **font-size preference clipping** bug (`BL-050`).
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -338,7 +348,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Current Direction (2026-07-10, partner assignment use case — backlog only, not immediate build):
 - Partner may require students to **chat with a book character** as an assignment exercise, and may have students **share a conversation** they had with a character as a fun in-class activity.
 - Do **not** block BL-025.1 domain model or BL-025.4 assignment v1 (book/chapter/due/quiz) on this. Track as `BL-025.11` after core pilot path.
-- Prerequisites when prioritized: durable character-chat persistence (today character chat is localStorage-only), assignment requirement/completion model beyond quiz, FERPA alignment with `BL-025.7` / `BL-043` if teachers can view or export student–character chats.
+- Prerequisites when prioritized: durable character-chat persistence (`BL-049`; today character chat is localStorage-only), assignment requirement/completion model beyond quiz, FERPA alignment with `BL-025.7` / `BL-043` if teachers can view or export student–character chats.
 - Exit Criteria for Discovery:
 - Classroom architecture decision (roles, enrollment flow, class ownership boundaries, School vs. Teacher account tiers).
 - v1 classroom control matrix (which features are class-configurable).
@@ -364,7 +374,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
 - BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) exit criteria are drafted, since these are exactly the data flows FERPA constrains.
 - BL-042 (token usage/cost calculator) depends on BL-025.6's usage logging for per-student/per-class token attribution.
-- BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.**
+- BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (`BL-049`, not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.** Local download + soft require shipped 2026-07.
 - Session Log:
 - 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
 - 2026-07-13: Classroom demo UI implemented and manually verified through the core teacher-to-student path: create class → share/redeem invite → confirm roster → publish assignment → view assignment in the student's Library. Known defect: a student who signs in on an already-loaded reader page must hard-refresh before classroom context and assignments appear. BL-025.2–.4 remain `In Progress` pending the follow-ups documented in the implementation handoff.
@@ -423,29 +433,33 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - At least one streak-based challenge and one non-streak challenge are supported.
 - Challenge progress updates without requiring manual user management.
 
-### BL-032 - Character Chat Hub and Full-Page Conversations
+### BL-032 - Character Chat Hub and Full-Page Conversations (**My Chats**)
 - Type: Feature
-- Priority: P2
+- Priority: P1
 - Effort: L
 - Status: Discovery
-- Problem: Character chat exists today, but it is still a book-adjacent interaction rather than a first-class destination for signed-in readers.
+- Problem: Character chat exists today, but it is still a book-adjacent interaction rather than a first-class destination for signed-in readers. Partner (Jessica, 2026-07-22) explicitly asked for a **My Chats** surface students can find without reopening a book.
 - Scope Buckets:
-- Signed-in chat hub listing recent and resumable character conversations.
+- Signed-in **My Chats** hub listing recent and resumable character conversations.
 - Dedicated full-page chat experience beyond modal/in-reader entry points.
 - Conversation context, resume affordances, and spoiler boundary communication.
+- Landing placement: near **Achievements** on the signed-in home (partner preference); may start as a compact recent list or a link into the hub page.
 - Discovery Questions:
 - Should chat history be organized by character, by book, or both?
 - What new capabilities belong in full-page chat v1: pinned chats, suggested prompts, conversation search, richer history?
 - Should full-page chat remain strictly character-scoped or expand later into broader book discussion threads?
-- Current Direction (2026-04-06):
+- Compact landing shelf vs link-only to dedicated page for v1?
+- Current Direction (2026-07-22):
+- Product name for the surface: **My Chats**.
 - First make chat re-entry easy for registered users before expanding the conversation feature set.
 - Treat a chat hub as the bridge between account value and a fuller conversational reading experience.
 - Keep spoiler guardrails explicit and tied to reading progress.
+- **Depends on `BL-049`** for truthful multi-device history; localStorage-only hub is a temporary demo bridge at best.
 - Exit Criteria for Discovery:
 - Approved chat hub IA and full-page chat entry flow.
 - Decision on v1 history model and spoiler-context UX.
 - Acceptance Criteria:
-- Signed-in readers can view recent character chats and resume them from a dedicated landing or chat hub surface.
+- Signed-in readers can view recent character chats and resume them from a dedicated landing or **My Chats** hub surface near Achievements.
 - Full-page chat supports longer-form sessions without depending on the in-reader modal flow.
 - Existing character progress guardrails continue to apply.
 
@@ -600,34 +614,41 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - App enforces per-reader/per-IP/app-wide throttles with user-friendly upgrade or wait states.
 - PAYG credit accounting is auditable and prevents chat usage beyond available balance.
 
-### BL-039 - Character Chat Home and Discovery Surfaces
+### BL-039 - Character Chat Home and Discovery Surfaces (**My Chats** landing slice)
 - Type: Improvement
 - Priority: P1
 - Effort: M
 - Status: Discovery
-- Problem: Character chat is compelling, but the library/home experience does not yet make it obvious, resumable, or easy for new users to try.
+- Problem: Character chat is compelling, but the library/home experience does not yet make it obvious, resumable, or easy for new users to try. Partner (Jessica, 2026-07-22) asked for **My Chats** near **Achievements** on the landing page (recent list and/or link to dedicated page).
 - Scope Buckets:
-- Recent chats shelf or module with character portraits, book context, last-message snippet, and `Continue chat` action.
+- **My Chats** shelf or module with character portraits, book context, last-message snippet, and `Continue chat` action — placement toward the top of signed-in landing near Achievements.
+- Optional link into full **My Chats** page (`BL-032`) if the landing module is compact.
 - `Characters You've Met` shelf based on discovered characters from reader progress.
 - First-run/public `Try Character Chat` module with a few curated characters and starter prompts from popular books.
 - Optional featured-character panel for the strongest resume or discovery opportunity.
 - Discovery Questions:
-- Should recent chats appear above or below `Continue Reading`?
+- Should recent chats appear above or below `Continue Reading` / Achievements?
+- Compact recent list on landing vs link-only to dedicated My Chats page for v1?
 - Should anonymous users see starter chat prompts before reading progress creates discovered characters?
 - Which characters/books are safe and compelling defaults for a public try-chat module?
 - How should spoiler boundaries be communicated from home-page chat entry points?
-- Current Direction (2026-04-27):
+- Current Direction (2026-07-22):
 - Treat chat as a first-class home-page hook, not only an in-reader modal.
+- Partner label: **My Chats**; place near Achievements for signed-in readers.
 - For signed-in/readers with history, prioritize resumable recent chats and discovered characters.
 - For new/anonymous readers, show a small curated try-chat surface that demonstrates the feature quickly.
+- Full multi-device truth requires `BL-049`; landing can prototype from local history only as a short-lived bridge.
 - Exit Criteria for Discovery:
 - Approved home-page placement and priority order for chat modules.
 - Decision on data requirements for recent chats, discovered characters, and starter prompt curation.
 - Acceptance Criteria:
-- Readers can resume recent character chats from the library/home view.
+- Readers can resume recent character chats from the library/home **My Chats** surface.
 - Readers can discover chat-capable characters without already knowing where the feature lives.
 - New users see at least one low-friction path to try character chat.
 - Home-page chat entry points preserve existing spoiler guardrails.
+- Dependency Notes:
+- Complements `BL-032` (full hub/page). Prefer implementing landing `BL-039` after or alongside persistence `BL-049`.
+- Classroom show-and-tell download remains `BL-025.11` Slice A (local export); My Chats is the ongoing re-entry surface.
 
 ### BL-040 - Personal Editions and Paid Creative Customization
 - Type: Feature
@@ -839,6 +860,91 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Coordinate cleanup with `BL-007` library administration and the existing dependent-record deletion safeguards; do not auto-delete or merge books without preserving reader/classroom references.
 - This improves `BL-025.4` assignment reliability but does not block the basic classroom demo flow.
 
+### BL-047 - Assignment Dashboard Shows Stale Quiz Completion After Returning from Reader
+- Type: Bug
+- Priority: P1
+- Effort: S
+- Status: Ready
+- Problem: After a student completes a chapter, its required quiz, and a required character chat, the first return to the Library can still show **Quiz required** and **2/3 complete**. Opening the book and returning again changes the same assignment to **3/3 complete** without additional work.
+- Reproduction:
+  1. Assign a chapter with both quiz and character chat required.
+  2. As the student, complete the chapter and end-of-chapter quiz.
+  3. Complete a character chat and download the transcript.
+  4. Return to the Library; observe **Quiz required** and **2/3 complete**.
+  5. Reopen the book and return to the Library; observe **3/3 complete**.
+- Confirmed Root Cause:
+- `backToLibrary()` renders immediately from the existing classroom context, where the server-backed quiz status can still be `PENDING`, while locally persisted character chat is already recognized.
+- The subsequent `loadClassroomContext()` receives the completed quiz status but only rerenders when `!state.currentBook`. Returning to the Library does not clear `state.currentBook`, so the refreshed state is retained but not displayed until a later render.
+- Acceptance Criteria:
+- A single return to the Library after quiz completion refreshes the assignment card to **Quiz complete** and **3/3 complete** without reopening the book.
+- The post-refresh rerender occurs only while the Library remains visible; a fast return into a book must not overwrite the reader view.
+- Add an end-to-end regression test that returns `PENDING` on the initial classroom context request and `COMPLETE` on the refresh, then verifies the first Library return shows **3/3 complete**.
+- Preserve immediate local recognition of character chat and existing reading-progress behavior.
+- Related Note: Character chat completion currently means any nonempty locally stored chat history; downloading the transcript is not independently tracked or required by the completion calculation.
+
+### BL-048 - Reading Buddy Classroom Toggle Misrepresents Global Availability
+- Type: Bug
+- Priority: P1
+- Effort: S
+- Status: Ready
+- Problem: The teacher workspace allows `readingBuddyEnabled=true` to be saved for a class even when the deployment-wide Reading Buddy rollout flag is off. This presents the feature as enabled to the teacher, but the reader never loads personas/preferences or sends proactive `check-comment` requests because `/api/reading-buddy/status` reports `available=false`.
+- Confirmed Evidence (2026-07-21):
+- The deployed status endpoint reported `enabled=false`, `available=false`, `providerAvailable=true`, and `chatEnabled=true`.
+- Runtime access logs showed repeated page-position activity during reproduction but no Reading Buddy persona, preference, or `check-comment` requests.
+- The classroom feature setting and deployment availability are currently independent; the teacher UI renders and saves the classroom checkbox without consulting global Reading Buddy availability.
+- Acceptance Criteria:
+- Teacher workspace clearly distinguishes the saved classroom policy from current deployment availability.
+- When Reading Buddy is globally unavailable, the classroom control is disabled or accompanied by an explicit **Unavailable in this deployment** state; saving the form must not imply that students can currently use it.
+- Decide and document whether the stored classroom preference remains enabled for automatic activation after rollout, or must be explicitly re-enabled by the teacher.
+- Student settings must not expose an apparently usable Reading Buddy configuration when effective availability is false.
+- Add frontend coverage for global-off/classroom-on and global-on/classroom-on combinations.
+- Retain privacy-safe diagnostics for availability, client gate skips, backend silence reasons, provider errors, and successful comments without logging paragraph or generated-comment text.
+
+### BL-049 - Character Chat Server Persistence (Cross-Device History)
+- Type: Feature
+- Priority: P1
+- Effort: L
+- Status: Proposed
+- Problem: Character chat (and related show-and-tell completion signals) are **localStorage-only**. Students cannot resume conversations on another device/browser, and classroom completion/export cannot rely on durable history. Partner (Jessica, 2026-07-22) explicitly needs chats accessible regardless of device.
+- Scope Buckets:
+- Account-scoped server schema for character conversation threads + messages (book + character keys; timestamps; role/content).
+- API to list recent threads, load history, append messages (and optionally claim-sync migrate existing localStorage threads on first signed-in open).
+- Reader client: prefer server history when signed in; keep anonymous/local path; graceful offline/fallback policy.
+- Retention/privacy: ownership by `user_id`; classroom teacher access remains out of scope until FERPA/`BL-025.7` policy (default student-only).
+- Performance: message page size, last-N for model context, rate limits aligned with chat endpoints.
+- Discovery / design decisions:
+- Thread identity: `(userId, bookId, characterId)` vs multiple threads per character.
+- Migrate-once localStorage claim vs dual-write period.
+- Whether voice-call transcript turns use the same store (recommended: yes).
+- Acceptance Criteria:
+- Signed-in student can chat on device A, sign in on device B, and resume the same conversation.
+- In-reader character chat loads server history when available; new turns persist server-side.
+- Optional one-time migration of existing local character chat keys into the account store without duplicate spam.
+- No teacher bulk read path in this epic (track under `BL-025.7` / FERPA).
+- Dependency Notes:
+- Unblocks truthful **My Chats** (`BL-039`/`BL-032`) and durable `BL-025.11` completion beyond local heuristics.
+- Align retention/access notes with `BL-043` before any non-student consumers.
+- Reading Buddy already has server message persistence patterns to reuse conceptually (do not couple schemas).
+
+### BL-050 - Reader Font Size Preference Clips Paragraph Text
+- Type: Bug
+- Priority: P1
+- Effort: S
+- Status: Ready
+- Problem: When the user increases **font size** in reader preferences (`BL-006`), text size updates but **paragraph content can be clipped** (content cut off / not fully visible within the page/column layout).
+- Reported: Educator partner call (Jessica), 2026-07-22 — observed during product walkthrough.
+- Investigation Scope:
+- Re-pagination path after font-size change (`reader.js` preferences → measure → reflow pages) while preserving current paragraph context.
+- Column height / overflow / line-clamp CSS interactions with larger type and line-height.
+- Interaction with multi-column layout, page padding, and mobile vs desktop reader chrome.
+- Acceptance Criteria:
+- Increasing font size through preferences fully reflows so no paragraph body is clipped mid-glyph or cut by the page box at usable sizes in the control range.
+- Decreasing font size and Reset preferences also reflow cleanly without leftover overflow.
+- Current reading position (paragraph identity) remains stable across the reflow when possible.
+- Add a regression check (Playwright visual or layout assertion, or unit coverage of pagination bounds) for a large font-size setting.
+- Dependency Notes:
+- Regression on shipped `BL-006` preferences panel; fix in reader pagination/layout, not a new preferences feature.
+
 ## P0
 
 ### BL-001 - Secure and rate-limit generation/chat endpoints
@@ -972,6 +1078,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Re-pagination remains stable after setting changes.
 - Session Log:
 - 2026-02-14: Added a compact reader preferences gear menu beside search with persisted font size, line height, column gap, and theme controls (including reset), and wired preference changes to re-pagination while preserving current paragraph context.
+- 2026-07-22: Partner-reported regression — large font size can clip paragraph text; tracked as `BL-050` (does not reopen BL-006).
 
 ### BL-007 - Library management UI for local books and feature toggles
 - Type: Improvement
