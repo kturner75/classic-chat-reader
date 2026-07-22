@@ -116,7 +116,7 @@ class ReadingBuddyProactiveRaceTest {
                 });
         when(memoryRepository.findByOwnerKeyAndBookIdAndPersonaId(any(), any(), any()))
                 .thenReturn(Optional.empty());
-        when(memoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(memoryRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         ReadingBuddyMemoryService.ProactivePersistResult result = memoryService.persistProactiveComment(
                 "owner", "book-1", "humorist", "fresh comment", 3, 12);

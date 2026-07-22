@@ -56,7 +56,13 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/tts/speak/book-1/chapter-2/3"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(null, "/api/pregen/book/book-1"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/history"));
-        assertEquals(NONE, SensitiveApiRequestMatcher.classify("DELETE", "/api/reading-buddy/history"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/chat"));
+    }
+
+    @Test
+    void classify_marksReadingBuddyMutationsAsChatSensitive() {
+        assertEquals(CHAT, SensitiveApiRequestMatcher.classify("PUT", "/api/reading-buddy/preferences"));
+        assertEquals(CHAT, SensitiveApiRequestMatcher.classify("DELETE", "/api/reading-buddy/history"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/preferences"));
     }
 }

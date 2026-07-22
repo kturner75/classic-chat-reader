@@ -8,6 +8,7 @@ import com.classicchatreader.model.ReadingBuddyPersona;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.repository.ReadingBuddyMemoryRepository;
 import com.classicchatreader.repository.ReadingBuddyMessageRepository;
 import com.classicchatreader.service.llm.LlmOptions;
@@ -82,6 +83,9 @@ class ReadingBuddySpoilerAcceptanceTest {
     @Mock
     private ChapterRepository chapterRepository;
 
+    @Mock
+    private ParagraphRepository paragraphRepository;
+
     private ReadingBuddyProperties properties;
     private ReadingBuddyPersonaCatalog catalog;
     private ReadingBuddyPromptBuilder promptBuilder;
@@ -101,7 +105,8 @@ class ReadingBuddySpoilerAcceptanceTest {
                 properties,
                 metricsService,
                 bookRepository,
-                chapterRepository
+                chapterRepository,
+                paragraphRepository
         );
     }
 
@@ -496,8 +501,11 @@ class ReadingBuddySpoilerAcceptanceTest {
     private void stubBookAndChapter(BookEntity book, int chapterIndex, String title) {
         when(bookRepository.findById(book.getId())).thenReturn(Optional.of(book));
         ChapterEntity chapter = new ChapterEntity(chapterIndex, title);
+        chapter.setId(book.getId() + "-chapter-" + chapterIndex);
         when(chapterRepository.findByBookIdAndChapterIndex(book.getId(), chapterIndex))
                 .thenReturn(Optional.of(chapter));
+        when(paragraphRepository.existsByChapterIdAndParagraphIndex(
+                eq(chapter.getId()), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
     }
 
     private static BookEntity book(String id, String title, String author) {

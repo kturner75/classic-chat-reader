@@ -477,6 +477,9 @@ Set watermarks on each summary refresh to the **max position among messages fold
 - Does not send hidden message contents into any client-side prompt assembly (server ignores client history for truth anyway).
 
 Optional query `includeHidden=false` returns only visible messages for lighter payloads.
+When `includeHidden=true`, `limit` is applied independently to the newest overall rows and
+the newest visible rows, then the pages are de-duplicated. This prevents future-relative
+placeholders from crowding all visible conversation out of a rewind response.
 
 #### Spoiler acceptance bar (required before prod flag-on)
 
@@ -555,7 +558,7 @@ Let `anonKey = readerId`, `userKey = "user:" + userId`.
 **Messages**
 
 1. If user has **zero** messages for a given `(book_id, persona_id)` → bulk rewrite `owner_key` anon → user for those rows.
-2. If user already has messages → **append** anon messages whose `(created_at, content_hash)` (or `id` if already migrated) are not present; skip duplicates. Order remains by `created_at`.
+2. If user already has messages → **append** anon messages whose `(created_at, content_hash)` (or `id` if already migrated) are not present; skip duplicates. Order uses `created_at`, then the monotonic `chronology_sequence`, then `id` for deterministic ties.
 3. Proactive unique on `proactive_position_key`: if anon and user both commented same position, **keep earlier `created_at`**, delete duplicate.
 
 **Memories (summary rows)**

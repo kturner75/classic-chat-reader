@@ -23,6 +23,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -116,6 +118,7 @@ public class ReadingBuddyMemoryService {
         }
         entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(role, kind, content));
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setChronologySequence(ReadingBuddyMessageEntity.nextChronologySequence());
         return messageRepository.save(entity);
     }
 
@@ -140,12 +143,13 @@ public class ReadingBuddyMemoryService {
                     ownerKey, bookId, personaId,
                     ROLE_BUDDY, KIND_CHAT, buddyContent,
                     chapterIndex, paragraphIndex);
-            touchMemoryLastMessage(ownerKey, bookId, personaId, buddyMessage.getId());
             return new ChatTurn(userMessage, buddyMessage);
         });
+        ChatTurn committedTurn = Objects.requireNonNull(turn, "chat turn");
+        touchMemoryLastMessage(ownerKey, bookId, personaId, committedTurn.buddyMessage().getId());
         // Summary is best-effort after durable write — never fail the chat path.
         safeMaybeRefreshRollingSummary(ownerKey, bookId, personaId);
-        return Objects.requireNonNull(turn, "chat turn");
+        return committedTurn;
     }
 
     /**
@@ -198,6 +202,7 @@ public class ReadingBuddyMemoryService {
         }
 
         if (result.inserted()) {
+            touchMemoryLastMessage(ownerKey, bookId, personaId, result.message().getId());
             // Summary is best-effort after durable write — never fail the proactive path.
             safeMaybeRefreshRollingSummary(ownerKey, bookId, personaId);
         }
@@ -235,10 +240,10 @@ public class ReadingBuddyMemoryService {
         entity.setProactivePositionKey(positionKey);
         entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(ROLE_BUDDY, KIND_PROACTIVE, content));
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setChronologySequence(ReadingBuddyMessageEntity.nextChronologySequence());
         // saveAndFlush forces unique-index check before nested TX commit (GenerationType.UUID
         // would otherwise defer INSERT until flush/commit, missing our catch path).
         ReadingBuddyMessageEntity saved = messageRepository.saveAndFlush(entity);
-        touchMemoryLastMessage(ownerKey, bookId, personaId, saved.getId());
         return ProactivePersistResult.inserted(saved);
     }
 
@@ -268,6 +273,7 @@ public class ReadingBuddyMemoryService {
         }
         entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(role, kind, content));
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setChronologySequence(ReadingBuddyMessageEntity.nextChronologySequence());
         return messageRepository.save(entity);
     }
 
@@ -389,9 +395,21 @@ public class ReadingBuddyMemoryService {
         int effectiveLimit = normalizeHistoryLimit(limit);
         List<ReadingBuddyMessageEntity> pageNewestFirst;
         if (includeHidden) {
-            // Include future-relative rows (UI collapses them via visibleAtPosition).
-            pageNewestFirst = messageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
-                    ownerKey, bookId, personaId, PageRequest.of(0, effectiveLimit));
+            // Preserve the last N visible turns even when newer future-relative placeholders
+            // would otherwise consume the entire page after a rewind. The response can contain
+            // up to 2N rows: N newest overall plus N newest visible, de-duplicated.
+            List<ReadingBuddyMessageEntity> newestOverall =
+                    messageRepository.findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
+                            ownerKey, bookId, personaId, PageRequest.of(0, effectiveLimit));
+            List<ReadingBuddyMessageEntity> newestVisible =
+                    messageRepository.findVisibleAtOrBeforeOrderByCreatedAtDesc(
+                            ownerKey,
+                            bookId,
+                            personaId,
+                            readerChapterIndex,
+                            readerParagraphIndex,
+                            PageRequest.of(0, effectiveLimit));
+            pageNewestFirst = mergeNewestPages(newestOverall, newestVisible);
         } else {
             // Visible-only: position-filter first, then last N.
             pageNewestFirst = messageRepository.findVisibleAtOrBeforeOrderByCreatedAtDesc(
@@ -821,19 +839,25 @@ public class ReadingBuddyMemoryService {
             String bookId,
             String personaId,
             String lastMessageId) {
-        ReadingBuddyMemoryEntity memory = memoryRepository
-                .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
-                .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
-        memory.setLastMessageId(lastMessageId);
         try {
-            memoryRepository.save(memory);
+            requiresNewTx.executeWithoutResult(status -> {
+                ReadingBuddyMemoryEntity memory = memoryRepository
+                        .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
+                        .orElseGet(() -> newEmptyMemory(ownerKey, bookId, personaId));
+                memory.setLastMessageId(lastMessageId);
+                // Force the unique-key check before this recoverable transaction returns.
+                memoryRepository.saveAndFlush(memory);
+            });
         } catch (DataIntegrityViolationException ex) {
-            // Concurrent first-insert race on uk_rbmem_owner_book_persona — reload winner.
-            ReadingBuddyMemoryEntity existing = memoryRepository
-                    .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
-                    .orElseThrow(() -> ex);
-            existing.setLastMessageId(lastMessageId);
-            memoryRepository.save(existing);
+            // The failed REQUIRES_NEW transaction has rolled back. Reload and update the
+            // concurrent winner in a clean transaction instead of querying a doomed session.
+            requiresNewTx.executeWithoutResult(status -> {
+                ReadingBuddyMemoryEntity existing = memoryRepository
+                        .findByOwnerKeyAndBookIdAndPersonaId(ownerKey, bookId, personaId)
+                        .orElseThrow(() -> ex);
+                existing.setLastMessageId(lastMessageId);
+                memoryRepository.saveAndFlush(existing);
+            });
         }
     }
 
@@ -847,6 +871,38 @@ public class ReadingBuddyMemoryService {
         created.setSummaryVersion(0);
         created.setMessagesAtLastSummary(0);
         return created;
+    }
+
+    private static List<ReadingBuddyMessageEntity> mergeNewestPages(
+            List<ReadingBuddyMessageEntity> newestOverall,
+            List<ReadingBuddyMessageEntity> newestVisible) {
+        LinkedHashMap<String, ReadingBuddyMessageEntity> unique = new LinkedHashMap<>();
+        for (ReadingBuddyMessageEntity message : newestOverall) {
+            unique.put(historyMergeKey(message), message);
+        }
+        for (ReadingBuddyMessageEntity message : newestVisible) {
+            unique.putIfAbsent(historyMergeKey(message), message);
+        }
+        List<ReadingBuddyMessageEntity> merged = new ArrayList<>(unique.values());
+        merged.sort(messageChronologyComparator().reversed());
+        return List.copyOf(merged);
+    }
+
+    private static String historyMergeKey(ReadingBuddyMessageEntity message) {
+        return message.getId() != null
+                ? message.getId()
+                : "unsaved:" + System.identityHashCode(message);
+    }
+
+    private static Comparator<ReadingBuddyMessageEntity> messageChronologyComparator() {
+        return Comparator
+                .comparing(
+                        ReadingBuddyMessageEntity::getCreatedAt,
+                        Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparingLong(ReadingBuddyMessageEntity::getChronologySequence)
+                .thenComparing(
+                        ReadingBuddyMessageEntity::getId,
+                        Comparator.nullsFirst(Comparator.naturalOrder()));
     }
 
     /**

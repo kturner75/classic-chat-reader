@@ -16,19 +16,30 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
 
     List<ReadingBuddyMessageEntity> findByOwnerKey(String ownerKey);
 
+    @Query("""
+            SELECT m FROM ReadingBuddyMessageEntity m
+            WHERE m.ownerKey = :ownerKey
+              AND m.bookId = :bookId
+              AND m.personaId = :personaId
+            ORDER BY m.createdAt ASC, m.chronologySequence ASC, m.id ASC
+            """)
     List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtAsc(
-            String ownerKey,
-            String bookId,
-            String personaId
+            @Param("ownerKey") String ownerKey,
+            @Param("bookId") String bookId,
+            @Param("personaId") String personaId
     );
 
-    /**
-     * Newest-first page for a thread (use with {@link Pageable} limit; reverse for chrono ASC).
-     */
+    @Query("""
+            SELECT m FROM ReadingBuddyMessageEntity m
+            WHERE m.ownerKey = :ownerKey
+              AND m.bookId = :bookId
+              AND m.personaId = :personaId
+            ORDER BY m.createdAt DESC, m.chronologySequence DESC, m.id DESC
+            """)
     List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdOrderByCreatedAtDesc(
-            String ownerKey,
-            String bookId,
-            String personaId,
+            @Param("ownerKey") String ownerKey,
+            @Param("bookId") String bookId,
+            @Param("personaId") String personaId,
             Pageable pageable
     );
 
@@ -44,7 +55,7 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
               AND (m.chapterIndex < :readerChapterIndex
                    OR (m.chapterIndex = :readerChapterIndex
                        AND m.paragraphIndex <= :readerParagraphIndex))
-            ORDER BY m.createdAt DESC
+            ORDER BY m.createdAt DESC, m.chronologySequence DESC, m.id DESC
             """)
     List<ReadingBuddyMessageEntity> findVisibleAtOrBeforeOrderByCreatedAtDesc(
             @Param("ownerKey") String ownerKey,
@@ -74,23 +85,40 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
     /**
      * Most recent proactive comment for the thread (newest first with {@link Pageable} limit 1).
      */
+    @Query("""
+            SELECT m FROM ReadingBuddyMessageEntity m
+            WHERE m.ownerKey = :ownerKey
+              AND m.bookId = :bookId
+              AND m.personaId = :personaId
+              AND m.kind = :kind
+            ORDER BY m.createdAt DESC, m.chronologySequence DESC, m.id DESC
+            """)
     List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdAndKindOrderByCreatedAtDesc(
-            String ownerKey,
-            String bookId,
-            String personaId,
-            String kind,
+            @Param("ownerKey") String ownerKey,
+            @Param("bookId") String bookId,
+            @Param("personaId") String personaId,
+            @Param("kind") String kind,
             Pageable pageable
     );
 
     /**
      * Most recent user chat turn for the thread (newest first with {@link Pageable} limit 1).
      */
+    @Query("""
+            SELECT m FROM ReadingBuddyMessageEntity m
+            WHERE m.ownerKey = :ownerKey
+              AND m.bookId = :bookId
+              AND m.personaId = :personaId
+              AND m.role = :role
+              AND m.kind = :kind
+            ORDER BY m.createdAt DESC, m.chronologySequence DESC, m.id DESC
+            """)
     List<ReadingBuddyMessageEntity> findByOwnerKeyAndBookIdAndPersonaIdAndRoleAndKindOrderByCreatedAtDesc(
-            String ownerKey,
-            String bookId,
-            String personaId,
-            String role,
-            String kind,
+            @Param("ownerKey") String ownerKey,
+            @Param("bookId") String bookId,
+            @Param("personaId") String personaId,
+            @Param("role") String role,
+            @Param("kind") String kind,
             Pageable pageable
     );
 
@@ -120,7 +148,7 @@ public interface ReadingBuddyMessageRepository extends JpaRepository<ReadingBudd
               AND m.personaId = :personaId
               AND m.kind = :kind
               AND m.createdAt >= :since
-            ORDER BY m.createdAt ASC
+            ORDER BY m.createdAt ASC, m.chronologySequence ASC, m.id ASC
             """)
     List<ReadingBuddyMessageEntity> findOldestSince(
             @Param("ownerKey") String ownerKey,

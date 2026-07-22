@@ -7,6 +7,7 @@ import com.classicchatreader.model.ReadingBuddyPersona;
 import com.classicchatreader.model.ReadingBuddyPositionedMessage;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
 import org.slf4j.Logger;
@@ -40,6 +41,7 @@ public class ReadingBuddyChatService {
     private final ReadingBuddyMetricsService metricsService;
     private final BookRepository bookRepository;
     private final ChapterRepository chapterRepository;
+    private final ParagraphRepository paragraphRepository;
 
     public ReadingBuddyChatService(
             @Qualifier("chatLlmProvider") LlmProvider chatProvider,
@@ -49,7 +51,8 @@ public class ReadingBuddyChatService {
             ReadingBuddyProperties properties,
             ReadingBuddyMetricsService metricsService,
             BookRepository bookRepository,
-            ChapterRepository chapterRepository) {
+            ChapterRepository chapterRepository,
+            ParagraphRepository paragraphRepository) {
         this.chatProvider = chatProvider;
         this.promptBuilder = promptBuilder;
         this.memoryService = memoryService;
@@ -58,6 +61,7 @@ public class ReadingBuddyChatService {
         this.metricsService = metricsService;
         this.bookRepository = bookRepository;
         this.chapterRepository = chapterRepository;
+        this.paragraphRepository = paragraphRepository;
         log.info("Reading buddy chat service initialized with provider: {}", chatProvider.getProviderName());
     }
 
@@ -85,11 +89,16 @@ public class ReadingBuddyChatService {
         BookEntity book = bookRepository.findById(bookId.trim())
                 .orElseThrow(() -> new BookNotFoundException(bookId));
 
-        String userMessage = message.trim();
-        String chapterTitle = chapterRepository
+        ChapterEntity chapter = chapterRepository
                 .findByBookIdAndChapterIndex(book.getId(), readerChapterIndex)
-                .map(ChapterEntity::getTitle)
-                .orElse(null);
+                .orElseThrow(() -> invalidPosition(readerChapterIndex, readerParagraphIndex));
+        if (!paragraphRepository.existsByChapterIdAndParagraphIndex(
+                chapter.getId(), readerParagraphIndex)) {
+            throw invalidPosition(readerChapterIndex, readerParagraphIndex);
+        }
+
+        String userMessage = message.trim();
+        String chapterTitle = chapter.getTitle();
 
         List<ReadingBuddyPositionedMessage> recentForPrompt = memoryService.loadRecentMessagesForPrompt(
                 ownerKey,
@@ -215,6 +224,13 @@ public class ReadingBuddyChatService {
                     "INVALID_POSITION",
                     "readerChapterIndex and readerParagraphIndex must be non-negative");
         }
+    }
+
+    private static ValidationException invalidPosition(int chapterIndex, int paragraphIndex) {
+        return new ValidationException(
+                "INVALID_POSITION",
+                "No paragraph exists at chapter index " + chapterIndex
+                        + ", paragraph index " + paragraphIndex);
     }
 
     static String cleanResponse(String response, String personaDisplayName) {

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -42,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -187,6 +189,15 @@ class ReadingBuddyMemoryServiceTest {
                     memories.put(threadKey(entity.getOwnerKey(), entity.getBookId(), entity.getPersonaId()), entity);
                     return entity;
                 });
+        org.mockito.Mockito.lenient().when(memoryRepository.saveAndFlush(any(ReadingBuddyMemoryEntity.class)))
+                .thenAnswer(invocation -> {
+                    ReadingBuddyMemoryEntity entity = invocation.getArgument(0);
+                    if (entity.getId() == null) {
+                        entity.setId("mem-" + idSeq.getAndIncrement());
+                    }
+                    memories.put(threadKey(entity.getOwnerKey(), entity.getBookId(), entity.getPersonaId()), entity);
+                    return entity;
+                });
     }
 
     @Test
@@ -234,6 +245,37 @@ class ReadingBuddyMemoryServiceTest {
         assertEquals(turn.buddyMessage().getId(), memory.getLastMessageId());
         assertEquals("", memory.getSummaryText());
         assertNull(memory.getSummaryMaxChapterIndex());
+        assertTrue(turn.userMessage().getChronologySequence() < turn.buddyMessage().getChronologySequence());
+    }
+
+    @Test
+    void persistChatTurn_memoryInsertRace_reloadsWinnerInCleanTransaction() {
+        AtomicInteger flushAttempts = new AtomicInteger();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ReadingBuddyMemoryEntity attempted = invocation.getArgument(0);
+            if (flushAttempts.getAndIncrement() == 0) {
+                ReadingBuddyMemoryEntity winner = new ReadingBuddyMemoryEntity();
+                winner.setId("mem-winner");
+                winner.setOwnerKey(attempted.getOwnerKey());
+                winner.setBookId(attempted.getBookId());
+                winner.setPersonaId(attempted.getPersonaId());
+                winner.setSummaryText("");
+                memories.put(threadKey("owner-A", "book-1", "humorist"), winner);
+                throw new DataIntegrityViolationException("concurrent insert");
+            }
+            memories.put(threadKey(
+                    attempted.getOwnerKey(), attempted.getBookId(), attempted.getPersonaId()), attempted);
+            return attempted;
+        }).when(memoryRepository).saveAndFlush(any(ReadingBuddyMemoryEntity.class));
+
+        ReadingBuddyMemoryService.ChatTurn turn = memoryService.persistChatTurn(
+                "owner-A", "book-1", "humorist",
+                "user text", "buddy text", 2, 5);
+
+        assertEquals(2, messagesByThread.get(threadKey("owner-A", "book-1", "humorist")).size());
+        assertEquals(turn.buddyMessage().getId(),
+                memories.get(threadKey("owner-A", "book-1", "humorist")).getLastMessageId());
+        verify(memoryRepository, times(2)).saveAndFlush(any(ReadingBuddyMemoryEntity.class));
     }
 
     @Test
@@ -284,6 +326,25 @@ class ReadingBuddyMemoryServiceTest {
                 "owner-A", "book-1", "humorist", 50, 1, 0, false);
         assertEquals(1, visibleOnly.messages().size());
         assertEquals("visible", visibleOnly.messages().get(0).content());
+    }
+
+    @Test
+    void getHistory_includeHidden_preservesVisibleLimitAfterRewind() {
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "visible-1", 1, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "visible-2", 2, 0);
+        seedMessage("owner-A", "book-1", "humorist", "user", "chat", "future-1", 8, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "future-2", 9, 0);
+        seedMessage("owner-A", "book-1", "humorist", "buddy", "chat", "future-3", 10, 0);
+
+        ReadingBuddyMemoryService.HistoryResult history = memoryService.getHistory(
+                "owner-A", "book-1", "humorist", 2, 2, 0, true);
+
+        assertEquals(List.of("visible-1", "visible-2", "future-2", "future-3"),
+                history.messages().stream().map(ReadingBuddyMemoryService.HistoryMessage::content).toList());
+        assertTrue(history.messages().get(0).visibleAtPosition());
+        assertTrue(history.messages().get(1).visibleAtPosition());
+        assertFalse(history.messages().get(2).visibleAtPosition());
+        assertFalse(history.messages().get(3).visibleAtPosition());
     }
 
     @Test
@@ -640,7 +701,11 @@ class ReadingBuddyMemoryServiceTest {
     private static List<ReadingBuddyMessageEntity> newestFirstPage(
             List<ReadingBuddyMessageEntity> source, int limit) {
         return source.stream()
-                .sorted(Comparator.comparing(ReadingBuddyMessageEntity::getCreatedAt).reversed())
+                .sorted(Comparator
+                        .comparing(ReadingBuddyMessageEntity::getCreatedAt)
+                        .thenComparingLong(ReadingBuddyMessageEntity::getChronologySequence)
+                        .thenComparing(ReadingBuddyMessageEntity::getId)
+                        .reversed())
                 .limit(Math.max(1, limit))
                 .collect(Collectors.toList());
     }
@@ -666,6 +731,7 @@ class ReadingBuddyMemoryServiceTest {
         entity.setParagraphIndex(paragraph);
         entity.setContentHash(ReadingBuddyMessageEntity.computeContentHash(role, kind, content));
         entity.setCreatedAt(LocalDateTime.of(2026, 7, 8, 12, 0).plusSeconds(idSeq.get()));
+        entity.setChronologySequence(ReadingBuddyMessageEntity.nextChronologySequence());
         messagesByThread.computeIfAbsent(threadKey(ownerKey, bookId, personaId), k -> new ArrayList<>())
                 .add(entity);
     }

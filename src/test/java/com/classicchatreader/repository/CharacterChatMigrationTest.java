@@ -30,6 +30,7 @@ class CharacterChatMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(url, "sa", "")
                 .locations("classpath:db/migration")
+                .target("19")
                 .cleanDisabled(false)
                 .load();
 
