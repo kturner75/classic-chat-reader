@@ -247,25 +247,20 @@
     }
 
     function safeSessionUrl(item) {
-        const candidates = [
-            typeof item?.resume?.url === 'string' ? item.resume.url : '',
-            item?.sessionId ? `/my-chats?session=${item.sessionId}` : ''
-        ];
-        for (const candidate of candidates) {
-            const value = candidate.trim();
-            if (!/^\/my-chats\?/.test(value)) {
-                continue;
+        const serverUrl = typeof item?.resume?.url === 'string' ? item.resume.url.trim() : '';
+        const value = serverUrl || (item?.sessionId ? `/my-chats?session=${item.sessionId}` : '');
+        if (!/^\/my-chats\?/.test(value)) {
+            return null;
+        }
+        try {
+            const parsed = new URL(value, 'https://classicchatreader.invalid');
+            if (parsed.origin === 'https://classicchatreader.invalid'
+                    && parsed.pathname === '/my-chats'
+                    && parsed.searchParams.has('session')) {
+                return `${parsed.pathname}${parsed.search}`;
             }
-            try {
-                const parsed = new URL(value, 'https://classicchatreader.invalid');
-                if (parsed.origin === 'https://classicchatreader.invalid'
-                        && parsed.pathname === '/my-chats'
-                        && parsed.searchParams.has('session')) {
-                    return `${parsed.pathname}${parsed.search}`;
-                }
-            } catch (_error) {
-                // try next candidate
-            }
+        } catch (_error) {
+            // Invalid server-provided targets must not fall back to a fabricated URL.
         }
         return null;
     }

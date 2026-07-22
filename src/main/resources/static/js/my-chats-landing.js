@@ -27,6 +27,23 @@
         return url.startsWith('/') && !url.startsWith('//') ? url : '';
     }
 
+    function safeSessionUrl(session) {
+        const serverUrl = typeof session?.resume?.url === 'string' ? session.resume.url.trim() : '';
+        const value = serverUrl || (session?.sessionId ? `/my-chats?session=${session.sessionId}` : '');
+        if (!/^\/my-chats\?/.test(value)) return '';
+        try {
+            const parsed = new URL(value, 'https://classicchatreader.invalid');
+            if (parsed.origin === 'https://classicchatreader.invalid'
+                    && parsed.pathname === '/my-chats'
+                    && parsed.searchParams.has('session')) {
+                return `${parsed.pathname}${parsed.search}`;
+            }
+        } catch (_error) {
+            // Invalid server-provided targets must not fall back to a fabricated URL.
+        }
+        return '';
+    }
+
     function formatRelativeTime(value, now = Date.now()) {
         const timestamp = Date.parse(value || '');
         if (!Number.isFinite(timestamp)) {
@@ -95,9 +112,11 @@
         const timeMarkup = lastMessageAt && relativeTime
             ? `<time datetime="${escapeHtml(lastMessageAt)}" title="${escapeHtml(absoluteTime)}" aria-label="${escapeHtml(absoluteTime)}">${escapeHtml(relativeTime)}</time>`
             : '';
-        const resumeUrl = session?.resume?.available === true
-            ? safeRelativeUrl(session.resume.url)
-            : '';
+        const sessionUrl = safeSessionUrl(session);
+        const canContinue = session?.resume?.available === true && !!sessionUrl;
+        const actionLabel = canContinue
+            ? 'Continue chat'
+            : sessionUrl ? 'View chat' : unavailableLabel(session?.resume?.unavailableReason);
         const content = `
             ${renderPortrait(session?.character)}
             <span class="my-chat-card-content">
@@ -106,10 +125,11 @@
                 <span class="my-chat-preview">${escapeHtml(previewText)}</span>
                 ${timeMarkup ? `<span class="my-chat-time">${timeMarkup}</span>` : ''}
             </span>
-            <span class="my-chat-card-action">${resumeUrl ? 'Continue chat' : escapeHtml(unavailableLabel(session?.resume?.unavailableReason))}</span>`;
+            <span class="my-chat-card-action">${escapeHtml(actionLabel)}</span>`;
 
-        if (resumeUrl) {
-            return `<a class="my-chat-card" href="${escapeHtml(resumeUrl)}" aria-label="Continue chat with ${escapeHtml(characterName)} about ${escapeHtml(bookTitle)}">${content}</a>`;
+        if (sessionUrl) {
+            const verb = canContinue ? 'Continue chat' : 'View chat';
+            return `<a class="my-chat-card" href="${escapeHtml(sessionUrl)}" aria-label="${verb} with ${escapeHtml(characterName)} about ${escapeHtml(bookTitle)}">${content}</a>`;
         }
         return `<article class="my-chat-card my-chat-card-unavailable" aria-label="${escapeHtml(characterName)} chat unavailable">${content}</article>`;
     }

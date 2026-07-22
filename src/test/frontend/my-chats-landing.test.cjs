@@ -82,6 +82,36 @@ test('recent chats empty state links readers back to the Library', () => {
     });
 });
 
+test('read-only recent chats remain openable without presenting a continue action', () => {
+    const view = buildRecentChatsView([{
+        sessionId: 'archived-chat',
+        character: { name: 'Archived Character' },
+        book: { title: 'Archived Book' },
+        previewText: 'A saved exchange',
+        resume: {
+            available: false,
+            url: '/my-chats?session=archived-chat',
+            unavailableReason: 'CHARACTER_UNAVAILABLE'
+        }
+    }], { now: NOW });
+
+    assert.match(view.html, /href="\/my-chats\?session=archived-chat"/);
+    assert.match(view.html, />View chat</);
+    assert.doesNotMatch(view.html, />Continue chat</);
+});
+
+test('recent chats reject unsafe server session routes instead of using a fallback', () => {
+    const view = buildRecentChatsView([{
+        sessionId: 'chat-1',
+        character: { name: 'Character' },
+        book: { title: 'Book' },
+        resume: { available: true, url: 'https://example.com/steal' }
+    }], { now: NOW });
+
+    assert.doesNotMatch(view.html, /href=/);
+    assert.match(view.html, /Conversation unavailable/);
+});
+
 test('recent chats are capped at four cards without client-side reordering', () => {
     const sessions = Array.from({ length: 5 }, (_, index) => ({
         sessionId: `chat-${index}`,

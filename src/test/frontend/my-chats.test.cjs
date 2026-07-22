@@ -167,10 +167,11 @@ test('unsafe and missing session targets are rejected, but read-only chats keep 
     assert.equal(safeResumeUrl(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), null);
     assert.equal(safeSessionUrl(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), '/my-chats?session=session-1');
     assert.equal(canContinueChat(chat({ resume: { available: false, url: '/my-chats?session=session-1' } })), false);
-    // Reject off-site resume URLs, but fall back to the owned sessionId when present.
-    assert.equal(safeResumeUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), '/my-chats?session=session-1');
-    assert.equal(safeSessionUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), '/my-chats?session=session-1');
+    // Reject an explicitly unsafe server URL instead of hiding it with a generated fallback.
+    assert.equal(safeResumeUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), null);
+    assert.equal(safeSessionUrl(chat({ resume: { available: true, url: 'https://example.com/steal' } })), null);
     assert.equal(safeSessionUrl({ resume: { available: true, url: 'https://example.com/steal' } }), null);
+    assert.equal(safeSessionUrl(chat({ resume: { available: true } })), '/my-chats?session=session-1');
     assert.equal(safeResumeUrl(chat({ resume: { available: true, url: '/my-chats?session=server-owned-id' } })), '/my-chats?session=server-owned-id');
     assert.equal(canContinueChat(chat({ resume: { available: true, url: '/my-chats?session=server-owned-id' } })), true);
 });
