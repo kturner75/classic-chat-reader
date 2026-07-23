@@ -46,8 +46,8 @@ public interface CharacterChatConversationRepository extends JpaRepository<Chara
                             AND userMessage.role = com.classicchatreader.entity.CharacterChatMessageRole.USER)
               AND (:bookId IS NULL OR book.id = :bookId)
               AND (:characterId IS NULL OR character.id = :characterId)
-              AND (:activeAfter IS NULL OR conversation.updatedAt >= :activeAfter)
-              AND (:activeBefore IS NULL OR conversation.updatedAt < :activeBefore)
+              AND (CAST(:activeAfter AS LocalDateTime) IS NULL OR conversation.updatedAt >= :activeAfter)
+              AND (CAST(:activeBefore AS LocalDateTime) IS NULL OR conversation.updatedAt < :activeBefore)
               AND (:q IS NULL
                    OR LOWER(character.name) LIKE :q ESCAPE '\\'
                    OR LOWER(book.title) LIKE :q ESCAPE '\\'
@@ -56,7 +56,7 @@ public interface CharacterChatConversationRepository extends JpaRepository<Chara
                               WHERE matchingMessage.conversationId = conversation.id
                                 AND matchingMessage.userId = :userId
                                 AND LOWER(matchingMessage.content) LIKE :q ESCAPE '\\'))
-              AND (:cursorTime IS NULL
+              AND (CAST(:cursorTime AS LocalDateTime) IS NULL
                    OR conversation.updatedAt < :cursorTime
                    OR (conversation.updatedAt = :cursorTime AND conversation.id > :cursorId))
             ORDER BY conversation.updatedAt DESC, conversation.id ASC
