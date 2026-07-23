@@ -638,10 +638,6 @@ public class CharacterService {
     }
 
     private void generatePortrait(String characterId) {
-        if (cacheOnly) {
-            log.info("Skipping portrait generation in cache-only mode for character {}", characterId);
-            return;
-        }
         if (!tryClaimPortraitLease(characterId)) {
             log.debug("Skipping portrait generation for character {} because lease claim failed", characterId);
             rescheduleDeferredPortraitRetryIfNeeded(characterId);
@@ -651,6 +647,16 @@ public class CharacterService {
         if (character == null) {
             log.warn("Character not found for portrait generation: {}", characterId);
             self.handlePortraitFailure(characterId, "Character not found", false);
+            return;
+        }
+
+        String cacheKey = buildPortraitCacheKey(character);
+        if (restoreCachedPortrait(character, cacheKey)) {
+            return;
+        }
+        if (cacheOnly) {
+            log.info("Skipping portrait generation in cache-only mode for character {}", characterId);
+            self.updateCharacterStatus(characterId, CharacterStatus.PENDING, null, null);
             return;
         }
 
@@ -669,7 +675,6 @@ public class CharacterService {
             self.updatePortraitPrompt(characterId, portraitPrompt);
 
             String outputPrefix = "portrait_" + characterId;
-            String cacheKey = buildPortraitCacheKey(character);
             String promptId = comfyUIService.submitPortraitWorkflow(portraitPrompt, outputPrefix, cacheKey);
 
             ComfyUIService.IllustrationResult result = comfyUIService.pollForPortraitCompletion(promptId);
@@ -705,6 +710,8 @@ public class CharacterService {
         }
         if (status == CharacterStatus.COMPLETED) {
             character.setCompletedAt(LocalDateTime.now());
+            character.setErrorMessage(null);
+            character.setRetryCount(0);
         }
         if (status != CharacterStatus.PENDING) {
             character.setNextRetryAt(null);
@@ -714,6 +721,63 @@ public class CharacterService {
         }
         characterRepository.save(character);
         log.debug("Updated character status for {}: {}", characterId, status);
+    }
+
+    private boolean restoreCachedPortrait(CharacterEntity character, String cacheKey) {
+        String resolvedKey = resolveCachedPortraitKey(character, cacheKey).orElse(null);
+        if (resolvedKey == null) {
+            return false;
+        }
+        self.updateCharacterStatus(character.getId(), CharacterStatus.COMPLETED, resolvedKey, null);
+        log.info("Restored cached portrait for character '{}' from {}", character.getName(), resolvedKey);
+        return true;
+    }
+
+    private Optional<String> resolveCachedPortraitKey(CharacterEntity character, String expectedKey) {
+        if (comfyUIService.hasPortraitImage(expectedKey)) {
+            return Optional.of(expectedKey);
+        }
+
+        String normalizedName = assetKeyService.normalizeCharacterName(character.getName());
+        List<String> nameParts = Arrays.stream(normalizedName.split("-"))
+                .filter(part -> !part.isBlank())
+                .toList();
+        if (nameParts.size() < 2 || !NAME_TITLES.contains(nameParts.get(0))) {
+            return Optional.empty();
+        }
+
+        int finalSlash = expectedKey.lastIndexOf('/');
+        if (finalSlash < 0) {
+            return Optional.empty();
+        }
+        String directory = expectedKey.substring(0, finalSlash);
+        String title = nameParts.get(0);
+        String surname = nameParts.get(nameParts.size() - 1);
+        List<String> matches = comfyUIService.listPortraitImages(directory).stream()
+                .filter(candidate -> portraitKeyMatchesTitleAndSurname(candidate, title, surname))
+                .toList();
+        if (matches.size() == 1) {
+            log.info("Matched portrait alias for character '{}': {}", character.getName(), matches.get(0));
+            return Optional.of(matches.get(0));
+        }
+        if (matches.size() > 1) {
+            log.warn("Skipping ambiguous cached portrait aliases for character '{}': {}", character.getName(), matches);
+        }
+        return Optional.empty();
+    }
+
+    private boolean portraitKeyMatchesTitleAndSurname(String key, String title, String surname) {
+        int finalSlash = key.lastIndexOf('/');
+        String filename = finalSlash >= 0 ? key.substring(finalSlash + 1) : key;
+        String stem = filename.toLowerCase().endsWith(".png")
+                ? filename.substring(0, filename.length() - 4)
+                : filename;
+        List<String> parts = Arrays.stream(stem.split("-"))
+                .filter(part -> !part.isBlank())
+                .toList();
+        return parts.size() >= 2
+                && title.equals(parts.get(0))
+                && surname.equals(parts.get(parts.size() - 1));
     }
 
     @Transactional
@@ -881,15 +945,32 @@ public class CharacterService {
      */
     @Transactional
     public int resetAndRequeueStuckPortraitsForBook(String bookId) {
-        if (cacheOnly) {
-            log.info("Skipping portrait reset/re-queue in cache-only mode for book {}", bookId);
-            return 0;
-        }
         List<CharacterEntity> stuckGenerating = characterRepository.findByBookIdAndStatus(bookId, CharacterStatus.GENERATING);
         List<CharacterEntity> stuckPending = characterRepository.findByBookIdAndStatus(bookId, CharacterStatus.PENDING);
+        List<CharacterEntity> failed = characterRepository.findByBookIdAndStatus(bookId, CharacterStatus.FAILED);
+
+        int restored = 0;
+        for (CharacterEntity character : java.util.stream.Stream
+                .of(stuckGenerating, stuckPending, failed)
+                .flatMap(List::stream)
+                .toList()) {
+            String cacheKey = buildPortraitCacheKey(character);
+            if (restoreCachedPortrait(character, cacheKey)) {
+                restored++;
+            }
+        }
+
+        if (cacheOnly) {
+            log.info("Restored {} cached portraits and skipped portrait reset/re-queue in cache-only mode for book {}",
+                    restored, bookId);
+            return restored;
+        }
 
         int reset = 0;
         for (CharacterEntity character : stuckGenerating) {
+            if (character.getStatus() == CharacterStatus.COMPLETED) {
+                continue;
+            }
             character.setStatus(CharacterStatus.PENDING);
             character.setRetryCount(0);
             character.setNextRetryAt(null);
@@ -901,22 +982,27 @@ public class CharacterService {
         // Re-queue all pending (including just-reset ones)
         int queued = 0;
         for (CharacterEntity character : stuckGenerating) {
-            if (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank()) {
+            if (character.getStatus() != CharacterStatus.COMPLETED
+                    && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank())) {
                 if (requestQueue.offer(new PortraitRequest(character.getId()))) {
                     queued++;
                 }
             }
         }
         for (CharacterEntity character : stuckPending) {
-            if (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank()) {
+            if (character.getStatus() != CharacterStatus.COMPLETED
+                    && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank())) {
                 if (requestQueue.offer(new PortraitRequest(character.getId()))) {
                     queued++;
                 }
             }
         }
 
-        log.info("Reset {} stuck GENERATING portraits and queued {} total for book {}", reset, queued, bookId);
-        return reset + stuckPending.size();
+        log.info("Restored {} cached portraits, reset {} stuck GENERATING portraits, and queued {} total for book {}",
+                restored, reset, queued, bookId);
+        return restored + reset + (int) stuckPending.stream()
+                .filter(character -> character.getStatus() != CharacterStatus.COMPLETED)
+                .count();
     }
 
     /**

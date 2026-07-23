@@ -158,11 +158,28 @@ public class IllustrationService {
      */
     @Transactional
     public void requestIllustration(String chapterId) {
+        ChapterEntity chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+        if (chapter == null) {
+            log.warn("Cannot request illustration: chapter not found: {}", chapterId);
+            return;
+        }
+
+        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        if (comfyUIService.hasImage(cacheKey)) {
+            if (existing.isPresent()) {
+                restoreCachedIllustration(existing.get(), cacheKey);
+            } else {
+                IllustrationEntity illustration = new IllustrationEntity(chapter);
+                restoreCachedIllustration(illustration, cacheKey);
+            }
+            return;
+        }
+
         if (cacheOnly) {
             log.info("Skipping illustration request in cache-only mode for chapter {}", chapterId);
             return;
         }
-        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
 
         if (existing.isPresent()) {
             IllustrationStatus status = existing.get().getStatus();
@@ -190,12 +207,6 @@ public class IllustrationService {
             // If failed, allow retry by deleting the old record
             illustrationRepository.delete(existing.get());
             illustrationRepository.flush(); // Ensure delete is committed before insert
-        }
-
-        ChapterEntity chapter = chapterRepository.findById(chapterId).orElse(null);
-        if (chapter == null) {
-            log.warn("Cannot request illustration: chapter not found: {}", chapterId);
-            return;
         }
 
         // Create pending record - handle race condition gracefully
@@ -333,10 +344,6 @@ public class IllustrationService {
      * @param customPrompt If provided, skip LLM prompt generation and use this prompt directly
      */
     private void generateIllustration(String chapterId, String customPrompt) {
-        if (cacheOnly) {
-            log.info("Skipping illustration generation in cache-only mode for chapter {}", chapterId);
-            return;
-        }
         if (!tryClaimGenerationLease(chapterId)) {
             log.debug("Skipping illustration generation for chapter {} because lease claim failed", chapterId);
             rescheduleDeferredRetryIfNeeded(chapterId, customPrompt);
@@ -353,6 +360,17 @@ public class IllustrationService {
             return;
         }
         BookEntity book = chapter.getBook();
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        if (customPrompt == null && comfyUIService.hasImage(cacheKey)) {
+            illustrationRepository.findByChapterId(chapterId)
+                    .ifPresent(illustration -> restoreCachedIllustration(illustration, cacheKey));
+            return;
+        }
+        if (cacheOnly) {
+            log.info("Skipping illustration generation in cache-only mode for chapter {}", chapterId);
+            self.updateIllustrationStatus(chapterId, IllustrationStatus.PENDING, null, null);
+            return;
+        }
 
         try {
             String imagePrompt;
@@ -381,7 +399,6 @@ public class IllustrationService {
 
             // Submit to ComfyUI
             String outputPrefix = "illustration_" + chapterId;
-            String cacheKey = assetKeyService.buildIllustrationKey(chapter);
             String promptId = comfyUIService.submitWorkflow(imagePrompt, outputPrefix, cacheKey);
 
             // Poll for completion
@@ -421,6 +438,8 @@ public class IllustrationService {
         }
         if (status == IllustrationStatus.COMPLETED) {
             illustration.setCompletedAt(LocalDateTime.now());
+            illustration.setErrorMessage(null);
+            illustration.setRetryCount(0);
         }
         if (status != IllustrationStatus.PENDING) {
             illustration.setNextRetryAt(null);
@@ -430,6 +449,19 @@ public class IllustrationService {
         }
         illustrationRepository.save(illustration);
         log.debug("Updated illustration status for chapter {}: {}", chapterId, status);
+    }
+
+    private void restoreCachedIllustration(IllustrationEntity illustration, String cacheKey) {
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename(cacheKey);
+        illustration.setErrorMessage(null);
+        illustration.setRetryCount(0);
+        illustration.setNextRetryAt(null);
+        illustration.setCompletedAt(LocalDateTime.now());
+        clearIllustrationLease(illustration);
+        illustrationRepository.save(illustration);
+        log.info("Restored cached illustration for chapter {} from {}",
+                illustration.getChapter().getId(), cacheKey);
     }
 
     /**
@@ -570,15 +602,33 @@ public class IllustrationService {
      */
     @Transactional
     public int resetAndRequeueStuckForBook(String bookId) {
-        if (cacheOnly) {
-            log.info("Skipping illustration reset/re-queue in cache-only mode for book {}", bookId);
-            return 0;
-        }
         List<IllustrationEntity> stuckGenerating = illustrationRepository.findByChapterBookIdAndStatus(bookId, IllustrationStatus.GENERATING);
         List<IllustrationEntity> stuckPending = illustrationRepository.findByChapterBookIdAndStatus(bookId, IllustrationStatus.PENDING);
+        List<IllustrationEntity> failed = illustrationRepository.findByChapterBookIdAndStatus(bookId, IllustrationStatus.FAILED);
+
+        int restored = 0;
+        for (IllustrationEntity illustration : java.util.stream.Stream
+                .of(stuckGenerating, stuckPending, failed)
+                .flatMap(List::stream)
+                .toList()) {
+            String cacheKey = assetKeyService.buildIllustrationKey(illustration.getChapter());
+            if (comfyUIService.hasImage(cacheKey)) {
+                restoreCachedIllustration(illustration, cacheKey);
+                restored++;
+            }
+        }
+
+        if (cacheOnly) {
+            log.info("Restored {} cached illustrations and skipped illustration reset/re-queue in cache-only mode for book {}",
+                    restored, bookId);
+            return restored;
+        }
 
         int reset = 0;
         for (IllustrationEntity illustration : stuckGenerating) {
+            if (illustration.getStatus() == IllustrationStatus.COMPLETED) {
+                continue;
+            }
             illustration.setStatus(IllustrationStatus.PENDING);
             illustration.setRetryCount(0);
             illustration.setNextRetryAt(null);
@@ -590,18 +640,23 @@ public class IllustrationService {
         // Re-queue all pending (including just-reset ones)
         int queued = 0;
         for (IllustrationEntity illustration : stuckGenerating) {
-            if (generationQueue.offer(new IllustrationRequest(illustration.getChapter().getId()))) {
+            if (illustration.getStatus() != IllustrationStatus.COMPLETED
+                    && generationQueue.offer(new IllustrationRequest(illustration.getChapter().getId()))) {
                 queued++;
             }
         }
         for (IllustrationEntity illustration : stuckPending) {
-            if (generationQueue.offer(new IllustrationRequest(illustration.getChapter().getId()))) {
+            if (illustration.getStatus() != IllustrationStatus.COMPLETED
+                    && generationQueue.offer(new IllustrationRequest(illustration.getChapter().getId()))) {
                 queued++;
             }
         }
 
-        log.info("Reset {} stuck GENERATING illustrations and queued {} total for book {}", reset, queued, bookId);
-        return reset + stuckPending.size();
+        log.info("Restored {} cached illustrations, reset {} stuck GENERATING illustrations, and queued {} total for book {}",
+                restored, reset, queued, bookId);
+        return restored + reset + (int) stuckPending.stream()
+                .filter(illustration -> illustration.getStatus() != IllustrationStatus.COMPLETED)
+                .count();
     }
 
     private sealed interface GenerationRequest permits IllustrationRequest, RegenerateRequest {
