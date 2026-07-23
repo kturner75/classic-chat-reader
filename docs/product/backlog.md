@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-22
+Last updated: 2026-07-23
 
 ## Implementation handoff (classroom)
 
@@ -34,7 +34,7 @@ Last updated: 2026-07-22
 **Known demo issues found during walkthrough (2026-07-13 / 2026-07-16 partner call):**
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
 - ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position.
-- Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat. Returning to the book and Library a second time corrects it to **3/3 complete**; tracked in `BL-047` as a stale classroom-context rerender bug.
+- ~~Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat.~~ **Fixed in BL-047:** refreshed classroom context rerenders the visible Library immediately, so the first return shows **3/3 complete**.
 - ~~The teacher workspace can show **Reading Buddy enabled** while the deployment-wide rollout is off without explaining that students cannot use it.~~ **Fixed in BL-048:** the saved policy remains intact, while the control clearly shows deployment unavailability and student settings remain unusable.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
@@ -70,8 +70,8 @@ Last updated: 2026-07-22
 
 **Next when resuming (suggested order):**
 1. ~~Assignment open-chapter / chat download / characterChatRequired / assignment progress UX~~ shipped (`main`).
-2. `BL-047` stale assignment quiz completion rerender; `BL-048` Reading Buddy classroom toggle vs global flag.
-3. `BL-050` font-size preference paragraph clipping (partner-reported reader bug).
+2. ~~`BL-047` stale assignment quiz completion rerender; `BL-048` Reading Buddy classroom toggle vs global flag~~ shipped on `main` (PRs #85 and #84).
+3. ~~`BL-050` font-size preference paragraph clipping~~ shipped on `main` (PRs #77 and #79; responsive re-pagination plus split-paragraph navigation coverage).
 4. ~~`BL-049` character chat server persistence~~ shipped on `main` (PR #82; cross-device history and database synchronization).
 5. ~~`BL-039` / `BL-032` **My Chats** recent-chat landing slice + dedicated page~~ shipped on `main` (PR #78).
 6. Roster display name + email; BL-025.10 v1 student drill-down/progress.
@@ -87,10 +87,10 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent completed slice: `BL-028 - Account auth endpoint hardening` (`Done`, delivered account auth rate limiting with `429` + `Retry-After`, login lockout/backoff persistence, and structured non-PII auth audit events with regression test coverage).
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
-- Reading Buddy Mode stack is implemented end-to-end on `feature/reading-buddy` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). **Local spoiler suite + Playwright smoke are green (2026-07-09).** Prod flag-on remains blocked until merge to `main` and public-mode deploy verification. Default remains `reading-buddy.enabled=false`.
-- Active priority work: `BL-025` classroom foundation (schema + APIs). Reading Buddy remains on `feature/reading-buddy` for merge/prod verification.
+- Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
+- Active priority work remains the deeper `BL-025` classroom pilot path: roster identity, student drill-down/progress, invite hardening, and FERPA-gated reporting/export.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
-- 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. Character chat is still client-local today; durable completion/export for this use case is deferred.
+- 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
 - 2026-07-11: Fixed classroom context stale-after-login defect: `accountCheckStatus` now reloads classroom context and re-renders Library when account identity changes (login/logout/register), with Playwright regression coverage. Partner/grant-facing pilot pitch doc added at `docs/product/classroom-pilot-pitch.md`.
 - 2026-07-13: Added the classroom demo UI slice: `/teacher` workspace, class setup, invite link, roster, feature controls, assignment management, workspace navigation, and student invite redemption. Full Maven suite green (536 tests); BL-025.2–.4 remain in progress for rate limits, roster removal/import, entitlement, and wider enforcement/polish.
@@ -99,6 +99,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-14: Added the database-backed teacher capability gate ahead of the educator demo: durable `CREATE_CLASSROOM` grants, capability-aware navigation/direct-access handling, backend enforcement, and operator provisioning by existing account email.
 - 2026-07-16: Educator partner call (Jessica) went well — classroom setup and assignments impressed. Captured assignment open-chapter bug (Library used resume progress, so students with prior reading landed on the wrong chapter) and elevated BL-025.11 with optional character-chat requirement + student downloadable transcript for in-class show-and-tell.
 - 2026-07-22: Educator partner call (Jessica) — positive on require-chat + download demo path. New asks: **My Chats** landing surface near Achievements (`BL-039`/`BL-032`), **server-persisted character chat** for cross-device access (`BL-049`), and **font-size preference clipping** bug (`BL-050`).
+- 2026-07-23: Reconciled the partner-readiness slice after merge and regression verification: My Chats, cross-device chat persistence, font-size re-pagination, BL-047 assignment progress refresh, and BL-048 Reading Buddy availability are shipped on `main`; 596 backend, 91 frontend, and 24 Playwright tests pass locally.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -890,7 +891,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Bug
 - Priority: P1
 - Effort: S
-- Status: Ready
+- Status: Done
 - Problem: The teacher workspace allows `readingBuddyEnabled=true` to be saved for a class even when the deployment-wide Reading Buddy rollout flag is off. This presents the feature as enabled to the teacher, but the reader never loads personas/preferences or sends proactive `check-comment` requests because `/api/reading-buddy/status` reports `available=false`.
 - Confirmed Evidence (2026-07-21):
 - The deployed status endpoint reported `enabled=false`, `available=false`, `providerAvailable=true`, and `chatEnabled=true`.
@@ -936,7 +937,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Bug
 - Priority: P1
 - Effort: S
-- Status: Ready
+- Status: Done
 - Problem: When the user increases **font size** in reader preferences (`BL-006`), text size updates but **paragraph content can be clipped** (content cut off / not fully visible within the page/column layout).
 - Reported: Educator partner call (Jessica), 2026-07-22 — observed during product walkthrough.
 - Investigation Scope:
@@ -950,6 +951,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Add a regression check (Playwright visual or layout assertion, or unit coverage of pagination bounds) for a large font-size setting.
 - Dependency Notes:
 - Regression on shipped `BL-006` preferences panel; fix in reader pagination/layout, not a new preferences feature.
+- Resolution (2026-07-22): Reader pages remeasure and repaginate immediately after font-size changes while preserving the active paragraph. Follow-up navigation coverage verifies all fragments of split paragraphs are shown before advancing chapters. Shipped in PRs #77 and #79 with desktop, laptop, tablet, and split-paragraph Playwright regressions.
 
 ## P0
 
