@@ -6392,7 +6392,7 @@
         renderLibrary();
         refreshMyChatsLanding(true);
         void loadClassroomContext().then(() => {
-            if (!state.currentBook && elements.libraryView && !elements.libraryView.classList.contains('hidden')) {
+            if (elements.libraryView && !elements.libraryView.classList.contains('hidden')) {
                 renderLibrary();
             }
         });
