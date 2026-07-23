@@ -35,7 +35,7 @@ Last updated: 2026-07-22
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
 - ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position.
 - Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat. Returning to the book and Library a second time corrects it to **3/3 complete**; tracked in `BL-047` as a stale classroom-context rerender bug.
-- The teacher workspace can save **Reading Buddy enabled** while the deployment-wide `reading-buddy.enabled` rollout flag is off. Students then receive no proactive checks even though the class configuration says the feature is enabled; tracked in `BL-048` as a misleading availability-state bug.
+- ~~The teacher workspace can show **Reading Buddy enabled** while the deployment-wide rollout is off without explaining that students cannot use it.~~ **Fixed in BL-048:** the saved policy remains intact, while the control clearly shows deployment unavailability and student settings remain unusable.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
@@ -868,7 +868,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Bug
 - Priority: P1
 - Effort: S
-- Status: Ready
+- Status: Done
 - Problem: After a student completes a chapter, its required quiz, and a required character chat, the first return to the Library can still show **Quiz required** and **2/3 complete**. Opening the book and returning again changes the same assignment to **3/3 complete** without additional work.
 - Reproduction:
   1. Assign a chapter with both quiz and character chat required.
@@ -903,6 +903,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Student settings must not expose an apparently usable Reading Buddy configuration when effective availability is false.
 - Add frontend coverage for global-off/classroom-on and global-on/classroom-on combinations.
 - Retain privacy-safe diagnostics for availability, client gate skips, backend silence reasons, provider errors, and successful comments without logging paragraph or generated-comment text.
+- Resolution (2026-07-22): The saved classroom preference remains enabled during a global outage/rollout-off state and activates automatically when effective deployment availability returns. The teacher control is disabled with an explicit unavailable message while global status is off; student controls are hidden and disabled when the combined global and classroom gates are false.
 
 ### BL-049 - Character Chat Server Persistence (Cross-Device History)
 - Type: Feature

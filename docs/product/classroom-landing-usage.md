@@ -19,6 +19,17 @@ This guide explains how to enable and use the classroom-aware landing behavior a
   - character
   - chat
   - speed reading
+  - Reading Buddy
+
+## Reading Buddy Saved Policy and Availability
+
+The classroom `readingBuddyEnabled` value is a saved policy, not a statement that Reading Buddy is currently available. Effective student availability requires all of the following:
+
+- the saved classroom Reading Buddy policy is on
+- classroom AI chat is on
+- `GET /api/reading-buddy/status` reports `available=true`
+
+When deployment-wide availability is off, the teacher workspace keeps the saved policy unchanged and shows its toggle as disabled with **Unavailable in this deployment**. An enabled saved policy automatically takes effect when deployment availability returns; the teacher does not need to re-enable it. Student Reading Buddy settings remain hidden and disabled whenever effective availability is false.
 
 ## Enable Classroom Demo Mode
 

@@ -153,6 +153,7 @@ This inventory reflects implemented behavior in backend controllers/services and
 - Interactive chat: `POST /api/reading-buddy/chat` uses server memory only (client history ignored for prompts).
 - Spoiler safety: position-bounded STORY CONTEXT, future messages filtered from prompts, history `visibleAtPosition` for rewind masking, rolling summary omitted when reader is behind summary watermarks.
 - Reader UI: settings toggle/persona/frequency, toast (never auto-opens modal), Talk modal, classroom FE kill-switch via `readingBuddyEnabled` (+ `chatEnabled`).
+- The teacher workspace distinguishes the saved classroom policy from effective availability. A global-off deployment leaves the saved policy intact for automatic activation after rollout, but disables the classroom control with an explicit unavailable state; student settings stay hidden and disabled while effective availability is false.
 - Design notes: `docs/product/reading-buddy-mode.md`.
 
 ## Pre-Generation and Operations
