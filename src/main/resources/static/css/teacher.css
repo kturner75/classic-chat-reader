@@ -107,6 +107,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .feature-control input:checked + i { background: var(--accent); }
 .feature-control input:checked + i::after { transform: translateX(17px); }
 .feature-control:focus-within { outline: 2px solid rgba(91,79,138,.25); }
+.feature-control.feature-unavailable { cursor: not-allowed; background: #f3f1ec; }
+.feature-control.feature-unavailable strong { color: var(--muted); }
+.feature-control.feature-unavailable i,
+.feature-control.feature-unavailable input:checked + i { background: #aaa69d; }
 .save-status { color: var(--success); font-size: .75rem; }
 
 .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 1rem; }

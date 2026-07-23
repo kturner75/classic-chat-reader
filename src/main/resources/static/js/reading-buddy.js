@@ -345,18 +345,20 @@
         }
 
         function syncSettingsPanel() {
+            const usable = state.statusAvailable && classroomAllowed();
             const section = els().settingsSection;
             if (section) {
-                const show = state.statusAvailable && classroomAllowed();
-                section.classList.toggle('hidden', !show);
+                section.classList.toggle('hidden', !usable);
             }
             const toggle = els().toggle;
             if (toggle) {
                 toggle.checked = state.prefs.enabled === true;
+                toggle.disabled = !usable;
             }
             const freq = els().frequency;
             if (freq) {
                 freq.value = normalizeFrequency(state.prefs.frequency);
+                freq.disabled = !usable;
             }
             renderPersonaList();
             updateTalkButton();

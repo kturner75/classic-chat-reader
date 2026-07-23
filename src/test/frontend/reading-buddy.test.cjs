@@ -106,8 +106,8 @@ function createFakeHost(overrides = {}) {
         isFocusedModal: () => focused,
         setFocusedModal: (v) => { focused = v; },
         isSpeedReadingActive: () => speed,
-        getClassroomContext: () => ({ enrolled: false }),
-        isClassroomAllowed: () => true,
+        getClassroomContext: () => overrides.classroomContext || { enrolled: false },
+        isClassroomAllowed: () => overrides.classroomAllowed !== false,
         onDiagnostic: overrides.onDiagnostic || (() => {}),
         mapChatError: () => ({ message: 'err', retryable: true }),
         escapeHtml,
@@ -218,6 +218,39 @@ test('isFeatureAvailable honors status and classroom kill-switch', () => {
         { available: true },
         { enrolled: true, features: { chatEnabled: true, readingBuddyEnabled: false } }
     ), false);
+});
+
+test('student settings are unusable for global-off/classroom-on and usable for global-on/classroom-on', async () => {
+    const classroomContext = {
+        enrolled: true,
+        features: { chatEnabled: true, readingBuddyEnabled: true }
+    };
+    const unavailableHost = createFakeHost({
+        classroomContext,
+        fetch: async () => ({
+            ok: true,
+            json: async () => ({ available: false, enabled: false, providerAvailable: true, chatEnabled: true })
+        })
+    });
+    const unavailableController = createController(unavailableHost);
+    await unavailableController.checkAvailability();
+    assert.equal(unavailableHost.elements.settingsSection.classList.contains('hidden'), true);
+    assert.equal(unavailableHost.elements.toggle.disabled, true);
+    assert.equal(unavailableHost.elements.frequency.disabled, true);
+    assert.equal(unavailableHost.elements.talkBtn.disabled, true);
+
+    const availableHost = createFakeHost({
+        classroomContext,
+        fetch: async () => ({
+            ok: true,
+            json: async () => ({ available: true, enabled: true, providerAvailable: true, chatEnabled: true })
+        })
+    });
+    const availableController = createController(availableHost);
+    await availableController.checkAvailability();
+    assert.equal(availableHost.elements.settingsSection.classList.contains('hidden'), false);
+    assert.equal(availableHost.elements.toggle.disabled, false);
+    assert.equal(availableHost.elements.frequency.disabled, false);
 });
 
 test('controller diagnostics explain unavailable status without logging reader text', async () => {

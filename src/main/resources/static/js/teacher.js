@@ -10,6 +10,7 @@
         roster: [],
         assignments: [],
         features: null,
+        readingBuddyStatus: null,
         editingAssignmentId: null,
         featureSaveTimer: null,
         activeBookOption: -1
@@ -104,14 +105,16 @@
     async function initialize() {
         setPageState('loading');
         try {
-            const [account, capabilities, books] = await Promise.all([
+            const [account, capabilities, books, readingBuddyStatus] = await Promise.all([
                 api('/api/account/status'),
                 api('/api/classroom/capabilities'),
-                api('/api/library').catch(() => [])
+                api('/api/library').catch(() => []),
+                api('/api/reading-buddy/status').catch(() => ({ available: false }))
             ]);
             state.account = account;
             state.capabilities = capabilities || {};
             state.books = Array.isArray(books) ? books : [];
+            state.readingBuddyStatus = readingBuddyStatus || { available: false };
             el['account-email'].textContent = account?.authenticated ? account.email || 'Signed in' : '';
             show(el['sign-out'], account?.authenticated === true);
             if (!account?.authenticated) {
@@ -261,7 +264,16 @@
 
     function renderFeatures() {
         Array.from(el['features-form'].elements).forEach(input => {
-            if (input.type === 'checkbox') input.checked = state.features?.[input.name] !== false;
+            if (input.type !== 'checkbox') return;
+            input.checked = state.features?.[input.name] !== false;
+            if (input.name === 'readingBuddyEnabled') {
+                const available = state.readingBuddyStatus?.available === true;
+                input.disabled = !available;
+                input.closest('.feature-control')?.classList.toggle('feature-unavailable', !available);
+                el['reading-buddy-feature-description'].textContent = available
+                    ? 'Available in this deployment; this saved policy controls student access'
+                    : `Unavailable in this deployment. Saved classroom policy: ${input.checked ? 'On' : 'Off'}; it will apply automatically when available.`;
+            }
         });
     }
 

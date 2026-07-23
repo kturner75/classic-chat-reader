@@ -95,7 +95,7 @@ async function installBuddyApiMocks(page, options = {}) {
       });
     }
     if (method === 'GET' && path === '/api/classroom/context') {
-      return json(route, 200, { enrolled: false });
+      return json(route, 200, options.classroomContext || { enrolled: false });
     }
     if (method === 'GET' && path === '/api/library') {
       return json(route, 200, [TEST_BOOK]);
@@ -362,7 +362,14 @@ test('reading buddy toast appears after mocked check-comment COMMENT and opens m
 });
 
 test('reading buddy settings stay hidden when status.available is false', async ({ page }) => {
-  await installBuddyApiMocks(page, { buddyAvailable: false, forceCommentOnCheck: false });
+  await installBuddyApiMocks(page, {
+    buddyAvailable: false,
+    forceCommentOnCheck: false,
+    classroomContext: {
+      enrolled: true,
+      features: { chatEnabled: true, readingBuddyEnabled: true }
+    }
+  });
   await openReaderForBuddyBook(page);
 
   await openReaderSettings(page);

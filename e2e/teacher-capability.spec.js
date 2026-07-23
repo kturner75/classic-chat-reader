@@ -34,7 +34,7 @@ async function installTeacherMocks(page, canTeach) {
   });
 }
 
-async function installAssignmentMocks(page) {
+async function installAssignmentMocks(page, options = {}) {
   const books = [
     { id: 'treasure', title: 'Treasure Island', author: 'Robert Louis Stevenson', chapters: [{ id: 'treasure-1', title: 'The Old Sea-dog' }] },
     { id: 'pride', title: 'Pride and Prejudice', author: 'Jane Austen', chapters: [{ id: 'pride-1', title: 'Chapter 1' }] },
@@ -53,6 +53,10 @@ async function installAssignmentMocks(page) {
     if (request.method() === 'GET' && path === '/api/library') {
       return json(route, books);
     }
+    if (request.method() === 'GET' && path === '/api/reading-buddy/status') {
+      const available = options.readingBuddyAvailable !== false;
+      return json(route, { available, enabled: available, chatEnabled: true, providerAvailable: true });
+    }
     if (request.method() === 'GET' && path === '/api/classroom/classes') {
       return json(route, [{ classId: 'class-1', className: 'Literature 101', activeTermId: 'term-1', activeTermName: 'Fall' }]);
     }
@@ -63,7 +67,7 @@ async function installAssignmentMocks(page) {
       return json(route, []);
     }
     if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/features') {
-      return json(route, {});
+      return json(route, { readingBuddyEnabled: options.classroomReadingBuddyEnabled !== false });
     }
     return json(route, { error: `Unhandled route: ${request.method()} ${path}` }, 404);
   });
@@ -109,4 +113,25 @@ test('assignment book autocomplete sorts titles and narrows the choices', async 
   await expect(search).toHaveValue('Pride and Prejudice · Jane Austen');
   await expect(page.locator('#assignment-book')).toHaveValue('pride');
   await expect(page.locator('#assignment-chapter option')).toHaveText(['Whole book', 'Chapter 1']);
+});
+
+test('global-off/classroom-on shows the saved Reading Buddy policy as unavailable', async ({ page }) => {
+  await installAssignmentMocks(page, { readingBuddyAvailable: false, classroomReadingBuddyEnabled: true });
+  await page.goto('/teacher.html');
+
+  const toggle = page.locator('input[name="readingBuddyEnabled"]');
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeDisabled();
+  await expect(page.locator('#reading-buddy-feature-description')).toContainText('Unavailable in this deployment');
+  await expect(page.locator('#reading-buddy-feature-description')).toContainText('Saved classroom policy: On');
+});
+
+test('global-on/classroom-on keeps the Reading Buddy policy usable', async ({ page }) => {
+  await installAssignmentMocks(page, { readingBuddyAvailable: true, classroomReadingBuddyEnabled: true });
+  await page.goto('/teacher.html');
+
+  const toggle = page.locator('input[name="readingBuddyEnabled"]');
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await expect(page.locator('#reading-buddy-feature-description')).toContainText('Available in this deployment');
 });
