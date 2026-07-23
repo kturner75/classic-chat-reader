@@ -9,6 +9,7 @@ const {
     createInitialListState,
     getListViewModel,
     reduceListState,
+    renderConversationPortrait,
     safeResumeUrl,
     safeSessionUrl,
     toReaderParagraphParam
@@ -189,4 +190,13 @@ test('open-book URL converts zero-based paragraph indexes to the one-based reade
     assert.equal(parsed.searchParams.get('book'), 'book-1');
     assert.equal(parsed.searchParams.get('chapter'), 'chapter-1');
     assert.equal(parsed.searchParams.get('paragraph'), '5');
+});
+
+test('conversation portrait remains optional when cached HTML lacks the new elements', () => {
+    assert.doesNotThrow(() => renderConversationPortrait(
+        null,
+        null,
+        'Mr. Bingley',
+        '/api/characters/character-1/portrait'
+    ));
 });

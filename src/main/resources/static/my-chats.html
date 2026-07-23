@@ -113,14 +113,20 @@
                     <span>This conversation couldn’t load.</span>
                     <button id="my-chat-conversation-retry" class="my-chat-secondary-action" type="button">Retry</button>
                 </div>
-                <div class="my-chat-conversation-heading">
-                    <p class="my-chats-eyebrow">Character conversation</p>
-                    <h1 id="my-chat-conversation-title" tabindex="-1"></h1>
-                    <p id="my-chat-conversation-book" class="my-chat-conversation-book"></p>
-                    <p id="my-chat-conversation-context" class="my-chat-conversation-context"></p>
-                    <div class="my-chat-conversation-actions">
-                        <a id="my-chat-open-book" class="my-chat-secondary-action hidden" href="/">Open book</a>
-                        <button id="my-chat-download" class="my-chat-secondary-action" type="button">Download</button>
+                <div class="my-chat-conversation-heading has-portrait">
+                    <div class="my-chat-conversation-portrait" aria-hidden="true">
+                        <span id="my-chat-conversation-portrait-placeholder">?</span>
+                        <img id="my-chat-conversation-portrait" class="hidden" alt="">
+                    </div>
+                    <div class="my-chat-conversation-heading-content">
+                        <p class="my-chats-eyebrow">Character conversation</p>
+                        <h1 id="my-chat-conversation-title" tabindex="-1"></h1>
+                        <p id="my-chat-conversation-book" class="my-chat-conversation-book"></p>
+                        <p id="my-chat-conversation-context" class="my-chat-conversation-context"></p>
+                        <div class="my-chat-conversation-actions">
+                            <a id="my-chat-open-book" class="my-chat-secondary-action hidden" href="/">Open book</a>
+                            <button id="my-chat-download" class="my-chat-secondary-action" type="button">Download</button>
+                        </div>
                     </div>
                 </div>
                 <div id="my-chat-messages" class="my-chat-messages" aria-label="Conversation messages"></div>

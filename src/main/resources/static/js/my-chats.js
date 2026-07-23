@@ -608,6 +608,23 @@
         });
     }
 
+    function renderConversationPortrait(portrait, placeholder, characterName, portraitUrl) {
+        // A reader may briefly have older cached HTML with newer JavaScript during a deploy.
+        // The portrait is progressive enhancement, so it must never block the conversation.
+        if (!portrait || !placeholder) return;
+
+        placeholder.textContent = characterName.charAt(0).toUpperCase() || '?';
+        if (!portraitUrl) {
+            portrait.classList.add('hidden');
+            portrait.removeAttribute('src');
+        } else if (portrait.getAttribute('src') !== portraitUrl) {
+            portrait.classList.add('hidden');
+            portrait.onload = () => portrait.classList.remove('hidden');
+            portrait.onerror = () => portrait.classList.add('hidden');
+            portrait.src = portraitUrl;
+        }
+    }
+
     function initConversationPage(context, sessionId) {
         const { document: documentRef, fetch: fetchRef } = context;
         const listPage = documentRef.getElementById('my-chats-list-page');
@@ -615,6 +632,8 @@
         const loading = documentRef.getElementById('my-chat-conversation-loading');
         const error = documentRef.getElementById('my-chat-conversation-error');
         const title = documentRef.getElementById('my-chat-conversation-title');
+        const portrait = documentRef.getElementById('my-chat-conversation-portrait');
+        const portraitPlaceholder = documentRef.getElementById('my-chat-conversation-portrait-placeholder');
         const book = documentRef.getElementById('my-chat-conversation-book');
         const contextLabel = documentRef.getElementById('my-chat-conversation-context');
         const messagesElement = documentRef.getElementById('my-chat-messages');
@@ -644,6 +663,12 @@
             const characterName = session?.character?.name || 'Unavailable character';
             title.textContent = characterName;
             title.focus();
+            renderConversationPortrait(
+                portrait,
+                portraitPlaceholder,
+                characterName,
+                session?.character?.portraitUrl || ''
+            );
             book.textContent = [session?.book?.title || 'Unavailable book', session?.book?.author].filter(Boolean).join(' · ');
             const chapter = session?.context?.chapterTitle || (Number.isInteger(session?.context?.chapterIndex)
                 ? `Chapter ${session.context.chapterIndex + 1}` : 'Reading position unavailable');
@@ -868,6 +893,7 @@
         mergeFilterCatalog,
         normalizeFilters,
         reduceListState,
+        renderConversationPortrait,
         safeResumeUrl,
         safeSessionUrl,
         toReaderParagraphParam,
