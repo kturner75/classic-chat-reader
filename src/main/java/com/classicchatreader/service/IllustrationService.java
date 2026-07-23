@@ -46,6 +46,7 @@ public class IllustrationService {
     private final IllustrationStyleAnalysisService styleAnalysisService;
     private final ComfyUIService comfyUIService;
     private final AssetKeyService assetKeyService;
+    private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -83,7 +84,8 @@ public class IllustrationService {
             IllustrationPromptService promptService,
             IllustrationStyleAnalysisService styleAnalysisService,
             ComfyUIService comfyUIService,
-            AssetKeyService assetKeyService) {
+            AssetKeyService assetKeyService,
+            CdnAssetService cdnAssetService) {
         this.illustrationRepository = illustrationRepository;
         this.chapterRepository = chapterRepository;
         this.bookRepository = bookRepository;
@@ -92,6 +94,7 @@ public class IllustrationService {
         this.styleAnalysisService = styleAnalysisService;
         this.comfyUIService = comfyUIService;
         this.assetKeyService = assetKeyService;
+        this.cdnAssetService = cdnAssetService;
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -246,10 +249,22 @@ public class IllustrationService {
         if (chapter == null) {
             return false;
         }
-        return restoreCachedIllustrationIfPresent(
-                chapter,
+
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        if (!isCachedAssetPresent(cacheKey)) {
+            return false;
+        }
+
+        ChapterEntity lockedChapter = chapterRepository.findByIdWithBookForUpdate(chapterId).orElse(null);
+        if (lockedChapter == null) {
+            return false;
+        }
+        restoreCachedIllustration(
                 illustrationRepository.findByChapterId(chapterId)
+                        .orElseGet(() -> new IllustrationEntity(lockedChapter)),
+                cacheKey
         );
+        return true;
     }
 
     private boolean restoreCachedIllustrationIfPresent(
@@ -264,6 +279,12 @@ public class IllustrationService {
                 cacheKey
         );
         return true;
+    }
+
+    private boolean isCachedAssetPresent(String cacheKey) {
+        boolean cachedLocally = comfyUIService.hasImage(cacheKey);
+        return cachedLocally
+                || (cacheOnly && cdnAssetService.assetExists("illustrations", cacheKey));
     }
 
     /**

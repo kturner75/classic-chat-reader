@@ -1,7 +1,9 @@
 package com.classicchatreader.repository;
 
 import com.classicchatreader.entity.ChapterEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -18,4 +20,8 @@ public interface ChapterRepository extends JpaRepository<ChapterEntity, String> 
 
     @Query("SELECT c FROM ChapterEntity c JOIN FETCH c.book WHERE c.id = :id")
     Optional<ChapterEntity> findByIdWithBook(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM ChapterEntity c JOIN FETCH c.book WHERE c.id = :id")
+    Optional<ChapterEntity> findByIdWithBookForUpdate(@Param("id") String id);
 }

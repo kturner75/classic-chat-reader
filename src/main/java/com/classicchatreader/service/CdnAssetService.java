@@ -3,16 +3,36 @@ package com.classicchatreader.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Optional;
 
 @Service
 public class CdnAssetService {
+
+    private static final Duration ASSET_CHECK_TIMEOUT = Duration.ofSeconds(3);
+
+    private final HttpClient httpClient;
 
     @Value("${assets.cdn-base-url:}")
     private String cdnBaseUrl;
 
     @Value("${assets.cdn-prefix:assets}")
     private String cdnPrefix;
+
+    public CdnAssetService() {
+        this(HttpClient.newBuilder()
+                .connectTimeout(ASSET_CHECK_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build());
+    }
+
+    CdnAssetService(HttpClient httpClient) {
+        this.httpClient = httpClient;
+    }
 
     public boolean isEnabled() {
         return cdnBaseUrl != null && !cdnBaseUrl.isBlank();
@@ -58,5 +78,26 @@ public class CdnAssetService {
                 ? base + "/" + path
                 : base + "/" + prefix + "/" + path;
         return Optional.of(url);
+    }
+
+    public boolean assetExists(String assetRoot, String assetKey) {
+        Optional<String> url = buildAssetUrl(assetRoot, assetKey);
+        if (url.isEmpty()) {
+            return false;
+        }
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url.get()))
+                    .timeout(ASSET_CHECK_TIMEOUT)
+                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                    .build();
+            int statusCode = httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+            return statusCode >= 200 && statusCode < 300;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
