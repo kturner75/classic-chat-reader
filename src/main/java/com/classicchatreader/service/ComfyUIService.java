@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -255,6 +256,17 @@ public class ComfyUIService {
   }
 
   /**
+   * Check whether an illustration is already present without loading it into memory.
+   */
+  public boolean hasImage(String filename) {
+    if (filename == null || filename.isBlank()) {
+      return false;
+    }
+    Path imagePath = safeResolve(cacheDir, filename);
+    return Files.isRegularFile(imagePath);
+  }
+
+  /**
    * Build the ComfyUI workflow JSON in API format.
    */
   private ObjectNode buildWorkflow(String positivePrompt, String outputFilename) {
@@ -475,6 +487,40 @@ public class ComfyUIService {
       log.error("Failed to read cached portrait: {}", filename, e);
     }
     return null;
+  }
+
+  /**
+   * Check whether a portrait is already present in the local cache without loading it.
+   */
+  public boolean hasPortraitImage(String filename) {
+    if (filename == null || filename.isBlank()) {
+      return false;
+    }
+    Path imagePath = safeResolve(portraitCacheDir, filename);
+    return Files.isRegularFile(imagePath);
+  }
+
+  /**
+   * List cached PNG keys beneath a portrait directory. Used to recover a uniquely
+   * identifiable portrait when character extraction adds or removes a given name.
+   */
+  public List<String> listPortraitImages(String directory) {
+    Path basePath = Paths.get(portraitCacheDir).toAbsolutePath().normalize();
+    Path directoryPath = safeResolve(portraitCacheDir, directory);
+    if (!Files.isDirectory(directoryPath)) {
+      return List.of();
+    }
+    try (var paths = Files.list(directoryPath)) {
+      return paths
+          .filter(Files::isRegularFile)
+          .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".png"))
+          .map(path -> basePath.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/'))
+          .sorted()
+          .toList();
+    } catch (IOException e) {
+      log.error("Failed to list cached portraits in: {}", directory, e);
+      return List.of();
+    }
   }
 
   /**
