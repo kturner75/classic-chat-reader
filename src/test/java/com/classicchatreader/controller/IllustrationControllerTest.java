@@ -2,6 +2,7 @@ package com.classicchatreader.controller;
 
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.IllustrationStatus;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.service.CdnAssetService;
@@ -14,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
@@ -36,6 +38,9 @@ class IllustrationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private IllustrationController controller;
 
     @MockitoBean
     private IllustrationService illustrationService;
@@ -102,6 +107,32 @@ class IllustrationControllerTest {
         mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://cdn.example.com/chapter-1.png"));
+    }
+
+    @Test
+    void getChapterStatus_recoversCachedImageInCacheOnlyModeWhenDatabaseRecordIsMissing() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.getStatus("chapter-1")).thenReturn(null);
+        when(illustrationService.restoreCachedIllustrationIfPresent("chapter-1")).thenReturn(true);
+
+        ReflectionTestUtils.setField(controller, "cacheOnly", true);
+        try {
+            mockMvc.perform(get("/api/illustrations/chapter/chapter-1/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is(IllustrationStatus.COMPLETED.name())))
+                    .andExpect(jsonPath("$.ready", is(true)));
+
+            verify(illustrationService).restoreCachedIllustrationIfPresent("chapter-1");
+        } finally {
+            ReflectionTestUtils.setField(controller, "cacheOnly", false);
+        }
     }
 
     @Test

@@ -165,14 +165,7 @@ public class IllustrationService {
         }
 
         Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
-        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
-        if (comfyUIService.hasImage(cacheKey)) {
-            if (existing.isPresent()) {
-                restoreCachedIllustration(existing.get(), cacheKey);
-            } else {
-                IllustrationEntity illustration = new IllustrationEntity(chapter);
-                restoreCachedIllustration(illustration, cacheKey);
-            }
+        if (restoreCachedIllustrationIfPresent(chapter, existing)) {
             return;
         }
 
@@ -240,6 +233,37 @@ public class IllustrationService {
                 log.error("Failed to update status after queuing failure for chapter: {}", chapterId, updateEx);
             }
         }
+    }
+
+    /**
+     * Reconcile a chapter's database state from its stable cached asset key.
+     * This never queues generation, so status/read paths may safely use it in
+     * cache-only deployments and after database restores.
+     */
+    @Transactional
+    public boolean restoreCachedIllustrationIfPresent(String chapterId) {
+        ChapterEntity chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+        if (chapter == null) {
+            return false;
+        }
+        return restoreCachedIllustrationIfPresent(
+                chapter,
+                illustrationRepository.findByChapterId(chapterId)
+        );
+    }
+
+    private boolean restoreCachedIllustrationIfPresent(
+            ChapterEntity chapter,
+            Optional<IllustrationEntity> existing) {
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        if (!comfyUIService.hasImage(cacheKey)) {
+            return false;
+        }
+        restoreCachedIllustration(
+                existing.orElseGet(() -> new IllustrationEntity(chapter)),
+                cacheKey
+        );
+        return true;
     }
 
     /**

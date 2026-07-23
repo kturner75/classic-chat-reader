@@ -177,6 +177,11 @@ public class IllustrationController {
             );
         }
         IllustrationStatus status = illustrationService.getStatus(chapterId);
+        if (cacheOnly
+                && status != IllustrationStatus.COMPLETED
+                && illustrationService.restoreCachedIllustrationIfPresent(chapterId)) {
+            status = IllustrationStatus.COMPLETED;
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("chapterId", chapterId);

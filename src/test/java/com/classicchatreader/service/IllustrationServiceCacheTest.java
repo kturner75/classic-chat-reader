@@ -74,13 +74,14 @@ class IllustrationServiceCacheTest {
     }
 
     @Test
-    void requestCreatesCompletedRecordWhenOnlyCachedFileExists() throws Exception {
+    void onDemandRecoveryCreatesCompletedRecordWhenOnlyCachedFileExists() throws Exception {
         when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
         when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.empty());
         when(comfyUIService.hasImage(cacheKey)).thenReturn(true);
 
-        service.requestIllustration("chapter-1");
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
 
+        assertEquals(true, recovered);
         verify(illustrationRepository).save(any(IllustrationEntity.class));
         verify(comfyUIService, never()).submitWorkflow(any(), any(), any());
     }
