@@ -10,6 +10,7 @@
 
     const DEFAULT_LIMIT = 20;
     const SEARCH_DELAY_MS = 300;
+    const CALL_SAMPLE_RATE = 24000;
     const UNAVAILABLE_REASONS = {
         CHAT_DISABLED: 'Character chat is temporarily unavailable.',
         BOOK_DISABLED: 'Chat is unavailable for this book.',
@@ -35,6 +36,39 @@
 
     function hasFilters(filters) {
         return Object.values(normalizeFilters(filters)).some(Boolean);
+    }
+
+    function canStartVoiceCall(detail, status, browser) {
+        const session = detail?.session;
+        return session?.resume?.available === true
+            && !!session?.character?.id
+            && status?.enabled === true
+            && status?.chatEnabled === true
+            && status?.chatProviderAvailable === true
+            && status?.voiceCallEnabled === true
+            && status?.voiceCallAvailable === true
+            && typeof browser?.navigator?.mediaDevices?.getUserMedia === 'function'
+            && typeof browser?.AudioWorkletNode === 'function';
+    }
+
+    function toVoiceCallHistory(messages) {
+        if (!Array.isArray(messages)) return [];
+        return messages.flatMap(message => {
+            const role = String(message?.role || '').toUpperCase() === 'USER' ? 'user'
+                : String(message?.role || '').toUpperCase() === 'CHARACTER' ? 'character'
+                    : '';
+            const content = typeof message?.content === 'string' ? message.content.trim() : '';
+            if (!role || !content) return [];
+            const sourceTimestamp = message?.timestamp ?? message?.createdAt;
+            const parsedTimestamp = Number.isFinite(sourceTimestamp)
+                ? sourceTimestamp
+                : Date.parse(sourceTimestamp || '');
+            return [{
+                role,
+                content,
+                timestamp: Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now()
+            }];
+        });
     }
 
     function localDateStartIso(value, addDays) {
@@ -640,14 +674,40 @@
         const unavailable = documentRef.getElementById('my-chat-conversation-unavailable');
         const openBook = documentRef.getElementById('my-chat-open-book');
         const download = documentRef.getElementById('my-chat-download');
+        const callButton = documentRef.getElementById('my-chat-call');
+        const callLaunchStatus = documentRef.getElementById('my-chat-call-launch-status');
+        const callModal = documentRef.getElementById('my-chat-call-modal');
+        const callBackdrop = callModal?.querySelector('.my-chat-call-backdrop');
+        const callPortrait = documentRef.getElementById('my-chat-call-portrait');
+        const callCharacterName = documentRef.getElementById('my-chat-call-character-name');
+        const callStatus = documentRef.getElementById('my-chat-call-status');
+        const callError = documentRef.getElementById('my-chat-call-error');
+        const callCaptions = documentRef.getElementById('my-chat-call-captions');
+        const callMute = documentRef.getElementById('my-chat-call-mute');
+        const callEnd = documentRef.getElementById('my-chat-call-end');
         const form = documentRef.getElementById('my-chat-send-form');
         const composer = documentRef.getElementById('my-chat-composer');
         const send = documentRef.getElementById('my-chat-send');
         const sendStatus = documentRef.getElementById('my-chat-send-status');
         const retry = documentRef.getElementById('my-chat-conversation-retry');
         let detail = null;
+        let voiceStatus = null;
         let pendingIdempotencyKey = null;
         let pendingContent = '';
+        const callState = {
+            active: false,
+            muted: false,
+            userEnded: false,
+            reconnectAttempted: false,
+            ws: null,
+            audioContext: null,
+            micStream: null,
+            workletNode: null,
+            micSource: null,
+            tracker: null,
+            playbackSources: [],
+            nextPlayTime: 0
+        };
 
         listPage.classList.add('hidden');
         conversation.classList.remove('hidden');
@@ -682,6 +742,7 @@
                 openBook.classList.add('hidden');
             }
             download.disabled = !Array.isArray(detail.messages) || detail.messages.length === 0;
+            callButton?.classList.toggle('hidden', !canStartVoiceCall(detail, voiceStatus, context.window));
             if (session?.resume?.available === true) {
                 unavailable.classList.add('hidden');
                 form.classList.remove('hidden');
@@ -693,6 +754,21 @@
             }
             loading.classList.add('hidden');
             error.classList.add('hidden');
+        }
+
+        async function loadVoiceStatus() {
+            try {
+                const response = await fetchRef('/api/characters/status', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                voiceStatus = response.ok ? await readJson(response) : null;
+            } catch (_error) {
+                voiceStatus = null;
+            }
+            if (detail) {
+                callButton?.classList.toggle('hidden', !canStartVoiceCall(detail, voiceStatus, context.window));
+            }
         }
 
         async function loadConversation() {
@@ -761,8 +837,382 @@
             }
         }
 
+        function setCallStatus(message) {
+            if (callStatus) callStatus.textContent = message;
+        }
+
+        function setCallError(message) {
+            if (!callError) return;
+            callError.textContent = message;
+            callError.classList.remove('hidden');
+        }
+
+        function clearCallError() {
+            if (!callError) return;
+            callError.textContent = '';
+            callError.classList.add('hidden');
+        }
+
+        function renderCallCaptions() {
+            if (!callCaptions || !callState.tracker) return;
+            callCaptions.replaceChildren();
+            const appendCaption = (role, content, partial) => {
+                const caption = createElement(
+                    documentRef,
+                    'div',
+                    `my-chat-call-caption ${role}${partial ? ' partial' : ''}`,
+                    content
+                );
+                callCaptions.appendChild(caption);
+            };
+            callState.tracker.getFinalized().slice(-6)
+                .forEach(turn => appendCaption(turn.role, turn.content, false));
+            const userPartial = callState.tracker.getUserPartial();
+            const assistantPartial = callState.tracker.getAssistantPartial();
+            if (userPartial) appendCaption('user', userPartial, true);
+            if (assistantPartial) appendCaption('character', assistantPartial, true);
+            callCaptions.scrollTop = callCaptions.scrollHeight;
+        }
+
+        function persistCallTurns(turns) {
+            if (!Array.isArray(turns) || turns.length === 0 || !detail) return;
+            for (const turn of turns) {
+                detail.messages.push({
+                    role: turn.role === 'user' ? 'USER' : 'CHARACTER',
+                    content: turn.content,
+                    createdAt: new Date(turn.timestamp).toISOString()
+                });
+            }
+            renderConversationMessages(
+                documentRef,
+                messagesElement,
+                detail.messages,
+                detail.session?.character?.name || 'Character'
+            );
+        }
+
+        function flushPlayback() {
+            for (const source of callState.playbackSources) {
+                try { source.stop(); } catch (_error) { /* already stopped */ }
+            }
+            callState.playbackSources = [];
+            callState.nextPlayTime = 0;
+        }
+
+        function teardownCallAudio() {
+            flushPlayback();
+            if (callState.workletNode) {
+                try { callState.workletNode.disconnect(); } catch (_error) { /* no-op */ }
+                callState.workletNode.port.onmessage = null;
+                callState.workletNode = null;
+            }
+            if (callState.micSource) {
+                try { callState.micSource.disconnect(); } catch (_error) { /* no-op */ }
+                callState.micSource = null;
+            }
+            if (callState.micStream) {
+                callState.micStream.getTracks().forEach(track => track.stop());
+                callState.micStream = null;
+            }
+            if (callState.audioContext) {
+                callState.audioContext.close().catch(() => {});
+                callState.audioContext = null;
+            }
+        }
+
+        function finishCall(reason) {
+            callState.active = false;
+            callState.userEnded = true;
+            if (callState.ws) {
+                try { callState.ws.close(); } catch (_error) { /* no-op */ }
+                callState.ws = null;
+            }
+            teardownCallAudio();
+            if (callState.tracker) {
+                persistCallTurns(callState.tracker.flush());
+                callState.tracker = null;
+            }
+            callPortrait?.classList.remove('speaking');
+            callModal?.classList.add('hidden');
+            setCallStatus('');
+            clearCallError();
+            if (reason && callLaunchStatus) callLaunchStatus.textContent = reason;
+            callButton?.focus();
+        }
+
+        function failCall(message) {
+            callState.active = false;
+            callState.userEnded = true;
+            if (callState.ws) {
+                try { callState.ws.close(); } catch (_error) { /* no-op */ }
+                callState.ws = null;
+            }
+            teardownCallAudio();
+            if (callState.tracker) {
+                persistCallTurns(callState.tracker.flush());
+                callState.tracker = null;
+            }
+            callPortrait?.classList.remove('speaking');
+            setCallStatus('');
+            setCallError(message);
+        }
+
+        function schedulePlayback(samples) {
+            const audioContext = callState.audioContext;
+            if (!audioContext || samples.length === 0) return;
+            const buffer = audioContext.createBuffer(1, samples.length, CALL_SAMPLE_RATE);
+            buffer.copyToChannel(samples, 0);
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            const startAt = Math.max(audioContext.currentTime, callState.nextPlayTime);
+            source.start(startAt);
+            callState.nextPlayTime = startAt + buffer.duration;
+            callState.playbackSources.push(source);
+            source.onended = () => {
+                const index = callState.playbackSources.indexOf(source);
+                if (index >= 0) callState.playbackSources.splice(index, 1);
+            };
+        }
+
+        async function startMicCapture() {
+            const audioContext = callState.audioContext;
+            if (!audioContext || !callState.micStream || callState.workletNode) return;
+            await audioContext.audioWorklet.addModule('/js/pcm-capture-worklet.js');
+            if (!callState.active) return;
+            const source = audioContext.createMediaStreamSource(callState.micStream);
+            const worklet = new context.window.AudioWorkletNode(audioContext, 'pcm-capture');
+            worklet.port.onmessage = event => {
+                if (callState.muted || callState.ws?.readyState !== context.window.WebSocket.OPEN) return;
+                let samples = event.data;
+                if (audioContext.sampleRate !== CALL_SAMPLE_RATE) {
+                    samples = globalThis.VoiceCallUtils.resampleLinear(
+                        samples,
+                        audioContext.sampleRate,
+                        CALL_SAMPLE_RATE
+                    );
+                }
+                callState.ws.send(JSON.stringify({
+                    type: 'input_audio_buffer.append',
+                    audio: globalThis.VoiceCallUtils.floatTo16BitPcmBase64(samples)
+                }));
+            };
+            source.connect(worklet);
+            callState.micSource = source;
+            callState.workletNode = worklet;
+        }
+
+        function handleCallEvent(event) {
+            switch (event.type) {
+                case 'session.created':
+                    break;
+                case 'session.updated':
+                    startMicCapture().catch(error => {
+                        console.error('Mic capture failed:', error);
+                        failCall('Could not start the microphone.');
+                    });
+                    setCallStatus('Listening…');
+                    break;
+                case 'response.output_audio.delta':
+                case 'response.audio.delta':
+                    if (typeof event.delta === 'string' && event.delta) {
+                        schedulePlayback(globalThis.VoiceCallUtils.base64PcmToFloat32(event.delta));
+                        setCallStatus('Speaking…');
+                        callPortrait?.classList.add('speaking');
+                    }
+                    break;
+                case 'input_audio_buffer.speech_started':
+                    flushPlayback();
+                    callPortrait?.classList.remove('speaking');
+                    setCallStatus('Listening…');
+                    persistCallTurns(callState.tracker.consume(event));
+                    renderCallCaptions();
+                    break;
+                case 'response.done':
+                    callPortrait?.classList.remove('speaking');
+                    setCallStatus('Listening…');
+                    persistCallTurns(callState.tracker.consume(event));
+                    renderCallCaptions();
+                    break;
+                case 'error':
+                    console.error('Voice call event error:', event);
+                    break;
+                default:
+                    persistCallTurns(callState.tracker.consume(event));
+                    renderCallCaptions();
+            }
+        }
+
+        async function connectCall() {
+            let data;
+            const session = detail?.session;
+            try {
+                const response = await fetchRef(
+                    `/api/characters/${encodeURIComponent(session.character.id)}/call-session`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({
+                            conversationHistory: toVoiceCallHistory(detail.messages).slice(-10),
+                            readerChapterIndex: session.context?.chapterIndex || 0,
+                            readerParagraphIndex: session.context?.paragraphIndex || 0
+                        })
+                    }
+                );
+                const payload = await readJson(response);
+                if (!response.ok) {
+                    const message = response.status === 503
+                        ? 'Voice calls are unavailable right now.'
+                        : (payload?.error || "Voice calls aren't available.");
+                    failCall(message);
+                    return;
+                }
+                data = payload;
+            } catch (error) {
+                console.error('Voice call session request failed:', error);
+                failCall('Could not reach the server to start the call.');
+                return;
+            }
+
+            if (!callState.active || callState.userEnded) return;
+            let socket;
+            try {
+                socket = new context.window.WebSocket(
+                    data.websocketUrl,
+                    ['xai-client-secret.' + data.token]
+                );
+            } catch (error) {
+                console.error('Voice call WebSocket open failed:', error);
+                failCall('Could not connect to the voice service.');
+                return;
+            }
+            callState.ws = socket;
+            socket.onopen = () => {
+                const config = data.sessionConfig || {};
+                const vad = config.turnDetection || {};
+                socket.send(JSON.stringify({
+                    type: 'session.update',
+                    session: {
+                        instructions: config.instructions,
+                        voice: config.voice,
+                        turn_detection: {
+                            type: vad.type || 'server_vad',
+                            threshold: vad.threshold,
+                            silence_duration_ms: vad.silenceDurationMs,
+                            idle_timeout_ms: vad.idleTimeoutMs
+                        },
+                        audio: {
+                            input: {
+                                format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE },
+                                transcription: { model: 'grok-transcribe' }
+                            },
+                            output: {
+                                format: { type: 'audio/pcm', rate: CALL_SAMPLE_RATE }
+                            }
+                        }
+                    }
+                }));
+            };
+            socket.onmessage = messageEvent => {
+                try {
+                    handleCallEvent(JSON.parse(messageEvent.data));
+                } catch (_error) {
+                    // Ignore malformed provider events.
+                }
+            };
+            socket.onclose = () => {
+                if (callState.ws !== socket) return;
+                callState.ws = null;
+                if (!callState.active || callState.userEnded) return;
+                if (!callState.reconnectAttempted) {
+                    callState.reconnectAttempted = true;
+                    setCallStatus('Reconnecting…');
+                    flushPlayback();
+                    void connectCall();
+                    return;
+                }
+                finishCall('Connection lost');
+            };
+            socket.onerror = () => { /* onclose handles the failure */ };
+        }
+
+        async function startCall() {
+            if (callState.active || !canStartVoiceCall(detail, voiceStatus, context.window)) return;
+            if (!globalThis.VoiceCallUtils) {
+                if (callLaunchStatus) callLaunchStatus.textContent = 'Voice calls are unavailable right now.';
+                return;
+            }
+            callState.active = true;
+            callState.muted = false;
+            callState.userEnded = false;
+            callState.reconnectAttempted = false;
+            callState.tracker = globalThis.VoiceCallUtils.createTranscriptTracker();
+            callState.nextPlayTime = 0;
+            clearCallError();
+            if (callLaunchStatus) callLaunchStatus.textContent = '';
+            setCallStatus('Connecting…');
+            if (callCharacterName) callCharacterName.textContent = detail.session.character.name || '';
+            if (callPortrait) {
+                callPortrait.src = detail.session.character.portraitUrl || '';
+                callPortrait.alt = detail.session.character.name || '';
+            }
+            callCaptions?.replaceChildren();
+            callMute?.classList.remove('muted');
+            if (callMute) {
+                callMute.title = 'Mute';
+                callMute.setAttribute('aria-label', 'Mute');
+            }
+            callModal?.classList.remove('hidden');
+
+            try {
+                const AudioContextClass = context.window.AudioContext || context.window.webkitAudioContext;
+                callState.audioContext = new AudioContextClass({ sampleRate: CALL_SAMPLE_RATE });
+                await callState.audioContext.resume();
+                callState.micStream = await context.window.navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        channelCount: 1
+                    }
+                });
+            } catch (error) {
+                console.error('Voice call audio setup failed:', error);
+                teardownCallAudio();
+                callState.active = false;
+                setCallStatus('');
+                setCallError(error?.name === 'NotAllowedError'
+                    ? 'Microphone access is needed for voice calls.'
+                    : 'Could not start audio for the call.');
+                return;
+            }
+            await connectCall();
+        }
+
+        function toggleCallMute() {
+            callState.muted = !callState.muted;
+            callMute?.classList.toggle('muted', callState.muted);
+            if (callMute) {
+                const label = callState.muted ? 'Unmute' : 'Mute';
+                callMute.title = label;
+                callMute.setAttribute('aria-label', label);
+            }
+        }
+
         retry.addEventListener('click', () => void loadConversation());
         form.addEventListener('submit', sendMessage);
+        callButton?.addEventListener('click', () => void startCall());
+        callMute?.addEventListener('click', toggleCallMute);
+        callEnd?.addEventListener('click', () => finishCall());
+        callBackdrop?.addEventListener('click', () => finishCall());
+        context.window.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && callModal && !callModal.classList.contains('hidden')) {
+                event.preventDefault();
+                finishCall();
+            }
+        });
+        context.window.addEventListener('beforeunload', teardownCallAudio);
         download.addEventListener('click', () => {
             if (!detail || !globalThis.CharacterChatExport) return;
             const options = {
@@ -777,6 +1227,7 @@
             const filename = globalThis.CharacterChatExport.buildCharacterChatFilename(options);
             globalThis.CharacterChatExport.downloadTextFile(filename, markdown);
         });
+        void loadVoiceStatus();
         void loadConversation();
     }
 
@@ -883,6 +1334,7 @@
         buildFilterOptions,
         buildListRequestUrl,
         buildOpenBookUrl,
+        canStartVoiceCall,
         canContinueChat,
         catalogFromSessionItems,
         createInitialListState,
@@ -896,6 +1348,7 @@
         renderConversationPortrait,
         safeResumeUrl,
         safeSessionUrl,
+        toVoiceCallHistory,
         toReaderParagraphParam,
         unavailableReason
     };
