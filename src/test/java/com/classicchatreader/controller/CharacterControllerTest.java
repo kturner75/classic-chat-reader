@@ -23,6 +23,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
@@ -225,7 +226,11 @@ class CharacterControllerTest {
                         .contentType("application/json")
                         .content("""
                                 {
-                                  "conversationHistory": [],
+                                  "conversationHistory": [{
+                                    "role": "user",
+                                    "content": "Call me Ishmael.",
+                                    "timestamp": "2026-07-23T16:07:54.805411Z"
+                                  }],
                                   "readerChapterIndex": 2,
                                   "readerParagraphIndex": 5
                                 }
@@ -236,6 +241,14 @@ class CharacterControllerTest {
                 .andExpect(jsonPath("$.websocketUrl", is("wss://api.x.ai/v1/realtime?model=grok-voice-latest")))
                 .andExpect(jsonPath("$.sessionConfig.voice", is("leo")))
                 .andExpect(jsonPath("$.sessionConfig.turnDetection.type", is("server_vad")));
+
+        verify(voiceCallService).createSession(
+                org.mockito.ArgumentMatchers.eq("character-1"),
+                org.mockito.ArgumentMatchers.argThat(history -> history.size() == 1
+                        && history.getFirst().timestamp()
+                        == Instant.parse("2026-07-23T16:07:54.805411Z").toEpochMilli()),
+                org.mockito.ArgumentMatchers.eq(2),
+                org.mockito.ArgumentMatchers.eq(5));
     }
 
     @Test

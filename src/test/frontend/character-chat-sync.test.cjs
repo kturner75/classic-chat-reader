@@ -41,6 +41,10 @@ test('load requests the authenticated character transcript and preserves server 
         ['m-1', 'user'],
         ['m-2', 'character']
     ]);
+    assert.deepEqual(loaded.messages.map(message => message.timestamp), [
+        Date.parse('2026-07-22T12:00:00Z'),
+        Date.parse('2026-07-22T12:00:01Z')
+    ]);
 });
 
 test('send uses a stable idempotency key and server-owned reader context', async () => {

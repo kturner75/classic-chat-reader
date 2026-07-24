@@ -11,6 +11,13 @@
 
     const LEGACY_STORAGE_PREFIX = 'reader_characterChat_';
 
+    function normalizeTimestamp(value) {
+        if (Number.isFinite(value)) return value;
+        if (typeof value !== 'string' || !value.trim()) return null;
+        const parsed = Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
     function normalizeMessage(message) {
         if (!message || typeof message !== 'object') return null;
         const content = typeof message.content === 'string' ? message.content : '';
@@ -22,7 +29,7 @@
             messageId: typeof message.messageId === 'string' && message.messageId ? message.messageId : null,
             role,
             content,
-            timestamp: message.createdAt || message.timestamp || null
+            timestamp: normalizeTimestamp(message.createdAt ?? message.timestamp)
         };
     }
 
