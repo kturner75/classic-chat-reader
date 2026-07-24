@@ -392,6 +392,97 @@ class AccountChatHistoryServiceTest {
                 org.mockito.ArgumentMatchers.eq(3));
     }
 
+    @Test
+    void voiceCallTurnsAreOwnerScopedDurableIdempotentAndIncludedInTextContext() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        addMessage(fixture.session(), "USER", "Earlier question", BASE.minusMinutes(1));
+        addMessage(fixture.session(), "CHARACTER", "Earlier answer", BASE);
+        flushAndClear();
+        var request = new com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest(List.of(
+                new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                        "voice-turn-1", "USER", "Spoken question"),
+                new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                        "voice-turn-2", "CHARACTER", "Spoken answer")
+        ));
+
+        var appended = service.appendVoiceCallTurns("owner", fixture.session().getId(), request);
+        var replayed = service.appendVoiceCallTurns("owner", fixture.session().getId(), request);
+        var denied = service.appendVoiceCallTurns("other-owner", fixture.session().getId(), request);
+        flushAndClear();
+
+        assertThat(appended.messages()).extracting(message -> message.content())
+                .containsExactly("Spoken question", "Spoken answer");
+        assertThat(replayed.messages()).extracting(message -> message.messageId())
+                .containsExactlyElementsOf(appended.messages().stream().map(message -> message.messageId()).toList());
+        assertThat(denied).isNull();
+        assertThat(service.get("owner", fixture.session().getId()).messages())
+                .extracting(message -> message.content())
+                .containsExactly("Earlier question", "Earlier answer", "Spoken question", "Spoken answer");
+
+        when(characterChatService.chat(
+                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
+                org.mockito.ArgumentMatchers.eq("Text follow-up"),
+                org.mockito.ArgumentMatchers.argThat(history -> history.size() == 4
+                        && history.get(2).content().equals("Spoken question")
+                        && history.get(3).content().equals("Spoken answer")),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(3)))
+                .thenReturn("Follow-up answer");
+
+        service.continueConversation(
+                "owner",
+                fixture.session().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Text follow-up", null),
+                "text-follow-up-1");
+
+        org.mockito.Mockito.verify(characterChatService).chat(
+                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
+                org.mockito.ArgumentMatchers.eq("Text follow-up"),
+                org.mockito.ArgumentMatchers.argThat(history -> history.size() == 4
+                        && history.get(2).content().equals("Spoken question")
+                        && history.get(3).content().equals("Spoken answer")),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(3));
+    }
+
+    @Test
+    void voiceCallTurnsRejectInvalidPayloadsAndUnavailableChats() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        addMessage(fixture.session(), "USER", "Earlier", BASE);
+        flushAndClear();
+
+        assertThatThrownBy(() -> service.appendVoiceCallTurns(
+                "owner",
+                fixture.session().getId(),
+                new com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest(List.of())
+        )).isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("INVALID_VOICE_TURNS");
+
+        var invalidRole = new com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest(List.of(
+                new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                        "voice-turn-1", "SYSTEM", "Not allowed")
+        ));
+        assertThatThrownBy(() -> service.appendVoiceCallTurns(
+                "owner", fixture.session().getId(), invalidRole
+        )).isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("INVALID_VOICE_TURN");
+
+        CharacterEntity character = entityManager.find(CharacterEntity.class, fixture.character().getId());
+        character.setCharacterType(CharacterType.SECONDARY);
+        entityManager.flush();
+        var valid = new com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest(List.of(
+                new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                        "voice-turn-2", "USER", "Still not allowed")
+        ));
+        assertThatThrownBy(() -> service.appendVoiceCallTurns(
+                "owner", fixture.session().getId(), valid
+        )).isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
+    }
+
     private void assertInvalid(AccountChatHistoryService.ListRequest request) {
         assertThatThrownBy(() -> service.list("owner", request))
                 .isInstanceOf(ChatHistoryValidationException.class);

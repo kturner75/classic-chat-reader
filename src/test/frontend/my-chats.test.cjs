@@ -14,6 +14,7 @@ const {
     safeResumeUrl,
     safeSessionUrl,
     toVoiceCallHistory,
+    toVoiceCallPersistenceTurns,
     toReaderParagraphParam
 } = require('../../main/resources/static/js/my-chats.js');
 
@@ -257,5 +258,17 @@ test('voice call history normalizes account messages to the shared call payload'
             content: 'Good day.',
             timestamp: Date.parse('2026-07-23T16:08:00Z')
         }
+    ]);
+});
+
+test('finalized voice call turns receive stable persistence payload fields', () => {
+    const ids = ['turn-1', 'turn-2'];
+    assert.deepEqual(toVoiceCallPersistenceTurns([
+        { role: 'user', content: ' Hello aloud ' },
+        { role: 'character', content: 'Good day.' },
+        { role: 'system', content: 'ignored' }
+    ], () => ids.shift()), [
+        { turnId: 'turn-1', role: 'USER', content: 'Hello aloud' },
+        { turnId: 'turn-2', role: 'CHARACTER', content: 'Good day.' }
     ]);
 });

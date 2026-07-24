@@ -71,6 +71,21 @@
         });
     }
 
+    function toVoiceCallPersistenceTurns(turns, createId) {
+        if (!Array.isArray(turns)) return [];
+        const idFactory = typeof createId === 'function'
+            ? createId
+            : () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        return turns.flatMap(turn => {
+            const role = turn?.role === 'user' ? 'USER'
+                : turn?.role === 'character' ? 'CHARACTER'
+                    : '';
+            const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+            if (!role || !content) return [];
+            return [{ turnId: idFactory(), role, content }];
+        });
+    }
+
     function localDateStartIso(value, addDays) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) {
             return '';
@@ -685,6 +700,10 @@
         const callCaptions = documentRef.getElementById('my-chat-call-captions');
         const callMute = documentRef.getElementById('my-chat-call-mute');
         const callEnd = documentRef.getElementById('my-chat-call-end');
+        const callBackgroundRegions = [
+            documentRef.querySelector('.my-chats-site-header'),
+            documentRef.querySelector('.my-chats-main')
+        ].filter(Boolean);
         const form = documentRef.getElementById('my-chat-send-form');
         const composer = documentRef.getElementById('my-chat-composer');
         const send = documentRef.getElementById('my-chat-send');
@@ -705,6 +724,7 @@
             workletNode: null,
             micSource: null,
             tracker: null,
+            persistence: Promise.resolve(true),
             playbackSources: [],
             nextPlayTime: 0
         };
@@ -853,6 +873,18 @@
             callError.classList.add('hidden');
         }
 
+        function setCallDialogOpen(open) {
+            callBackgroundRegions.forEach(region => {
+                region.inert = open;
+            });
+            callModal?.classList.toggle('hidden', !open);
+            if (open) {
+                callEnd?.focus();
+            } else {
+                callButton?.focus();
+            }
+        }
+
         function renderCallCaptions() {
             if (!callCaptions || !callState.tracker) return;
             callCaptions.replaceChildren();
@@ -875,20 +907,57 @@
         }
 
         function persistCallTurns(turns) {
-            if (!Array.isArray(turns) || turns.length === 0 || !detail) return;
-            for (const turn of turns) {
-                detail.messages.push({
-                    role: turn.role === 'user' ? 'USER' : 'CHARACTER',
-                    content: turn.content,
-                    createdAt: new Date(turn.timestamp).toISOString()
-                });
-            }
-            renderConversationMessages(
-                documentRef,
-                messagesElement,
-                detail.messages,
-                detail.session?.character?.name || 'Character'
-            );
+            const createId = () => globalThis.crypto?.randomUUID?.()
+                || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const requestTurns = toVoiceCallPersistenceTurns(turns, createId);
+            if (requestTurns.length === 0 || !detail) return callState.persistence;
+
+            callState.persistence = callState.persistence.then(async previousPersisted => {
+                if (previousPersisted === false) return false;
+                const response = await fetchRef(
+                    `/api/account/chats/${encodeURIComponent(sessionId)}/voice-turns`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ turns: requestTurns })
+                    }
+                );
+                const payload = await readJson(response);
+                if (!response.ok) {
+                    throw new Error(readErrorMessage(
+                        payload,
+                        'The voice call transcript could not be saved.'
+                    ));
+                }
+                if (Array.isArray(payload?.messages)) {
+                    detail.messages.push(...payload.messages);
+                }
+                if (payload?.lastMessageAt) detail.session.lastMessageAt = payload.lastMessageAt;
+                renderConversationMessages(
+                    documentRef,
+                    messagesElement,
+                    detail.messages,
+                    detail.session?.character?.name || 'Character'
+                );
+                return true;
+            }).catch(requestError => {
+                console.error('Voice call transcript persistence failed:', requestError);
+                callState.active = false;
+                callState.userEnded = true;
+                callState.tracker = null;
+                if (callState.ws) {
+                    try { callState.ws.close(); } catch (_error) { /* no-op */ }
+                    callState.ws = null;
+                }
+                teardownCallAudio();
+                setCallStatus('');
+                const message = requestError.message || 'The voice call transcript could not be saved.';
+                setCallError(message);
+                if (callLaunchStatus) callLaunchStatus.textContent = message;
+                return false;
+            });
+            return callState.persistence;
         }
 
         function flushPlayback() {
@@ -920,7 +989,7 @@
             }
         }
 
-        function finishCall(reason) {
+        async function finishCall(reason) {
             callState.active = false;
             callState.userEnded = true;
             if (callState.ws) {
@@ -928,19 +997,24 @@
                 callState.ws = null;
             }
             teardownCallAudio();
+            let persistence = callState.persistence;
             if (callState.tracker) {
-                persistCallTurns(callState.tracker.flush());
+                persistence = persistCallTurns(callState.tracker.flush());
                 callState.tracker = null;
             }
+            const persisted = await persistence;
             callPortrait?.classList.remove('speaking');
-            callModal?.classList.add('hidden');
+            setCallDialogOpen(false);
             setCallStatus('');
             clearCallError();
-            if (reason && callLaunchStatus) callLaunchStatus.textContent = reason;
-            callButton?.focus();
+            if (callLaunchStatus) {
+                callLaunchStatus.textContent = persisted === false
+                    ? 'The voice call transcript could not be saved.'
+                    : (reason || '');
+            }
         }
 
-        function failCall(message) {
+        async function failCall(message) {
             callState.active = false;
             callState.userEnded = true;
             if (callState.ws) {
@@ -948,13 +1022,15 @@
                 callState.ws = null;
             }
             teardownCallAudio();
+            let persistence = callState.persistence;
             if (callState.tracker) {
-                persistCallTurns(callState.tracker.flush());
+                persistence = persistCallTurns(callState.tracker.flush());
                 callState.tracker = null;
             }
+            const persisted = await persistence;
             callPortrait?.classList.remove('speaking');
             setCallStatus('');
-            setCallError(message);
+            if (persisted !== false) setCallError(message);
         }
 
         function schedulePlayback(samples) {
@@ -1009,7 +1085,7 @@
                 case 'session.updated':
                     startMicCapture().catch(error => {
                         console.error('Mic capture failed:', error);
-                        failCall('Could not start the microphone.');
+                        void failCall('Could not start the microphone.');
                     });
                     setCallStatus('Listening…');
                     break;
@@ -1025,25 +1101,26 @@
                     flushPlayback();
                     callPortrait?.classList.remove('speaking');
                     setCallStatus('Listening…');
-                    persistCallTurns(callState.tracker.consume(event));
+                    void persistCallTurns(callState.tracker.consume(event));
                     renderCallCaptions();
                     break;
                 case 'response.done':
                     callPortrait?.classList.remove('speaking');
                     setCallStatus('Listening…');
-                    persistCallTurns(callState.tracker.consume(event));
+                    void persistCallTurns(callState.tracker.consume(event));
                     renderCallCaptions();
                     break;
                 case 'error':
                     console.error('Voice call event error:', event);
                     break;
                 default:
-                    persistCallTurns(callState.tracker.consume(event));
+                    void persistCallTurns(callState.tracker.consume(event));
                     renderCallCaptions();
             }
         }
 
         async function connectCall() {
+            if (await callState.persistence === false || !callState.active) return;
             let data;
             const session = detail?.session;
             try {
@@ -1065,13 +1142,13 @@
                     const message = response.status === 503
                         ? 'Voice calls are unavailable right now.'
                         : (payload?.error || "Voice calls aren't available.");
-                    failCall(message);
+                    void failCall(message);
                     return;
                 }
                 data = payload;
             } catch (error) {
                 console.error('Voice call session request failed:', error);
-                failCall('Could not reach the server to start the call.');
+                void failCall('Could not reach the server to start the call.');
                 return;
             }
 
@@ -1084,7 +1161,7 @@
                 );
             } catch (error) {
                 console.error('Voice call WebSocket open failed:', error);
-                failCall('Could not connect to the voice service.');
+                void failCall('Could not connect to the voice service.');
                 return;
             }
             callState.ws = socket;
@@ -1132,7 +1209,7 @@
                     void connectCall();
                     return;
                 }
-                finishCall('Connection lost');
+                void finishCall('Connection lost');
             };
             socket.onerror = () => { /* onclose handles the failure */ };
         }
@@ -1148,6 +1225,7 @@
             callState.userEnded = false;
             callState.reconnectAttempted = false;
             callState.tracker = globalThis.VoiceCallUtils.createTranscriptTracker();
+            callState.persistence = Promise.resolve(true);
             callState.nextPlayTime = 0;
             clearCallError();
             if (callLaunchStatus) callLaunchStatus.textContent = '';
@@ -1163,7 +1241,7 @@
                 callMute.title = 'Mute';
                 callMute.setAttribute('aria-label', 'Mute');
             }
-            callModal?.classList.remove('hidden');
+            setCallDialogOpen(true);
 
             try {
                 const AudioContextClass = context.window.AudioContext || context.window.webkitAudioContext;
@@ -1204,12 +1282,12 @@
         form.addEventListener('submit', sendMessage);
         callButton?.addEventListener('click', () => void startCall());
         callMute?.addEventListener('click', toggleCallMute);
-        callEnd?.addEventListener('click', () => finishCall());
-        callBackdrop?.addEventListener('click', () => finishCall());
+        callEnd?.addEventListener('click', () => void finishCall());
+        callBackdrop?.addEventListener('click', () => void finishCall());
         context.window.addEventListener('keydown', event => {
             if (event.key === 'Escape' && callModal && !callModal.classList.contains('hidden')) {
                 event.preventDefault();
-                finishCall();
+                void finishCall();
             }
         });
         context.window.addEventListener('beforeunload', teardownCallAudio);
@@ -1349,6 +1427,7 @@
         safeResumeUrl,
         safeSessionUrl,
         toVoiceCallHistory,
+        toVoiceCallPersistenceTurns,
         toReaderParagraphParam,
         unavailableReason
     };

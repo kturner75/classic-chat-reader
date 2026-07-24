@@ -23,6 +23,9 @@ import com.classicchatreader.model.AccountChatModels.SessionDetail;
 import com.classicchatreader.model.AccountChatModels.SessionDetailResponse;
 import com.classicchatreader.model.AccountChatModels.SessionListResponse;
 import com.classicchatreader.model.AccountChatModels.SessionSummary;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptResponse;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTurn;
 import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.model.ChatMessage;
 import com.classicchatreader.repository.CharacterChatConversationRepository;
@@ -64,6 +67,7 @@ public class AccountChatHistoryService {
     private static final int MAX_LIMIT = 50;
     private static final int MAX_QUERY_LENGTH = 100;
     private static final int MAX_PREVIEW_CODE_POINTS = 160;
+    private static final int MAX_VOICE_CALL_TURNS = 20;
     private static final byte CURSOR_VERSION = 1;
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
@@ -361,6 +365,70 @@ public class AccountChatHistoryService {
         );
     }
 
+    @Transactional
+    public VoiceCallTranscriptResponse appendVoiceCallTurns(
+            String ownerUserId,
+            String sessionId,
+            VoiceCallTranscriptRequest request) {
+        Objects.requireNonNull(ownerUserId, "ownerUserId");
+        List<ValidatedVoiceCallTurn> turns = validateVoiceCallTurns(request);
+        CharacterChatConversationEntity session = conversationRepository
+                .findByIdAndUserIdForUpdate(sessionId, ownerUserId)
+                .orElse(null);
+        if (session == null) return null;
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId()).orElse(null);
+        if (character == null) return null;
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
+            throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
+        }
+
+        List<CharacterChatMessageEntity> transcript = messageRepository
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(sessionId, ownerUserId);
+        Map<String, CharacterChatMessageEntity> byClientMessageId = new HashMap<>();
+        for (CharacterChatMessageEntity message : transcript) {
+            if (message.getClientMessageId() != null) {
+                byClientMessageId.put(message.getClientMessageId(), message);
+            }
+        }
+
+        long nextSequence = transcript.isEmpty() ? 0 : transcript.getLast().getSequenceNumber() + 1;
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        List<CharacterChatMessageEntity> persisted = new ArrayList<>();
+        List<CharacterChatMessageEntity> created = new ArrayList<>();
+        for (ValidatedVoiceCallTurn turn : turns) {
+            CharacterChatMessageEntity existing = byClientMessageId.get(turn.clientMessageId());
+            if (existing != null) {
+                if (existing.getRole() != turn.role() || !existing.getContent().equals(turn.content())) {
+                    throw new ChatHistoryValidationException(
+                            "IDEMPOTENCY_CONFLICT", "A voice call turn ID was reused with different content.");
+                }
+                persisted.add(existing);
+                continue;
+            }
+            CharacterChatMessageEntity message = messageEntity(
+                    session,
+                    nextSequence++,
+                    turn.role(),
+                    turn.content(),
+                    turn.clientMessageId(),
+                    now.plusNanos(created.size())
+            );
+            created.add(message);
+            persisted.add(message);
+            byClientMessageId.put(turn.clientMessageId(), message);
+        }
+        if (!created.isEmpty()) {
+            messageRepository.saveAll(created);
+            CharacterChatMessageEntity newest = created.getLast();
+            session.setUpdatedAt(newest.getCreatedAt());
+            conversationRepository.save(session);
+        }
+        return new VoiceCallTranscriptResponse(
+                persisted.stream().map(this::toMessage).toList(),
+                toInstant(session.getUpdatedAt())
+        );
+    }
+
     private void updateContext(CharacterChatConversationEntity session, com.classicchatreader.entity.ChapterEntity chapter,
                                int paragraphIndex) {
         session.setContextChapterId(chapter.getId());
@@ -471,6 +539,46 @@ public class AccountChatHistoryService {
                     "INVALID_MESSAGE", "Message content must be at most 4000 characters.");
         }
         return content;
+    }
+
+    private List<ValidatedVoiceCallTurn> validateVoiceCallTurns(VoiceCallTranscriptRequest request) {
+        List<VoiceCallTurn> supplied = request == null ? null : request.turns();
+        if (supplied == null || supplied.isEmpty()) {
+            throw new ChatHistoryValidationException(
+                    "INVALID_VOICE_TURNS", "At least one voice call turn is required.");
+        }
+        if (supplied.size() > MAX_VOICE_CALL_TURNS) {
+            throw new ChatHistoryValidationException(
+                    "INVALID_VOICE_TURNS", "At most 20 voice call turns may be saved at once.");
+        }
+        List<ValidatedVoiceCallTurn> validated = new ArrayList<>();
+        Map<String, Boolean> seenTurnIds = new HashMap<>();
+        for (VoiceCallTurn turn : supplied) {
+            String turnId = turn == null ? null : blankToNull(turn.turnId());
+            if (turnId == null || turnId.length() > 249) {
+                throw new ChatHistoryValidationException(
+                        "INVALID_VOICE_TURN", "Each voice call turn requires a valid turnId.");
+            }
+            if (seenTurnIds.put(turnId, Boolean.TRUE) != null) {
+                throw new ChatHistoryValidationException(
+                        "INVALID_VOICE_TURN", "Voice call turn IDs must be unique within a request.");
+            }
+            String roleName = turn == null || turn.role() == null
+                    ? ""
+                    : turn.role().trim().toUpperCase(Locale.ROOT);
+            if (!"USER".equals(roleName) && !"CHARACTER".equals(roleName)) {
+                throw new ChatHistoryValidationException(
+                        "INVALID_VOICE_TURN", "Voice call turn role must be USER or CHARACTER.");
+            }
+            CharacterChatMessageRole role = CharacterChatMessageRole.valueOf(roleName);
+            String content = normalizeMessage(turn == null ? null : turn.content());
+            if (content == null || content.codePointCount(0, content.length()) > 4000) {
+                throw new ChatHistoryValidationException(
+                        "INVALID_VOICE_TURN", "Voice call turn content must be between 1 and 4000 characters.");
+            }
+            validated.add(new ValidatedVoiceCallTurn("voice:" + turnId, role, content));
+        }
+        return validated;
     }
 
     private String validateRequiredIdempotencyKey(String value) {
@@ -813,5 +921,11 @@ public class AccountChatHistoryService {
         private static MessageStats empty() {
             return new MessageStats(0, null);
         }
+    }
+
+    private record ValidatedVoiceCallTurn(
+            String clientMessageId,
+            CharacterChatMessageRole role,
+            String content) {
     }
 }
