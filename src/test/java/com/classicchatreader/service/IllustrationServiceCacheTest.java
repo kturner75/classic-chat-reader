@@ -35,6 +35,7 @@ class IllustrationServiceCacheTest {
     @Mock private IllustrationPromptService promptService;
     @Mock private IllustrationStyleAnalysisService styleAnalysisService;
     @Mock private ComfyUIService comfyUIService;
+    @Mock private CdnAssetService cdnAssetService;
 
     private IllustrationService service;
     private ChapterEntity chapter;
@@ -51,7 +52,8 @@ class IllustrationServiceCacheTest {
                 promptService,
                 styleAnalysisService,
                 comfyUIService,
-                new AssetKeyService()
+                new AssetKeyService(),
+                cdnAssetService
         );
         service.setSelf(service);
         ReflectionTestUtils.setField(service, "cacheOnly", true);
@@ -74,15 +76,63 @@ class IllustrationServiceCacheTest {
     }
 
     @Test
-    void requestCreatesCompletedRecordWhenOnlyCachedFileExists() throws Exception {
+    void onDemandRecoveryCreatesCompletedRecordWhenOnlyCachedFileExists() throws Exception {
         when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByIdWithBookForUpdate("chapter-1")).thenReturn(Optional.of(chapter));
         when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.empty());
         when(comfyUIService.hasImage(cacheKey)).thenReturn(true);
 
-        service.requestIllustration("chapter-1");
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
 
+        assertEquals(true, recovered);
         verify(illustrationRepository).save(any(IllustrationEntity.class));
         verify(comfyUIService, never()).submitWorkflow(any(), any(), any());
+    }
+
+    @Test
+    void onDemandRecoveryCreatesCompletedRecordWhenOnlyCdnAssetExists() throws Exception {
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByIdWithBookForUpdate("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.empty());
+        when(comfyUIService.hasImage(cacheKey)).thenReturn(false);
+        when(cdnAssetService.assetExists("illustrations", cacheKey)).thenReturn(true);
+
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
+
+        assertEquals(true, recovered);
+        verify(illustrationRepository).save(any(IllustrationEntity.class));
+        verify(comfyUIService, never()).submitWorkflow(any(), any(), any());
+    }
+
+    @Test
+    void onDemandRecoveryRepairsCompletedRecordWithStaleFilename() throws Exception {
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename("legacy/chapter-1.png");
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByIdWithBookForUpdate("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+        when(cdnAssetService.assetExists("illustrations", cacheKey)).thenReturn(true);
+
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
+
+        assertEquals(true, recovered);
+        assertEquals(cacheKey, illustration.getImageFilename());
+        verify(illustrationRepository).save(illustration);
+    }
+
+    @Test
+    void onDemandRecoveryAcceptsCompletedRecordWithStableFilenameWithoutCacheProbe() {
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename(cacheKey);
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
+
+        assertEquals(true, recovered);
+        verify(comfyUIService, never()).hasImage(any());
+        verify(chapterRepository, never()).findByIdWithBookForUpdate(any());
+        verify(illustrationRepository, never()).save(any());
     }
 
     @Test

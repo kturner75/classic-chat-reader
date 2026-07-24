@@ -46,6 +46,7 @@ public class IllustrationService {
     private final IllustrationStyleAnalysisService styleAnalysisService;
     private final ComfyUIService comfyUIService;
     private final AssetKeyService assetKeyService;
+    private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -83,7 +84,8 @@ public class IllustrationService {
             IllustrationPromptService promptService,
             IllustrationStyleAnalysisService styleAnalysisService,
             ComfyUIService comfyUIService,
-            AssetKeyService assetKeyService) {
+            AssetKeyService assetKeyService,
+            CdnAssetService cdnAssetService) {
         this.illustrationRepository = illustrationRepository;
         this.chapterRepository = chapterRepository;
         this.bookRepository = bookRepository;
@@ -92,6 +94,7 @@ public class IllustrationService {
         this.styleAnalysisService = styleAnalysisService;
         this.comfyUIService = comfyUIService;
         this.assetKeyService = assetKeyService;
+        this.cdnAssetService = cdnAssetService;
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -165,14 +168,7 @@ public class IllustrationService {
         }
 
         Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
-        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
-        if (comfyUIService.hasImage(cacheKey)) {
-            if (existing.isPresent()) {
-                restoreCachedIllustration(existing.get(), cacheKey);
-            } else {
-                IllustrationEntity illustration = new IllustrationEntity(chapter);
-                restoreCachedIllustration(illustration, cacheKey);
-            }
+        if (restoreCachedIllustrationIfPresent(chapter, existing)) {
             return;
         }
 
@@ -240,6 +236,69 @@ public class IllustrationService {
                 log.error("Failed to update status after queuing failure for chapter: {}", chapterId, updateEx);
             }
         }
+    }
+
+    /**
+     * Reconcile a chapter's database state from its stable cached asset key.
+     * This never queues generation, so status/read paths may safely use it in
+     * cache-only deployments and after database restores.
+     */
+    public boolean restoreCachedIllustrationIfPresent(String chapterId) {
+        ChapterEntity chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+        if (chapter == null) {
+            return false;
+        }
+
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
+        if (existing
+                .filter(i -> i.getStatus() == IllustrationStatus.COMPLETED)
+                .map(IllustrationEntity::getImageFilename)
+                .filter(cacheKey::equals)
+                .isPresent()) {
+            return true;
+        }
+        if (!isCachedAssetPresent(cacheKey)) {
+            return false;
+        }
+
+        // Enter through the proxy so the locking query is the first database read
+        // in a fresh transaction. This avoids stale snapshots under REPEATABLE READ.
+        return self.restoreCachedIllustrationRecord(chapterId, cacheKey);
+    }
+
+    @Transactional
+    public boolean restoreCachedIllustrationRecord(String chapterId, String cacheKey) {
+        ChapterEntity lockedChapter = chapterRepository.findByIdWithBookForUpdate(chapterId).orElse(null);
+        if (lockedChapter == null) {
+            return false;
+        }
+        restoreCachedIllustration(
+                illustrationRepository.findByChapterId(chapterId)
+                        .orElseGet(() -> new IllustrationEntity(lockedChapter)),
+                cacheKey
+        );
+        return true;
+    }
+
+    private boolean restoreCachedIllustrationIfPresent(
+            ChapterEntity chapter,
+            Optional<IllustrationEntity> existing) {
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        if (!comfyUIService.hasImage(cacheKey)) {
+            return false;
+        }
+        restoreCachedIllustration(
+                existing.orElseGet(() -> new IllustrationEntity(chapter)),
+                cacheKey
+        );
+        return true;
+    }
+
+    private boolean isCachedAssetPresent(String cacheKey) {
+        boolean cachedLocally = comfyUIService.hasImage(cacheKey);
+        return cachedLocally
+                || (cacheOnly && cdnAssetService.assetExists("illustrations", cacheKey));
     }
 
     /**
