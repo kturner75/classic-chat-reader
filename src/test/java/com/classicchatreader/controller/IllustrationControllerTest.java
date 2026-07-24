@@ -136,6 +136,30 @@ class IllustrationControllerTest {
     }
 
     @Test
+    void getChapterStatus_doesNotReportReadyWhenCompletedRowCannotUseStableAsset() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.getStatus("chapter-1")).thenReturn(IllustrationStatus.COMPLETED);
+        when(illustrationService.restoreCachedIllustrationIfPresent("chapter-1")).thenReturn(false);
+
+        ReflectionTestUtils.setField(controller, "cacheOnly", true);
+        try {
+            mockMvc.perform(get("/api/illustrations/chapter/chapter-1/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("NOT_REQUESTED")))
+                    .andExpect(jsonPath("$.ready", is(false)));
+        } finally {
+            ReflectionTestUtils.setField(controller, "cacheOnly", false);
+        }
+    }
+
+    @Test
     void regenerate_blankPrompt_returnsBadRequest() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setIllustrationEnabled(true);

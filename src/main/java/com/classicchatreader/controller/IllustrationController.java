@@ -177,10 +177,13 @@ public class IllustrationController {
             );
         }
         IllustrationStatus status = illustrationService.getStatus(chapterId);
-        if (cacheOnly
-                && status != IllustrationStatus.COMPLETED
-                && illustrationService.restoreCachedIllustrationIfPresent(chapterId)) {
-            status = IllustrationStatus.COMPLETED;
+        if (cacheOnly) {
+            boolean stableAssetReady = illustrationService.restoreCachedIllustrationIfPresent(chapterId);
+            if (stableAssetReady) {
+                status = IllustrationStatus.COMPLETED;
+            } else if (status == IllustrationStatus.COMPLETED) {
+                status = null;
+            }
         }
 
         Map<String, Object> response = new HashMap<>();

@@ -250,6 +250,14 @@ public class IllustrationService {
         }
 
         String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
+        if (existing
+                .filter(i -> i.getStatus() == IllustrationStatus.COMPLETED)
+                .map(IllustrationEntity::getImageFilename)
+                .filter(cacheKey::equals)
+                .isPresent()) {
+            return true;
+        }
         if (!isCachedAssetPresent(cacheKey)) {
             return false;
         }

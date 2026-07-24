@@ -105,6 +105,37 @@ class IllustrationServiceCacheTest {
     }
 
     @Test
+    void onDemandRecoveryRepairsCompletedRecordWithStaleFilename() throws Exception {
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename("legacy/chapter-1.png");
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByIdWithBookForUpdate("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+        when(cdnAssetService.assetExists("illustrations", cacheKey)).thenReturn(true);
+
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
+
+        assertEquals(true, recovered);
+        assertEquals(cacheKey, illustration.getImageFilename());
+        verify(illustrationRepository).save(illustration);
+    }
+
+    @Test
+    void onDemandRecoveryAcceptsCompletedRecordWithStableFilenameWithoutCacheProbe() {
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename(cacheKey);
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+
+        boolean recovered = service.restoreCachedIllustrationIfPresent("chapter-1");
+
+        assertEquals(true, recovered);
+        verify(comfyUIService, never()).hasImage(any());
+        verify(chapterRepository, never()).findByIdWithBookForUpdate(any());
+        verify(illustrationRepository, never()).save(any());
+    }
+
+    @Test
     void startupRecoveryRestoresFailedCachedIllustration() throws Exception {
         when(illustrationRepository.findByChapterBookIdAndStatus("book-1", IllustrationStatus.GENERATING))
                 .thenReturn(List.of());
