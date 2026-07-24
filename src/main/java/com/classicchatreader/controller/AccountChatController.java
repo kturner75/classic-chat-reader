@@ -9,6 +9,8 @@ import com.classicchatreader.model.AccountChatModels.ErrorEnvelope;
 import com.classicchatreader.model.AccountChatModels.FilterOptionsResponse;
 import com.classicchatreader.model.AccountChatModels.SessionDetailResponse;
 import com.classicchatreader.model.AccountChatModels.SessionListResponse;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptRequest;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptResponse;
 import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.AccountChatHistoryService;
 import com.classicchatreader.service.ChatHistoryValidationException;
@@ -128,6 +130,25 @@ public class AccountChatController {
         try {
             ContinueResponse response = chatHistoryService.continueConversation(
                     principal.get().userId(), sessionId, body, idempotencyKey);
+            if (response == null) {
+                return error(HttpStatus.NOT_FOUND, "CHAT_NOT_FOUND", "Chat session not found.");
+            }
+            return ok(response);
+        } catch (ChatHistoryValidationException ex) {
+            return error(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage());
+        }
+    }
+
+    @PostMapping("/{sessionId}/voice-turns")
+    public ResponseEntity<?> appendVoiceCallTurns(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) VoiceCallTranscriptRequest body,
+            HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
+        try {
+            VoiceCallTranscriptResponse response = chatHistoryService.appendVoiceCallTurns(
+                    principal.get().userId(), sessionId, body);
             if (response == null) {
                 return error(HttpStatus.NOT_FOUND, "CHAT_NOT_FOUND", "Chat session not found.");
             }

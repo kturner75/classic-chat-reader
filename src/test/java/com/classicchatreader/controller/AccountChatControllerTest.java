@@ -11,6 +11,7 @@ import com.classicchatreader.model.AccountChatModels.PageInfo;
 import com.classicchatreader.model.AccountChatModels.Resume;
 import com.classicchatreader.model.AccountChatModels.SessionListResponse;
 import com.classicchatreader.model.AccountChatModels.SessionSummary;
+import com.classicchatreader.model.AccountChatModels.VoiceCallTranscriptResponse;
 import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.AccountChatHistoryService;
 import com.classicchatreader.service.ChatHistoryValidationException;
@@ -64,6 +65,14 @@ class AccountChatControllerTest {
         mockMvc.perform(get("/api/account/chats/chat-1"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
+
+        mockMvc.perform(post("/api/account/chats/chat-1/voice-turns")
+                        .contentType("application/json")
+                        .content("""
+                                {"turns":[{"turnId":"turn-1","role":"USER","content":"Hello"}]}
+                                """))
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
     }
 
@@ -242,6 +251,29 @@ class AccountChatControllerTest {
                         .content("{\"content\":\"Hello\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code", is("CHAT_NOT_FOUND")));
+    }
+
+    @Test
+    void voiceCallTurnsUseAuthenticatedOwnerAndReturnPersistedMessages() throws Exception {
+        authenticate("user-1");
+        Instant now = Instant.parse("2026-07-21T12:00:00Z");
+        when(chatHistoryService.appendVoiceCallTurns(eq("user-1"), eq("chat-1"), any()))
+                .thenReturn(new VoiceCallTranscriptResponse(
+                        List.of(new Message("message-1", "USER", "Hello aloud", now)),
+                        now
+                ));
+
+        mockMvc.perform(post("/api/account/chats/chat-1/voice-turns")
+                        .contentType("application/json")
+                        .content("""
+                                {"turns":[{"turnId":"turn-1","role":"USER","content":"Hello aloud"}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.messages[0].messageId", is("message-1")))
+                .andExpect(jsonPath("$.messages[0].content", is("Hello aloud")));
+
+        verify(chatHistoryService).appendVoiceCallTurns(eq("user-1"), eq("chat-1"), any());
     }
 
     private void authenticate(String userId) {

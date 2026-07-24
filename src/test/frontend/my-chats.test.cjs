@@ -5,6 +5,7 @@ const {
     buildListRequestUrl,
     buildFilterOptions,
     buildOpenBookUrl,
+    canStartVoiceCall,
     canContinueChat,
     createInitialListState,
     getListViewModel,
@@ -12,6 +13,8 @@ const {
     renderConversationPortrait,
     safeResumeUrl,
     safeSessionUrl,
+    toVoiceCallHistory,
+    toVoiceCallPersistenceTurns,
     toReaderParagraphParam
 } = require('../../main/resources/static/js/my-chats.js');
 
@@ -199,4 +202,73 @@ test('conversation portrait remains optional when cached HTML lacks the new elem
         'Mr. Bingley',
         '/api/characters/character-1/portrait'
     ));
+});
+
+test('voice call action uses the reader availability, policy, and browser gates', () => {
+    const detail = {
+        session: {
+            character: { id: 'character-1' },
+            resume: { available: true }
+        }
+    };
+    const status = {
+        enabled: true,
+        chatEnabled: true,
+        chatProviderAvailable: true,
+        voiceCallEnabled: true,
+        voiceCallAvailable: true
+    };
+    const browser = {
+        navigator: { mediaDevices: { getUserMedia() {} } },
+        AudioWorkletNode: function AudioWorkletNode() {}
+    };
+
+    assert.equal(canStartVoiceCall(detail, status, browser), true);
+    assert.equal(canStartVoiceCall({
+        session: { ...detail.session, resume: { available: false } }
+    }, status, browser), false);
+    assert.equal(canStartVoiceCall(detail, { ...status, voiceCallAvailable: false }, browser), false);
+    assert.equal(canStartVoiceCall(detail, status, {
+        ...browser,
+        navigator: { mediaDevices: {} }
+    }), false);
+});
+
+test('voice call history normalizes account messages to the shared call payload', () => {
+    assert.deepEqual(toVoiceCallHistory([
+        {
+            role: 'USER',
+            content: ' Hello ',
+            createdAt: '2026-07-23T16:07:54.805411Z'
+        },
+        {
+            role: 'CHARACTER',
+            content: 'Good day.',
+            createdAt: '2026-07-23T16:08:00Z'
+        },
+        { role: 'SYSTEM', content: 'ignored', createdAt: '2026-07-23T16:08:01Z' }
+    ]), [
+        {
+            role: 'user',
+            content: 'Hello',
+            timestamp: Date.parse('2026-07-23T16:07:54.805411Z')
+        },
+        {
+            role: 'character',
+            content: 'Good day.',
+            timestamp: Date.parse('2026-07-23T16:08:00Z')
+        }
+    ]);
+});
+
+test('finalized voice call turns receive stable persistence payload fields', () => {
+    const ids = ['turn-1', 'turn-2'];
+    assert.deepEqual(toVoiceCallPersistenceTurns([
+        { role: 'user', content: ' Hello aloud ' },
+        { role: 'character', content: 'Good day.' },
+        { role: 'system', content: 'ignored' }
+    ], () => ids.shift()), [
+        { turnId: 'turn-1', role: 'USER', content: 'Hello aloud' },
+        { turnId: 'turn-2', role: 'CHARACTER', content: 'Good day.' }
+    ]);
 });

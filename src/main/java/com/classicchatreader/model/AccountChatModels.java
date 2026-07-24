@@ -77,6 +77,15 @@ public final class AccountChatModels {
     public record ContinueRequest(String content, ChatContext context) {
     }
 
+    public record VoiceCallTurn(String turnId, String role, String content) {
+    }
+
+    public record VoiceCallTranscriptRequest(List<VoiceCallTurn> turns) {
+    }
+
+    public record VoiceCallTranscriptResponse(List<Message> messages, Instant lastMessageAt) {
+    }
+
     public record ContinueResponse(
             Message userMessage,
             Message characterMessage,
