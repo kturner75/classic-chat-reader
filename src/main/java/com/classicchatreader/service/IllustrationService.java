@@ -243,7 +243,6 @@ public class IllustrationService {
      * This never queues generation, so status/read paths may safely use it in
      * cache-only deployments and after database restores.
      */
-    @Transactional
     public boolean restoreCachedIllustrationIfPresent(String chapterId) {
         ChapterEntity chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
         if (chapter == null) {
@@ -255,6 +254,13 @@ public class IllustrationService {
             return false;
         }
 
+        // Enter through the proxy so the locking query is the first database read
+        // in a fresh transaction. This avoids stale snapshots under REPEATABLE READ.
+        return self.restoreCachedIllustrationRecord(chapterId, cacheKey);
+    }
+
+    @Transactional
+    public boolean restoreCachedIllustrationRecord(String chapterId, String cacheKey) {
         ChapterEntity lockedChapter = chapterRepository.findByIdWithBookForUpdate(chapterId).orElse(null);
         if (lockedChapter == null) {
             return false;
