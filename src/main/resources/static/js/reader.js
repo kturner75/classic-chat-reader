@@ -140,6 +140,7 @@
         callReconnectAttempted: false,
         callUserEnded: false,
         callPersistence: Promise.resolve(true),
+        callPersistenceGeneration: 0,
         callPendingPersistenceBatches: new Map(),
         callPersistenceRetryHandler: null,
         callEndingPromise: null,
@@ -8896,8 +8897,13 @@
     function discardPendingCallPersistence() {
         if (state.callPendingPersistenceBatches.size === 0) return;
         const discardedBatchIds = new Set(state.callPendingPersistenceBatches.keys());
+        const abortControllers = [...state.callPendingPersistenceBatches.values()]
+            .map(batch => batch.abortController)
+            .filter(Boolean);
+        state.callPersistenceGeneration += 1;
         state.callPendingPersistenceBatches.clear();
         state.callPersistence = Promise.resolve(true);
+        abortControllers.forEach(controller => controller.abort());
         state.chatHistory = state.chatHistory.filter(
             message => !discardedBatchIds.has(message?.voicePersistenceBatchId));
         clearCallPersistenceError();
@@ -8948,23 +8954,38 @@
             requestTurns,
             context
         });
-        state.callPersistence = state.callPersistence.then(flushPendingCallPersistence);
+        return queueCallPersistenceFlush();
+    }
+
+    function queueCallPersistenceFlush() {
+        const generation = state.callPersistenceGeneration;
+        state.callPersistence = state.callPersistence.then(() => {
+            if (generation !== state.callPersistenceGeneration) return false;
+            return flushPendingCallPersistence(generation);
+        });
         return state.callPersistence;
     }
 
-    async function flushPendingCallPersistence() {
+    async function flushPendingCallPersistence(generation = state.callPersistenceGeneration) {
         let allPersisted = true;
         const blockedCharacterIds = new Set();
         for (const batch of [...state.callPendingPersistenceBatches.values()]) {
+            if (generation !== state.callPersistenceGeneration) return false;
             if (blockedCharacterIds.has(batch.characterId)) {
                 continue;
             }
             if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
                 continue;
             }
+            const abortController = new AbortController();
+            batch.abortController = abortController;
             try {
                 const result = await characterChatClient.saveVoiceTurns(
-                    batch.characterId, batch.requestTurns, batch.context);
+                    batch.characterId,
+                    batch.requestTurns,
+                    batch.context,
+                    { signal: abortController.signal });
+                if (generation !== state.callPersistenceGeneration) return false;
                 if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
                     continue;
                 }
@@ -8979,6 +9000,7 @@
                     renderChatMessages();
                 }
             } catch (error) {
+                if (generation !== state.callPersistenceGeneration) return false;
                 if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
                     continue;
                 }
@@ -8991,8 +9013,13 @@
                     setCharacterChatError(message, state.callPersistenceRetryHandler);
                 }
                 blockedCharacterIds.add(batch.characterId);
+            } finally {
+                if (batch.abortController === abortController) {
+                    batch.abortController = null;
+                }
             }
         }
+        if (generation !== state.callPersistenceGeneration) return false;
         if (allPersisted && state.callPendingPersistenceBatches.size === 0) {
             clearCallPersistenceError();
         }
@@ -9001,15 +9028,45 @@
 
     async function retryPendingCallPersistence() {
         if (state.callPendingPersistenceBatches.size === 0) return true;
-        state.callPersistence = state.callPersistence.then(flushPendingCallPersistence);
-        return state.callPersistence;
+        return queueCallPersistenceFlush();
     }
 
     async function persistFinishedCallTracker(tracker) {
+        const generation = state.callPersistenceGeneration;
         if (tracker) {
             await persistCallTurns(tracker.flush());
         }
-        await retryPendingCallPersistence();
+        if (generation !== state.callPersistenceGeneration) return false;
+        return retryPendingCallPersistence();
+    }
+
+    function detachTimedOutCallPersistence() {
+        const pendingBatches = [...state.callPendingPersistenceBatches.values()];
+        state.callPersistenceGeneration += 1;
+        state.callPersistence = Promise.resolve(false);
+        pendingBatches.forEach(batch => {
+            batch.errorMessage = 'Saving the voice call transcript timed out.';
+            batch.abortController?.abort();
+        });
+        if (state.chatCharacterId) {
+            showPendingCallPersistenceError(state.chatCharacterId);
+        }
+    }
+
+    async function waitForFinishedCallPersistence(tracker) {
+        let timeoutId;
+        const persistence = persistFinishedCallTracker(tracker);
+        const timeout = new Promise(resolve => {
+            timeoutId = setTimeout(() => {
+                detachTimedOutCallPersistence();
+                resolve(false);
+            }, 5000);
+        });
+        try {
+            return await Promise.race([persistence, timeout]);
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 
     async function startVoiceCall() {
@@ -9317,10 +9374,7 @@
             if (reason) {
                 setCharacterChatError(reason, null);
             }
-            await Promise.race([
-                persistFinishedCallTracker(tracker),
-                new Promise(resolve => setTimeout(resolve, 5000))
-            ]);
+            await waitForFinishedCallPersistence(tracker);
 
             elements.callCharacterPortrait?.classList.remove('speaking');
             elements.characterCallModal?.classList.add('hidden');

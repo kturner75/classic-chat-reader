@@ -77,6 +77,7 @@ test('send uses a stable idempotency key and server-owned reader context', async
 test('saveVoiceTurns creates or reuses the character session and sends reader context', async () => {
     const requests = [];
     const ids = ['turn-1', 'turn-2'];
+    const abortController = new AbortController();
     const client = createCharacterChatClient({
         idFactory: () => ids.shift(),
         fetchImpl: async (...args) => {
@@ -95,11 +96,12 @@ test('saveVoiceTurns creates or reuses the character session and sends reader co
     const saved = await client.saveVoiceTurns('character/one', [
         { role: 'user', content: ' Hello Tom ' },
         { role: 'character', content: 'Hello Huck' }
-    ], context);
+    ], context, { signal: abortController.signal });
 
     assert.equal(requests[0][0], '/api/account/chats/characters/character%2Fone/voice-turns');
     assert.equal(requests[0][1].credentials, 'same-origin');
     assert.equal(requests[0][1].keepalive, true);
+    assert.equal(requests[0][1].signal, abortController.signal);
     assert.deepEqual(JSON.parse(requests[0][1].body), {
         turns: [
             { turnId: 'turn-1', role: 'USER', content: 'Hello Tom' },

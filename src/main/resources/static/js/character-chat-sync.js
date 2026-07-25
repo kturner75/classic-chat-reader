@@ -166,7 +166,7 @@
                 };
             },
 
-            async saveVoiceTurns(characterId, turns, context) {
+            async saveVoiceTurns(characterId, turns, context, options = {}) {
                 const requestTurns = (Array.isArray(turns) ? turns : []).flatMap(turn => {
                     const normalizedRole = String(turn?.role || '').toUpperCase();
                     const role = normalizedRole === 'USER' ? 'USER'
@@ -192,6 +192,7 @@
                             'Content-Type': 'application/json'
                         },
                         keepalive: true,
+                        signal: options.signal,
                         body: JSON.stringify({ turns: requestTurns, context: context || null })
                     }
                 );
