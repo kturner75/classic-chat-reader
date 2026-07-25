@@ -8933,7 +8933,8 @@
                 allPersisted = false;
                 console.error('Voice call transcript persistence failed:', error);
                 const message = error?.message || 'The voice call transcript could not be saved.';
-                setCharacterChatError(message, null);
+                setCharacterChatError(message, () => retryPendingCallPersistence());
+                break;
             }
         }
         return allPersisted;
