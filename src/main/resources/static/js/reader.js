@@ -8975,8 +8975,10 @@
                 console.error('Voice call transcript persistence failed:', error);
                 const message = error?.message || 'The voice call transcript could not be saved.';
                 batch.errorMessage = message;
-                state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
-                setCharacterChatError(message, state.callPersistenceRetryHandler);
+                if (state.chatCharacterId === batch.characterId) {
+                    state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
+                    setCharacterChatError(message, state.callPersistenceRetryHandler);
+                }
                 break;
             }
         }
@@ -8990,6 +8992,13 @@
         if (state.callPendingPersistenceBatches.size === 0) return true;
         state.callPersistence = state.callPersistence.then(flushPendingCallPersistence);
         return state.callPersistence;
+    }
+
+    async function persistFinishedCallTracker(tracker) {
+        if (tracker) {
+            await persistCallTurns(tracker.flush());
+        }
+        await retryPendingCallPersistence();
     }
 
     async function startVoiceCall() {
@@ -9276,7 +9285,6 @@
 
     async function endVoiceCall(reason) {
         // Idempotent: also closes the modal after a failed call (callActive already false)
-        const callGeneration = state.callGeneration;
         state.callActive = false;
         state.callUserEnded = true;
 
@@ -9289,11 +9297,6 @@
         // Persist any dangling partial captions into the shared chat history
         const tracker = state.callTracker;
         state.callTracker = null;
-        if (tracker) {
-            await persistCallTurns(tracker.flush());
-        }
-        await retryPendingCallPersistence();
-        if (state.callGeneration !== callGeneration) return;
 
         elements.callCharacterPortrait?.classList.remove('speaking');
         elements.characterCallModal?.classList.add('hidden');
@@ -9303,6 +9306,7 @@
         if (reason) {
             setCharacterChatError(reason, null);
         }
+        void persistFinishedCallTracker(tracker);
     }
 
     function toggleCallMute() {
@@ -9314,7 +9318,6 @@
     }
 
     async function failVoiceCall(message) {
-        const callGeneration = state.callGeneration;
         state.callActive = false;
         state.callUserEnded = true;
         if (state.callWs) {
@@ -9324,13 +9327,9 @@
         teardownCallAudio();
         const tracker = state.callTracker;
         state.callTracker = null;
-        if (tracker) {
-            await persistCallTurns(tracker.flush());
-        }
-        await retryPendingCallPersistence();
-        if (state.callGeneration !== callGeneration) return;
         setCallStatus('');
         setCallError(message);
+        void persistFinishedCallTracker(tracker);
     }
 
     // ========================================
