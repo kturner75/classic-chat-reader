@@ -36,7 +36,7 @@ public class CuratedCatalogService {
             new CuratedCatalogBook(2600, "War and Peace", "Leo Tolstoy", 84_000, List.of("Historical fiction"), List.of("Classics")),
             new CuratedCatalogBook(28054, "The Brothers Karamazov", "Fyodor Dostoyevsky", 83_000, List.of("Brothers -- Fiction"), List.of("Classics")),
             new CuratedCatalogBook(120, "Treasure Island", "Robert Louis Stevenson", 82_000, List.of("Treasure troves -- Fiction"), List.of("Adventure")),
-            new CuratedCatalogBook(25, "The Scarlet Letter", "Nathaniel Hawthorne", 81_000, List.of("Adultery -- Fiction"), List.of("Classics")),
+            new CuratedCatalogBook(25344, "The Scarlet Letter", "Nathaniel Hawthorne", 81_000, List.of("Adultery -- Fiction"), List.of("Classics")),
             new CuratedCatalogBook(1400, "Great Expectations", "Charles Dickens", 80_000, List.of("Orphans -- Fiction"), List.of("Classics")),
             new CuratedCatalogBook(76, "Adventures of Huckleberry Finn", "Mark Twain", 79_000, List.of("Boys -- Fiction"), List.of("Adventure")),
             new CuratedCatalogBook(46, "A Christmas Carol", "Charles Dickens", 78_000, List.of("Christmas stories"), List.of("Holiday")),
