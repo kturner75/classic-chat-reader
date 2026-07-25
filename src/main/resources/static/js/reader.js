@@ -8621,6 +8621,7 @@
             if (loadSequence === state.chatLoadSequence && state.chatCharacterId === characterId) {
                 state.chatHistoryLoading = false;
                 renderChatMessages();
+                showPendingCallPersistenceError(characterId);
                 updateCharacterChatInputState();
                 if (!elements.chatInput.disabled) elements.chatInput.focus();
             }
@@ -8902,6 +8903,14 @@
         renderChatMessages();
     }
 
+    function showPendingCallPersistenceError(characterId) {
+        const failedBatch = [...state.callPendingPersistenceBatches.values()]
+            .find(batch => batch.characterId === characterId && batch.errorMessage);
+        if (!failedBatch) return;
+        state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
+        setCharacterChatError(failedBatch.errorMessage, state.callPersistenceRetryHandler);
+    }
+
     function persistCallTurns(turns) {
         if (!turns || turns.length === 0 || !state.chatCharacterId || !characterChatClient) {
             return state.callPersistence;
@@ -8965,6 +8974,7 @@
                 allPersisted = false;
                 console.error('Voice call transcript persistence failed:', error);
                 const message = error?.message || 'The voice call transcript could not be saved.';
+                batch.errorMessage = message;
                 state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
                 setCharacterChatError(message, state.callPersistenceRetryHandler);
                 break;
