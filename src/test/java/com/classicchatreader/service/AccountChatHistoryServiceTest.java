@@ -476,6 +476,42 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void replayedCharacterVoiceCallDoesNotOverwriteNewerContextOrActivity() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        String characterId = fixture.character().getId();
+        var earlierRequest = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-1", "USER", "Earlier question"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-2", "CHARACTER", "Earlier answer")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 3)
+        );
+        var newerRequest = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-3", "USER", "Newer question"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-4", "CHARACTER", "Newer answer")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 7)
+        );
+
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, earlierRequest);
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, newerRequest);
+        flushAndClear();
+        var beforeReplay = service.getLatestForCharacter("owner", characterId).session();
+
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, earlierRequest);
+        flushAndClear();
+        var afterReplay = service.getLatestForCharacter("owner", characterId).session();
+
+        assertThat(afterReplay.context().paragraphIndex()).isEqualTo(7);
+        assertThat(afterReplay.lastMessageAt()).isEqualTo(beforeReplay.lastMessageAt());
+    }
+
+    @Test
     void voiceCallTurnsRejectInvalidPayloadsAndUnavailableChats() {
         Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
         addMessage(fixture.session(), "USER", "Earlier", BASE);

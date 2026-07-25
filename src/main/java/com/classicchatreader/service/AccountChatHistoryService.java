@@ -383,7 +383,7 @@ public class AccountChatHistoryService {
         if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
-        return appendVoiceCallTurns(session, ownerUserId, turns);
+        return appendVoiceCallTurns(session, ownerUserId, turns, null, null);
     }
 
     @Transactional
@@ -415,8 +415,13 @@ public class AccountChatHistoryService {
         if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
-        updateContextFromRequest(session, character, request == null ? null : request.context());
-        VoiceCallTranscriptResponse response = appendVoiceCallTurns(session, ownerUserId, turns);
+        VoiceCallTranscriptResponse response = appendVoiceCallTurns(
+                session,
+                ownerUserId,
+                turns,
+                character,
+                request == null ? null : request.context()
+        );
         return new CharacterVoiceCallTranscriptResponse(
                 session.getId(), response.messages(), response.lastMessageAt());
     }
@@ -424,7 +429,9 @@ public class AccountChatHistoryService {
     private VoiceCallTranscriptResponse appendVoiceCallTurns(
             CharacterChatConversationEntity session,
             String ownerUserId,
-            List<ValidatedVoiceCallTurn> turns) {
+            List<ValidatedVoiceCallTurn> turns,
+            CharacterEntity contextCharacter,
+            ChatContext requestedContext) {
         List<CharacterChatMessageEntity> transcript = messageRepository
                 .findByConversationIdAndUserIdOrderBySequenceNumberAsc(session.getId(), ownerUserId);
         Map<String, CharacterChatMessageEntity> byClientMessageId = new HashMap<>();
@@ -461,6 +468,9 @@ public class AccountChatHistoryService {
             byClientMessageId.put(turn.clientMessageId(), message);
         }
         if (!created.isEmpty()) {
+            if (contextCharacter != null) {
+                updateContextFromRequest(session, contextCharacter, requestedContext);
+            }
             messageRepository.saveAll(created);
             CharacterChatMessageEntity newest = created.getLast();
             session.setUpdatedAt(newest.getCreatedAt());
