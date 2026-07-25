@@ -135,6 +135,30 @@ test('voice turns remain local until persistence replaces their batch with serve
     assert.equal(persisted.some(message => message.voicePersistenceBatchId), false);
 });
 
+test('persisted voice batch replaces pending turns in place without reordering later batches', () => {
+    const first = createPendingVoiceMessages([
+        { role: 'user', content: 'First question' },
+        { role: 'character', content: 'First answer' }
+    ], 'batch-1', 100);
+    const second = createPendingVoiceMessages([
+        { role: 'user', content: 'Second question' }
+    ], 'batch-2', 200);
+
+    const merged = mergePersistedVoiceMessages(
+        [...first, ...second],
+        [
+            { messageId: 'm-1', role: 'USER', content: 'First question' },
+            { messageId: 'm-2', role: 'CHARACTER', content: 'First answer' }
+        ],
+        'batch-1'
+    );
+
+    assert.deepEqual(merged.map(message => message.content), [
+        'First question', 'First answer', 'Second question'
+    ]);
+    assert.equal(merged[2].voicePersistenceBatchId, 'batch-2');
+});
+
 test('retry response replaces the optimistic message and repeated responses do not duplicate turns', () => {
     const pending = createPendingUserMessage('Hello', 'request-1', 100);
     const exchange = {

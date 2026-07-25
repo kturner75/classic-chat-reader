@@ -87,9 +87,21 @@
     }
 
     function mergePersistedVoiceMessages(messages, persisted, batchId) {
-        const withoutPendingBatch = (Array.isArray(messages) ? messages : [])
-            .filter(message => message?.voicePersistenceBatchId !== batchId);
-        return normalizeMessages([...withoutPendingBatch, ...(Array.isArray(persisted) ? persisted : [])]);
+        const serverMessages = normalizeMessages(persisted);
+        const merged = [];
+        let replaced = false;
+        for (const message of Array.isArray(messages) ? messages : []) {
+            if (message?.voicePersistenceBatchId === batchId) {
+                if (!replaced) {
+                    merged.push(...serverMessages);
+                    replaced = true;
+                }
+            } else {
+                merged.push(message);
+            }
+        }
+        if (!replaced) merged.push(...serverMessages);
+        return normalizeMessages(merged);
     }
 
     function defaultRequestId() {

@@ -140,6 +140,7 @@
         callReconnectAttempted: false,
         callUserEnded: false,
         callPersistence: Promise.resolve(true),
+        callGeneration: 0,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
         cacheOnly: false,
@@ -8925,6 +8926,7 @@
         state.callMuted = false;
         state.callUserEnded = false;
         state.callReconnectAttempted = false;
+        state.callGeneration += 1;
         state.callTracker = VoiceCallUtils.createTranscriptTracker();
         state.callPersistence = Promise.resolve(true);
         clearCallError();
@@ -9200,6 +9202,7 @@
 
     async function endVoiceCall(reason) {
         // Idempotent: also closes the modal after a failed call (callActive already false)
+        const callGeneration = state.callGeneration;
         state.callActive = false;
         state.callUserEnded = true;
 
@@ -9210,10 +9213,12 @@
         teardownCallAudio();
 
         // Persist any dangling partial captions into the shared chat history
-        if (state.callTracker) {
-            await persistCallTurns(state.callTracker.flush());
-            state.callTracker = null;
+        const tracker = state.callTracker;
+        state.callTracker = null;
+        if (tracker) {
+            await persistCallTurns(tracker.flush());
         }
+        if (state.callGeneration !== callGeneration) return;
 
         elements.callCharacterPortrait?.classList.remove('speaking');
         elements.characterCallModal?.classList.add('hidden');
@@ -9234,6 +9239,7 @@
     }
 
     async function failVoiceCall(message) {
+        const callGeneration = state.callGeneration;
         state.callActive = false;
         state.callUserEnded = true;
         if (state.callWs) {
@@ -9241,10 +9247,12 @@
             state.callWs = null;
         }
         teardownCallAudio();
-        if (state.callTracker) {
-            await persistCallTurns(state.callTracker.flush());
-            state.callTracker = null;
+        const tracker = state.callTracker;
+        state.callTracker = null;
+        if (tracker) {
+            await persistCallTurns(tracker.flush());
         }
+        if (state.callGeneration !== callGeneration) return;
         setCallStatus('');
         setCallError(message);
     }
