@@ -141,6 +141,7 @@
         callUserEnded: false,
         callPersistence: Promise.resolve(true),
         callPendingPersistenceBatches: new Map(),
+        callPersistenceRetryHandler: null,
         callGeneration: 0,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
@@ -2177,6 +2178,9 @@
             updateAccountUi();
             const identityChanged = previousAuthenticated !== state.accountAuthenticated
                 || previousEmail !== state.accountEmail;
+            if (identityChanged) {
+                discardPendingCallPersistence();
+            }
             refreshMyChatsLanding(identityChanged);
 
             refreshClassroomWorkspaceActions();
@@ -8879,6 +8883,25 @@
         elements.callCaptions.scrollTop = elements.callCaptions.scrollHeight;
     }
 
+    function clearCallPersistenceError() {
+        if (state.callPersistenceRetryHandler
+                && state.characterChatRetryHandler === state.callPersistenceRetryHandler) {
+            clearCharacterChatError();
+        }
+        state.callPersistenceRetryHandler = null;
+    }
+
+    function discardPendingCallPersistence() {
+        if (state.callPendingPersistenceBatches.size === 0) return;
+        const discardedBatchIds = new Set(state.callPendingPersistenceBatches.keys());
+        state.callPendingPersistenceBatches.clear();
+        state.callPersistence = Promise.resolve(true);
+        state.chatHistory = state.chatHistory.filter(
+            message => !discardedBatchIds.has(message?.voicePersistenceBatchId));
+        clearCallPersistenceError();
+        renderChatMessages();
+    }
+
     function persistCallTurns(turns) {
         if (!turns || turns.length === 0 || !state.chatCharacterId || !characterChatClient) {
             return state.callPersistence;
@@ -8916,9 +8939,15 @@
     async function flushPendingCallPersistence() {
         let allPersisted = true;
         for (const batch of [...state.callPendingPersistenceBatches.values()]) {
+            if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                continue;
+            }
             try {
                 const result = await characterChatClient.saveVoiceTurns(
                     batch.characterId, batch.requestTurns, batch.context);
+                if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                    continue;
+                }
                 state.callPendingPersistenceBatches.delete(batch.persistenceBatchId);
                 if (state.chatCharacterId === batch.characterId) {
                     state.chatSessionId = result.sessionId || state.chatSessionId;
@@ -8930,12 +8959,19 @@
                     renderChatMessages();
                 }
             } catch (error) {
+                if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                    continue;
+                }
                 allPersisted = false;
                 console.error('Voice call transcript persistence failed:', error);
                 const message = error?.message || 'The voice call transcript could not be saved.';
-                setCharacterChatError(message, () => retryPendingCallPersistence());
+                state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
+                setCharacterChatError(message, state.callPersistenceRetryHandler);
                 break;
             }
+        }
+        if (allPersisted && state.callPendingPersistenceBatches.size === 0) {
+            clearCallPersistenceError();
         }
         return allPersisted;
     }
