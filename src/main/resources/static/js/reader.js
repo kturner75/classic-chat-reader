@@ -142,6 +142,7 @@
         callPersistence: Promise.resolve(true),
         callPendingPersistenceBatches: new Map(),
         callPersistenceRetryHandler: null,
+        callEndingPromise: null,
         callGeneration: 0,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
@@ -8628,9 +8629,9 @@
         }
     }
 
-    function closeCharacterChat() {
-        if (state.callActive) {
-            endVoiceCall();
+    async function closeCharacterChat() {
+        if (state.callActive || state.callEndingPromise || isCharacterCallVisible()) {
+            await endVoiceCall();
         }
         elements.characterChatModal.classList.add('hidden');
         state.characterChatOpen = false;
@@ -8912,9 +8913,15 @@
     }
 
     function persistCallTurns(turns) {
-        if (!turns || turns.length === 0 || !state.chatCharacterId || !characterChatClient) {
+        if (!turns || turns.length === 0 || !state.chatCharacterId) {
             return state.callPersistence;
         }
+        if (!state.accountAuthenticated) {
+            state.chatHistory.push(...characterChatSyncHelpers.createPendingVoiceMessages(turns, null));
+            renderChatMessages();
+            return state.callPersistence;
+        }
+        if (!characterChatClient) return state.callPersistence;
         const characterId = state.chatCharacterId;
         const persistenceBatchId = characterChatClient.createRequestId();
         const chapter = state.chapters[state.currentChapterIndex];
@@ -9006,7 +9013,8 @@
     }
 
     async function startVoiceCall() {
-        if (state.callActive || !state.chatCharacterId || !state.voiceCallAvailable) return;
+        if (state.callActive || state.callEndingPromise
+                || !state.chatCharacterId || !state.voiceCallAvailable) return;
 
         const character = state.chatCharacter;
         state.callActive = true;
@@ -9015,7 +9023,6 @@
         state.callReconnectAttempted = false;
         state.callGeneration += 1;
         state.callTracker = VoiceCallUtils.createTranscriptTracker();
-        state.callPersistence = Promise.resolve(true);
         clearCallError();
         setCallStatus('Connecting…');
 
@@ -9287,30 +9294,48 @@
         }
     }
 
-    async function endVoiceCall(reason) {
-        // Idempotent: also closes the modal after a failed call (callActive already false)
-        state.callActive = false;
-        state.callUserEnded = true;
+    function endVoiceCall(reason) {
+        if (state.callEndingPromise) return state.callEndingPromise;
 
-        if (state.callWs) {
-            try { state.callWs.close(); } catch (_e) { /* noop */ }
-            state.callWs = null;
-        }
-        teardownCallAudio();
+        const operation = (async () => {
+            // Idempotent: also closes the modal after a failed call (callActive already false)
+            state.callActive = false;
+            state.callUserEnded = true;
 
-        // Persist any dangling partial captions into the shared chat history
-        const tracker = state.callTracker;
-        state.callTracker = null;
+            if (state.callWs) {
+                try { state.callWs.close(); } catch (_e) { /* noop */ }
+                state.callWs = null;
+            }
+            teardownCallAudio();
 
-        elements.callCharacterPortrait?.classList.remove('speaking');
-        elements.characterCallModal?.classList.add('hidden');
-        setCallStatus('');
-        clearCallError();
+            // Persist dangling partial captions before allowing the reader to leave. The grace
+            // period prevents a degraded connection from trapping the call UI indefinitely.
+            const tracker = state.callTracker;
+            state.callTracker = null;
+            setCallStatus('Saving conversation…');
+            if (elements.callEndBtn) elements.callEndBtn.disabled = true;
+            if (reason) {
+                setCharacterChatError(reason, null);
+            }
+            await Promise.race([
+                persistFinishedCallTracker(tracker),
+                new Promise(resolve => setTimeout(resolve, 5000))
+            ]);
 
-        if (reason) {
-            setCharacterChatError(reason, null);
-        }
-        void persistFinishedCallTracker(tracker);
+            elements.callCharacterPortrait?.classList.remove('speaking');
+            elements.characterCallModal?.classList.add('hidden');
+            setCallStatus('');
+            clearCallError();
+            if (elements.callEndBtn) elements.callEndBtn.disabled = false;
+        })();
+        state.callEndingPromise = operation;
+        const clearEndingPromise = () => {
+            if (state.callEndingPromise === operation) {
+                state.callEndingPromise = null;
+            }
+        };
+        void operation.then(clearEndingPromise, clearEndingPromise);
+        return operation;
     }
 
     function toggleCallMute() {
