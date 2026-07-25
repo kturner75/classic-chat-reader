@@ -129,6 +129,37 @@
                     ...(await readResponse(response)),
                     requestId
                 };
+            },
+
+            async saveVoiceTurns(characterId, turns, context) {
+                const requestTurns = (Array.isArray(turns) ? turns : []).flatMap(turn => {
+                    const role = turn?.role === 'user' ? 'USER'
+                        : turn?.role === 'character' ? 'CHARACTER'
+                            : '';
+                    const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+                    if (!role || !content) return [];
+                    return [{ turnId: idFactory(), role, content }];
+                });
+                if (requestTurns.length === 0) {
+                    return { sessionId: null, messages: [] };
+                }
+                const response = await fetchImpl(
+                    `/api/account/chats/characters/${encodeURIComponent(characterId)}/voice-turns`,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ turns: requestTurns, context: context || null })
+                    }
+                );
+                const payload = await readResponse(response);
+                return {
+                    ...payload,
+                    messages: normalizeMessages(payload?.messages)
+                };
             }
         };
     }

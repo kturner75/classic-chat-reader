@@ -10,6 +10,8 @@ import com.classicchatreader.model.AccountChatModels.BookIdentity;
 import com.classicchatreader.model.AccountChatModels.CharacterFilterOption;
 import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest;
+import com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptResponse;
 import com.classicchatreader.model.AccountChatModels.ChatContext;
 import com.classicchatreader.model.AccountChatModels.CharacterIdentity;
 import com.classicchatreader.model.AccountChatModels.ContinueRequest;
@@ -381,9 +383,50 @@ public class AccountChatHistoryService {
         if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
+        return appendVoiceCallTurns(session, ownerUserId, turns);
+    }
 
+    @Transactional
+    public CharacterVoiceCallTranscriptResponse appendVoiceCallTurnsToCharacter(
+            String ownerUserId,
+            String characterId,
+            CharacterVoiceCallTranscriptRequest request) {
+        Objects.requireNonNull(ownerUserId, "ownerUserId");
+        List<ValidatedVoiceCallTurn> turns = validateVoiceCallTurns(
+                request == null ? null : new VoiceCallTranscriptRequest(request.turns()));
+        if (userRepository.findByIdForUpdate(ownerUserId).isEmpty()) return null;
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
+        if (character == null) return null;
+
+        List<CharacterChatConversationEntity> existing = conversationRepository
+                .findByUserIdAndCharacterIdOrderByUpdatedAtDescCreatedAtDesc(ownerUserId, characterId);
+        CharacterChatConversationEntity session;
+        if (existing.isEmpty()) {
+            session = new CharacterChatConversationEntity();
+            session.setUserId(ownerUserId);
+            session.setCharacterId(characterId);
+            session = conversationRepository.saveAndFlush(session);
+        } else {
+            session = conversationRepository
+                    .findByIdAndUserIdForUpdate(existing.getFirst().getId(), ownerUserId)
+                    .orElse(null);
+            if (session == null) return null;
+        }
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
+            throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
+        }
+        updateContextFromRequest(session, character, request == null ? null : request.context());
+        VoiceCallTranscriptResponse response = appendVoiceCallTurns(session, ownerUserId, turns);
+        return new CharacterVoiceCallTranscriptResponse(
+                session.getId(), response.messages(), response.lastMessageAt());
+    }
+
+    private VoiceCallTranscriptResponse appendVoiceCallTurns(
+            CharacterChatConversationEntity session,
+            String ownerUserId,
+            List<ValidatedVoiceCallTurn> turns) {
         List<CharacterChatMessageEntity> transcript = messageRepository
-                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(sessionId, ownerUserId);
+                .findByConversationIdAndUserIdOrderBySequenceNumberAsc(session.getId(), ownerUserId);
         Map<String, CharacterChatMessageEntity> byClientMessageId = new HashMap<>();
         for (CharacterChatMessageEntity message : transcript) {
             if (message.getClientMessageId() != null) {

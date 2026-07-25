@@ -446,6 +446,36 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void firstVoiceCallTurnsCreateAVisibleCharacterConversation() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        String characterId = fixture.character().getId();
+        entityManager.remove(fixture.session());
+        flushAndClear();
+        var request = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-1", "USER", "Hello Tom"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-2", "CHARACTER", "Hello there")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 3)
+        );
+
+        var appended = service.appendVoiceCallTurnsToCharacter("owner", characterId, request);
+        flushAndClear();
+
+        assertThat(appended.sessionId()).isNotBlank();
+        assertThat(appended.messages()).extracting(message -> message.content())
+                .containsExactly("Hello Tom", "Hello there");
+        assertThat(service.getLatestForCharacter("owner", characterId).messages())
+                .extracting(message -> message.content())
+                .containsExactly("Hello Tom", "Hello there");
+        assertThat(service.list("owner", AccountChatHistoryService.ListRequest.empty()).items())
+                .extracting(item -> item.sessionId())
+                .containsExactly(appended.sessionId());
+    }
+
+    @Test
     void voiceCallTurnsRejectInvalidPayloadsAndUnavailableChats() {
         Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
         addMessage(fixture.session(), "USER", "Earlier", BASE);

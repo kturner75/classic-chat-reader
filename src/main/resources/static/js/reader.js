@@ -139,6 +139,7 @@
         callNextPlayTime: 0,
         callReconnectAttempted: false,
         callUserEnded: false,
+        callPersistence: Promise.resolve(true),
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
         cacheOnly: false,
@@ -8877,11 +8878,40 @@
     }
 
     function persistCallTurns(turns) {
-        if (!turns || turns.length === 0 || !state.chatCharacterId) return;
-        for (const turn of turns) {
-            state.chatHistory.push(turn);
+        if (!turns || turns.length === 0 || !state.chatCharacterId || !characterChatClient) {
+            return state.callPersistence;
         }
-        renderChatMessages();
+        const characterId = state.chatCharacterId;
+        const loadSequence = state.chatLoadSequence;
+        const chapter = state.chapters[state.currentChapterIndex];
+        const context = {
+            chapterId: chapter?.id || null,
+            chapterIndex: state.currentChapterIndex,
+            chapterTitle: chapter?.title || '',
+            paragraphIndex: state.currentParagraphIndex
+        };
+        state.callPersistence = state.callPersistence.then(async persisted => {
+            if (persisted === false) return false;
+            const result = await characterChatClient.saveVoiceTurns(characterId, turns, context);
+            if (state.chatCharacterId === characterId && state.chatLoadSequence === loadSequence) {
+                state.chatSessionId = result.sessionId || state.chatSessionId;
+                state.chatHistory = characterChatSyncHelpers.normalizeMessages([
+                    ...state.chatHistory,
+                    ...(result.messages || [])
+                ]);
+                if (state.currentBook?.id) {
+                    state.persistedCharacterChatBookIds.add(state.currentBook.id);
+                }
+                renderChatMessages();
+            }
+            return true;
+        }).catch(error => {
+            console.error('Voice call transcript persistence failed:', error);
+            const message = error?.message || 'The voice call transcript could not be saved.';
+            setCharacterChatError(message, null);
+            return false;
+        });
+        return state.callPersistence;
     }
 
     async function startVoiceCall() {
@@ -8893,6 +8923,7 @@
         state.callUserEnded = false;
         state.callReconnectAttempted = false;
         state.callTracker = VoiceCallUtils.createTranscriptTracker();
+        state.callPersistence = Promise.resolve(true);
         clearCallError();
         setCallStatus('Connecting…');
 
@@ -9164,7 +9195,7 @@
         }
     }
 
-    function endVoiceCall(reason) {
+    async function endVoiceCall(reason) {
         // Idempotent: also closes the modal after a failed call (callActive already false)
         state.callActive = false;
         state.callUserEnded = true;
@@ -9177,7 +9208,7 @@
 
         // Persist any dangling partial captions into the shared chat history
         if (state.callTracker) {
-            persistCallTurns(state.callTracker.flush());
+            await persistCallTurns(state.callTracker.flush());
             state.callTracker = null;
         }
 
@@ -9199,7 +9230,7 @@
         }
     }
 
-    function failVoiceCall(message) {
+    async function failVoiceCall(message) {
         state.callActive = false;
         state.callUserEnded = true;
         if (state.callWs) {
@@ -9208,7 +9239,7 @@
         }
         teardownCallAudio();
         if (state.callTracker) {
-            persistCallTurns(state.callTracker.flush());
+            await persistCallTurns(state.callTracker.flush());
             state.callTracker = null;
         }
         setCallStatus('');

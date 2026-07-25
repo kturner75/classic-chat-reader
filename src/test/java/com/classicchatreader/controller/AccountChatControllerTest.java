@@ -5,6 +5,7 @@ import com.classicchatreader.model.AccountChatModels.ChatContext;
 import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterIdentity;
+import com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptResponse;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
 import com.classicchatreader.model.AccountChatModels.Message;
 import com.classicchatreader.model.AccountChatModels.PageInfo;
@@ -274,6 +275,34 @@ class AccountChatControllerTest {
                 .andExpect(jsonPath("$.messages[0].content", is("Hello aloud")));
 
         verify(chatHistoryService).appendVoiceCallTurns(eq("user-1"), eq("chat-1"), any());
+    }
+
+    @Test
+    void characterVoiceCallTurnsCreateOrReuseAConversation() throws Exception {
+        authenticate("user-1");
+        Instant now = Instant.parse("2026-07-21T12:00:00Z");
+        when(chatHistoryService.appendVoiceCallTurnsToCharacter(eq("user-1"), eq("character-1"), any()))
+                .thenReturn(new CharacterVoiceCallTranscriptResponse(
+                        "chat-1",
+                        List.of(new Message("message-1", "USER", "Hello aloud", now)),
+                        now
+                ));
+
+        mockMvc.perform(post("/api/account/chats/characters/character-1/voice-turns")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "turns":[{"turnId":"turn-1","role":"USER","content":"Hello aloud"}],
+                                  "context":{"chapterIndex":0,"paragraphIndex":3}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.sessionId", is("chat-1")))
+                .andExpect(jsonPath("$.messages[0].content", is("Hello aloud")));
+
+        verify(chatHistoryService).appendVoiceCallTurnsToCharacter(
+                eq("user-1"), eq("character-1"), any());
     }
 
     private void authenticate(String userId) {

@@ -72,6 +72,42 @@ test('send uses a stable idempotency key and server-owned reader context', async
     }
 });
 
+test('saveVoiceTurns creates or reuses the character session and sends reader context', async () => {
+    const requests = [];
+    const ids = ['turn-1', 'turn-2'];
+    const client = createCharacterChatClient({
+        idFactory: () => ids.shift(),
+        fetchImpl: async (...args) => {
+            requests.push(args);
+            return response({
+                sessionId: 'session-1',
+                messages: [
+                    { messageId: 'm-1', role: 'USER', content: 'Hello Tom' },
+                    { messageId: 'm-2', role: 'CHARACTER', content: 'Hello Huck' }
+                ]
+            });
+        }
+    });
+    const context = { chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'One', paragraphIndex: 3 };
+
+    const saved = await client.saveVoiceTurns('character/one', [
+        { role: 'user', content: ' Hello Tom ' },
+        { role: 'character', content: 'Hello Huck' }
+    ], context);
+
+    assert.equal(requests[0][0], '/api/account/chats/characters/character%2Fone/voice-turns');
+    assert.equal(requests[0][1].credentials, 'same-origin');
+    assert.deepEqual(JSON.parse(requests[0][1].body), {
+        turns: [
+            { turnId: 'turn-1', role: 'USER', content: 'Hello Tom' },
+            { turnId: 'turn-2', role: 'CHARACTER', content: 'Hello Huck' }
+        ],
+        context
+    });
+    assert.equal(saved.sessionId, 'session-1');
+    assert.deepEqual(saved.messages.map(message => message.role), ['user', 'character']);
+});
+
 test('retry response replaces the optimistic message and repeated responses do not duplicate turns', () => {
     const pending = createPendingUserMessage('Hello', 'request-1', 100);
     const exchange = {
