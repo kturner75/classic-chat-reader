@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const {
     createCharacterChatClient,
     createPendingUserMessage,
+    createPendingVoiceMessages,
     discardLegacyCharacterChatCache,
+    mergePersistedVoiceMessages,
     mergeServerExchange,
     normalizeMessages
 } = require('../../main/resources/static/js/character-chat-sync.js');
@@ -106,6 +108,31 @@ test('saveVoiceTurns creates or reuses the character session and sends reader co
     });
     assert.equal(saved.sessionId, 'session-1');
     assert.deepEqual(saved.messages.map(message => message.role), ['user', 'character']);
+});
+
+test('voice turns remain local until persistence replaces their batch with server messages', () => {
+    const pending = createPendingVoiceMessages([
+        { role: 'user', content: ' Hello Tom ' },
+        { role: 'character', content: 'Hello Huck' }
+    ], 'batch-1', 100);
+
+    assert.deepEqual(pending.map(message => [message.role, message.content, message.timestamp]), [
+        ['user', 'Hello Tom', 100],
+        ['character', 'Hello Huck', 101]
+    ]);
+    assert.equal(pending.every(message => message.voicePersistenceBatchId === 'batch-1'), true);
+
+    const persisted = mergePersistedVoiceMessages(
+        [{ messageId: 'earlier', role: 'USER', content: 'Earlier' }, ...pending],
+        [
+            { messageId: 'm-1', role: 'USER', content: 'Hello Tom' },
+            { messageId: 'm-2', role: 'CHARACTER', content: 'Hello Huck' }
+        ],
+        'batch-1'
+    );
+
+    assert.deepEqual(persisted.map(message => message.messageId), ['earlier', 'm-1', 'm-2']);
+    assert.equal(persisted.some(message => message.voicePersistenceBatchId), false);
 });
 
 test('retry response replaces the optimistic message and repeated responses do not duplicate turns', () => {

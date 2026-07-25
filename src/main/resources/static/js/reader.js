@@ -8883,6 +8883,7 @@
         }
         const characterId = state.chatCharacterId;
         const loadSequence = state.chatLoadSequence;
+        const persistenceBatchId = characterChatClient.createRequestId();
         const chapter = state.chapters[state.currentChapterIndex];
         const context = {
             chapterId: chapter?.id || null,
@@ -8890,15 +8891,15 @@
             chapterTitle: chapter?.title || '',
             paragraphIndex: state.currentParagraphIndex
         };
-        state.callPersistence = state.callPersistence.then(async persisted => {
-            if (persisted === false) return false;
+        state.chatHistory.push(...characterChatSyncHelpers.createPendingVoiceMessages(
+            turns, persistenceBatchId));
+        renderChatMessages();
+        state.callPersistence = state.callPersistence.then(async () => {
             const result = await characterChatClient.saveVoiceTurns(characterId, turns, context);
             if (state.chatCharacterId === characterId && state.chatLoadSequence === loadSequence) {
                 state.chatSessionId = result.sessionId || state.chatSessionId;
-                state.chatHistory = characterChatSyncHelpers.normalizeMessages([
-                    ...state.chatHistory,
-                    ...(result.messages || [])
-                ]);
+                state.chatHistory = characterChatSyncHelpers.mergePersistedVoiceMessages(
+                    state.chatHistory, result.messages, persistenceBatchId);
                 if (state.currentBook?.id) {
                     state.persistedCharacterChatBookIds.add(state.currentBook.id);
                 }
@@ -8909,7 +8910,9 @@
             console.error('Voice call transcript persistence failed:', error);
             const message = error?.message || 'The voice call transcript could not be saved.';
             setCharacterChatError(message, null);
-            return false;
+            // Keep this batch in the local transcript and recover the queue so a
+            // signed-out or transiently failed save does not suppress later turns.
+            return true;
         });
         return state.callPersistence;
     }

@@ -69,6 +69,29 @@
         ]);
     }
 
+    function createPendingVoiceMessages(turns, batchId, timestamp = Date.now()) {
+        return (Array.isArray(turns) ? turns : []).flatMap((turn, index) => {
+            const role = turn?.role === 'user' ? 'user'
+                : turn?.role === 'character' ? 'character'
+                    : '';
+            const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+            if (!role || !content) return [];
+            return [{
+                messageId: null,
+                role,
+                content,
+                timestamp: timestamp + index,
+                voicePersistenceBatchId: batchId
+            }];
+        });
+    }
+
+    function mergePersistedVoiceMessages(messages, persisted, batchId) {
+        const withoutPendingBatch = (Array.isArray(messages) ? messages : [])
+            .filter(message => message?.voicePersistenceBatchId !== batchId);
+        return normalizeMessages([...withoutPendingBatch, ...(Array.isArray(persisted) ? persisted : [])]);
+    }
+
     function defaultRequestId() {
         if (typeof globalThis !== 'undefined' && globalThis.crypto
                 && typeof globalThis.crypto.randomUUID === 'function') {
@@ -187,7 +210,9 @@
         LEGACY_STORAGE_PREFIX,
         createCharacterChatClient,
         createPendingUserMessage,
+        createPendingVoiceMessages,
         discardLegacyCharacterChatCache,
+        mergePersistedVoiceMessages,
         mergeServerExchange,
         normalizeMessages
     };
