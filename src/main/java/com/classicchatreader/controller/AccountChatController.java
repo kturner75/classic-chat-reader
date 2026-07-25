@@ -5,6 +5,8 @@ import com.classicchatreader.model.AccountChatModels.ContinueRequest;
 import com.classicchatreader.model.AccountChatModels.ContinueResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterConversationResponse;
 import com.classicchatreader.model.AccountChatModels.CharacterExchangeResponse;
+import com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest;
+import com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptResponse;
 import com.classicchatreader.model.AccountChatModels.ErrorEnvelope;
 import com.classicchatreader.model.AccountChatModels.FilterOptionsResponse;
 import com.classicchatreader.model.AccountChatModels.SessionDetailResponse;
@@ -99,6 +101,25 @@ public class AccountChatController {
         try {
             CharacterExchangeResponse response = chatHistoryService.sendToCharacter(
                     principal.get().userId(), characterId, body, idempotencyKey);
+            if (response == null) {
+                return error(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "Character not found.");
+            }
+            return ok(response);
+        } catch (ChatHistoryValidationException ex) {
+            return error(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage());
+        }
+    }
+
+    @PostMapping("/characters/{characterId}/voice-turns")
+    public ResponseEntity<?> appendVoiceCallTurnsToCharacter(
+            @PathVariable String characterId,
+            @RequestBody(required = false) CharacterVoiceCallTranscriptRequest body,
+            HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required.");
+        try {
+            CharacterVoiceCallTranscriptResponse response = chatHistoryService.appendVoiceCallTurnsToCharacter(
+                    principal.get().userId(), characterId, body);
             if (response == null) {
                 return error(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "Character not found.");
             }

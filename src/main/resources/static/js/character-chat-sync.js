@@ -69,6 +69,41 @@
         ]);
     }
 
+    function createPendingVoiceMessages(turns, batchId, timestamp = Date.now()) {
+        return (Array.isArray(turns) ? turns : []).flatMap((turn, index) => {
+            const role = turn?.role === 'user' ? 'user'
+                : turn?.role === 'character' ? 'character'
+                    : '';
+            const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+            if (!role || !content) return [];
+            return [{
+                messageId: null,
+                role,
+                content,
+                timestamp: timestamp + index,
+                voicePersistenceBatchId: batchId
+            }];
+        });
+    }
+
+    function mergePersistedVoiceMessages(messages, persisted, batchId) {
+        const serverMessages = normalizeMessages(persisted);
+        const merged = [];
+        let replaced = false;
+        for (const message of Array.isArray(messages) ? messages : []) {
+            if (message?.voicePersistenceBatchId === batchId) {
+                if (!replaced) {
+                    merged.push(...serverMessages);
+                    replaced = true;
+                }
+            } else {
+                merged.push(message);
+            }
+        }
+        if (!replaced) merged.push(...serverMessages);
+        return normalizeMessages(merged);
+    }
+
     function defaultRequestId() {
         if (typeof globalThis !== 'undefined' && globalThis.crypto
                 && typeof globalThis.crypto.randomUUID === 'function') {
@@ -129,6 +164,43 @@
                     ...(await readResponse(response)),
                     requestId
                 };
+            },
+
+            async saveVoiceTurns(characterId, turns, context, options = {}) {
+                const requestTurns = (Array.isArray(turns) ? turns : []).flatMap(turn => {
+                    const normalizedRole = String(turn?.role || '').toUpperCase();
+                    const role = normalizedRole === 'USER' ? 'USER'
+                        : normalizedRole === 'CHARACTER' ? 'CHARACTER'
+                            : '';
+                    const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+                    if (!role || !content) return [];
+                    const turnId = typeof turn?.turnId === 'string' && turn.turnId.trim()
+                        ? turn.turnId.trim()
+                        : idFactory();
+                    return [{ turnId, role, content }];
+                });
+                if (requestTurns.length === 0) {
+                    return { sessionId: null, messages: [] };
+                }
+                const response = await fetchImpl(
+                    `/api/account/chats/characters/${encodeURIComponent(characterId)}/voice-turns`,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        keepalive: true,
+                        signal: options.signal,
+                        body: JSON.stringify({ turns: requestTurns, context: context || null })
+                    }
+                );
+                const payload = await readResponse(response);
+                return {
+                    ...payload,
+                    messages: normalizeMessages(payload?.messages)
+                };
             }
         };
     }
@@ -156,7 +228,9 @@
         LEGACY_STORAGE_PREFIX,
         createCharacterChatClient,
         createPendingUserMessage,
+        createPendingVoiceMessages,
         discardLegacyCharacterChatCache,
+        mergePersistedVoiceMessages,
         mergeServerExchange,
         normalizeMessages
     };

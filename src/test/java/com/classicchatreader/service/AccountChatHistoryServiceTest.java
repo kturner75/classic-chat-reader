@@ -446,6 +446,72 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void firstVoiceCallTurnsCreateAVisibleCharacterConversation() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        String characterId = fixture.character().getId();
+        entityManager.remove(fixture.session());
+        flushAndClear();
+        var request = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-1", "USER", "Hello Tom"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-2", "CHARACTER", "Hello there")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 3)
+        );
+
+        var appended = service.appendVoiceCallTurnsToCharacter("owner", characterId, request);
+        flushAndClear();
+
+        assertThat(appended.sessionId()).isNotBlank();
+        assertThat(appended.messages()).extracting(message -> message.content())
+                .containsExactly("Hello Tom", "Hello there");
+        assertThat(service.getLatestForCharacter("owner", characterId).messages())
+                .extracting(message -> message.content())
+                .containsExactly("Hello Tom", "Hello there");
+        assertThat(service.list("owner", AccountChatHistoryService.ListRequest.empty()).items())
+                .extracting(item -> item.sessionId())
+                .containsExactly(appended.sessionId());
+    }
+
+    @Test
+    void replayedCharacterVoiceCallDoesNotOverwriteNewerContextOrActivity() {
+        Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
+        String characterId = fixture.character().getId();
+        var earlierRequest = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-1", "USER", "Earlier question"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-2", "CHARACTER", "Earlier answer")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 3)
+        );
+        var newerRequest = new com.classicchatreader.model.AccountChatModels.CharacterVoiceCallTranscriptRequest(
+                List.of(
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-3", "USER", "Newer question"),
+                        new com.classicchatreader.model.AccountChatModels.VoiceCallTurn(
+                                "voice-turn-4", "CHARACTER", "Newer answer")
+                ),
+                new com.classicchatreader.model.AccountChatModels.ChatContext(null, 0, "Chapter One", 7)
+        );
+
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, earlierRequest);
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, newerRequest);
+        flushAndClear();
+        var beforeReplay = service.getLatestForCharacter("owner", characterId).session();
+
+        service.appendVoiceCallTurnsToCharacter("owner", characterId, earlierRequest);
+        flushAndClear();
+        var afterReplay = service.getLatestForCharacter("owner", characterId).session();
+
+        assertThat(afterReplay.context().paragraphIndex()).isEqualTo(7);
+        assertThat(afterReplay.lastMessageAt()).isEqualTo(beforeReplay.lastMessageAt());
+    }
+
+    @Test
     void voiceCallTurnsRejectInvalidPayloadsAndUnavailableChats() {
         Fixture fixture = createSession("owner", "Book", "Author", "Character", BASE);
         addMessage(fixture.session(), "USER", "Earlier", BASE);

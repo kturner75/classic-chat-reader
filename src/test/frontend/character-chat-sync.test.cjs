@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const {
     createCharacterChatClient,
     createPendingUserMessage,
+    createPendingVoiceMessages,
     discardLegacyCharacterChatCache,
+    mergePersistedVoiceMessages,
     mergeServerExchange,
     normalizeMessages
 } = require('../../main/resources/static/js/character-chat-sync.js');
@@ -70,6 +72,116 @@ test('send uses a stable idempotency key and server-owned reader context', async
         assert.equal(options.headers['Idempotency-Key'], 'request-1');
         assert.deepEqual(JSON.parse(options.body), { content: 'Hello', context });
     }
+});
+
+test('saveVoiceTurns creates or reuses the character session and sends reader context', async () => {
+    const requests = [];
+    const ids = ['turn-1', 'turn-2'];
+    const abortController = new AbortController();
+    const client = createCharacterChatClient({
+        idFactory: () => ids.shift(),
+        fetchImpl: async (...args) => {
+            requests.push(args);
+            return response({
+                sessionId: 'session-1',
+                messages: [
+                    { messageId: 'm-1', role: 'USER', content: 'Hello Tom' },
+                    { messageId: 'm-2', role: 'CHARACTER', content: 'Hello Huck' }
+                ]
+            });
+        }
+    });
+    const context = { chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'One', paragraphIndex: 3 };
+
+    const saved = await client.saveVoiceTurns('character/one', [
+        { role: 'user', content: ' Hello Tom ' },
+        { role: 'character', content: 'Hello Huck' }
+    ], context, { signal: abortController.signal });
+
+    assert.equal(requests[0][0], '/api/account/chats/characters/character%2Fone/voice-turns');
+    assert.equal(requests[0][1].credentials, 'same-origin');
+    assert.equal(requests[0][1].keepalive, true);
+    assert.equal(requests[0][1].signal, abortController.signal);
+    assert.deepEqual(JSON.parse(requests[0][1].body), {
+        turns: [
+            { turnId: 'turn-1', role: 'USER', content: 'Hello Tom' },
+            { turnId: 'turn-2', role: 'CHARACTER', content: 'Hello Huck' }
+        ],
+        context
+    });
+    assert.equal(saved.sessionId, 'session-1');
+    assert.deepEqual(saved.messages.map(message => message.role), ['user', 'character']);
+});
+
+test('saveVoiceTurns preserves supplied turn IDs for idempotent retries', async () => {
+    const requests = [];
+    const client = createCharacterChatClient({
+        idFactory: () => {
+            throw new Error('retry IDs must not be regenerated');
+        },
+        fetchImpl: async (...args) => {
+            requests.push(args);
+            return response({ sessionId: 'session-1', messages: [] });
+        }
+    });
+    const turns = [{ turnId: 'stable-turn-1', role: 'USER', content: 'Hello again' }];
+
+    await client.saveVoiceTurns('character-1', turns, null);
+    await client.saveVoiceTurns('character-1', turns, null);
+
+    assert.deepEqual(
+        requests.map(([, options]) => JSON.parse(options.body).turns[0].turnId),
+        ['stable-turn-1', 'stable-turn-1']
+    );
+});
+
+test('voice turns remain local until persistence replaces their batch with server messages', () => {
+    const pending = createPendingVoiceMessages([
+        { role: 'user', content: ' Hello Tom ' },
+        { role: 'character', content: 'Hello Huck' }
+    ], 'batch-1', 100);
+
+    assert.deepEqual(pending.map(message => [message.role, message.content, message.timestamp]), [
+        ['user', 'Hello Tom', 100],
+        ['character', 'Hello Huck', 101]
+    ]);
+    assert.equal(pending.every(message => message.voicePersistenceBatchId === 'batch-1'), true);
+
+    const persisted = mergePersistedVoiceMessages(
+        [{ messageId: 'earlier', role: 'USER', content: 'Earlier' }, ...pending],
+        [
+            { messageId: 'm-1', role: 'USER', content: 'Hello Tom' },
+            { messageId: 'm-2', role: 'CHARACTER', content: 'Hello Huck' }
+        ],
+        'batch-1'
+    );
+
+    assert.deepEqual(persisted.map(message => message.messageId), ['earlier', 'm-1', 'm-2']);
+    assert.equal(persisted.some(message => message.voicePersistenceBatchId), false);
+});
+
+test('persisted voice batch replaces pending turns in place without reordering later batches', () => {
+    const first = createPendingVoiceMessages([
+        { role: 'user', content: 'First question' },
+        { role: 'character', content: 'First answer' }
+    ], 'batch-1', 100);
+    const second = createPendingVoiceMessages([
+        { role: 'user', content: 'Second question' }
+    ], 'batch-2', 200);
+
+    const merged = mergePersistedVoiceMessages(
+        [...first, ...second],
+        [
+            { messageId: 'm-1', role: 'USER', content: 'First question' },
+            { messageId: 'm-2', role: 'CHARACTER', content: 'First answer' }
+        ],
+        'batch-1'
+    );
+
+    assert.deepEqual(merged.map(message => message.content), [
+        'First question', 'First answer', 'Second question'
+    ]);
+    assert.equal(merged[2].voicePersistenceBatchId, 'batch-2');
 });
 
 test('retry response replaces the optimistic message and repeated responses do not duplicate turns', () => {

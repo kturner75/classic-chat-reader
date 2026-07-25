@@ -139,6 +139,12 @@
         callNextPlayTime: 0,
         callReconnectAttempted: false,
         callUserEnded: false,
+        callPersistence: Promise.resolve(true),
+        callPersistenceGeneration: 0,
+        callPendingPersistenceBatches: new Map(),
+        callPersistenceRetryHandler: null,
+        callEndingPromise: null,
+        callGeneration: 0,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
         cacheOnly: false,
@@ -2174,6 +2180,9 @@
             updateAccountUi();
             const identityChanged = previousAuthenticated !== state.accountAuthenticated
                 || previousEmail !== state.accountEmail;
+            if (identityChanged) {
+                discardPendingCallPersistence();
+            }
             refreshMyChatsLanding(identityChanged);
 
             refreshClassroomWorkspaceActions();
@@ -8614,15 +8623,16 @@
             if (loadSequence === state.chatLoadSequence && state.chatCharacterId === characterId) {
                 state.chatHistoryLoading = false;
                 renderChatMessages();
+                showPendingCallPersistenceError(characterId);
                 updateCharacterChatInputState();
                 if (!elements.chatInput.disabled) elements.chatInput.focus();
             }
         }
     }
 
-    function closeCharacterChat() {
-        if (state.callActive) {
-            endVoiceCall();
+    async function closeCharacterChat() {
+        if (state.callActive || state.callEndingPromise || isCharacterCallVisible()) {
+            await endVoiceCall();
         }
         elements.characterChatModal.classList.add('hidden');
         state.characterChatOpen = false;
@@ -8876,22 +8886,199 @@
         elements.callCaptions.scrollTop = elements.callCaptions.scrollHeight;
     }
 
-    function persistCallTurns(turns) {
-        if (!turns || turns.length === 0 || !state.chatCharacterId) return;
-        for (const turn of turns) {
-            state.chatHistory.push(turn);
+    function clearCallPersistenceError() {
+        if (state.callPersistenceRetryHandler
+                && state.characterChatRetryHandler === state.callPersistenceRetryHandler) {
+            clearCharacterChatError();
         }
+        state.callPersistenceRetryHandler = null;
+    }
+
+    function discardPendingCallPersistence() {
+        if (state.callPendingPersistenceBatches.size === 0) return;
+        const discardedBatchIds = new Set(state.callPendingPersistenceBatches.keys());
+        const abortControllers = [...state.callPendingPersistenceBatches.values()]
+            .map(batch => batch.abortController)
+            .filter(Boolean);
+        state.callPersistenceGeneration += 1;
+        state.callPendingPersistenceBatches.clear();
+        state.callPersistence = Promise.resolve(true);
+        abortControllers.forEach(controller => controller.abort());
+        state.chatHistory = state.chatHistory.filter(
+            message => !discardedBatchIds.has(message?.voicePersistenceBatchId));
+        clearCallPersistenceError();
         renderChatMessages();
     }
 
+    function showPendingCallPersistenceError(characterId) {
+        const failedBatch = [...state.callPendingPersistenceBatches.values()]
+            .find(batch => batch.characterId === characterId && batch.errorMessage);
+        if (!failedBatch) return;
+        state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
+        setCharacterChatError(failedBatch.errorMessage, state.callPersistenceRetryHandler);
+    }
+
+    function persistCallTurns(turns) {
+        if (!turns || turns.length === 0 || !state.chatCharacterId) {
+            return state.callPersistence;
+        }
+        if (!state.accountAuthenticated) {
+            state.chatHistory.push(...characterChatSyncHelpers.createPendingVoiceMessages(turns, null));
+            renderChatMessages();
+            return state.callPersistence;
+        }
+        if (!characterChatClient) return state.callPersistence;
+        const characterId = state.chatCharacterId;
+        const persistenceBatchId = characterChatClient.createRequestId();
+        const chapter = state.chapters[state.currentChapterIndex];
+        const context = {
+            chapterId: chapter?.id || null,
+            chapterIndex: state.currentChapterIndex,
+            chapterTitle: chapter?.title || '',
+            paragraphIndex: state.currentParagraphIndex
+        };
+        const requestTurns = turns.flatMap(turn => {
+            const role = turn?.role === 'user' ? 'USER'
+                : turn?.role === 'character' ? 'CHARACTER'
+                    : '';
+            const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+            if (!role || !content) return [];
+            return [{ turnId: characterChatClient.createRequestId(), role, content }];
+        });
+        state.chatHistory.push(...characterChatSyncHelpers.createPendingVoiceMessages(
+            turns, persistenceBatchId));
+        renderChatMessages();
+        state.callPendingPersistenceBatches.set(persistenceBatchId, {
+            persistenceBatchId,
+            characterId,
+            requestTurns,
+            context
+        });
+        return queueCallPersistenceFlush();
+    }
+
+    function queueCallPersistenceFlush() {
+        const generation = state.callPersistenceGeneration;
+        state.callPersistence = state.callPersistence.then(() => {
+            if (generation !== state.callPersistenceGeneration) return false;
+            return flushPendingCallPersistence(generation);
+        });
+        return state.callPersistence;
+    }
+
+    async function flushPendingCallPersistence(generation = state.callPersistenceGeneration) {
+        let allPersisted = true;
+        const blockedCharacterIds = new Set();
+        for (const batch of [...state.callPendingPersistenceBatches.values()]) {
+            if (generation !== state.callPersistenceGeneration) return false;
+            if (blockedCharacterIds.has(batch.characterId)) {
+                continue;
+            }
+            if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                continue;
+            }
+            const abortController = new AbortController();
+            batch.abortController = abortController;
+            try {
+                const result = await characterChatClient.saveVoiceTurns(
+                    batch.characterId,
+                    batch.requestTurns,
+                    batch.context,
+                    { signal: abortController.signal });
+                if (generation !== state.callPersistenceGeneration) return false;
+                if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                    continue;
+                }
+                state.callPendingPersistenceBatches.delete(batch.persistenceBatchId);
+                if (state.chatCharacterId === batch.characterId) {
+                    state.chatSessionId = result.sessionId || state.chatSessionId;
+                    state.chatHistory = characterChatSyncHelpers.mergePersistedVoiceMessages(
+                        state.chatHistory, result.messages, batch.persistenceBatchId);
+                    if (state.currentBook?.id) {
+                        state.persistedCharacterChatBookIds.add(state.currentBook.id);
+                    }
+                    renderChatMessages();
+                }
+            } catch (error) {
+                if (generation !== state.callPersistenceGeneration) return false;
+                if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
+                    continue;
+                }
+                allPersisted = false;
+                console.error('Voice call transcript persistence failed:', error);
+                const message = error?.message || 'The voice call transcript could not be saved.';
+                batch.errorMessage = message;
+                if (state.chatCharacterId === batch.characterId) {
+                    state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
+                    setCharacterChatError(message, state.callPersistenceRetryHandler);
+                }
+                blockedCharacterIds.add(batch.characterId);
+            } finally {
+                if (batch.abortController === abortController) {
+                    batch.abortController = null;
+                }
+            }
+        }
+        if (generation !== state.callPersistenceGeneration) return false;
+        if (allPersisted && state.callPendingPersistenceBatches.size === 0) {
+            clearCallPersistenceError();
+        }
+        return allPersisted;
+    }
+
+    async function retryPendingCallPersistence() {
+        if (state.callPendingPersistenceBatches.size === 0) return true;
+        return queueCallPersistenceFlush();
+    }
+
+    async function persistFinishedCallTracker(tracker) {
+        const generation = state.callPersistenceGeneration;
+        if (tracker) {
+            await persistCallTurns(tracker.flush());
+        }
+        if (generation !== state.callPersistenceGeneration) return false;
+        return retryPendingCallPersistence();
+    }
+
+    function detachTimedOutCallPersistence() {
+        const pendingBatches = [...state.callPendingPersistenceBatches.values()];
+        state.callPersistenceGeneration += 1;
+        state.callPersistence = Promise.resolve(false);
+        pendingBatches.forEach(batch => {
+            batch.errorMessage = 'Saving the voice call transcript timed out.';
+            batch.abortController?.abort();
+        });
+        if (state.chatCharacterId) {
+            showPendingCallPersistenceError(state.chatCharacterId);
+        }
+    }
+
+    async function waitForFinishedCallPersistence(tracker) {
+        let timeoutId;
+        const persistence = persistFinishedCallTracker(tracker);
+        const timeout = new Promise(resolve => {
+            timeoutId = setTimeout(() => {
+                detachTimedOutCallPersistence();
+                resolve(false);
+            }, 5000);
+        });
+        try {
+            return await Promise.race([persistence, timeout]);
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
     async function startVoiceCall() {
-        if (state.callActive || !state.chatCharacterId || !state.voiceCallAvailable) return;
+        if (state.callActive || state.callEndingPromise
+                || !state.chatCharacterId || !state.voiceCallAvailable) return;
 
         const character = state.chatCharacter;
         state.callActive = true;
         state.callMuted = false;
         state.callUserEnded = false;
         state.callReconnectAttempted = false;
+        state.callGeneration += 1;
         state.callTracker = VoiceCallUtils.createTranscriptTracker();
         clearCallError();
         setCallStatus('Connecting…');
@@ -9165,30 +9352,44 @@
     }
 
     function endVoiceCall(reason) {
-        // Idempotent: also closes the modal after a failed call (callActive already false)
-        state.callActive = false;
-        state.callUserEnded = true;
+        if (state.callEndingPromise) return state.callEndingPromise;
 
-        if (state.callWs) {
-            try { state.callWs.close(); } catch (_e) { /* noop */ }
-            state.callWs = null;
-        }
-        teardownCallAudio();
+        const operation = (async () => {
+            // Idempotent: also closes the modal after a failed call (callActive already false)
+            state.callActive = false;
+            state.callUserEnded = true;
 
-        // Persist any dangling partial captions into the shared chat history
-        if (state.callTracker) {
-            persistCallTurns(state.callTracker.flush());
+            if (state.callWs) {
+                try { state.callWs.close(); } catch (_e) { /* noop */ }
+                state.callWs = null;
+            }
+            teardownCallAudio();
+
+            // Persist dangling partial captions before allowing the reader to leave. The grace
+            // period prevents a degraded connection from trapping the call UI indefinitely.
+            const tracker = state.callTracker;
             state.callTracker = null;
-        }
+            setCallStatus('Saving conversation…');
+            if (elements.callEndBtn) elements.callEndBtn.disabled = true;
+            if (reason) {
+                setCharacterChatError(reason, null);
+            }
+            await waitForFinishedCallPersistence(tracker);
 
-        elements.callCharacterPortrait?.classList.remove('speaking');
-        elements.characterCallModal?.classList.add('hidden');
-        setCallStatus('');
-        clearCallError();
-
-        if (reason) {
-            setCharacterChatError(reason, null);
-        }
+            elements.callCharacterPortrait?.classList.remove('speaking');
+            elements.characterCallModal?.classList.add('hidden');
+            setCallStatus('');
+            clearCallError();
+            if (elements.callEndBtn) elements.callEndBtn.disabled = false;
+        })();
+        state.callEndingPromise = operation;
+        const clearEndingPromise = () => {
+            if (state.callEndingPromise === operation) {
+                state.callEndingPromise = null;
+            }
+        };
+        void operation.then(clearEndingPromise, clearEndingPromise);
+        return operation;
     }
 
     function toggleCallMute() {
@@ -9199,7 +9400,7 @@
         }
     }
 
-    function failVoiceCall(message) {
+    async function failVoiceCall(message) {
         state.callActive = false;
         state.callUserEnded = true;
         if (state.callWs) {
@@ -9207,12 +9408,11 @@
             state.callWs = null;
         }
         teardownCallAudio();
-        if (state.callTracker) {
-            persistCallTurns(state.callTracker.flush());
-            state.callTracker = null;
-        }
+        const tracker = state.callTracker;
+        state.callTracker = null;
         setCallStatus('');
         setCallError(message);
+        void persistFinishedCallTracker(tracker);
     }
 
     // ========================================
