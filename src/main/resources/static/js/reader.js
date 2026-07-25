@@ -8947,7 +8947,11 @@
 
     async function flushPendingCallPersistence() {
         let allPersisted = true;
+        const blockedCharacterIds = new Set();
         for (const batch of [...state.callPendingPersistenceBatches.values()]) {
+            if (blockedCharacterIds.has(batch.characterId)) {
+                continue;
+            }
             if (state.callPendingPersistenceBatches.get(batch.persistenceBatchId) !== batch) {
                 continue;
             }
@@ -8979,7 +8983,7 @@
                     state.callPersistenceRetryHandler = () => retryPendingCallPersistence();
                     setCharacterChatError(message, state.callPersistenceRetryHandler);
                 }
-                break;
+                blockedCharacterIds.add(batch.characterId);
             }
         }
         if (allPersisted && state.callPendingPersistenceBatches.size === 0) {
