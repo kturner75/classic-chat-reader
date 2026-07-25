@@ -99,6 +99,7 @@ test('saveVoiceTurns creates or reuses the character session and sends reader co
 
     assert.equal(requests[0][0], '/api/account/chats/characters/character%2Fone/voice-turns');
     assert.equal(requests[0][1].credentials, 'same-origin');
+    assert.equal(requests[0][1].keepalive, true);
     assert.deepEqual(JSON.parse(requests[0][1].body), {
         turns: [
             { turnId: 'turn-1', role: 'USER', content: 'Hello Tom' },
@@ -108,6 +109,28 @@ test('saveVoiceTurns creates or reuses the character session and sends reader co
     });
     assert.equal(saved.sessionId, 'session-1');
     assert.deepEqual(saved.messages.map(message => message.role), ['user', 'character']);
+});
+
+test('saveVoiceTurns preserves supplied turn IDs for idempotent retries', async () => {
+    const requests = [];
+    const client = createCharacterChatClient({
+        idFactory: () => {
+            throw new Error('retry IDs must not be regenerated');
+        },
+        fetchImpl: async (...args) => {
+            requests.push(args);
+            return response({ sessionId: 'session-1', messages: [] });
+        }
+    });
+    const turns = [{ turnId: 'stable-turn-1', role: 'USER', content: 'Hello again' }];
+
+    await client.saveVoiceTurns('character-1', turns, null);
+    await client.saveVoiceTurns('character-1', turns, null);
+
+    assert.deepEqual(
+        requests.map(([, options]) => JSON.parse(options.body).turns[0].turnId),
+        ['stable-turn-1', 'stable-turn-1']
+    );
 });
 
 test('voice turns remain local until persistence replaces their batch with server messages', () => {

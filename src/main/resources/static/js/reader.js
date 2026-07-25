@@ -140,6 +140,7 @@
         callReconnectAttempted: false,
         callUserEnded: false,
         callPersistence: Promise.resolve(true),
+        callPendingPersistenceBatches: new Map(),
         callGeneration: 0,
         isMobileLayout: false,
         mobileHeaderMenuFocusIndex: -1,
@@ -8883,7 +8884,6 @@
             return state.callPersistence;
         }
         const characterId = state.chatCharacterId;
-        const loadSequence = state.chatLoadSequence;
         const persistenceBatchId = characterChatClient.createRequestId();
         const chapter = state.chapters[state.currentChapterIndex];
         const context = {
@@ -8892,29 +8892,56 @@
             chapterTitle: chapter?.title || '',
             paragraphIndex: state.currentParagraphIndex
         };
+        const requestTurns = turns.flatMap(turn => {
+            const role = turn?.role === 'user' ? 'USER'
+                : turn?.role === 'character' ? 'CHARACTER'
+                    : '';
+            const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
+            if (!role || !content) return [];
+            return [{ turnId: characterChatClient.createRequestId(), role, content }];
+        });
         state.chatHistory.push(...characterChatSyncHelpers.createPendingVoiceMessages(
             turns, persistenceBatchId));
         renderChatMessages();
-        state.callPersistence = state.callPersistence.then(async () => {
-            const result = await characterChatClient.saveVoiceTurns(characterId, turns, context);
-            if (state.chatCharacterId === characterId && state.chatLoadSequence === loadSequence) {
-                state.chatSessionId = result.sessionId || state.chatSessionId;
-                state.chatHistory = characterChatSyncHelpers.mergePersistedVoiceMessages(
-                    state.chatHistory, result.messages, persistenceBatchId);
-                if (state.currentBook?.id) {
-                    state.persistedCharacterChatBookIds.add(state.currentBook.id);
-                }
-                renderChatMessages();
-            }
-            return true;
-        }).catch(error => {
-            console.error('Voice call transcript persistence failed:', error);
-            const message = error?.message || 'The voice call transcript could not be saved.';
-            setCharacterChatError(message, null);
-            // Keep this batch in the local transcript and recover the queue so a
-            // signed-out or transiently failed save does not suppress later turns.
-            return true;
+        state.callPendingPersistenceBatches.set(persistenceBatchId, {
+            persistenceBatchId,
+            characterId,
+            requestTurns,
+            context
         });
+        state.callPersistence = state.callPersistence.then(flushPendingCallPersistence);
+        return state.callPersistence;
+    }
+
+    async function flushPendingCallPersistence() {
+        let allPersisted = true;
+        for (const batch of [...state.callPendingPersistenceBatches.values()]) {
+            try {
+                const result = await characterChatClient.saveVoiceTurns(
+                    batch.characterId, batch.requestTurns, batch.context);
+                state.callPendingPersistenceBatches.delete(batch.persistenceBatchId);
+                if (state.chatCharacterId === batch.characterId) {
+                    state.chatSessionId = result.sessionId || state.chatSessionId;
+                    state.chatHistory = characterChatSyncHelpers.mergePersistedVoiceMessages(
+                        state.chatHistory, result.messages, batch.persistenceBatchId);
+                    if (state.currentBook?.id) {
+                        state.persistedCharacterChatBookIds.add(state.currentBook.id);
+                    }
+                    renderChatMessages();
+                }
+            } catch (error) {
+                allPersisted = false;
+                console.error('Voice call transcript persistence failed:', error);
+                const message = error?.message || 'The voice call transcript could not be saved.';
+                setCharacterChatError(message, null);
+            }
+        }
+        return allPersisted;
+    }
+
+    async function retryPendingCallPersistence() {
+        if (state.callPendingPersistenceBatches.size === 0) return true;
+        state.callPersistence = state.callPersistence.then(flushPendingCallPersistence);
         return state.callPersistence;
     }
 
@@ -9218,6 +9245,7 @@
         if (tracker) {
             await persistCallTurns(tracker.flush());
         }
+        await retryPendingCallPersistence();
         if (state.callGeneration !== callGeneration) return;
 
         elements.callCharacterPortrait?.classList.remove('speaking');
@@ -9252,6 +9280,7 @@
         if (tracker) {
             await persistCallTurns(tracker.flush());
         }
+        await retryPendingCallPersistence();
         if (state.callGeneration !== callGeneration) return;
         setCallStatus('');
         setCallError(message);

@@ -168,12 +168,16 @@
 
             async saveVoiceTurns(characterId, turns, context) {
                 const requestTurns = (Array.isArray(turns) ? turns : []).flatMap(turn => {
-                    const role = turn?.role === 'user' ? 'USER'
-                        : turn?.role === 'character' ? 'CHARACTER'
+                    const normalizedRole = String(turn?.role || '').toUpperCase();
+                    const role = normalizedRole === 'USER' ? 'USER'
+                        : normalizedRole === 'CHARACTER' ? 'CHARACTER'
                             : '';
                     const content = typeof turn?.content === 'string' ? turn.content.trim() : '';
                     if (!role || !content) return [];
-                    return [{ turnId: idFactory(), role, content }];
+                    const turnId = typeof turn?.turnId === 'string' && turn.turnId.trim()
+                        ? turn.turnId.trim()
+                        : idFactory();
+                    return [{ turnId, role, content }];
                 });
                 if (requestTurns.length === 0) {
                     return { sessionId: null, messages: [] };
@@ -187,6 +191,7 @@
                             Accept: 'application/json',
                             'Content-Type': 'application/json'
                         },
+                        keepalive: true,
                         body: JSON.stringify({ turns: requestTurns, context: context || null })
                     }
                 );
