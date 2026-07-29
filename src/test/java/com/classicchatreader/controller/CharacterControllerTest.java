@@ -216,8 +216,8 @@ class CharacterControllerTest {
                 org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.anyInt()))
                 .thenReturn(new CharacterVoiceCallService.VoiceCallSession(
-                        "secret-token", 1234567890L, "grok-voice-latest",
-                        "wss://api.x.ai/v1/realtime?model=grok-voice-latest",
+                        "secret-token", 1234567890L, "grok-voice-think-fast-2.0",
+                        "wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0",
                         new CharacterVoiceCallService.SessionConfig(
                                 "instructions here", "leo",
                                 new CharacterVoiceCallService.TurnDetection("server_vad", 0.5, 600, 30000))));
@@ -237,8 +237,8 @@ class CharacterControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token", is("secret-token")))
-                .andExpect(jsonPath("$.model", is("grok-voice-latest")))
-                .andExpect(jsonPath("$.websocketUrl", is("wss://api.x.ai/v1/realtime?model=grok-voice-latest")))
+                .andExpect(jsonPath("$.model", is("grok-voice-think-fast-2.0")))
+                .andExpect(jsonPath("$.websocketUrl", is("wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0")))
                 .andExpect(jsonPath("$.sessionConfig.voice", is("leo")))
                 .andExpect(jsonPath("$.sessionConfig.turnDetection.type", is("server_vad")));
 

@@ -31,7 +31,7 @@ class XaiRealtimeSessionServiceTest {
 
         assertEquals("secret-1", session.clientSecret());
         assertEquals(1234L, session.expiresAtEpochSeconds());
-        assertEquals("grok-voice-latest", session.model());
+        assertEquals("grok-voice-think-fast-2.0", session.model());
         assertEquals(List.of("Bearer api-key"), authHeaders);
     }
 
@@ -116,7 +116,7 @@ class XaiRealtimeSessionServiceTest {
     }
 
     private XaiRealtimeSessionService service(String apiKey, XaiOAuthTokenManager oauthManager, WebClient webClient) {
-        return new XaiRealtimeSessionService(apiKey, "grok-voice-latest", 1800, 10, oauthManager, webClient);
+        return new XaiRealtimeSessionService(apiKey, "grok-voice-think-fast-2.0", 1800, 10, oauthManager, webClient);
     }
 
     private String tokenResponse(int expiresInSeconds) {
