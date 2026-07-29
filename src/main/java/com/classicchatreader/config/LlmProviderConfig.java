@@ -154,7 +154,7 @@ public class LlmProviderConfig {
     @Value("${voice.call.xai.api-key:${ai.chat.xai.api-key:}}")
     private String voiceCallXaiApiKey;
 
-    @Value("${voice.call.xai.model:grok-voice-latest}")
+    @Value("${voice.call.xai.model:grok-voice-think-fast-2.0}")
     private String voiceCallXaiModel;
 
     @Value("${voice.call.token-ttl-seconds:1800}")

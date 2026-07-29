@@ -78,7 +78,7 @@ class CharacterVoiceCallServiceTest {
         when(voiceSelectionService.selectVoice(character.getName(), character.getDescription()))
                 .thenReturn(new VoiceSelection("atlas", "Grounded voice suits a detective", true));
         when(realtimeSessionService.mintSession())
-                .thenReturn(new XaiRealtimeSessionService.RealtimeSession("secret", 42L, "grok-voice-latest"));
+                .thenReturn(new XaiRealtimeSessionService.RealtimeSession("secret", 42L, "grok-voice-think-fast-2.0"));
 
         List<ChatMessage> history = List.of(
                 new ChatMessage("user", "Tell me about the moor.", 1L),
@@ -89,7 +89,7 @@ class CharacterVoiceCallServiceTest {
 
         assertEquals("secret", session.token());
         assertEquals(42L, session.expiresAtEpochSeconds());
-        assertEquals("wss://api.x.ai/v1/realtime?model=grok-voice-latest", session.websocketUrl());
+        assertEquals("wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0", session.websocketUrl());
 
         String instructions = session.sessionConfig().instructions();
         assertTrue(instructions.contains("Sherlock Holmes"), "persona should name the character");
@@ -236,7 +236,7 @@ class CharacterVoiceCallServiceTest {
         when(chapterRepository.findByBookIdAndChapterIndex(character.getBook().getId(), 2))
                 .thenReturn(Optional.of(new ChapterEntity(2, "The Turning Point")));
         when(realtimeSessionService.mintSession())
-                .thenReturn(new XaiRealtimeSessionService.RealtimeSession("secret", 42L, "grok-voice-latest"));
+                .thenReturn(new XaiRealtimeSessionService.RealtimeSession("secret", 42L, "grok-voice-think-fast-2.0"));
     }
 
     private CharacterEntity characterInBook() {
