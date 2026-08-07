@@ -205,18 +205,22 @@ public class TeacherQuizAuthoringService {
                     "Effective quiz cannot exceed 20 questions.");
         }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
-        // Content replacement invalidates prior attempt scores for this chapter's pass rules.
-        LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
-        for (AssignmentEntity assignment : assignmentRepository
-                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")) {
-            if (!termId.equals(assignment.getTermId())) {
-                continue;
+        String nextContentVersion = chapterQuizService.contentVersion(
+                new ChapterQuizPayload(effective.effectiveQuestions()));
+        // Only invalidate attempt windows when the effective quiz content actually changed.
+        if (!Objects.equals(previousContentVersion, nextContentVersion)) {
+            LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
+            for (AssignmentEntity assignment : assignmentRepository
+                    .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")) {
+                if (!termId.equals(assignment.getTermId())) {
+                    continue;
+                }
+                if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
+                    continue;
+                }
+                assignment.setQuizRulesActivatedAt(activated);
+                assignmentRepository.save(assignment);
             }
-            if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
-                continue;
-            }
-            assignment.setQuizRulesActivatedAt(activated);
-            assignmentRepository.save(assignment);
         }
         return effective;
     }

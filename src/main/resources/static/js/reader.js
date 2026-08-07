@@ -5732,16 +5732,25 @@
         const payload = quiz && quiz.payload ? quiz.payload : {};
         const questions = Array.isArray(payload.questions) ? payload.questions : [];
         const previousSelections = Array.isArray(state.quizSelectedAnswers) ? state.quizSelectedAnswers : [];
-        const sameQuestionCount = Array.isArray(state.quizQuestions) && state.quizQuestions.length === questions.length;
+        const previousVersion = state.quizContentVersion;
+        const previousIds = Array.isArray(state.quizQuestions)
+            ? state.quizQuestions.map(item => item && item.id ? String(item.id) : '').join('|')
+            : '';
+        const nextVersion = typeof payload.contentVersion === 'string' ? payload.contentVersion : null;
+        const nextIds = questions.map(item => item && item.id ? String(item.id) : '').join('|');
+        const sameContent = (previousVersion && nextVersion && previousVersion === nextVersion)
+            || (!!previousIds && previousIds === nextIds);
         const difficultyLevel = Number.isInteger(quiz?.difficultyLevel) ? quiz.difficultyLevel : 0;
 
         state.quizQuestions = questions;
-        state.quizContentVersion = typeof payload.contentVersion === 'string' ? payload.contentVersion : null;
+        state.quizContentVersion = nextVersion;
         state.quizDifficultyLevel = difficultyLevel;
-        state.quizSelectedAnswers = questions.map((_, index) =>
-            Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
-        );
-        if (!sameQuestionCount) {
+        if (sameContent) {
+            state.quizSelectedAnswers = questions.map((_, index) =>
+                Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
+            );
+        } else {
+            state.quizSelectedAnswers = questions.map(() => null);
             state.quizResult = null;
             renderChapterQuizFeedback(null);
         }
