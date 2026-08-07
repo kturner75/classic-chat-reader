@@ -233,6 +233,15 @@ public class ClassroomAdminService {
                     HttpStatus.BAD_REQUEST,
                     "defaultQuizMaxRetries requires defaultQuizPassMinCorrect.");
         }
+        int questionCount = features.getDefaultQuizQuestionCount() > 0
+                ? features.getDefaultQuizQuestionCount()
+                : 5;
+        if (min != null && min > questionCount) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "defaultQuizPassMinCorrect cannot exceed defaultQuizQuestionCount ("
+                            + questionCount + ").");
+        }
     }
 
     private void validateFeatureUpdate(String termId, FeatureUpdateRequest request) {
@@ -604,26 +613,17 @@ public class ClassroomAdminService {
                     "quizPassMinCorrect requires a chapter-targeted assignment (not whole-book).");
         }
         Optional<Integer> known = classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId);
-        if (known.isPresent()) {
-            if (minCorrect > known.get()) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
-                                + known.get() + " questions).");
-            }
-            return;
-        }
-        // Quiz content not published yet — bound by teacher default question count (or 5).
-        int fallback = classFeatureSettingsRepository.findById(termId)
-                .map(ClassFeatureSettingsEntity::getDefaultQuizQuestionCount)
-                .filter(count -> count != null && count > 0)
-                .orElse(5);
-        if (minCorrect > fallback) {
+        if (known.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "quizPassMinCorrect (" + minCorrect + ") cannot exceed the class default quiz size ("
-                            + fallback + ") before a chapter quiz is published. "
-                            + "Publish the class quiz first or lower the pass threshold.");
+                    "Publish a class quiz for this chapter before setting quizPassMinCorrect, "
+                            + "so the pass threshold can be checked against the real question count.");
+        }
+        if (minCorrect > known.get()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
+                            + known.get() + " questions).");
         }
     }
 
