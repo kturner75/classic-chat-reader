@@ -5738,8 +5738,8 @@
             : '';
         const nextVersion = typeof payload.contentVersion === 'string' ? payload.contentVersion : null;
         const nextIds = questions.map(item => item && item.id ? String(item.id) : '').join('|');
-        const sameContent = (previousVersion && nextVersion && previousVersion === nextVersion)
-            || (!!previousIds && previousIds === nextIds);
+        const sameContent = !!(previousVersion && nextVersion && previousVersion === nextVersion
+            && previousIds && previousIds === nextIds);
         const difficultyLevel = Number.isInteger(quiz?.difficultyLevel) ? quiz.difficultyLevel : 0;
 
         state.quizQuestions = questions;

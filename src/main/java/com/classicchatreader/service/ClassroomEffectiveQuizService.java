@@ -144,9 +144,10 @@ public class ClassroomEffectiveQuizService {
 
     private void assertSubmissionMatchesDisplayedQuiz(
             ChapterQuizPayload payload, List<String> submittedQuestionIds, String contentVersion) {
-        if ((submittedQuestionIds == null || submittedQuestionIds.isEmpty())
-                && (contentVersion == null || contentVersion.isBlank())) {
-            return;
+        if (contentVersion == null || contentVersion.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "contentVersion is required. Reload the quiz and try again.");
         }
         List<String> currentIds = payload == null || payload.questions() == null
                 ? List.of()
@@ -165,13 +166,11 @@ public class ClassroomEffectiveQuizService {
                         "This quiz was updated since you opened it. Reload the quiz and try again.");
             }
         }
-        if (contentVersion != null && !contentVersion.isBlank()) {
-            String currentVersion = chapterQuizService.contentVersion(payload);
-            if (currentVersion == null || !currentVersion.equals(contentVersion.trim())) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "This quiz was updated since you opened it. Reload the quiz and try again.");
-            }
+        String currentVersion = chapterQuizService.contentVersion(payload);
+        if (currentVersion == null || !currentVersion.equals(contentVersion.trim())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This quiz was updated since you opened it. Reload the quiz and try again.");
         }
     }
 
