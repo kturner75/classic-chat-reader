@@ -290,39 +290,32 @@ public class TeacherQuizAuthoringService {
         if (result.isEmpty()) {
             throw new IllegalArgumentException("No usable questions returned");
         }
-        // Trim options to requested count when longer, keeping the correct answer.
+        // Trim options to requested count when longer, preserving order and correct answer.
         return result.stream()
                 .map(q -> {
-                    List<String> sourceOptions = q.options() == null ? List.of() : q.options();
+                    List<String> sourceOptions = q.options() == null ? List.of() : q.options().stream()
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(s -> !s.isBlank())
+                            .toList();
                     int correct = q.correctOptionIndex() == null ? 0 : q.correctOptionIndex();
+                    if (sourceOptions.isEmpty()) {
+                        return q;
+                    }
                     if (correct < 0 || correct >= sourceOptions.size()) {
                         correct = 0;
                     }
-                    String correctText = sourceOptions.isEmpty() ? "" : sourceOptions.get(correct);
-                    List<String> options = new ArrayList<>();
-                    if (!correctText.isBlank()) {
-                        options.add(correctText);
+                    if (sourceOptions.size() <= optionCount) {
+                        return new ChapterQuizPayload.Question(
+                                q.id(), q.question(), sourceOptions, correct,
+                                q.citationParagraphIndex(), q.citationSnippet());
                     }
-                    for (String option : sourceOptions) {
-                        if (options.size() >= optionCount) {
-                            break;
-                        }
-                        if (option == null || option.isBlank()) {
-                            continue;
-                        }
-                        if (options.stream().noneMatch(existing -> existing.equalsIgnoreCase(option))) {
-                            options.add(option);
-                        }
-                    }
-                    while (options.size() < Math.min(2, optionCount)) {
-                        options.add("Option " + (options.size() + 1));
-                    }
-                    int remapped = 0;
-                    for (int i = 0; i < options.size(); i++) {
-                        if (options.get(i).equalsIgnoreCase(correctText)) {
-                            remapped = i;
-                            break;
-                        }
+                    List<String> options = new ArrayList<>(sourceOptions.subList(0, optionCount));
+                    int remapped = correct;
+                    if (correct >= optionCount) {
+                        // Keep provider order for the first N-1 options; place correct answer last.
+                        options.set(optionCount - 1, sourceOptions.get(correct));
+                        remapped = optionCount - 1;
                     }
                     return new ChapterQuizPayload.Question(
                             q.id(), q.question(), options, remapped,

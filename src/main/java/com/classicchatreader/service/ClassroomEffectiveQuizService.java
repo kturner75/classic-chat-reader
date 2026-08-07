@@ -66,7 +66,7 @@ public class ClassroomEffectiveQuizService {
                     original.chapterId(),
                     original.chapterIndex(),
                     original.chapterTitle(),
-                    original.status(),
+                    "COMPLETED",
                     true,
                     original.generatedAt(),
                     original.updatedAt(),
