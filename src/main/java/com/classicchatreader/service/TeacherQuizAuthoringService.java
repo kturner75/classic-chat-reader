@@ -103,6 +103,10 @@ public class TeacherQuizAuthoringService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "operations are required.");
         }
 
+        EffectiveQuizResponse previousEffective = getEffectiveQuiz(userId, termId, chapterId);
+        String previousContentVersion = chapterQuizService.contentVersion(
+                toPayload(previousEffective.effectiveQuestions()));
+
         ChapterQuizPayload generated = loadGeneratedPayload(chapterId);
         var generatedIds = EffectiveQuizAssembler.generatedQuestionIds(generated);
 
@@ -206,7 +210,7 @@ public class TeacherQuizAuthoringService {
         }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
         String nextContentVersion = chapterQuizService.contentVersion(
-                new ChapterQuizPayload(effective.effectiveQuestions()));
+                toPayload(effective.effectiveQuestions()));
         // Only invalidate attempt windows when the effective quiz content actually changed.
         if (!Objects.equals(previousContentVersion, nextContentVersion)) {
             LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
@@ -592,7 +596,24 @@ public class TeacherQuizAuthoringService {
         return value == null || value.isBlank();
     }
 
-    private static String trimToNull(String value) {
+    private ChapterQuizPayload toPayload(List<TeacherQuestionView> questions) {
+            if (questions == null || questions.isEmpty()) {
+                return new ChapterQuizPayload(List.of());
+            }
+            List<ChapterQuizPayload.Question> mapped = questions.stream()
+                    .filter(Objects::nonNull)
+                    .map(q -> new ChapterQuizPayload.Question(
+                            q.id(),
+                            q.question(),
+                            q.options(),
+                            q.correctOptionIndex(),
+                            q.citationParagraphIndex(),
+                            q.citationSnippet() == null ? "" : q.citationSnippet()))
+                    .toList();
+            return new ChapterQuizPayload(mapped);
+        }
+
+        private String trimToNull(String value) {
         if (value == null) {
             return null;
         }
