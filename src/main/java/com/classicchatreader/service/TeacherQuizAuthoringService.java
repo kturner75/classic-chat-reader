@@ -14,6 +14,7 @@ import com.classicchatreader.service.llm.LlmProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,7 @@ public class TeacherQuizAuthoringService {
     private final ChapterQuizService chapterQuizService;
     private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
 
     @Value("${quiz.generation.max-context-chars:7000}")
     private int maxContextChars;
@@ -51,7 +53,8 @@ public class TeacherQuizAuthoringService {
             ParagraphRepository paragraphRepository,
             ChapterQuizService chapterQuizService,
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            EntityManager entityManager) {
         this.authorizationService = authorizationService;
         this.overrideRepository = overrideRepository;
         this.assignmentRepository = assignmentRepository;
@@ -60,6 +63,7 @@ public class TeacherQuizAuthoringService {
         this.chapterQuizService = chapterQuizService;
         this.reasoningProvider = reasoningProvider;
         this.objectMapper = objectMapper;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -111,6 +115,8 @@ public class TeacherQuizAuthoringService {
                 overrideRepository.save(row);
             }
         }
+        // Flush archived overlay keys before inserting replacements that reuse source IDs.
+        entityManager.flush();
 
         int sort = 0;
         for (OverrideOperation op : request.operations()) {
@@ -342,12 +348,17 @@ public class TeacherQuizAuthoringService {
                             .toList();
                     int correct = q.correctOptionIndex() == null ? 0 : q.correctOptionIndex();
                     if (sourceOptions.isEmpty()) {
-                        return q;
+                        throw new IllegalArgumentException("Question options cannot be empty");
                     }
                     if (correct < 0 || correct >= sourceOptions.size()) {
                         correct = 0;
                     }
-                    if (sourceOptions.size() <= optionCount) {
+                    if (sourceOptions.size() < optionCount) {
+                        throw new IllegalArgumentException(
+                                "Expected exactly " + optionCount + " options but received "
+                                        + sourceOptions.size());
+                    }
+                    if (sourceOptions.size() == optionCount) {
                         return new ChapterQuizPayload.Question(
                                 q.id(), q.question(), sourceOptions, correct,
                                 q.citationParagraphIndex(), q.citationSnippet());

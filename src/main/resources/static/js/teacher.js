@@ -551,6 +551,12 @@
         const minCorrectRaw = String(form.get('quizPassMinCorrect') || '').trim();
         const maxRetriesRaw = String(form.get('quizMaxRetries') || '').trim();
         if (body.quizRequired) {
+            const minEmpty = !minCorrectRaw;
+            const retriesEmpty = !maxRetriesRaw;
+            if (minEmpty !== retriesEmpty) {
+                toast('Set both pass min correct and max retries, or clear both.');
+                return;
+            }
             body.quizPassMinCorrect = minCorrectRaw ? Number(minCorrectRaw) : null;
             body.quizMaxRetries = maxRetriesRaw ? Number(maxRetriesRaw) : null;
             if (body.quizPassMinCorrect == null) {
