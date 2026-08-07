@@ -255,7 +255,6 @@ public class ChapterQuizController {
         ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(httpRequest, httpResponse);
         String readerId = identity.accountAuthenticated() ? null : identity.readerKey();
         try {
-            classroomQuizPolicyService.assertCanAttempt(chapterId, identity.userId());
             return classroomEffectiveQuizService.gradeQuiz(
                             chapterId,
                             request.selectedOptionIndexes(),

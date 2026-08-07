@@ -550,8 +550,13 @@ public class ClassroomAdminService {
     }
 
     private void validatePassMinAgainstEffectiveQuiz(String termId, String chapterId, Integer minCorrect) {
-        if (minCorrect == null || chapterId == null || chapterId.isBlank()) {
+        if (minCorrect == null) {
             return;
+        }
+        if (chapterId == null || chapterId.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "quizPassMinCorrect requires a chapter-targeted assignment (not whole-book).");
         }
         classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId).ifPresent(count -> {
             if (minCorrect > count) {
@@ -672,6 +677,7 @@ public class ClassroomAdminService {
             if (override.chatEnabled() != null) features.setChatEnabled(override.chatEnabled());
             if (override.speedReadingEnabled() != null) features.setSpeedReadingEnabled(override.speedReadingEnabled());
             if (override.readingBuddyEnabled() != null) features.setReadingBuddyEnabled(override.readingBuddyEnabled());
+            applyQuizDefaults(features, override);
         }
         return features;
     }

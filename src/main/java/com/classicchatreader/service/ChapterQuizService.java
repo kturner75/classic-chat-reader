@@ -27,8 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,6 +42,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Service
 public class ChapterQuizService {
@@ -85,6 +86,9 @@ public class ChapterQuizService {
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    @Value("${quiz.content-version-secret:classic-chat-reader-quiz-content-version}")
+    private String contentVersionSecret;
 
     public ChapterQuizService(
             ChapterQuizRepository chapterQuizRepository,
@@ -733,7 +737,9 @@ public class ChapterQuizService {
         return new ChapterQuizViewPayload(questions, contentVersion(payload));
     }
 
-    /** Opaque grading-version token for the full quiz content (including correct answers). */
+    /** Opaque grading-version token for the full quiz content (including correct answers).
+     * Uses HMAC so the token is not a low-entropy answer-key oracle.
+     */
     public String contentVersion(ChapterQuizPayload payload) {
         if (payload == null || payload.questions() == null || payload.questions().isEmpty()) {
             return null;
@@ -755,16 +761,19 @@ public class ChapterQuizService {
             canonical.append('\u001d');
         }
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            String secret = (contentVersionSecret == null || contentVersionSecret.isBlank())
+                    ? "classic-chat-reader-quiz-content-version"
+                    : contentVersionSecret;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(canonical.toString().getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(hash.length * 2);
             for (byte b : hash) {
                 hex.append(String.format("%02x", b));
             }
             return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // Extremely unlikely on a standard JVM; fall back to canonical length marker.
-            return Integer.toHexString(canonical.toString().hashCode());
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to compute quiz content version", e);
         }
     }
 

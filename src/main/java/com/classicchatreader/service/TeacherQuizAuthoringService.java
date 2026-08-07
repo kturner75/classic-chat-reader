@@ -285,16 +285,42 @@ public class TeacherQuizAuthoringService {
         if (result.isEmpty()) {
             throw new IllegalArgumentException("No usable questions returned");
         }
-        // Trim options to requested count when longer
+        // Trim options to requested count when longer, keeping the correct answer.
         return result.stream()
                 .map(q -> {
-                    List<String> options = q.options().stream().limit(optionCount).toList();
+                    List<String> sourceOptions = q.options() == null ? List.of() : q.options();
                     int correct = q.correctOptionIndex() == null ? 0 : q.correctOptionIndex();
-                    if (correct >= options.size()) {
+                    if (correct < 0 || correct >= sourceOptions.size()) {
                         correct = 0;
                     }
+                    String correctText = sourceOptions.isEmpty() ? "" : sourceOptions.get(correct);
+                    List<String> options = new ArrayList<>();
+                    if (!correctText.isBlank()) {
+                        options.add(correctText);
+                    }
+                    for (String option : sourceOptions) {
+                        if (options.size() >= optionCount) {
+                            break;
+                        }
+                        if (option == null || option.isBlank()) {
+                            continue;
+                        }
+                        if (options.stream().noneMatch(existing -> existing.equalsIgnoreCase(option))) {
+                            options.add(option);
+                        }
+                    }
+                    while (options.size() < Math.min(2, optionCount)) {
+                        options.add("Option " + (options.size() + 1));
+                    }
+                    int remapped = 0;
+                    for (int i = 0; i < options.size(); i++) {
+                        if (options.get(i).equalsIgnoreCase(correctText)) {
+                            remapped = i;
+                            break;
+                        }
+                    }
                     return new ChapterQuizPayload.Question(
-                            q.id(), q.question(), options, correct,
+                            q.id(), q.question(), options, remapped,
                             q.citationParagraphIndex(), q.citationSnippet());
                 })
                 .toList();

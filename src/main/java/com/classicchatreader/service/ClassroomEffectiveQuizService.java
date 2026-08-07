@@ -28,6 +28,7 @@ public class ClassroomEffectiveQuizService {
     private final QuizQuestionOverrideRepository overrideRepository;
     private final ChapterRepository chapterRepository;
     private final ChapterQuizService chapterQuizService;
+    private final ClassroomQuizPolicyService classroomQuizPolicyService;
     private final ObjectMapper objectMapper;
 
     public ClassroomEffectiveQuizService(
@@ -35,11 +36,13 @@ public class ClassroomEffectiveQuizService {
             QuizQuestionOverrideRepository overrideRepository,
             ChapterRepository chapterRepository,
             ChapterQuizService chapterQuizService,
+            ClassroomQuizPolicyService classroomQuizPolicyService,
             ObjectMapper objectMapper) {
         this.classroomContextService = classroomContextService;
         this.overrideRepository = overrideRepository;
         this.chapterRepository = chapterRepository;
         this.chapterQuizService = chapterQuizService;
+        this.classroomQuizPolicyService = classroomQuizPolicyService;
         this.objectMapper = objectMapper;
     }
 
@@ -111,16 +114,21 @@ public class ClassroomEffectiveQuizService {
             String contentVersion,
             String readerId,
             String userId) {
-        Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
-        ChapterQuizPayload versioned = effective.orElseGet(
-                () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
-        assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
+        // Serialize last-attempt races for the same student/chapter on this JVM.
+        String lockKey = ((userId == null ? "" : userId) + "\u0000" + (chapterId == null ? "" : chapterId)).intern();
+        synchronized (lockKey) {
+            Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
+            ChapterQuizPayload versioned = effective.orElseGet(
+                    () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
+            assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
+            classroomQuizPolicyService.assertCanAttempt(chapterId, userId);
 
-        if (effective.isEmpty()) {
-            return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
+            if (effective.isEmpty()) {
+                return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
+            }
+            return chapterQuizService.gradeQuizWithPayload(
+                    chapterId, selectedOptionIndexes, readerId, userId, effective.get());
         }
-        return chapterQuizService.gradeQuizWithPayload(
-                chapterId, selectedOptionIndexes, readerId, userId, effective.get());
     }
 
     private void assertSubmissionMatchesDisplayedQuiz(
