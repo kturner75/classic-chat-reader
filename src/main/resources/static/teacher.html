@@ -158,7 +158,8 @@
                         </div>
                         <span id="feature-save-status" class="save-status" aria-live="polite"></span>
                     </div>
-                    <form id="features-form" class="feature-grid">
+                    <form id="features-form">
+                        <div class="feature-grid">
                         <label class="feature-control"><span><strong>Quizzes</strong><small>Chapter comprehension quizzes</small></span><input name="quizEnabled" type="checkbox"><i></i></label>
                         <label class="feature-control"><span><strong>Chapter recaps</strong><small>AI-generated chapter summaries</small></span><input name="recapEnabled" type="checkbox"><i></i></label>
                         <label class="feature-control"><span><strong>Read aloud</strong><small>Text-to-speech playback</small></span><input name="ttsEnabled" type="checkbox"><i></i></label>
@@ -167,7 +168,7 @@
                         <label class="feature-control"><span><strong>AI chat</strong><small>Conversation features in the reader</small></span><input name="chatEnabled" type="checkbox"><i></i></label>
                         <label class="feature-control"><span><strong>Speed reading</strong><small>Focused rapid-reading mode</small></span><input name="speedReadingEnabled" type="checkbox"><i></i></label>
                         <label class="feature-control"><span><strong>Reading Buddy</strong><small id="reading-buddy-feature-description">AI reading companion</small></span><input name="readingBuddyEnabled" type="checkbox" aria-describedby="reading-buddy-feature-description"><i></i></label>
-                    </form>
+                        </div>
                     <div class="quiz-defaults-panel">
                         <div class="section-heading compact">
                             <div>
@@ -177,12 +178,13 @@
                             </div>
                         </div>
                         <div class="form-grid quiz-defaults-grid">
-                            <label>Default question count<input name="defaultQuizQuestionCount" form="features-form" type="number" min="1" max="20" step="1"></label>
-                            <label>Default answer choices<input name="defaultQuizOptionCount" form="features-form" type="number" min="2" max="6" step="1"></label>
-                            <label>Default min correct to pass <span>(optional)</span><input name="defaultQuizPassMinCorrect" form="features-form" type="number" min="1" max="20" step="1" placeholder="e.g. 7"></label>
-                            <label>Default max retries <span>(0 = no retries)</span><input name="defaultQuizMaxRetries" form="features-form" type="number" min="0" max="20" step="1" placeholder="e.g. 1"></label>
+                            <label>Default question count<input name="defaultQuizQuestionCount" type="number" min="1" max="20" step="1"></label>
+                            <label>Default answer choices<input name="defaultQuizOptionCount" type="number" min="2" max="6" step="1"></label>
+                            <label>Default min correct to pass <span>(optional)</span><input name="defaultQuizPassMinCorrect" type="number" min="1" max="20" step="1" placeholder="e.g. 7"></label>
+                            <label>Default max retries <span>(0 = no retries)</span><input name="defaultQuizMaxRetries" type="number" min="0" max="20" step="1" placeholder="e.g. 1"></label>
                         </div>
                     </div>
+                    </form>
                 </section>
                 <section id="quiz-authoring" class="teacher-section">
                     <div class="section-heading">

@@ -1,9 +1,11 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.entity.QuizQuestionOverrideEntity;
 import com.classicchatreader.model.ChapterQuizPayload;
+import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.repository.QuizQuestionOverrideRepository;
@@ -31,6 +33,7 @@ public class TeacherQuizAuthoringService {
 
     private final ClassroomAuthorizationService authorizationService;
     private final QuizQuestionOverrideRepository overrideRepository;
+    private final AssignmentRepository assignmentRepository;
     private final ChapterRepository chapterRepository;
     private final ParagraphRepository paragraphRepository;
     private final ChapterQuizService chapterQuizService;
@@ -43,6 +46,7 @@ public class TeacherQuizAuthoringService {
     public TeacherQuizAuthoringService(
             ClassroomAuthorizationService authorizationService,
             QuizQuestionOverrideRepository overrideRepository,
+            AssignmentRepository assignmentRepository,
             ChapterRepository chapterRepository,
             ParagraphRepository paragraphRepository,
             ChapterQuizService chapterQuizService,
@@ -50,6 +54,7 @@ public class TeacherQuizAuthoringService {
             ObjectMapper objectMapper) {
         this.authorizationService = authorizationService;
         this.overrideRepository = overrideRepository;
+        this.assignmentRepository = assignmentRepository;
         this.chapterRepository = chapterRepository;
         this.paragraphRepository = paragraphRepository;
         this.chapterQuizService = chapterQuizService;
@@ -158,7 +163,32 @@ public class TeacherQuizAuthoringService {
             sort++;
         }
 
-        return getEffectiveQuiz(userId, termId, chapterId);
+        EffectiveQuizResponse effective = getEffectiveQuiz(userId, termId, chapterId);
+        assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
+        return effective;
+    }
+
+    private void assertCompatibleWithPublishedPassRules(
+            String termId, String chapterId, EffectiveQuizResponse effective) {
+        int questionCount = effective.effectiveQuestions() == null
+                ? 0
+                : effective.effectiveQuestions().size();
+        List<AssignmentEntity> conflicting = assignmentRepository
+                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
+                .stream()
+                .filter(a -> termId.equals(a.getTermId()))
+                .filter(a -> a.getQuizPassMinCorrect() != null)
+                .filter(a -> a.getQuizPassMinCorrect() > questionCount)
+                .toList();
+        if (conflicting.isEmpty()) {
+            return;
+        }
+        AssignmentEntity worst = conflicting.get(0);
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "This quiz edit would leave " + questionCount + " question(s), but published assignment \""
+                        + worst.getTitle() + "\" requires " + worst.getQuizPassMinCorrect()
+                        + " correct. Lower that assignment pass threshold (or keep enough questions) before publishing.");
     }
 
     @Transactional(readOnly = true)
