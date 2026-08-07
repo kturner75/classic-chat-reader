@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-07-23
+Last updated: 2026-08-06
 
 ## Implementation handoff (classroom)
 
@@ -53,6 +53,30 @@ Last updated: 2026-07-23
 - **Bug:** increasing **font size** in reader preferences updates text but **paragraph content can clip**. New bug `BL-050` (regression on `BL-006` preferences/re-pagination).
 - **Multi-teacher demo readiness:** Jessica believes with this round (including My Chats + server chat persistence + font-clip fix) the product is **good enough to show other teachers**. Target: next 1:1 **Tuesday 2026-07-28 6pm America/Chicago**, with those items addressed if possible before she coordinates the broader teacher demo.
 
+**Partner feedback (2026-08-06 educator call — Jessica):**
+- Call went well; **My Chats** walkthrough was the centerpiece (shipped on prod). Partner feedback from this call is captured below (this block is the full 2026-08-06 set unless later notes are appended).
+- **Teacher quiz authoring (`BL-025.5` expanded):** teacher must be able to **override and define their own quiz questions** for a book/chapter (class-scoped). **Multiple choice only** for now (no free-response / short answer in this slice).
+- **Authoring UX:** prefer a **wizard / stepped process**. First step stubs **N** default quiz question slots (N from teacher defaults — see `BL-025.13`). For each question the teacher may:
+  - **Manually enter** the question stem, options, and correct answer; and/or
+  - **Use AI to suggest** questions from chapter content, with full teacher override of stems and answers; and/or
+  - **Use AI to generate wrong (distractor) answers** while the teacher controls the stem and correct answer.
+- **Assignment pass rules (`BL-025.12`):** teacher may set a **minimum quiz score** (e.g. **7/10**). When a minimum is required, teacher must also set **maximum retry attempts** (`0` = no retries after the first attempt).
+- **Teacher quiz defaults (`BL-025.13`):** teacher-configurable defaults for number of questions, minimum passing score, **maximum retry attempts** (same unit as `BL-025.12`; **`0` = no retries** / initial attempt only), and default count of multiple-choice options/answers.
+- **Student display name (`BL-025.2` / roster identity):** optionally track a **student name** in addition to **email** (email remains required for the account). Name may be entered **optionally at registration** and/or set by the teacher as a **roster override** when email alone is not enough to identify the student in class.
+- **Teacher → student overview (`BL-025.10` expanded):** from the teacher dashboard, drill into a student and show at least:
+  1. **Current (active/open) assignments**
+  2. **Completed assignments**
+  3. **Time spent in the book** (partner-suggested engagement proxy; product caveat: weak engagement signal — keep measurable but labeled carefully; discuss better signals later)
+  4. **Progress by book** (e.g. chapter *n/n* and/or **% complete**)
+  5. **Quizzes for the book:** count complete, **scores**, and **retry attempts**
+  6. **Assignment progress / open state:** teacher must see whether the student has **even opened/clicked into** the assignment (not only finished checklist items)
+- **Multi-teacher / AI council demo window:** teachers meet the week of **2026-08-17 – 2026-08-21**; expect to schedule a **group demo** with Jessica + other teachers + **AI council** members — classroom + assignment walkthrough on prod. Need **reasonable pricing that at least covers costs** for that conversation (not necessarily a polished storefront).
+- **AI usage + cost metrics (`BL-042`, lower product priority than classroom UX but time-bound for pricing):** track **user activity** with emphasis on **AI usage** so cost estimates are evidence-based. Fixed monthly floor is known (DigitalOcean **droplet**, **Spaces**, **managed DB**); **variable cost is AI tokens/requests** (chat, voice, quiz gen, etc.). Need real measured usage to support **per-term / seat + pooled AI budget** pricing lean before the group demo.
+- **Fall 2026 pilot timing:** semester starts **2026-08-24**. Jessica would **like** to use the site at the **beginning of the semester**, but if not fully ready that is OK — the class **does not start reading books until mid-semester**; they **begin with short stories**.
+- **Short stories for curated catalog (`BL-052`):** Kevin asked Jessica for the **list of short stories scheduled for her class** so they can be added to the **curated** list (import + flags + assets as needed). **Blocked on partner sending the list.**
+- **Classroom scalability / droplet capacity (`BL-053`):** Kevin concern (also reflected in pricing lean): will the current **1GB-class DO droplet** hold a real classroom concurrent load? Need a measured answer for **how many concurrent users** before performance degrades (and a scale-up path). Complements `BL-042` cost work; this is **capacity/latency**, not token $.
+- **Misc convenience (`BL-051`):** while in the **reader**, override the **browser Back** button so it returns to the **previously accessed in-app page** when available, otherwise **Library** by default (instead of leaving the site / unexpected history).
+
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
 - Empty history keeps Download disabled; helper module + Node frontend unit tests in `character-chat-export.js` / `character-chat-export.test.cjs`.
@@ -74,11 +98,19 @@ Last updated: 2026-07-23
 3. ~~`BL-050` font-size preference paragraph clipping~~ shipped on `main` (PRs #77 and #79; responsive re-pagination plus split-paragraph navigation coverage).
 4. ~~`BL-049` character chat server persistence~~ shipped on `main` (PR #82; cross-device history and database synchronization).
 5. ~~`BL-039` / `BL-032` **My Chats** recent-chat landing slice + dedicated page~~ shipped on `main` (PR #78).
-6. Roster display name + email; BL-025.10 v1 student drill-down/progress.
-7. Invite redeem rate limits (BL-028 pattern)
-8. FERPA-gated: usage events, teacher chat export, dashboard (after BL-043 draft)
+6. ~~Capture 2026-08-06 partner feedback into backlog~~ recorded (quiz, dashboard/roster, AI cost/`BL-042`, Back/`BL-051`, fall timing, short stories/`BL-052`, capacity/`BL-053`).
+7. `BL-025.5` teacher quiz authoring wizard (MC-only) + PR-0 stable question ids; pair with `BL-025.12` min score / max retries and `BL-025.13` teacher quiz defaults.
+8. Roster **display name** (optional student self + teacher override) on `BL-025.2`; `BL-025.10` v1 teacher→student overview (assignments current/complete, book progress, time-in-book, quiz scores/attempts, assignment opened state) with `BL-025.6` usage events as needed.
+9. **`BL-042` (ops/pricing)** + **`BL-053` (capacity):** AI usage metering / cost model and droplet concurrent-load answer before multi-teacher week (**2026-08-17**) and fall start (**2026-08-24**) where practical.
+10. **`BL-052`:** when Jessica sends short-story list → gutendex IDs, curated catalog, import/pregen/transfer as needed (early-semester path).
+11. Invite redeem rate limits (BL-028 pattern)
+12. FERPA-gated: usage events, teacher chat export, dashboard broad rollout (after BL-043 draft)
 
-**Not started:** full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard.
+**Not started:** teacher quiz authoring / pass rules / defaults (`BL-025.5` / `.12` / `.13`), roster display name + teacher→student drill-down (`BL-025.2` name / `BL-025.10` / `BL-025.6`), **AI cost metering (`BL-042`)**, **classroom concurrent capacity (`BL-053`)**, **partner short-story curation (`BL-052`, blocked on list)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard, reader browser-Back convenience (`BL-051`).
+
+**External milestones:**
+- Multi-teacher + AI council demo target window **week of 2026-08-17 – 2026-08-21** (date TBD with Jessica); prep = stable classroom demo path + cost-backed pricing sketch + capacity honesty.
+- **Fall semester starts 2026-08-24.** Partner wants early use if ready; **books mid-semester** — **short stories first** (await story list for curated catalog).
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -88,7 +120,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path: roster identity, student drill-down/progress, invite hardening, and FERPA-gated reporting/export.
+- Active priority work remains the deeper `BL-025` classroom pilot path: teacher quiz authoring + pass rules/defaults, roster identity, student drill-down/progress, invite hardening, and FERPA-gated reporting/export. Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**); `BL-052` short-story curation when partner list arrives.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -100,6 +132,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-16: Educator partner call (Jessica) went well — classroom setup and assignments impressed. Captured assignment open-chapter bug (Library used resume progress, so students with prior reading landed on the wrong chapter) and elevated BL-025.11 with optional character-chat requirement + student downloadable transcript for in-class show-and-tell.
 - 2026-07-22: Educator partner call (Jessica) — positive on require-chat + download demo path. New asks: **My Chats** landing surface near Achievements (`BL-039`/`BL-032`), **server-persisted character chat** for cross-device access (`BL-049`), and **font-size preference clipping** bug (`BL-050`).
 - 2026-07-23: Reconciled the partner-readiness slice after merge and regression verification: My Chats, cross-device chat persistence, font-size re-pagination, BL-047 assignment progress refresh, and BL-048 Reading Buddy availability are shipped on `main`; 596 backend, 91 frontend, and 24 Playwright tests pass locally.
+- 2026-08-06: Educator partner call (Jessica) — My Chats demo on prod went well. Full call capture in handoff partner block: quiz authoring/pass rules/defaults (`BL-025.5`/`.12`/`.13`); roster display name + teacher→student overview (`BL-025.2`/`.10`/`.6`); multi-teacher + AI council week of **2026-08-17–21** with cost-backed pricing (`BL-042`); fall semester **2026-08-24** with early optional use and **short stories before mid-semester books** (`BL-052`, await partner list); droplet **concurrent classroom capacity** concern (`BL-053`); reader browser-Back convenience (`BL-051`).
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -318,13 +351,16 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Classroom-level feature controls (enable/disable recap, quiz, AI features, media generation), controllable per-class and confirmed independent of each other (for example recap off + quiz on simultaneously, not an all-or-nothing AI toggle).
 - Assignment workflows (assign books/chapters, due dates, required quiz completion; later: required character-chat and other non-quiz completion types — see `BL-025.11`).
 - Character-chat assignment activities (partner use case): require or encourage chatting with a book character; optional in-class share of a conversation as a classroom exercise (tracked in `BL-025.11`, not required for BL-025.1 / assignment v1).
-- Teacher-authored quiz support: add or override specific quiz questions for a given book/chapter at the class level, coexisting with (not just replacing wholesale) the generated quiz.
+- Teacher-authored quiz support: class-scoped **multiple-choice** authoring for a book/chapter via a stepped wizard (stub N slots → manual and/or AI-assisted stems + correct answers + AI distractors; teacher always overrides). Coexists with generated quizzes per existing overlay model (`BL-025.5`). See also assignment pass rules (`BL-025.12`) and teacher quiz defaults (`BL-025.13`).
+- Assignment quiz pass policy: optional **minimum score** (e.g. 7/10) and **maximum retry attempts** when a minimum is required (`0` = first attempt only) — `BL-025.12`.
+- Teacher quiz defaults: reusable defaults for question count, min passing score, **max retry attempts** (same unit as `BL-025.12`; `0` = no retries), and default MC option count — `BL-025.13`.
 - Classroom progress visibility (student in-progress/completed states, quiz outcomes, activity snapshots).
+- Teacher dashboard with per-student drill-down into activity (readable detail view, not just aggregate class stats): current vs completed assignments, book progress (chapter n/n and/or %), time spent in book, quiz completion counts/scores/retries, and whether each assignment was opened — see `BL-025.10`.
+- Optional **student display name** alongside required email (self-entered at register and/or teacher roster override) so teachers can identify students when email is opaque — see `BL-025.2`.
 - Student usage logging (what was read, chapter/page progress, time spent per session/book).
 - Chat history export/download, available to both the student (their own history) and the teacher (their students' history).
 - Account ownership model at Teacher level and School/Institution level (a school admin can own/see multiple teacher classes).
 - Semester/term-scoped classes: roster changes over time, class tied to a defined term window, historical rosters remain queryable after a term ends.
-- Teacher dashboard with per-student drill-down into activity (readable detail view, not just aggregate class stats).
 - Discovery Questions:
 - Should teachers create student accounts directly, issue invite codes, or both?
 - What does the classroom-ID registration link actually grant (join a specific class only, or also imply a role/account type)? Does it expire, and can it be regenerated/revoked by the instructor?
@@ -332,6 +368,12 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Are feature toggles class-wide only, or does a teacher ever need per-student overrides within a class (for example an accommodation)?
 - How should teacher-authored quizzes interact with generated quizzes (replace, merge, or fallback)? Specifically: can a teacher add/edit individual questions within an otherwise-generated quiz, or is authoring all-or-nothing per book/chapter?
 - Do teacher-added/overridden questions need review or regeneration when the underlying generated quiz changes (for example after a recap/content pipeline update)?
+- For the authoring wizard: default path = stub N empty MC slots vs seed from generated quiz vs AI-suggest-all-first? Can AI suggest run per-question or batch? Must distractors be unique/non-overlapping with the correct answer?
+- When minimum score is set on an assignment: is pass based on latest attempt, best attempt, or first passing attempt? Does exhausting retries fail the assignment quiz requirement or leave it PENDING?
+- Are quiz defaults teacher-account-global, per-class, or both (account defaults with class override)?
+- Display-name precedence on roster/dashboard: teacher override always wins vs student self-name wins unless override set? Can students see/edit the teacher override?
+- What counts as “opened” an assignment (first Library card click, first reader open for target chapter, first any checklist interaction)? Idle time vs active reading for time-in-book?
+- Time-in-book is a weak engagement proxy (partner-requested; product caveat) — ship as labeled metric; which better signals (quiz attempts, pages advanced, chat turns) belong in v1 vs later?
 - What minimum reporting is needed for pilot value without overbuilding gradebook integrations?
 - Is "School" a distinct account tier above "Teacher," or is it a v2 concept (single-teacher classes only at launch)?
 - How does a semester/term boundary work operationally: does a new term spawn a new class instance, or does the same class get a new roster snapshot? What happens to a student's history when they roll off a roster?
@@ -347,6 +389,24 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Cost/rate-limit planning for classroom AI usage (token usage tracking, cost calculator, subscription tiering) is tracked separately in `BL-042` since it is a pricing/ops concern shared with `BL-038`, not a classroom UI feature per se.
 - Confirmed concrete example from the partner for `BL-025.3`: her pilot class wants recap disabled for students but quiz enabled — validates that feature toggles must be independent, not a single "AI features on/off" switch.
 - Confirmed concrete need for `BL-025.5`: teacher wants to add or override individual quiz questions for a specific book/chapter for her class, on top of (not only instead of) the generated quiz.
+- Current Direction (2026-08-06, educator partner call — Jessica; quiz authoring):
+- Expand `BL-025.5` from thin overlay wording into a **teacher quiz authoring wizard** for book/chapter at class scope.
+- **Format lock for this slice: multiple choice only** (stem + options + single correct index). Free-response / short answer explicitly out of scope until a later epic.
+- Wizard / stepped flow (product preference):
+  1. Choose book/chapter (and class/term context already selected in Teaching workspace).
+  2. Stub **N** question slots (N from `BL-025.13` defaults; teacher can change count for this quiz).
+  3. Per question (or batch): **manual authoring** and/or **AI suggest from chapter content** and/or **AI generate distractors** only; teacher may override any stem, option, or correct answer before publish.
+  4. Review/publish effective quiz for the class (merge/overlay semantics remain as in `docs/product/bl-025-classroom-data-model.md` PR-0 + overrides; do not invent a second parallel quiz store without updating that design).
+- Pair authoring with **assignment pass rules** (`BL-025.12`): optional minimum score (e.g. 7 of 10); when min score is required, teacher must set **max retry attempts** where **`0` means no retries** (only the initial attempt).
+- Pair with **teacher quiz defaults** (`BL-025.13`): default question count, default min passing score, default **max retry attempts** (same unit as `BL-025.12`; **`0` = no retries** — not “max total attempts”), default number of MC answer choices.
+- Stable generated-question `id`s (design **PR-0**) remain a blocking prerequisite for OVERRIDE/DISABLE layered overrides; pure teacher-ADD / full-replacement paths should still use stable ids for grading and regen drift.
+- Do **not** block roster identity / drill-down work on shipping the full wizard, but treat quiz authoring + pass rules as high partner-value pilot depth once core assignment path is stable.
+- Current Direction (2026-08-06, educator partner call — Jessica; teacher dashboard + roster identity):
+- Expand `BL-025.2` roster identity: **email required**; optional **display name** from (a) student at registration/profile and/or (b) **teacher roster override** when email is not recognizable.
+- Expand `BL-025.10` teacher→student overview to the partner checklist (current assignments, completed assignments, time-in-book, book progress chapter n/n and/or %, quiz N complete + scores + retries, assignment opened/not-opened). Class-level dashboard summary can stay thin in v1 if drill-down is strong.
+- **Assignment opened** is a first-class signal distinct from checklist completion — needs durable server state (likely assignment_progress / first_opened_at), not inferred only from book resume.
+- **Time-in-book** depends on `BL-025.6` (or a minimal session heartbeat subset). Label as “time in reader” / similar; do not market as rigorous engagement proof. Kevin note: discuss better engagement measures; Jessica requested time spent.
+- FERPA (`BL-043`) still gates broad dashboard/PII surfaces; pilot internal teacher views should still avoid over-collecting and document access.
 - Current Direction (2026-07-10, partner assignment use case — backlog only, not immediate build):
 - Partner may require students to **chat with a book character** as an assignment exercise, and may have students **share a conversation** they had with a character as a fun in-class activity.
 - Do **not** block BL-025.1 domain model or BL-025.4 assignment v1 (book/chapter/due/quiz) on this. Track as `BL-025.11` after core pilot path.
@@ -361,27 +421,35 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
 | BL-025.1 Classroom Domain Model + Roles | In Progress | Define entities/relationships for teacher (admin), school, class, semester/term, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
-| BL-025.2 Teacher Onboarding + Roster Management | In Progress | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import) | Teacher can create a class, share a join link, and manage an active roster without manual DB operations |
+| BL-025.2 Teacher Onboarding + Roster Management | In Progress | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import). Include **optional student display name**: student may set at register/profile; teacher may set a **roster override** so the class list is identifiable when email alone is insufficient. Email remains the required account identifier. | Teacher can create a class, share a join link, and manage an active roster without manual DB operations; roster shows email plus optional name/override; teacher can edit override without changing login email |
 | BL-025.3 Class Feature Controls | In Progress | Add independent class-level toggles (quiz/recap/AI/media capabilities, each settable on its own — for example recap off + quiz on) with policy enforcement in UI + API | Teacher can set recap off and quiz on (or any other independent combination) and student feature availability matches per class |
-| BL-025.4 Assignment Workflow v1 | In Progress | Support assigning books/chapters, due windows, and required completion/quiz states (quiz-oriented v1; not character-chat requirements) | Teacher can publish assignments and students see clear due/required states in app |
-| BL-025.5 Teacher-Authored Quiz Authoring | Proposed | Enable teacher to add/override individual quiz questions for a specific book/chapter for their class, layered on top of the generated quiz (not full replacement-only) | Teacher can add or override specific questions for a book/chapter and students in that class receive the resulting question set |
-| BL-025.6 Student Usage Logging | Proposed | Persist per-student activity events (books/chapters read, progress %, session time spent) scoped to class/term | Usage events are queryable per student and roll up cleanly per class/term |
+| BL-025.4 Assignment Workflow v1 | In Progress | Support assigning books/chapters, due windows, and required completion/quiz states (quiz-oriented v1; not character-chat requirements). Pass threshold + retry policy is `BL-025.12` (extends this slice). Durable **assignment opened** / first-interaction timestamps feed `BL-025.10`. | Teacher can publish assignments and students see clear due/required states in app |
+| BL-025.5 Teacher-Authored Quiz Authoring (MC Wizard) | Proposed | Class-scoped **multiple-choice** quiz authoring for a book/chapter via a **stepped wizard**: stub N default slots; teacher may manually enter stems/options/correct answer, use AI to suggest questions from chapter content (full override), and/or use AI to generate wrong answers. Layered on generated quiz per design overlay model (not format expansion beyond MC). | Teacher can define or override the effective MC question set for a book/chapter for their class; students in that class receive that set; AI assists never publish without teacher confirmation |
+| BL-025.6 Student Usage Logging | Proposed | Persist per-student activity events (books/chapters read, progress %, **session / time-in-book**) scoped to class/term. Powers teacher drill-down time-spent and later cost attribution. | Usage events are queryable per student and roll up cleanly per class/term; time-in-book can be shown on `BL-025.10` with defined measurement rules |
 | BL-025.7 Chat History Export | Proposed | Add download/export of AI chat history, self-service for students and bulk/per-student for teachers | Student can export their own chat history; teacher can export any enrolled student's history in their class |
 | BL-025.8 School and Teacher Account Tiers | Proposed | Add account ownership model distinguishing School (multi-teacher) and Teacher (single-class-owner) tiers | A school-tier account can view/manage classes across its teachers; a teacher-only account is scoped to its own classes |
 | BL-025.9 Semester/Term-Scoped Rosters | Proposed | Add term boundaries to classes so rosters can change across semesters while preserving historical term data | Teacher can start a new term for a class with a fresh roster without losing prior-term student history/reporting |
-| BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Build teacher dashboard summarizing class activity with a per-student detail view (reading progress, time spent, quiz outcomes, chat activity) | Teacher can select a student from the roster and see that student's individual activity without external tooling |
+| BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Teacher dashboard with roster entry into a **Teacher→Student overview**. v1 student overview must list: (1) **current assignments**, (2) **completed assignments**, (3) **time spent in the book** (labeled engagement proxy; partner-requested), (4) **progress by book** (chapter n/n and/or % complete), (5) **quizzes for the book** — N complete, **scores**, **retry attempts**, (6) **assignment progress including opened/not-opened** (whether the student has clicked into the assignment at all). Class aggregate widgets optional if drill-down is complete. | Teacher can open any rostered student and see the six overview sections without external tooling; opened vs not-opened is accurate server-side; time-in-book and quiz stats match underlying events/attempts |
 | BL-025.11 Character-Chat Assignments + In-Class Share | Proposed | Partner use case (Jessica, 2026-07-16 call confirmed): assignment may **optionally require character chat** for classroom **show-and-tell**; students need a **downloadable conversation artifact** (text/Markdown). Includes requirement/completion modeling and export; student self-serve download first, teacher access behind FERPA. Local-first export can unblock pilot before full server persistence. | Teacher can optionally require character chat; student can download their conversation for class without screenshots; completion/export model agreed — discovery still open on specific character vs any, N-turn completion, and teacher bulk visibility |
+| BL-025.12 Assignment Quiz Pass Rules (Min Score + Retries) | Proposed | On quiz-required assignments, teacher may set **minimum passing score** (e.g. 7/10). When a minimum is set, teacher must set **maximum retry attempts**; **`0` = no retries** (initial attempt only). Student quiz completion for the assignment must honor pass threshold + remaining attempts (not “any attempt exists”). | Teacher can configure min score + max retries on an assignment; student UI/API show attempts remaining and pass/fail against the threshold; exhausting attempts without passing leaves quiz requirement unmet |
+| BL-025.13 Teacher Quiz Defaults | Proposed | Teacher-configurable defaults used when creating quizzes/assignments: **number of questions**, **minimum passing score**, **maximum retry attempts** (same unit as `BL-025.12`; **`0` = no retries** / initial attempt only — do **not** store this as total-attempt count), and **default multiple-choice option count**. Defaults seed the authoring wizard (`BL-025.5`) and pass-rule fields (`BL-025.12`); per-assignment/per-quiz overrides still allowed. | Teacher can save defaults once and see them pre-filled on new quiz authoring and quiz-required assignments using consistent retry units; changing defaults does not rewrite already-published quizzes/assignments unless teacher explicitly re-applies |
 - Dependency Notes:
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
 - BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) exit criteria are drafted, since these are exactly the data flows FERPA constrains.
 - BL-042 (token usage/cost calculator) depends on BL-025.6's usage logging for per-student/per-class token attribution.
 - BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (`BL-049`, not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.** Local download + soft require shipped 2026-07.
+- BL-025.5 depends on stable question ids (design **PR-0** in `docs/product/bl-025-classroom-data-model.md`) for OVERRIDE/DISABLE merge; MC-only wizard can ship ADD/manual paths earlier if product accepts temporary constraints — prefer PR-0 first.
+- BL-025.12 extends BL-025.4 quiz-required completion: today’s “any attempt exists ⇒ COMPLETE” is insufficient once min score / retries exist. Coordinate attempt counting with existing `quiz_attempts` / grade APIs.
+- BL-025.13 seeds BL-025.5 and BL-025.12 UIs; store scope (teacher account vs class) is an open discovery question — default lean: **teacher-account defaults** with optional later class override.
+- BL-025.10 v1 student overview depends on: roster identity/name (`BL-025.2`), assignment list + **opened** timestamps (`BL-025.4`), reading progress (existing reader progress APIs), quiz attempts/scores/retries (`quiz_attempts` + `BL-025.12` when present), and time-in-book from `BL-025.6` (or a minimal heartbeat slice). Broad PII dashboard rollout remains gated by `BL-043` draft exit criteria.
+- BL-025.2 display name: prefer storing student self-name on the user/profile and teacher override on **membership/roster** (class-scoped), not overwriting login email.
 - Session Log:
 - 2026-07-10: Design doc written and reviewed (`docs/product/bl-025-classroom-data-model.md`). First code slice: V14 schema, entities/repos, authz, invite redeem, bootstrap, features/assignments APIs, context dual-read. **API/backend only** (no teacher/student UI yet). Default consumer flow unchanged when demo off and no DB enrollment. Resume via backlog **Implementation handoff (classroom)** section.
 - 2026-07-13: Classroom demo UI implemented and manually verified through the core teacher-to-student path: create class → share/redeem invite → confirm roster → publish assignment → view assignment in the student's Library. Known defect: a student who signs in on an already-loaded reader page must hard-refresh before classroom context and assignments appear. BL-025.2–.4 remain `In Progress` pending the follow-ups documented in the implementation handoff.
 - 2026-07-14: Teacher access moved from “any authenticated account” to a durable capability model. V15 stores `CREATE_CLASSROOM`; the capability endpoint gates Library/Teaching UI, direct student access is denied, and class creation requires the capability server-side. Existing teacher memberships still grant access to their Teaching workspace.
 - 2026-07-16: Partner call confirmed assignment/chapter open bug under real progress (resume path). Product: optional character-chat requirement + downloadable student transcript for show-and-tell elevates BL-025.11.
+- 2026-08-06: Partner call (Jessica) expanded quiz depth: MC-only teacher authoring wizard (`BL-025.5`), assignment min score + max retries with `0` = no retries (`BL-025.12`), and teacher quiz defaults (`BL-025.13`). Same call: optional student display name + teacher roster override (`BL-025.2`); teacher→student overview checklist on `BL-025.10` (current/completed assignments, time-in-book, book progress, quiz scores/retries, assignment opened state) with `BL-025.6` for time metrics. More call notes still incoming.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -726,37 +794,62 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Decision on config granularity (global vs. per-book/character) and fallback behavior when a provider is degraded.
 
 ### BL-042 - Token Usage Tracking and Classroom Cost Calculator
-- Type: Feature
-- Priority: P1
+- Type: Feature / Ops
+- Priority: **P2 for classroom product UX**; **P1-timebound for commercial readiness** ahead of multi-teacher demo (**week of 2026-08-17 – 2026-08-21**)
 - Effort: L
 - Status: Discovery
-- Problem: Classroom deployment needs a way to model AI cost per student/class so a subscription plan and rate limits can be priced responsibly; today there is no per-user token accounting at all.
+- Problem: Classroom pilots and group demos need **pricing that at least covers costs**. Fixed monthly infrastructure is knowable (DigitalOcean **droplet**, **Spaces**, **managed database**). **AI spend is the variable risk** and today there is little/no durable per-user / per-feature AI metering, so cost estimates and seat/term prices are under-supported. Need real activity + AI usage metrics to back a pricing conversation (Jessica + other teachers + AI council), not only a polished in-app teacher dashboard.
+- Context (2026-08-06 partner call):
+- Group demo expected after teachers meet **2026-08-17 – 2026-08-21**; Kevin will walk classroom + assignment use on the site and present **reasonable cost-covering pricing**.
+- Pricing lean remains: **fixed per-term (or monthly) price**, **up to N seats**, **pooled AI token budget / rate limits** so variable AI does not blow the fixed fee.
+- This epic can stay **lower priority than classroom feature depth** for day-to-day build order, but a **minimum internal metering + cost model** should land in time to inform the pricing one-pager before that meeting.
 - Scope Buckets:
-- Per-user (student) token usage tracking across chat, quiz generation, recap, illustration, and TTS/voice features.
-- Cost calculator: map tracked token/request volume against current model provider pricing to estimate $ cost per student, per class, and per school over a term.
-- Rate limit modeling: derive suggested per-student/per-class daily or monthly usage caps from a target subscription price point and margin.
-- Subscription tier design inputs (not final pricing): what a "class seat" or "school seat" costs to serve at light/typical/heavy usage.
+- **User activity metrics (supporting):** sessions, assignment opens, reading progress events, quiz attempts — enough context to explain AI spikes (ties to `BL-025.6`; avoid duplicate event stores if possible).
+- **AI usage metering (primary):** durable records for provider calls with at least: timestamp, feature/surface (character chat, Call Character / realtime voice, quiz generation/suggest, recap, Reading Buddy, illustrations/portraits/TTS if billed, etc.), model id, input/output token counts (or provider billable units), estimated $ at recorded unit prices, optional `userId` / `termId` / `classId` when known, success/error.
+- **Operator reporting (v1):** internal/admin or SQL-friendly rollups — daily/weekly AI $ by feature; per-user and per-class totals; p50/p95 student AI cost; top consumers. Teacher-facing “% of allotment” can wait.
+- **Cost calculator / pricing support:** combine (a) fixed monthly infra floor (droplet + Spaces + DB + misc) amortized per class/term, (b) measured or scenario AI $/student at light/typical/heavy classroom patterns, (c) target margin → suggested **term price**, **seat cap N**, and **pooled token/rate limits**.
+- **Rate-limit / budget hooks (optional same epic or follow-on):** enforce or soft-warn against pooled class/term AI budget once metering exists (align with `BL-038` credit ideas; do not require full PAYG storefront for pilot pricing).
+- Work Tracker (suggested slices):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-042.1 AI call metering (write path) | Proposed | Instrument LLM/realtime/image/TTS providers to persist usage rows (tokens/units, model, feature, user when available) without blocking request path on report UI | Prod (or staging with prod-like traffic) produces queryable AI usage rows for major AI features used in classroom demos |
+| BL-042.2 Operator rollups | Proposed | Daily/feature/user/class aggregates + simple export or admin query docs | Kevin can answer “$ AI last 7/30 days by feature” and “approx $/active student” from real data |
+| BL-042.3 Cost model + pricing sketch | Proposed | Spreadsheet or small doc: fixed DO costs + AI scenarios + recommended term/seat/pool limits for group demo | One-pager pricing recommendation ready before multi-teacher meeting; assumptions and measurement gaps explicit |
+| BL-042.4 Classroom allotment UX (later) | Proposed | Teacher/school view of pool remaining; optional hard limits | Deferred unless pilot contract needs it; not required for first group demo |
 - Discovery Questions:
-- Which activities need metered token tracking at launch (chat only, or chat + quiz/recap/illustration generation too)?
+- Which activities need metered AI tracking first for the **Aug group demo** (character chat + voice call + quiz gen minimum?) vs later (illustrations, TTS, Reading Buddy)?
 - Should token accounting live per-request (raw provider usage) or be normalized into an internal "credit" unit shared with `BL-038`?
 - What provider pricing sources should the calculator use, and how should it stay current as provider prices change?
-- Should rate limits be enforced per-student, per-class, or pooled at the school/subscription level?
-- Is this calculator an internal planning tool only, or does it need a teacher/school-facing usage view (`"your class used X% of its allotment"`)?
+- Should rate limits be enforced per-student, per-class, or **pooled at subscription/term** (lean: pooled)?
+- Is v1 calculator **operator-only** (yes for Aug) vs teacher-facing usage later?
+- How to attribute **shared/cache hits** (e.g. pregenerated quiz/illustration) so classroom AI $ is not double-counted or under-counted?
+- Voice/realtime billing units may not be simple chat tokens — how do we normalize Call Character minutes/units into the same cost model?
 - Current Direction (2026-07-09):
 - Grew directly out of educator partner feedback: before committing to a classroom subscription price, need real cost-per-student modeling based on actual token usage, not guesswork.
 - Reuse `BL-038`'s credit ledger/ threading rather than building a second, separate accounting system if the data shapes are compatible.
 - Start with a planning/reporting tool (internal), then decide whether usage/limit visibility needs to surface to teachers/schools.
+- Current Direction (2026-08-06):
+- **Priority framing:** product build order still favors classroom UX (quiz authoring, roster name, student drill-down); **BL-042 is the commercial evidence track** — ship a thin internal metering + cost model before the **week of Aug 17** group demo if possible.
+- Cost structure to model explicitly: **fixed** = droplet + Spaces + DB (+ domain/misc); **variable** = AI (and any egress if material). Pricing must cover fixed floor at small N seats and not go underwater on heavy AI classes via **pooled budgets / rate limits**.
+- Prefer append-only usage events from provider responses (actual tokens when APIs return them) over client-estimated tokens.
+- Group demo success metric for this epic: Kevin can defend a **term + seats + AI pool** number with “based on measured X, assumed Y” — not a full self-serve billing product.
 - Exit Criteria for Discovery:
-- Decision on tracked activity scope (which features count toward token usage).
-- Decision on internal accounting unit (raw tokens vs. normalized credits) and its relationship to `BL-038`.
-- v1 cost calculator inputs/outputs defined (usage volume -> estimated cost -> suggested plan tiers/limits).
+- Decision on tracked AI activity scope for v1 metering (feature list).
+- Decision on internal accounting unit (raw tokens/units vs. normalized credits) and relationship to `BL-038`.
+- v1 cost calculator inputs/outputs defined (fixed infra + usage volume → estimated cost → suggested plan tiers/limits).
+- Explicit “good enough for Aug group demo” vs “full classroom allotment product” cut line.
 - Acceptance Criteria:
-- Token/request usage is attributable to an individual student and rolls up to class and school levels.
-- Cost calculator produces a per-student and per-class cost estimate from tracked usage and current model pricing.
-- Calculator output can suggest a rate limit (for example requests/tokens per day) for a given target subscription price and margin.
+- AI/provider usage is recorded for the v1 feature set with enough fields to roll up by time, feature, and user (when authenticated).
+- Operator can produce per-student and per-class (or cohort) AI cost estimates from tracked usage and current model pricing.
+- Cost model documents fixed monthly infra and combines it with AI scenarios to recommend a rate/limit shape for a target subscription price and margin.
+- Pricing sketch suitable for multi-teacher / AI council conversation exists and cites measurement sources + gaps.
 - Dependency Notes:
-- Depends on `BL-025.6` (student usage logging) for per-student activity data to meter.
-- Shares accounting foundations with `BL-038` (Public Character Chat Access and Cost Controls); avoid building a duplicate ledger.
+- Benefits from `BL-025.6` (student activity logging) for non-AI engagement context and class-scoped rollups; AI metering should still work if activity logging is partial (attribute what we can).
+- Shares accounting foundations with `BL-038` (Public Character Chat Access and Cost Controls); avoid building a duplicate ledger long-term.
+- Does **not** block BL-025 classroom UX slices; schedule as parallel ops work before commercial meetings.
+- Session Log:
+- 2026-07-09: Epic created from educator partner pricing/cost concerns.
+- 2026-08-06: Expanded after Jessica call — multi-teacher + AI council demo target week of Aug 17–21; need cost-covering pricing; fixed DO costs known; prioritize real AI usage metrics for estimates; keep epic lower than classroom feature priority but time-bound for pricing prep.
 
 ### BL-043 - FERPA Compliance for Classroom Data
 - Type: Tech Debt
@@ -952,6 +1045,97 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - Regression on shipped `BL-006` preferences panel; fix in reader pagination/layout, not a new preferences feature.
 - Resolution (2026-07-22): Reader pages remeasure and repaginate immediately after font-size changes while preserving the active paragraph. Follow-up navigation coverage verifies all fragments of split paragraphs are shown before advancing chapters. Shipped in PRs #77 and #79 with desktop, laptop, tablet, and split-paragraph Playwright regressions.
+
+### BL-051 - Reader Browser Back Goes to Prior In-App Page or Library
+- Type: Improvement
+- Priority: P3
+- Effort: S
+- Status: Proposed
+- Problem: While reading, the browser **Back** button often leaves the app or walks opaque history (external referrer, intermediate redirects, or in-reader hash/state churn) instead of a sensible in-product exit. Users expect Back to return to **where they were in the site** (e.g. Library, My Chats, teacher workspace) or, if unknown, **Library**.
+- Context: Miscellaneous convenience captured 2026-08-06 (Kevin). Related shipped behavior: logo/header back-link and removal of global Escape→Library (Escape closes overlays only — see `current-features.md`). This item is specifically **browser Back / history**, not Escape.
+- Scope Buckets:
+- While the **reader view is active**, intercept or shape history so Back prefers:
+  1. **Previously accessed same-origin app page** when that history entry exists and is safe; else
+  2. **Library** (`/` or established library route) as default.
+- Open reader with a deliberate history entry (e.g. `pushState`/`replaceState` strategy) so Back does not immediately exit the site after Library → book.
+- Preserve overlay-first behavior: if a modal/overlay is open, Back or Escape should close it first when that matches existing patterns (do not fight Escape semantics).
+- Mobile Safari / Android Chrome gesture-back parity as much as History API allows.
+- Out of scope unless cheap: full SPA router rewrite; deep multi-step undo of in-book page turns via Back (chapter/page Back is a separate product decision — default is **exit reader**, not reverse pagination).
+- Discovery Questions:
+- Should in-reader page/chapter changes push history entries, or only Library↔Reader?
+- If user landed on a deep reader URL from an external link, should first Back go to Library or allow leaving the site?
+- Interaction with My Chats full-page resume URLs and assignment deep links?
+- Acceptance Criteria:
+- From Library (or another in-app surface) → open book → browser Back returns to that prior in-app surface when it was same-origin app navigation.
+- From a cold/deep reader entry with no usable in-app prior page, Back lands on **Library** rather than a blank/external surprise when the app can still handle the navigation.
+- Open overlays continue to dismiss via existing Escape/close controls; Back does not discard unsaved overlay work without the same safeguards used elsewhere (if any).
+- Add a focused Playwright (or equivalent) case for Library → reader → Back → Library (or prior page).
+- Dependency Notes:
+- Touch `reader.js` history / view-switching only; keep framework-free static app constraints.
+- Do not reintroduce Escape-as-leave-reader without an explicit product decision (previously removed to avoid accidental exits).
+
+### BL-052 - Partner Short-Story List on Curated Catalog (Fall Early Path)
+- Type: Feature / Content ops
+- Priority: P1 (time-bound to early fall if partner wants day-one use; otherwise P2 before mid-semester books)
+- Effort: M (depends on list length and public-domain availability)
+- Status: **Blocked** — waiting on Jessica’s scheduled short-story list
+- Problem: Partner’s fall class **starts with short stories**, not full novels. Early-semester classroom use needs those titles **discoverable and classroom-ready** (curated catalog + import + feature flags + assets), not only long-form classics already prepped for demos.
+- Context (2026-08-06):
+- Fall semester starts **2026-08-24**.
+- Jessica would like to use the site at semester start if ready; if not, **books begin mid-semester** anyway — short stories are the early unit.
+- Kevin requested her **scheduled short-story list** to add them to the **curated** list.
+- Scope Buckets:
+- Receive and track partner story list (title/author/edition notes).
+- Resolve each item to a **correct Gutenberg (or other approved) ID** via gutendex (do not trust stale curated IDs — see Scarlet Letter 25344 lesson).
+- Curated-catalog membership + prod import path; enable needed flags (characters/illustrations/quiz as appropriate for short works).
+- Content readiness: chapter/structure quality for short works, progressive character discovery if chat is used, quiz/pregen only where it makes sense for single-sitting texts.
+- Teaching path: confirm assignments can target a short work / its “chapters” without novel-centric assumptions breaking UX.
+- Out of scope until requested: non-public-domain stories; custom teacher upload of copyrighted PDFs.
+- Acceptance Criteria:
+- Each list item is either **live on prod curated/importable with verified ID and title/author match**, or explicitly **deferred** with reason (rights, missing text, bad parse).
+- Partner can assign at least the must-have early-semester stories without manual DB surgery.
+- Document any short-story-specific product gaps (e.g. single-chapter books, anthologies).
+- Dependency Notes:
+- Follows `ccr-production-ops` publish path (curated ≠ pregen; flags + DB rows + Spaces).
+- Unblocks early-fall pilot narrative even if full BL-025 quiz authoring / dashboard is incomplete.
+- Session Log:
+- 2026-08-06: Created; blocked on partner list.
+
+### BL-053 - Classroom Concurrent Load / Droplet Capacity Validation
+- Type: Ops / Tech Debt
+- Priority: **P1-timebound** for multi-teacher demo week and fall pilot honesty; P2 as ongoing capacity program
+- Effort: M
+- Status: Proposed
+- Problem: Production runs on a small DigitalOcean droplet (historically **~1 vCPU / 1GB** class for `public-domain-reader`). Kevin’s open concern: **will it hold a real classroom concurrent load?** Unknown **concurrent user / session thresholds** before latency, 502s during Spring boot pressure, or AI fan-out makes the product unusable. Scalability already called out in pricing lean; this epic is the **measured capacity** answer.
+- Context:
+- Related: fixed host cost in `BL-042`; boot lag and small-droplet behavior already noted in deploy ops.
+- Pilot shape: one or a few college classes (not district-wide), but **same-hour concurrent readers + chat/quiz** is the stress case.
+- Scope Buckets:
+- Define pilot load hypotheses (e.g. 25 / 50 / 100 concurrent students; mix of read-only vs chat vs quiz vs voice).
+- Baseline prod metrics: CPU, memory, GC, request latency, error rate, DB connections, AI outbound concurrency.
+- Load/soak test plan against staging or carefully scheduled prod-like env (prefer not melting live pilot mid-class without a plan).
+- Identify first bottlenecks: JVM heap on 1GB, Tomcat threads, DB pool, blocking LLM calls, static/asset path, Spaces.
+- Scale-up options with cost deltas: resize droplet, add swap (mitigation only), separate DB already in play, read replicas later, queue/limit AI, CDN for static.
+- Write a short **capacity note** for Kevin (and optional AI council): “comfortable concurrent N”, “degraded at M”, “scale action if pilot grows”.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-053.1 Baseline + hypotheses | Proposed | Document current droplet size, observed prod headroom, pilot concurrency targets | One-page baseline exists |
+| BL-053.2 Load exercise | Proposed | Run controlled concurrent scenarios (library, reader turn pages, character chat, quiz submit) | Numbers for p95 latency / error rate vs concurrent users |
+| BL-053.3 Scale recommendation | Proposed | Thresholds + cheapest next resize/architecture step before fall classes | Kevin can answer “will one class fit?” with evidence |
+- Discovery Questions:
+- What is Jessica’s expected class size and simultaneous online fraction?
+- Is voice Call Character in-scope for early pilot load (much heavier) or chat-text only?
+- Acceptable p95 for page turn vs chat completion during class?
+- Acceptance Criteria:
+- Documented concurrent-user bands (OK / watch / fail) for the current droplet under a stated scenario mix.
+- Explicit recommendation: stay / resize / rate-limit AI / other, with rough monthly $ impact.
+- Monitoring checklist for live class sessions (what to watch on the box during pilot).
+- Dependency Notes:
+- Pairs with `BL-042` (cost) but measures **performance capacity**, not token spend.
+- May motivate AI concurrency limits even before full metering UI.
+- Session Log:
+- 2026-08-06: Captured from Kevin post-call concern (scalability / DO droplet concurrent classroom load).
 
 ## P0
 
