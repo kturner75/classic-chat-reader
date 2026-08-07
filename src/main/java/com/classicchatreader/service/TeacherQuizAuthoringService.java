@@ -163,6 +163,28 @@ public class TeacherQuizAuthoringService {
             sort++;
         }
 
+        // If this publication does not keep any generated source via OVERRIDE, suppress the base
+        // so a later background generation cannot silently expand the class quiz.
+        boolean keepsGenerated = request.operations().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(op -> QuizQuestionOverrideEntity.OPERATION_OVERRIDE
+                        .equalsIgnoreCase(op.operation() == null ? "" : op.operation().trim()));
+        if (!keepsGenerated) {
+            QuizQuestionOverrideEntity suppress = new QuizQuestionOverrideEntity();
+            suppress.setTermId(termId);
+            suppress.setBookId(chapter.getBook().getId());
+            suppress.setChapterId(chapterId);
+            suppress.setOperation(QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED);
+            suppress.setSourceQuestionId(null);
+            suppress.setOverlayKey(QuizQuestionOverrideEntity.SUPPRESS_OVERLAY_KEY);
+            suppress.setSortOrder(-1);
+            suppress.setStatus(QuizQuestionOverrideEntity.STATUS_ACTIVE);
+            suppress.setCreatedByUserId(userId);
+            suppress.setBasePromptVersion(request.basePromptVersion());
+            suppress.setNotes("Suppress generated base after teacher replace-set publish");
+            overrideRepository.save(suppress);
+        }
+
         EffectiveQuizResponse effective = getEffectiveQuiz(userId, termId, chapterId);
         if (effective.effectiveQuestions() == null || effective.effectiveQuestions().isEmpty()) {
             throw new ResponseStatusException(
@@ -228,7 +250,7 @@ public class TeacherQuizAuthoringService {
                 context
         );
         try {
-            String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.2, 0.9, 900));
+            String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
             return parseSuggestedQuestions(raw, optionCount);
         } catch (Exception e) {
             throw new ResponseStatusException(

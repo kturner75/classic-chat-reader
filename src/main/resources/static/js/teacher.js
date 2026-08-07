@@ -816,6 +816,10 @@
         const existing = Array.isArray(question?.options)
             ? question.options.map(option => String(option ?? ''))
             : [];
+        // Preserve exact existing option counts; only pad brand-new blanks.
+        if (existing.length >= 2) {
+            return existing;
+        }
         const count = questionOptionCount({ options: existing }, defaultOptionCount);
         return Array.from({ length: count }, (_, i) => existing[i] || '');
     }

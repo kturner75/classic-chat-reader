@@ -19,8 +19,11 @@ public class QuizQuestionOverrideEntity {
     public static final String OPERATION_ADD = "ADD";
     public static final String OPERATION_OVERRIDE = "OVERRIDE";
     public static final String OPERATION_DISABLE = "DISABLE";
+    /** When present, effective merge ignores the generated base set entirely. */
+    public static final String OPERATION_SUPPRESS_GENERATED = "SUPPRESS_GENERATED";
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_ARCHIVED = "ARCHIVED";
+    public static final String SUPPRESS_OVERLAY_KEY = "__suppress_generated__";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

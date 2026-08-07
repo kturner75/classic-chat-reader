@@ -60,16 +60,28 @@ public final class EffectiveQuizAssembler {
                         .thenComparing(row -> nullToEmpty(row.getId())))
                 .toList();
 
+        boolean suppressGenerated = active.stream().anyMatch(row ->
+                QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED
+                        .equalsIgnoreCase(nullToEmpty(row.getOperation())));
+        if (suppressGenerated) {
+            byId.clear();
+        }
+
         List<String> staleOverrideIds = new ArrayList<>();
         List<ChapterQuizPayload.Question> additions = new ArrayList<>();
 
         for (QuizQuestionOverrideEntity row : active) {
             String operation = nullToEmpty(row.getOperation()).toUpperCase(Locale.ROOT);
             switch (operation) {
+                case QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED -> {
+                    // Already applied by clearing the base map.
+                }
                 case QuizQuestionOverrideEntity.OPERATION_DISABLE -> {
                     String sourceId = trimToNull(row.getSourceQuestionId());
                     if (sourceId == null || !byId.containsKey(sourceId)) {
-                        staleOverrideIds.add(row.getId());
+                        if (!suppressGenerated) {
+                            staleOverrideIds.add(row.getId());
+                        }
                         continue;
                     }
                     byId.remove(sourceId);
@@ -77,7 +89,9 @@ public final class EffectiveQuizAssembler {
                 case QuizQuestionOverrideEntity.OPERATION_OVERRIDE -> {
                     String sourceId = trimToNull(row.getSourceQuestionId());
                     if (sourceId == null || !byId.containsKey(sourceId)) {
-                        staleOverrideIds.add(row.getId());
+                        if (!suppressGenerated) {
+                            staleOverrideIds.add(row.getId());
+                        }
                         continue;
                     }
                     ChapterQuizPayload.Question parsed = parseQuestion(row.getQuestionJson(), objectMapper);
@@ -120,6 +134,7 @@ public final class EffectiveQuizAssembler {
 
     private static int operationRank(String operation) {
         return switch (nullToEmpty(operation).toUpperCase(Locale.ROOT)) {
+            case QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED -> -1;
             case QuizQuestionOverrideEntity.OPERATION_DISABLE -> 0;
             case QuizQuestionOverrideEntity.OPERATION_OVERRIDE -> 1;
             case QuizQuestionOverrideEntity.OPERATION_ADD -> 2;
