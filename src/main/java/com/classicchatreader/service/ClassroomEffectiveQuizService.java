@@ -132,6 +132,7 @@ public class ClassroomEffectiveQuizService {
                 ChapterQuizPayload versioned = effective.orElseGet(
                         () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
                 assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
+                assertSubmissionComplete(versioned, selectedOptionIndexes);
 
                 if (effective.isEmpty()) {
                     return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
@@ -139,6 +140,26 @@ public class ClassroomEffectiveQuizService {
                 return chapterQuizService.gradeQuizWithPayload(
                         chapterId, selectedOptionIndexes, readerId, userId, effective.get());
             });
+        }
+    }
+
+    private void assertSubmissionComplete(ChapterQuizPayload payload, List<Integer> selectedOptionIndexes) {
+        int expected = payload == null || payload.questions() == null ? 0 : payload.questions().size();
+        if (expected <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quiz has no questions to grade.");
+        }
+        if (selectedOptionIndexes == null || selectedOptionIndexes.size() != expected) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Answer every question before submitting (" + expected + " required).");
+        }
+        for (int i = 0; i < selectedOptionIndexes.size(); i++) {
+            Integer selected = selectedOptionIndexes.get(i);
+            if (selected == null || selected < 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Answer every question before submitting.");
+            }
         }
     }
 

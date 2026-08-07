@@ -5827,10 +5827,11 @@
         const answeredCount = Array.isArray(state.quizSelectedAnswers)
             ? state.quizSelectedAnswers.filter(value => Number.isInteger(value)).length
             : 0;
+        const allAnswered = hasQuestions && answeredCount === state.quizQuestions.length;
         elements.chapterQuizSubmit.disabled = quizUnavailable
             || state.quizSubmitting
             || !hasQuestions
-            || answeredCount === 0;
+            || !allAnswered;
         elements.chapterQuizSubmit.textContent = state.quizSubmitting
             ? 'Checking...'
             : 'Check Answers';
