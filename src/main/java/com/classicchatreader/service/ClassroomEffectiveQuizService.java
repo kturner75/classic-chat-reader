@@ -120,7 +120,12 @@ public class ClassroomEffectiveQuizService {
             String userId) {
         // Hold the lock around the full transaction so concurrent last-attempt
         // submissions cannot both observe the pre-commit attempt count.
-        String lockKey = ((userId == null ? "" : userId) + "\u0000" + (chapterId == null ? "" : chapterId)).intern();
+        // Prefer account userId; fall back to readerId so anonymous graders do not
+        // all serialize on the empty-user key.
+        String identityKey = (userId != null && !userId.isBlank())
+                ? userId
+                : (readerId == null ? "" : readerId);
+        String lockKey = (identityKey + "\u0000" + (chapterId == null ? "" : chapterId)).intern();
         synchronized (lockKey) {
             return transactionTemplate.execute(status -> {
                 // Shared content lock with teacher republish (chapter + quiz rows).
