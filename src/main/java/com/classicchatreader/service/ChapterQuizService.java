@@ -87,7 +87,7 @@ public class ChapterQuizService {
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
-    @Value("${quiz.content-version-secret:classic-chat-reader-quiz-content-version}")
+    @Value("${quiz.content-version-secret:}")
     private String contentVersionSecret;
 
     public ChapterQuizService(
@@ -109,6 +109,13 @@ public class ChapterQuizService {
 
     @PostConstruct
     public void init() {
+        if (contentVersionSecret == null || contentVersionSecret.isBlank()
+                || "classic-chat-reader-quiz-content-version".equals(contentVersionSecret.trim())) {
+            // Never ship a publicly known HMAC key. Ephemeral per process is fine for local/dev;
+            // set quiz.content-version-secret in shared/prod so in-flight content versions survive restarts.
+            contentVersionSecret = UUID.randomUUID().toString();
+            log.info("quiz.content-version-secret unset; using ephemeral process secret");
+        }
         executor.submit(this::processQueue);
         log.info("Chapter quiz service started with background queue processor");
     }
@@ -762,8 +769,12 @@ public class ChapterQuizService {
         }
         try {
             String secret = (contentVersionSecret == null || contentVersionSecret.isBlank())
-                    ? "classic-chat-reader-quiz-content-version"
+                    ? UUID.randomUUID().toString()
                     : contentVersionSecret;
+            // Cache any fallback so verify uses the same key within this process.
+            if (contentVersionSecret == null || contentVersionSecret.isBlank()) {
+                contentVersionSecret = secret;
+            }
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] hash = mac.doFinal(canonical.toString().getBytes(StandardCharsets.UTF_8));

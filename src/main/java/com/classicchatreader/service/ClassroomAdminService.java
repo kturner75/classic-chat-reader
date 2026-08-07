@@ -547,6 +547,10 @@ public class ClassroomAdminService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "quizMaxRetries cannot be negative.");
         }
+        if (maxRetries > 20) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "quizMaxRetries cannot exceed 20.");
+        }
     }
 
     private void validatePassMinAgainstEffectiveQuiz(String termId, String chapterId, Integer minCorrect) {
