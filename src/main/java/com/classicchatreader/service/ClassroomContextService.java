@@ -490,11 +490,14 @@ public class ClassroomContextService {
         }
         Integer minCorrect = row.getQuizPassMinCorrect();
         Integer maxRetries = row.getQuizMaxRetries();
-        long used = quizAttemptRepository.countByChapterIdAndUserId(chapterId, userId);
+        java.time.LocalDateTime since = attemptWindowStart(row);
+        long used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                chapterId, userId, since);
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
         if (minCorrect != null) {
-            int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId(chapterId, userId);
+            int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                    chapterId, userId, since);
             passed = best >= minCorrect;
         } else if (used > 0) {
             passed = true;
@@ -503,6 +506,21 @@ public class ClassroomContextService {
                 used > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) used,
                 allowed,
                 passed);
+    }
+
+    private static java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
+        java.time.LocalDateTime since = assignment.getQuizRulesActivatedAt();
+        if (since == null) {
+            since = assignment.getCreatedAt();
+        }
+        if (assignment.getAvailableFromDate() != null) {
+            java.time.LocalDateTime open = java.time.LocalDateTime.of(
+                    assignment.getAvailableFromDate(), java.time.LocalTime.MIN);
+            if (since == null || open.isAfter(since)) {
+                since = open;
+            }
+        }
+        return since != null ? since : java.time.LocalDateTime.of(1970, 1, 1, 0, 0);
     }
 
     private record QuizAttemptSummary(Integer attemptsUsed, Integer attemptsAllowed, Boolean passed) {

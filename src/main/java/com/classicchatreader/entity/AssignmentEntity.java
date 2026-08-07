@@ -58,6 +58,10 @@ public class AssignmentEntity {
     @Column(name = "quiz_max_retries")
     private Integer quizMaxRetries;
 
+    /** When pass rules became active for attempt-window scoping (UTC). */
+    @Column(name = "quiz_rules_activated_at")
+    private LocalDateTime quizRulesActivatedAt;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -114,6 +118,10 @@ public class AssignmentEntity {
     public void setQuizPassMinCorrect(Integer quizPassMinCorrect) { this.quizPassMinCorrect = quizPassMinCorrect; }
     public Integer getQuizMaxRetries() { return quizMaxRetries; }
     public void setQuizMaxRetries(Integer quizMaxRetries) { this.quizMaxRetries = quizMaxRetries; }
+    public LocalDateTime getQuizRulesActivatedAt() { return quizRulesActivatedAt; }
+    public void setQuizRulesActivatedAt(LocalDateTime quizRulesActivatedAt) {
+        this.quizRulesActivatedAt = quizRulesActivatedAt;
+    }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getStatus() { return status; }

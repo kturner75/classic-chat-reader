@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -443,10 +444,18 @@ public class ClassroomAdminService {
         if (!assignment.isQuizRequired()) {
             assignment.setQuizPassMinCorrect(null);
             assignment.setQuizMaxRetries(null);
+            assignment.setQuizRulesActivatedAt(null);
             return;
         }
         assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
         assignment.setQuizMaxRetries(request.quizMaxRetries());
+        String status = !isBlank(request.status())
+                ? request.status().trim().toUpperCase()
+                : assignment.getStatus();
+        if (request.quizPassMinCorrect() != null && request.quizMaxRetries() != null
+                && "PUBLISHED".equalsIgnoreCase(status)) {
+            assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
+        }
     }
 
     private void applyQuizPassRulesOnUpdate(AssignmentEntity assignment, AssignmentWriteRequest request) {
@@ -456,13 +465,28 @@ public class ClassroomAdminService {
         if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
             assignment.setQuizPassMinCorrect(null);
             assignment.setQuizMaxRetries(null);
+            assignment.setQuizRulesActivatedAt(null);
             return;
         }
+        Integer previousMin = assignment.getQuizPassMinCorrect();
+        Integer previousRetries = assignment.getQuizMaxRetries();
         if (request.quizPassMinCorrect() != null) {
             assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
         }
         if (request.quizMaxRetries() != null) {
             assignment.setQuizMaxRetries(request.quizMaxRetries());
+        }
+        String nextStatus = !isBlank(request.status())
+                ? request.status().trim().toUpperCase()
+                : assignment.getStatus();
+        boolean hasRules = assignment.getQuizPassMinCorrect() != null && assignment.getQuizMaxRetries() != null;
+        boolean rulesChanged = !Objects.equals(previousMin, assignment.getQuizPassMinCorrect())
+                || !Objects.equals(previousRetries, assignment.getQuizMaxRetries());
+        boolean publishedNow = "PUBLISHED".equalsIgnoreCase(nextStatus)
+                && !"PUBLISHED".equalsIgnoreCase(assignment.getStatus());
+        if (hasRules && (rulesChanged || publishedNow || assignment.getQuizRulesActivatedAt() == null)
+                && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
+            assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
     }
 
@@ -579,14 +603,28 @@ public class ClassroomAdminService {
                     HttpStatus.BAD_REQUEST,
                     "quizPassMinCorrect requires a chapter-targeted assignment (not whole-book).");
         }
-        classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId).ifPresent(count -> {
-            if (minCorrect > count) {
+        Optional<Integer> known = classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId);
+        if (known.isPresent()) {
+            if (minCorrect > known.get()) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
-                                + count + " questions).");
+                                + known.get() + " questions).");
             }
-        });
+            return;
+        }
+        // Quiz content not published yet — bound by teacher default question count (or 5).
+        int fallback = classFeatureSettingsRepository.findById(termId)
+                .map(ClassFeatureSettingsEntity::getDefaultQuizQuestionCount)
+                .filter(count -> count != null && count > 0)
+                .orElse(5);
+        if (minCorrect > fallback) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "quizPassMinCorrect (" + minCorrect + ") cannot exceed the class default quiz size ("
+                            + fallback + ") before a chapter quiz is published. "
+                            + "Publish the class quiz first or lower the pass threshold.");
+        }
     }
 
     private void validateAssignmentForCreate(AssignmentWriteRequest request) {

@@ -56,7 +56,7 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
-        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(assignment));
         when(quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
                 eq("chapter-1"), eq("user-1"), any(LocalDateTime.class))).thenReturn(1L);
@@ -72,7 +72,7 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
-        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(assignment));
         when(quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
                 eq("chapter-1"), eq("user-1"), any(LocalDateTime.class))).thenReturn(1L);
@@ -89,7 +89,7 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
-        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(future));
 
         assertDoesNotThrow(() -> service.assertCanAttempt("chapter-1", "user-1"));
@@ -101,7 +101,7 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
-        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(otherTerm));
 
         assertDoesNotThrow(() -> service.assertCanAttempt("chapter-1", "user-1"));
@@ -114,7 +114,7 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
-        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(passed, open));
         when(quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
                 eq("chapter-1"), eq("user-1"), any(LocalDateTime.class))).thenReturn(1L);

@@ -81,7 +81,7 @@ public class ClassroomQuizPolicyService {
         }
         LocalDate today = classroomProperties.today();
         List<AssignmentEntity> matching = assignmentRepository
-                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
+                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(chapterId, "PUBLISHED")
                 .stream()
                 .filter(a -> activeTermId.equals(a.getTermId()))
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
@@ -117,11 +117,13 @@ public class ClassroomQuizPolicyService {
     }
 
     private LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
-        LocalDateTime since = assignment.getCreatedAt();
+        LocalDateTime since = assignment.getQuizRulesActivatedAt();
+        if (since == null) {
+            since = assignment.getCreatedAt();
+        }
         if (assignment.getAvailableFromDate() != null) {
             LocalDateTime open = LocalDateTime.of(
                     assignment.getAvailableFromDate(), LocalTime.MIN);
-            // Approximate calendar open day in server local; policy already gates by today().
             if (since == null || open.isAfter(since)) {
                 since = open;
             }
