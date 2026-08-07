@@ -857,13 +857,54 @@ public class ChapterQuizService {
         }
     }
 
+    /**
+     * Add stable question ids for legacy payloads without applying serving-time
+     * normalization. Lossy caps (max questions / option count) and empty-paragraph
+     * citation clearing must not be persisted during lazy id backfill.
+     */
     private ChapterQuizPayload toPayloadWithDeterministicIds(String payloadJson, String chapterId) {
         if (payloadJson == null || payloadJson.isBlank()) {
             return EMPTY_PAYLOAD;
         }
         try {
             ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
-            return normalizePayload(payload, List.of(), chapterId, true);
+            if (payload == null || payload.questions() == null) {
+                return EMPTY_PAYLOAD;
+            }
+
+            List<ChapterQuizPayload.Question> withIds = new ArrayList<>();
+            int questionIndex = 0;
+            for (ChapterQuizPayload.Question question : payload.questions()) {
+                if (question == null) {
+                    continue;
+                }
+                String questionId = question.id();
+                if (questionId == null || questionId.isBlank()) {
+                    String questionText = question.question() == null ? "" : question.question().trim();
+                    List<String> seedOptions = question.options() == null
+                            ? List.of()
+                            : question.options().stream()
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(s -> !s.isBlank())
+                            .toList();
+                    String seed = (chapterId == null ? "" : chapterId)
+                            + "|" + questionIndex + "|" + questionText + "|" + String.join("|", seedOptions);
+                    questionId = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+                } else {
+                    questionId = questionId.trim();
+                }
+                withIds.add(new ChapterQuizPayload.Question(
+                        questionId,
+                        question.question(),
+                        question.options(),
+                        question.correctOptionIndex(),
+                        question.citationParagraphIndex(),
+                        question.citationSnippet()
+                ));
+                questionIndex++;
+            }
+            return withIds.isEmpty() ? EMPTY_PAYLOAD : new ChapterQuizPayload(withIds);
         } catch (JsonProcessingException e) {
             log.warn("Failed to parse quiz payload JSON", e);
             return EMPTY_PAYLOAD;

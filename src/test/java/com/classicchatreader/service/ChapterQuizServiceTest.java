@@ -309,6 +309,56 @@ class ChapterQuizServiceTest {
         assertTrue(graded.get().results().get(1).citationSnippet().contains("Watson"));
     }
 
+    @Test
+    void loadCompletedPayloadWithIdBackfill_preservesRawFieldsWithoutServingNormalization() throws Exception {
+        // Serving caps would drop Q6 and option F and clear citation without paragraphs.
+        ReflectionTestUtils.setField(chapterQuizService, "maxQuestions", 5);
+
+        ChapterEntity chapter = createChapter("book-1", "chapter-1", 1, "Chapter 1");
+        ChapterQuizEntity entity = new ChapterQuizEntity(chapter);
+        entity.setStatus(ChapterQuizStatus.COMPLETED);
+        List<ChapterQuizPayload.Question> legacyQuestions = new java.util.ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            legacyQuestions.add(new ChapterQuizPayload.Question(
+                    null,
+                    "Question " + i + "?",
+                    List.of("A", "B", "C", "D", "E", "F"),
+                    5,
+                    12,
+                    "Original citation for question " + i
+            ));
+        }
+        entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(legacyQuestions)));
+
+        when(chapterQuizRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(entity));
+        when(chapterQuizRepository.findByChapterIdForUpdate("chapter-1")).thenReturn(Optional.of(entity));
+        when(chapterQuizRepository.save(any(ChapterQuizEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChapterQuizPayload viewed = chapterQuizService.loadCompletedPayloadWithIdBackfill("chapter-1");
+
+        ArgumentCaptor<ChapterQuizEntity> saved = ArgumentCaptor.forClass(ChapterQuizEntity.class);
+        verify(chapterQuizRepository).save(saved.capture());
+        ChapterQuizPayload persisted = new ObjectMapper().readValue(
+                saved.getValue().getPayloadJson(),
+                ChapterQuizPayload.class
+        );
+
+        assertEquals(6, persisted.questions().size());
+        ChapterQuizPayload.Question first = persisted.questions().get(0);
+        assertNotNull(first.id());
+        assertFalse(first.id().isBlank());
+        assertEquals(List.of("A", "B", "C", "D", "E", "F"), first.options());
+        assertEquals(5, first.correctOptionIndex());
+        assertEquals(12, first.citationParagraphIndex());
+        assertEquals("Original citation for question 1", first.citationSnippet());
+        assertEquals(6, persisted.questions().get(5).options().size());
+        assertNotNull(persisted.questions().get(5).id());
+
+        // Returned view still applies serving-time normalization separately.
+        assertTrue(viewed.questions().size() <= 5);
+        assertTrue(viewed.questions().get(0).options().size() <= 4);
+    }
+
     private ChapterEntity createChapter(String bookId, String chapterId, int index, String title) {
         BookEntity book = new BookEntity("Title", "Author", "gutenberg");
         book.setId(bookId);
