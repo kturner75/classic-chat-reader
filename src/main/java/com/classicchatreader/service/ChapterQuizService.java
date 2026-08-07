@@ -815,6 +815,19 @@ public class ChapterQuizService {
         return value == null ? "" : value;
     }
 
+    /**
+     * Shared DB lock for grade/republish coordination. Locks the chapter row (always)
+     * and the chapter-quiz row when present so concurrent content mutation serializes.
+     */
+    @Transactional
+    public void lockQuizContent(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return;
+        }
+        chapterRepository.findByIdWithBookForUpdate(chapterId);
+        chapterQuizRepository.findByChapterIdForUpdate(chapterId);
+    }
+
     private void maybeBackfillQuestionIds(ChapterQuizEntity entity) {
         if (entity == null
                 || entity.getStatus() != ChapterQuizStatus.COMPLETED
@@ -825,12 +838,36 @@ public class ChapterQuizService {
         if (!payloadMissingQuestionIds(entity.getPayloadJson())) {
             return;
         }
-        ChapterQuizPayload normalized = toPayload(entity.getPayloadJson());
+        String chapterId = entity.getChapter() != null ? entity.getChapter().getId() : null;
+        ChapterQuizEntity locked = chapterId == null
+                ? entity
+                : chapterQuizRepository.findByChapterIdForUpdate(chapterId).orElse(entity);
+        if (!payloadMissingQuestionIds(locked.getPayloadJson())) {
+            return;
+        }
+        ChapterQuizPayload normalized = toPayloadWithDeterministicIds(locked.getPayloadJson(), chapterId);
         if (!hasQuestions(normalized)) {
             return;
         }
-        entity.setPayloadJson(toJson(normalized));
-        chapterQuizRepository.save(entity);
+        locked.setPayloadJson(toJson(normalized));
+        chapterQuizRepository.save(locked);
+        // Keep the caller's entity view in sync when it is a different instance.
+        if (locked != entity) {
+            entity.setPayloadJson(locked.getPayloadJson());
+        }
+    }
+
+    private ChapterQuizPayload toPayloadWithDeterministicIds(String payloadJson, String chapterId) {
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return EMPTY_PAYLOAD;
+        }
+        try {
+            ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
+            return normalizePayload(payload, List.of(), chapterId, true);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse quiz payload JSON", e);
+            return EMPTY_PAYLOAD;
+        }
     }
 
     private boolean payloadMissingQuestionIds(String payloadJson) {
@@ -854,7 +891,7 @@ public class ChapterQuizService {
 
         try {
             ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
-            return normalizePayload(payload, List.of());
+            return normalizePayload(payload, List.of(), null, false);
         } catch (JsonProcessingException e) {
             log.warn("Failed to parse quiz payload JSON", e);
             return EMPTY_PAYLOAD;
@@ -870,6 +907,14 @@ public class ChapterQuizService {
     }
 
     private ChapterQuizPayload normalizePayload(ChapterQuizPayload payload, List<ParagraphEntity> paragraphs) {
+        return normalizePayload(payload, paragraphs, null, false);
+    }
+
+    private ChapterQuizPayload normalizePayload(
+            ChapterQuizPayload payload,
+            List<ParagraphEntity> paragraphs,
+            String chapterId,
+            boolean deterministicMissingIds) {
         if (payload == null || payload.questions() == null) {
             return EMPTY_PAYLOAD;
         }
@@ -886,12 +931,18 @@ public class ChapterQuizService {
                         (a, b) -> a
                 ));
 
-        List<ChapterQuizPayload.Question> normalizedQuestions = payload.questions().stream()
+        List<ChapterQuizPayload.Question> source = payload.questions().stream()
                 .filter(Objects::nonNull)
                 .limit(maxAllowed)
-                .map(question -> normalizeQuestion(question, paragraphByIndex))
-                .filter(Objects::nonNull)
                 .toList();
+        List<ChapterQuizPayload.Question> normalizedQuestions = new ArrayList<>();
+        for (int i = 0; i < source.size(); i++) {
+            ChapterQuizPayload.Question normalized = normalizeQuestion(
+                    source.get(i), paragraphByIndex, chapterId, i, deterministicMissingIds);
+            if (normalized != null) {
+                normalizedQuestions.add(normalized);
+            }
+        }
 
         return normalizedQuestions.isEmpty()
                 ? EMPTY_PAYLOAD
@@ -901,6 +952,15 @@ public class ChapterQuizService {
     private ChapterQuizPayload.Question normalizeQuestion(
             ChapterQuizPayload.Question question,
             Map<Integer, String> paragraphByIndex) {
+        return normalizeQuestion(question, paragraphByIndex, null, 0, false);
+    }
+
+    private ChapterQuizPayload.Question normalizeQuestion(
+            ChapterQuizPayload.Question question,
+            Map<Integer, String> paragraphByIndex,
+            String chapterId,
+            int questionIndex,
+            boolean deterministicMissingIds) {
         String normalizedQuestion = question.question() == null ? "" : question.question().trim();
 
         List<String> options = question.options() == null
@@ -932,9 +992,18 @@ public class ChapterQuizService {
             citationSnippet = paragraphByIndex.getOrDefault(paragraphIndex, "");
         }
 
-        String questionId = question.id() == null || question.id().isBlank()
-                ? UUID.randomUUID().toString()
-                : question.id().trim();
+        String questionId;
+        if (question.id() == null || question.id().isBlank()) {
+            if (deterministicMissingIds) {
+                String seed = (chapterId == null ? "" : chapterId)
+                        + "|" + questionIndex + "|" + normalizedQuestion + "|" + String.join("|", options);
+                questionId = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+            } else {
+                questionId = UUID.randomUUID().toString();
+            }
+        } else {
+            questionId = question.id().trim();
+        }
 
         return new ChapterQuizPayload.Question(
                 questionId,

@@ -97,6 +97,8 @@ public class TeacherQuizAuthoringService {
             ReplaceOverridesRequest request) {
         requireTeacher(userId, termId);
         ChapterEntity chapter = requireChapter(chapterId);
+        // Share content lock with student grade path even when no pass-rule assignment exists.
+        chapterQuizService.lockQuizContent(chapterId);
         if (request == null || request.operations() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "operations are required.");
         }

@@ -123,6 +123,8 @@ public class ClassroomEffectiveQuizService {
         String lockKey = ((userId == null ? "" : userId) + "\u0000" + (chapterId == null ? "" : chapterId)).intern();
         synchronized (lockKey) {
             return transactionTemplate.execute(status -> {
+                // Shared content lock with teacher republish (chapter + quiz rows).
+                chapterQuizService.lockQuizContent(chapterId);
                 // Lock assignment attempt rows first so a concurrent quiz republish
                 // cannot swap content after version check but before budget reservation.
                 classroomQuizPolicyService.assertCanAttempt(chapterId, userId);
