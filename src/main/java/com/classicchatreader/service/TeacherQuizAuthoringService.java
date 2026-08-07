@@ -199,6 +199,11 @@ public class TeacherQuizAuthoringService {
                     HttpStatus.BAD_REQUEST,
                     "Effective quiz cannot be empty. Keep at least one question or clear overrides.");
         }
+        if (effective.effectiveQuestions().size() > 20) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Effective quiz cannot exceed 20 questions.");
+        }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
         // Content replacement invalidates prior attempt scores for this chapter's pass rules.
         LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
@@ -421,7 +426,17 @@ public class TeacherQuizAuthoringService {
         if (question == null || isBlank(question.question()) || question.options() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs a stem and options.");
         }
-        List<String> rawOptions = question.options().stream()
+        List<String> sourceOptions = question.options();
+        int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
+        if (correct < 0 || correct >= sourceOptions.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
+        }
+        String correctRaw = sourceOptions.get(correct);
+        if (correctRaw == null || correctRaw.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correct option text cannot be blank.");
+        }
+        String correctText = correctRaw.trim();
+        List<String> rawOptions = sourceOptions.stream()
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -430,11 +445,6 @@ public class TeacherQuizAuthoringService {
         if (rawOptions.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least 2 options.");
         }
-        int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
-        if (correct < 0 || correct >= rawOptions.size()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
-        }
-        String correctText = rawOptions.get(correct);
         List<String> options = new ArrayList<>();
         for (String option : rawOptions) {
             if (options.stream().noneMatch(existing -> existing.equalsIgnoreCase(option))) {

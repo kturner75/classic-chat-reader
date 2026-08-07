@@ -301,6 +301,14 @@ public class ClassroomAdminService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
+        // Lock quiz content before mutation when pass rules may be validated against chapter quiz size,
+        // then reload so a concurrent publication cannot leave a stale activation timestamp in this session.
+        String lockChapterId = resolveChapterIdForPassRuleLock(assignment, request);
+        if (lockChapterId != null) {
+            chapterQuizService.lockQuizContent(lockChapterId);
+            assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found."));
+        }
         validateAssignmentForUpdate(request, assignment);
         boolean effectiveCharacterChatRequired = request.characterChatRequired() != null
                 ? request.characterChatRequired()
@@ -309,6 +317,29 @@ public class ClassroomAdminService {
         validateQuizPassRulesForUpdate(request, assignment);
         applyAssignmentUpdate(assignment, userId, request);
         return assignmentRepository.save(assignment);
+    }
+
+    private String resolveChapterIdForPassRuleLock(AssignmentEntity existing, AssignmentWriteRequest request) {
+        boolean quizRequired = request.quizRequired() != null
+                ? request.quizRequired()
+                : existing.isQuizRequired();
+        if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
+            return null;
+        }
+        Integer min = request.quizPassMinCorrect() != null
+                ? request.quizPassMinCorrect()
+                : existing.getQuizPassMinCorrect();
+        if (min == null) {
+            return null;
+        }
+        String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
+        String chapterId = request.chapterId() != null
+                ? trimToNull(request.chapterId())
+                : existing.getChapterId();
+        Integer chapterIndex = request.chapterIndex() != null
+                ? request.chapterIndex()
+                : existing.getChapterIndex();
+        return resolveChapterId(bookId, chapterId, chapterIndex);
     }
 
     @Transactional(readOnly = true)
