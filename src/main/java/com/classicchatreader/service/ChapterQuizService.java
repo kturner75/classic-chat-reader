@@ -22,7 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +62,7 @@ public class ChapterQuizService {
     private final ObjectMapper objectMapper;
     private final QuizProgressService quizProgressService;
     private final QuizMetricsService quizMetricsService;
+    private final Environment environment;
     private final BlockingQueue<String> requestQueue = new LinkedBlockingQueue<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile boolean running = true;
@@ -98,7 +101,8 @@ public class ChapterQuizService {
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
             QuizProgressService quizProgressService,
             QuizMetricsService quizMetricsService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Environment environment) {
         this.chapterQuizRepository = chapterQuizRepository;
         this.chapterRepository = chapterRepository;
         this.paragraphRepository = paragraphRepository;
@@ -106,6 +110,7 @@ public class ChapterQuizService {
         this.quizProgressService = quizProgressService;
         this.quizMetricsService = quizMetricsService;
         this.objectMapper = objectMapper;
+        this.environment = environment;
     }
 
     @PostConstruct
@@ -116,9 +121,16 @@ public class ChapterQuizService {
             // Never ship a publicly known HMAC key. Ephemeral per process is fine for local/dev only.
             // Shared/prod multi-instance deployments must set quiz.content-version-secret (or
             // QUIZ_CONTENT_VERSION_SECRET) so contentVersion tokens validate across replicas.
-            String profiles = System.getProperty("spring.profiles.active", "");
-            String envProfiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "");
-            boolean prodLike = (profiles + "," + envProfiles).toLowerCase(Locale.ROOT).contains("prod");
+            boolean prodLike = false;
+            if (environment != null) {
+                for (String profile : environment.getActiveProfiles()) {
+                    String p = profile == null ? "" : profile.toLowerCase(Locale.ROOT);
+                    if (p.contains("prod") || p.equals("mariadb")) {
+                        prodLike = true;
+                        break;
+                    }
+                }
+            }
             if (prodLike) {
                 throw new IllegalStateException(
                         "quiz.content-version-secret must be set in production so multi-instance "

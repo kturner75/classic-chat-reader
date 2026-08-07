@@ -59,6 +59,9 @@ class ChapterQuizServiceTest {
     @Mock
     private QuizMetricsService quizMetricsService;
 
+    @Mock
+    private org.springframework.core.env.Environment environment;
+
     private ChapterQuizService chapterQuizService;
 
     @BeforeEach
@@ -70,7 +73,8 @@ class ChapterQuizServiceTest {
                 reasoningProvider,
                 quizProgressService,
                 quizMetricsService,
-                new ObjectMapper()
+                new ObjectMapper(),
+                environment
         );
         ReflectionTestUtils.setField(chapterQuizService, "maxContextChars", 7000);
         ReflectionTestUtils.setField(chapterQuizService, "questionsPerChapter", 3);
