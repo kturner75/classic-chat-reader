@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.repository.AssignmentRepository;
@@ -12,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -27,13 +29,15 @@ class ClassroomQuizPolicyServiceTest {
     private EnrollmentRepository enrollmentRepository;
     @Mock
     private QuizAttemptRepository quizAttemptRepository;
+    @Mock
+    private ClassroomProperties classroomProperties;
 
     private ClassroomQuizPolicyService service;
 
     @BeforeEach
     void setUp() {
         service = new ClassroomQuizPolicyService(
-                assignmentRepository, enrollmentRepository, quizAttemptRepository);
+                assignmentRepository, enrollmentRepository, quizAttemptRepository, classroomProperties);
     }
 
     @Test
@@ -47,6 +51,7 @@ class ClassroomQuizPolicyServiceTest {
         assignment.setQuizPassMinCorrect(7);
         assignment.setQuizMaxRetries(1);
 
+        when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
         when(enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull("user-1", "ACTIVE"))
                 .thenReturn(List.of(enrollment));
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
@@ -67,6 +72,7 @@ class ClassroomQuizPolicyServiceTest {
         assignment.setQuizPassMinCorrect(7);
         assignment.setQuizMaxRetries(0);
 
+        when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
         when(enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull("user-1", "ACTIVE"))
                 .thenReturn(List.of(enrollment));
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
@@ -74,5 +80,27 @@ class ClassroomQuizPolicyServiceTest {
         when(quizAttemptRepository.countByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(1L);
 
         assertThrows(ResponseStatusException.class, () -> service.assertCanAttempt("chapter-1", "user-1"));
+    }
+
+    @Test
+    void assertCanAttempt_ignoresFutureAvailableFromAssignments() {
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setTermId("term-1");
+        AssignmentEntity future = new AssignmentEntity();
+        future.setTermId("term-1");
+        future.setChapterId("chapter-1");
+        future.setQuizRequired(true);
+        future.setQuizPassMinCorrect(7);
+        future.setQuizMaxRetries(0);
+        future.setAvailableFromDate(LocalDate.of(2026, 9, 1));
+
+        when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull("user-1", "ACTIVE"))
+                .thenReturn(List.of(enrollment));
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+                "chapter-1", "PUBLISHED")).thenReturn(List.of(future));
+        // No attempts needed — assignment is not yet available so budget does not apply.
+
+        assertDoesNotThrow(() -> service.assertCanAttempt("chapter-1", "user-1"));
     }
 }

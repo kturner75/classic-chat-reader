@@ -1,12 +1,9 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.entity.ChapterEntity;
-import com.classicchatreader.entity.ChapterQuizEntity;
-import com.classicchatreader.entity.ChapterQuizStatus;
 import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.entity.QuizQuestionOverrideEntity;
 import com.classicchatreader.model.ChapterQuizPayload;
-import com.classicchatreader.repository.ChapterQuizRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.repository.QuizQuestionOverrideRepository;
@@ -28,7 +25,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 @Service
 public class TeacherQuizAuthoringService {
@@ -36,7 +32,6 @@ public class TeacherQuizAuthoringService {
     private final ClassroomAuthorizationService authorizationService;
     private final QuizQuestionOverrideRepository overrideRepository;
     private final ChapterRepository chapterRepository;
-    private final ChapterQuizRepository chapterQuizRepository;
     private final ParagraphRepository paragraphRepository;
     private final ChapterQuizService chapterQuizService;
     private final LlmProvider reasoningProvider;
@@ -49,7 +44,6 @@ public class TeacherQuizAuthoringService {
             ClassroomAuthorizationService authorizationService,
             QuizQuestionOverrideRepository overrideRepository,
             ChapterRepository chapterRepository,
-            ChapterQuizRepository chapterQuizRepository,
             ParagraphRepository paragraphRepository,
             ChapterQuizService chapterQuizService,
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
@@ -57,14 +51,13 @@ public class TeacherQuizAuthoringService {
         this.authorizationService = authorizationService;
         this.overrideRepository = overrideRepository;
         this.chapterRepository = chapterRepository;
-        this.chapterQuizRepository = chapterQuizRepository;
         this.paragraphRepository = paragraphRepository;
         this.chapterQuizService = chapterQuizService;
         this.reasoningProvider = reasoningProvider;
         this.objectMapper = objectMapper;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public EffectiveQuizResponse getEffectiveQuiz(String userId, String termId, String chapterId) {
         requireTeacher(userId, termId);
         ChapterEntity chapter = requireChapter(chapterId);
@@ -352,11 +345,8 @@ public class TeacherQuizAuthoringService {
     }
 
     private ChapterQuizPayload loadGeneratedPayload(String chapterId) {
-        Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterId(chapterId);
-        if (quizOpt.isEmpty() || quizOpt.get().getStatus() != ChapterQuizStatus.COMPLETED) {
-            return new ChapterQuizPayload(List.of());
-        }
-        return chapterQuizService.parsePayloadJson(quizOpt.get().getPayloadJson());
+        // Persist lazy id backfill so OVERRIDE/DISABLE rows reference durable source ids.
+        return chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId);
     }
 
     private ChapterEntity requireChapter(String chapterId) {

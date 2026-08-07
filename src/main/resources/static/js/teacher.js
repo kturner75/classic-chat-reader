@@ -676,10 +676,18 @@
         });
         state.activeQuizBookOption = -1;
         el['quiz-book-options'].innerHTML = books.length
-            ? books.map((book, index) => `<button type="button" role="option" data-book-id="${escapeHtml(book.id)}" data-index="${index}">${escapeHtml(bookDisplayName(book))}</button>`).join('')
+            ? books.map((book) => `<button type="button" id="quiz-book-option-${escapeHtml(book.id)}" role="option" data-book-id="${escapeHtml(book.id)}" aria-selected="false">${escapeHtml(bookDisplayName(book))}</button>`).join('')
             : '<div class="book-option-empty">No matching books</div>';
         show(el['quiz-book-options'], true);
         el['quiz-book-search'].setAttribute('aria-expanded', 'true');
+        el['quiz-book-search'].removeAttribute('aria-activedescendant');
+    }
+
+    function closeQuizBookOptions() {
+        show(el['quiz-book-options'], false);
+        el['quiz-book-search'].setAttribute('aria-expanded', 'false');
+        el['quiz-book-search'].removeAttribute('aria-activedescendant');
+        state.activeQuizBookOption = -1;
     }
 
     function selectQuizBook(bookId) {
@@ -688,9 +696,24 @@
         el['quiz-book'].value = book.id;
         el['quiz-book-search'].value = bookDisplayName(book);
         el['quiz-book-search'].setCustomValidity('');
-        show(el['quiz-book-options'], false);
-        el['quiz-book-search'].setAttribute('aria-expanded', 'false');
+        closeQuizBookOptions();
         populateQuizChapterOptions('', book.id);
+    }
+
+    function moveActiveQuizBookOption(direction) {
+        const options = Array.from(el['quiz-book-options'].querySelectorAll('[role="option"]'));
+        if (options.length === 0) return;
+        if (el['quiz-book-options'].classList.contains('hidden')) renderQuizBookOptions();
+        state.activeQuizBookOption = (state.activeQuizBookOption + direction + options.length) % options.length;
+        options.forEach((option, index) => {
+            const active = index === state.activeQuizBookOption;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', String(active));
+            if (active) {
+                el['quiz-book-search'].setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
     }
 
     function openQuizWizard() {
@@ -1044,12 +1067,28 @@
         el['quiz-book-search']?.addEventListener('focus', renderQuizBookOptions);
         el['quiz-book-search']?.addEventListener('input', () => {
             el['quiz-book'].value = '';
+            el['quiz-book-search'].setCustomValidity('Choose a book from the suggestions.');
             renderQuizBookOptions();
         });
-        el['quiz-book-search']?.addEventListener('blur', () => window.setTimeout(() => {
-            show(el['quiz-book-options'], false);
-            el['quiz-book-search'].setAttribute('aria-expanded', 'false');
-        }, 100));
+        el['quiz-book-search']?.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveQuizBookOption(event.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+            if (event.key === 'Enter' && state.activeQuizBookOption >= 0) {
+                event.preventDefault();
+                const options = el['quiz-book-options'].querySelectorAll('[role="option"]');
+                selectQuizBook(options[state.activeQuizBookOption]?.dataset.bookId);
+                return;
+            }
+            if (event.key === 'Escape' && el['quiz-book-search'].getAttribute('aria-expanded') === 'true') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeQuizBookOptions();
+            }
+        });
+        el['quiz-book-search']?.addEventListener('blur', () => window.setTimeout(closeQuizBookOptions, 100));
         el['quiz-book-options']?.addEventListener('mousedown', event => {
             const option = event.target.closest('[data-book-id]');
             if (!option) return;

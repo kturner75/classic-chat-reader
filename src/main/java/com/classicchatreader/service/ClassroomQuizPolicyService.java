@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.repository.AssignmentRepository;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -24,14 +26,17 @@ public class ClassroomQuizPolicyService {
     private final AssignmentRepository assignmentRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final ClassroomProperties classroomProperties;
 
     public ClassroomQuizPolicyService(
             AssignmentRepository assignmentRepository,
             EnrollmentRepository enrollmentRepository,
-            QuizAttemptRepository quizAttemptRepository) {
+            QuizAttemptRepository quizAttemptRepository,
+            ClassroomProperties classroomProperties) {
         this.assignmentRepository = assignmentRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
+        this.classroomProperties = classroomProperties;
     }
 
     public record AttemptBudget(
@@ -70,11 +75,14 @@ public class ClassroomQuizPolicyService {
         if (termIds.isEmpty()) {
             return Optional.empty();
         }
+        LocalDate today = classroomProperties.today();
         List<AssignmentEntity> matching = assignmentRepository
                 .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
                 .stream()
                 .filter(a -> termIds.contains(a.getTermId()))
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
+                // Match student classroom context: ignore not-yet-available assignments.
+                .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
                 .toList();
         if (matching.isEmpty()) {
             return Optional.empty();

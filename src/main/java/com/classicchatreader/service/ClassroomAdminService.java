@@ -44,6 +44,7 @@ public class ClassroomAdminService {
     private final UserRepository userRepository;
     private final ClassroomProperties classroomProperties;
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
+    private final ClassroomEffectiveQuizService classroomEffectiveQuizService;
 
     public ClassroomAdminService(
             ClassSectionRepository classSectionRepository,
@@ -58,7 +59,8 @@ public class ClassroomAdminService {
             ChapterRepository chapterRepository,
             UserRepository userRepository,
             ClassroomProperties classroomProperties,
-            ClassroomTeacherCapabilityService teacherCapabilityService) {
+            ClassroomTeacherCapabilityService teacherCapabilityService,
+            ClassroomEffectiveQuizService classroomEffectiveQuizService) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
@@ -72,6 +74,7 @@ public class ClassroomAdminService {
         this.userRepository = userRepository;
         this.classroomProperties = classroomProperties;
         this.teacherCapabilityService = teacherCapabilityService;
+        this.classroomEffectiveQuizService = classroomEffectiveQuizService;
     }
 
     @Transactional
@@ -258,7 +261,7 @@ public class ClassroomAdminService {
         validateCharacterChatRequirement(
                 termId,
                 Boolean.TRUE.equals(request != null ? request.characterChatRequired() : null));
-        validateQuizPassRulesForCreate(request);
+        validateQuizPassRulesForCreate(termId, request);
         AssignmentEntity assignment = new AssignmentEntity();
         applyAssignmentCreate(assignment, termId, userId, request);
         if (isBlank(assignment.getStatus())) {
@@ -436,13 +439,19 @@ public class ClassroomAdminService {
         }
     }
 
-    private void validateQuizPassRulesForCreate(AssignmentWriteRequest request) {
+    private void validateQuizPassRulesForCreate(String termId, AssignmentWriteRequest request) {
         boolean quizRequired = Boolean.TRUE.equals(request.quizRequired());
         validateQuizPassRulePair(
                 quizRequired,
                 request.quizPassMinCorrect(),
                 request.quizMaxRetries(),
                 false);
+        if (quizRequired) {
+            validatePassMinAgainstEffectiveQuiz(
+                    termId,
+                    trimToNull(request.chapterId()),
+                    request.quizPassMinCorrect());
+        }
     }
 
     private void validateQuizPassRulesForUpdate(AssignmentWriteRequest request, AssignmentEntity existing) {
@@ -466,6 +475,10 @@ public class ClassroomAdminService {
             return;
         }
         validateQuizPassRulePair(quizRequired, min, retries, true);
+        String chapterId = request.chapterId() != null
+                ? trimToNull(request.chapterId())
+                : existing.getChapterId();
+        validatePassMinAgainstEffectiveQuiz(existing.getTermId(), chapterId, min);
     }
 
     private void validateQuizPassRulePair(
@@ -505,6 +518,20 @@ public class ClassroomAdminService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "quizMaxRetries cannot be negative.");
         }
+    }
+
+    private void validatePassMinAgainstEffectiveQuiz(String termId, String chapterId, Integer minCorrect) {
+        if (minCorrect == null || chapterId == null || chapterId.isBlank()) {
+            return;
+        }
+        classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId).ifPresent(count -> {
+            if (minCorrect > count) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
+                                + count + " questions).");
+            }
+        });
     }
 
     private void validateAssignmentForCreate(AssignmentWriteRequest request) {

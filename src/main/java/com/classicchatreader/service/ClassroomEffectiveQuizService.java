@@ -1,18 +1,13 @@
 package com.classicchatreader.service;
 
-import com.classicchatreader.entity.ChapterEntity;
-import com.classicchatreader.entity.ChapterQuizEntity;
-import com.classicchatreader.entity.ChapterQuizStatus;
-import com.classicchatreader.entity.EnrollmentEntity;
 import com.classicchatreader.entity.QuizQuestionOverrideEntity;
 import com.classicchatreader.model.ChapterQuizGradeResponse;
 import com.classicchatreader.model.ChapterQuizPayload;
 import com.classicchatreader.model.ChapterQuizResponse;
 import com.classicchatreader.model.ChapterQuizStatusResponse;
 import com.classicchatreader.model.ChapterQuizViewPayload;
-import com.classicchatreader.repository.ChapterQuizRepository;
+import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.repository.ChapterRepository;
-import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.QuizQuestionOverrideRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -27,23 +22,20 @@ import java.util.Optional;
 @Service
 public class ClassroomEffectiveQuizService {
 
-    private final EnrollmentRepository enrollmentRepository;
+    private final ClassroomContextService classroomContextService;
     private final QuizQuestionOverrideRepository overrideRepository;
-    private final ChapterQuizRepository chapterQuizRepository;
     private final ChapterRepository chapterRepository;
     private final ChapterQuizService chapterQuizService;
     private final ObjectMapper objectMapper;
 
     public ClassroomEffectiveQuizService(
-            EnrollmentRepository enrollmentRepository,
+            ClassroomContextService classroomContextService,
             QuizQuestionOverrideRepository overrideRepository,
-            ChapterQuizRepository chapterQuizRepository,
             ChapterRepository chapterRepository,
             ChapterQuizService chapterQuizService,
             ObjectMapper objectMapper) {
-        this.enrollmentRepository = enrollmentRepository;
+        this.classroomContextService = classroomContextService;
         this.overrideRepository = overrideRepository;
-        this.chapterQuizRepository = chapterQuizRepository;
         this.chapterRepository = chapterRepository;
         this.chapterQuizService = chapterQuizService;
         this.objectMapper = objectMapper;
@@ -104,7 +96,7 @@ public class ClassroomEffectiveQuizService {
                 chapterId, selectedOptionIndexes, readerId, userId, effective.get());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<ChapterQuizStatusResponse> getChapterQuizStatus(String chapterId, String userId) {
         Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
         if (effective.isPresent()) {
@@ -120,38 +112,55 @@ public class ClassroomEffectiveQuizService {
         return chapterQuizService.getChapterQuizStatus(chapterId);
     }
 
+    /**
+     * Effective question count for a term/chapter after overlays. Empty when no completed base
+     * and no usable active overrides (unknown size).
+     */
+    @Transactional
+    public Optional<Integer> resolveEffectiveQuestionCount(String termId, String chapterId) {
+        if (termId == null || termId.isBlank() || chapterId == null || chapterId.isBlank()) {
+            return Optional.empty();
+        }
+        ChapterQuizPayload generated = chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId);
+        List<QuizQuestionOverrideEntity> active = overrideRepository
+                .findByTermIdAndChapterIdAndStatusAndDeletedAtIsNullOrderBySortOrderAsc(
+                        termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
+        if ((generated.questions() == null || generated.questions().isEmpty()) && active.isEmpty()) {
+            return Optional.empty();
+        }
+        EffectiveQuizAssembler.MergeResult merged =
+                EffectiveQuizAssembler.merge(generated, active, objectMapper);
+        if (merged.effective().questions() == null || merged.effective().questions().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(merged.effective().questions().size());
+    }
+
     private Optional<ChapterQuizPayload> resolveEffectivePayload(String chapterId, String userId) {
         if (userId == null || userId.isBlank() || chapterId == null || chapterId.isBlank()) {
             return Optional.empty();
         }
-        List<EnrollmentEntity> enrollments = enrollmentRepository
-                .findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE");
-        for (EnrollmentEntity enrollment : enrollments) {
-            String termId = enrollment.getTermId();
-            if (termId == null) {
-                continue;
-            }
-            boolean hasOverrides = overrideRepository
-                    .existsByTermIdAndChapterIdAndStatusAndDeletedAtIsNull(
-                            termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
-            if (!hasOverrides) {
-                continue;
-            }
-            Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterId(chapterId);
-            ChapterQuizPayload generated = quizOpt
-                    .filter(q -> q.getStatus() == ChapterQuizStatus.COMPLETED)
-                    .map(q -> chapterQuizService.parsePayloadJson(q.getPayloadJson()))
-                    .orElseGet(() -> new ChapterQuizPayload(List.of()));
-            List<QuizQuestionOverrideEntity> active = overrideRepository
-                    .findByTermIdAndChapterIdAndStatusAndDeletedAtIsNullOrderBySortOrderAsc(
-                            termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
-            EffectiveQuizAssembler.MergeResult merged =
-                    EffectiveQuizAssembler.merge(generated, active, objectMapper);
-            if (merged.effective().questions() == null || merged.effective().questions().isEmpty()) {
-                return Optional.empty();
-            }
-            return Optional.of(merged.effective());
+        // Match the same active/preferred term ClassroomContextService exposes to the reader.
+        ClassroomContextResponse context = classroomContextService.getContext(userId);
+        if (!context.enrolled() || context.termId() == null || context.termId().isBlank()) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        String termId = context.termId();
+        boolean hasOverrides = overrideRepository
+                .existsByTermIdAndChapterIdAndStatusAndDeletedAtIsNull(
+                        termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
+        if (!hasOverrides) {
+            return Optional.empty();
+        }
+        ChapterQuizPayload generated = chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId);
+        List<QuizQuestionOverrideEntity> active = overrideRepository
+                .findByTermIdAndChapterIdAndStatusAndDeletedAtIsNullOrderBySortOrderAsc(
+                        termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
+        EffectiveQuizAssembler.MergeResult merged =
+                EffectiveQuizAssembler.merge(generated, active, objectMapper);
+        if (merged.effective().questions() == null || merged.effective().questions().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(merged.effective());
     }
 }

@@ -866,6 +866,24 @@ public class ChapterQuizService {
         return toPayload(payloadJson);
     }
 
+    /**
+     * Load a completed chapter quiz payload, persisting lazy question-id backfill when needed.
+     * Teacher override authoring and effective-quiz merge must use stable IDs from storage.
+     */
+    @Transactional
+    public ChapterQuizPayload loadCompletedPayloadWithIdBackfill(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return EMPTY_PAYLOAD;
+        }
+        Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterId(chapterId);
+        if (quizOpt.isEmpty() || quizOpt.get().getStatus() != ChapterQuizStatus.COMPLETED) {
+            return EMPTY_PAYLOAD;
+        }
+        ChapterQuizEntity entity = quizOpt.get();
+        maybeBackfillQuestionIds(entity);
+        return toPayload(entity.getPayloadJson());
+    }
+
     public String serializePayload(ChapterQuizPayload payload) {
         return toJson(payload);
     }
