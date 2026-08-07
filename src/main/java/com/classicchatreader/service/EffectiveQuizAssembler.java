@@ -88,14 +88,15 @@ public final class EffectiveQuizAssembler {
                 }
                 case QuizQuestionOverrideEntity.OPERATION_OVERRIDE -> {
                     String sourceId = trimToNull(row.getSourceQuestionId());
-                    if (sourceId == null || !byId.containsKey(sourceId)) {
-                        if (!suppressGenerated) {
-                            staleOverrideIds.add(row.getId());
-                        }
+                    ChapterQuizPayload.Question parsed = parseQuestion(row.getQuestionJson(), objectMapper);
+                    if (sourceId == null || parsed == null) {
+                        staleOverrideIds.add(row.getId());
                         continue;
                     }
-                    ChapterQuizPayload.Question parsed = parseQuestion(row.getQuestionJson(), objectMapper);
-                    if (parsed == null) {
+                    // Under SUPPRESS_BASE the map is empty on purpose: still apply OVERRIDE
+                    // rows so replace-set publications can keep edited generated questions
+                    // while freezing out every other current/future base item.
+                    if (!byId.containsKey(sourceId) && !suppressGenerated) {
                         staleOverrideIds.add(row.getId());
                         continue;
                     }

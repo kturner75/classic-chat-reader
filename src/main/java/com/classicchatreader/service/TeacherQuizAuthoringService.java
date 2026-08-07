@@ -175,27 +175,23 @@ public class TeacherQuizAuthoringService {
             sort++;
         }
 
-        // If this publication does not keep any generated source via OVERRIDE, suppress the base
-        // so a later background generation cannot silently expand the class quiz.
-        boolean keepsGenerated = request.operations().stream()
-                .filter(Objects::nonNull)
-                .anyMatch(op -> QuizQuestionOverrideEntity.OPERATION_OVERRIDE
-                        .equalsIgnoreCase(op.operation() == null ? "" : op.operation().trim()));
-        if (!keepsGenerated) {
-            QuizQuestionOverrideEntity suppress = new QuizQuestionOverrideEntity();
-            suppress.setTermId(termId);
-            suppress.setBookId(chapter.getBook().getId());
-            suppress.setChapterId(chapterId);
-            suppress.setOperation(QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED);
-            suppress.setSourceQuestionId(null);
-            suppress.setOverlayKey(QuizQuestionOverrideEntity.SUPPRESS_OVERLAY_KEY);
-            suppress.setSortOrder(-1);
-            suppress.setStatus(QuizQuestionOverrideEntity.STATUS_ACTIVE);
-            suppress.setCreatedByUserId(userId);
-            suppress.setBasePromptVersion(request.basePromptVersion());
-            suppress.setNotes("Suppress generated base after teacher replace-set publish");
-            overrideRepository.save(suppress);
-        }
+        // Replace-set publications always freeze the generated base. OVERRIDE rows still apply
+        // after SUPPRESS_BASE (assembler), so kept/edited generated questions survive while
+        // hidden base items (e.g. above max-questions) and later generation cannot expand
+        // the class quiz without another teacher publication.
+        QuizQuestionOverrideEntity suppress = new QuizQuestionOverrideEntity();
+        suppress.setTermId(termId);
+        suppress.setBookId(chapter.getBook().getId());
+        suppress.setChapterId(chapterId);
+        suppress.setOperation(QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED);
+        suppress.setSourceQuestionId(null);
+        suppress.setOverlayKey(QuizQuestionOverrideEntity.SUPPRESS_OVERLAY_KEY);
+        suppress.setSortOrder(-1);
+        suppress.setStatus(QuizQuestionOverrideEntity.STATUS_ACTIVE);
+        suppress.setCreatedByUserId(userId);
+        suppress.setBasePromptVersion(request.basePromptVersion());
+        suppress.setNotes("Suppress generated base after teacher replace-set publish");
+        overrideRepository.save(suppress);
 
         EffectiveQuizResponse effective = getEffectiveQuiz(userId, termId, chapterId);
         if (effective.effectiveQuestions() == null || effective.effectiveQuestions().isEmpty()) {

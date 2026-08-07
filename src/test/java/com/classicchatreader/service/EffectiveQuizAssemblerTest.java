@@ -86,6 +86,45 @@ class EffectiveQuizAssemblerTest {
         assertEquals(List.of("stale-1", "stale-2"), result.staleOverrideIds());
     }
 
+    @Test
+    void merge_suppressBase_stillAppliesOverrideRowsAndIgnoresUnreferencedBase() throws Exception {
+        ChapterQuizPayload generated = new ChapterQuizPayload(List.of(
+                question("q1", "Visible one?", List.of("A", "B"), 0),
+                question("q2", "Hidden by max-questions later?", List.of("C", "D"), 1),
+                question("q3", "Also hidden?", List.of("E", "F"), 0)
+        ));
+        QuizQuestionOverrideEntity suppress = row(
+                "o-suppress",
+                QuizQuestionOverrideEntity.OPERATION_SUPPRESS_GENERATED,
+                null,
+                null,
+                -1);
+        suppress.setOverlayKey(QuizQuestionOverrideEntity.SUPPRESS_OVERLAY_KEY);
+        QuizQuestionOverrideEntity override = row(
+                "o-override",
+                QuizQuestionOverrideEntity.OPERATION_OVERRIDE,
+                "q1",
+                objectMapper.writeValueAsString(question("q1", "Kept edited?", List.of("X", "Y"), 1)),
+                0);
+        QuizQuestionOverrideEntity add = row(
+                "o-add",
+                QuizQuestionOverrideEntity.OPERATION_ADD,
+                null,
+                objectMapper.writeValueAsString(question("q-new", "Teacher add?", List.of("G", "H"), 0)),
+                1);
+
+        EffectiveQuizAssembler.MergeResult result = EffectiveQuizAssembler.merge(
+                generated,
+                List.of(suppress, override, add),
+                objectMapper);
+
+        assertEquals(2, result.effective().questions().size());
+        assertEquals("q1", result.effective().questions().get(0).id());
+        assertEquals("Kept edited?", result.effective().questions().get(0).question());
+        assertEquals("q-new", result.effective().questions().get(1).id());
+        assertTrue(result.staleOverrideIds().isEmpty());
+    }
+
     private static ChapterQuizPayload.Question question(
             String id, String stem, List<String> options, int correctIndex) {
         return new ChapterQuizPayload.Question(id, stem, options, correctIndex, 0, "cite");
