@@ -389,6 +389,7 @@ public class ClassroomAdminService {
 
     /** Partial update: only non-null / non-blank request fields change existing row. */
     private void applyAssignmentUpdate(AssignmentEntity assignment, String userId, AssignmentWriteRequest request) {
+        String previousChapterId = assignment.getChapterId();
         if (!isBlank(request.title())) {
             assignment.setTitle(request.title().trim());
         }
@@ -410,6 +411,7 @@ public class ClassroomAdminService {
                 // Whole-book assignments cannot carry chapter pass rules.
                 assignment.setQuizPassMinCorrect(null);
                 assignment.setQuizMaxRetries(null);
+                assignment.setQuizRulesActivatedAt(null);
             } else {
                 String resolved = resolveChapterId(bookId, requestedChapterId, requestedIndex);
                 assignment.setChapterId(resolved);
@@ -437,7 +439,7 @@ public class ClassroomAdminService {
         if (request.characterChatRequired() != null) {
             assignment.setCharacterChatRequired(request.characterChatRequired());
         }
-        applyQuizPassRulesOnUpdate(assignment, request);
+        applyQuizPassRulesOnUpdate(assignment, request, previousChapterId);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -467,7 +469,8 @@ public class ClassroomAdminService {
         }
     }
 
-    private void applyQuizPassRulesOnUpdate(AssignmentEntity assignment, AssignmentWriteRequest request) {
+    private void applyQuizPassRulesOnUpdate(
+            AssignmentEntity assignment, AssignmentWriteRequest request, String previousChapterId) {
         boolean quizRequired = request.quizRequired() != null
                 ? request.quizRequired()
                 : assignment.isQuizRequired();
@@ -491,9 +494,10 @@ public class ClassroomAdminService {
         boolean hasRules = assignment.getQuizPassMinCorrect() != null && assignment.getQuizMaxRetries() != null;
         boolean rulesChanged = !Objects.equals(previousMin, assignment.getQuizPassMinCorrect())
                 || !Objects.equals(previousRetries, assignment.getQuizMaxRetries());
+        boolean chapterChanged = !Objects.equals(previousChapterId, assignment.getChapterId());
         boolean publishedNow = "PUBLISHED".equalsIgnoreCase(nextStatus)
                 && !"PUBLISHED".equalsIgnoreCase(assignment.getStatus());
-        if (hasRules && (rulesChanged || publishedNow || assignment.getQuizRulesActivatedAt() == null)
+        if (hasRules && (rulesChanged || chapterChanged || publishedNow || assignment.getQuizRulesActivatedAt() == null)
                 && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         }

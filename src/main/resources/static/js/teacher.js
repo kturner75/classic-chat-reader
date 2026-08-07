@@ -907,6 +907,10 @@
                     question: question.question || '',
                     options: normalizeQuestionOptions(question, optionCount),
                     correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+                    citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
+                        ? question.citationParagraphIndex
+                        : null,
+                    citationSnippet: question.citationSnippet || '',
                     sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
                     mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
                 }));
@@ -938,6 +942,10 @@
             question: question.question || '',
             options: normalizeQuestionOptions(question, optionCount),
             correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+            citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
+                ? question.citationParagraphIndex
+                : null,
+            citationSnippet: question.citationSnippet || '',
             sourceQuestionId: question.id,
             mode: 'override'
         }));
@@ -965,6 +973,10 @@
                 question: question.question || '',
                 options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
                 correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+                citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
+                    ? question.citationParagraphIndex
+                    : null,
+                citationSnippet: question.citationSnippet || '',
                 sourceQuestionId: null,
                 mode: 'add'
             }));
@@ -1050,8 +1062,10 @@
                 question: item.question,
                 options: item.options,
                 correctOptionIndex: item.correctOptionIndex,
-                citationParagraphIndex: null,
-                citationSnippet: ''
+                citationParagraphIndex: Number.isInteger(item.citationParagraphIndex)
+                    ? item.citationParagraphIndex
+                    : null,
+                citationSnippet: item.citationSnippet || ''
             };
             if (item.sourceQuestionId && generatedIds.has(item.sourceQuestionId)) {
                 operations.push({

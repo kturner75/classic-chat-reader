@@ -251,7 +251,7 @@ public class TeacherQuizAuthoringService {
         );
         try {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
-            return parseSuggestedQuestions(raw, optionCount);
+            return parseSuggestedQuestions(raw, count, optionCount);
         } catch (Exception e) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions: " + e.getMessage());
@@ -293,7 +293,7 @@ public class TeacherQuizAuthoringService {
         }
     }
 
-    private List<ChapterQuizPayload.Question> parseSuggestedQuestions(String raw, int optionCount)
+    private List<ChapterQuizPayload.Question> parseSuggestedQuestions(String raw, int count, int optionCount)
             throws JsonProcessingException {
         String json = extractJsonObject(raw);
         JsonNode root = objectMapper.readTree(json);
@@ -304,13 +304,20 @@ public class TeacherQuizAuthoringService {
         List<ChapterQuizPayload.Question> result = new ArrayList<>();
         for (JsonNode node : questions) {
             ChapterQuizPayload.Question parsed = objectMapper.treeToValue(node, ChapterQuizPayload.Question.class);
-            result.add(normalizeTeacherQuestion(parsed, parsed != null ? parsed.id() : null));
-            if (result.size() >= 20) {
+            ChapterQuizPayload.Question normalized = normalizeTeacherQuestion(parsed, parsed != null ? parsed.id() : null);
+            if (normalized != null) {
+                result.add(normalized);
+            }
+            if (result.size() >= count) {
                 break;
             }
         }
         if (result.isEmpty()) {
             throw new IllegalArgumentException("No usable questions returned");
+        }
+        if (result.size() != count) {
+            throw new IllegalArgumentException(
+                    "Expected exactly " + count + " questions but received " + result.size());
         }
         // Trim options to requested count when longer, preserving order and correct answer.
         return result.stream()
