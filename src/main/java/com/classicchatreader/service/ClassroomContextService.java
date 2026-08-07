@@ -508,14 +508,16 @@ public class ClassroomContextService {
                 passed);
     }
 
-    private static java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
+    private java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
         java.time.LocalDateTime since = assignment.getQuizRulesActivatedAt();
         if (since == null) {
             since = assignment.getCreatedAt();
         }
         if (assignment.getAvailableFromDate() != null) {
-            java.time.LocalDateTime open = java.time.LocalDateTime.of(
-                    assignment.getAvailableFromDate(), java.time.LocalTime.MIN);
+            java.time.LocalDateTime open = assignment.getAvailableFromDate()
+                    .atStartOfDay(classroomProperties.calendarZoneId())
+                    .withZoneSameInstant(java.time.ZoneOffset.UTC)
+                    .toLocalDateTime();
             if (since == null || open.isAfter(since)) {
                 since = open;
             }

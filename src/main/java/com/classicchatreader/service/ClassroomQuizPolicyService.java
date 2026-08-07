@@ -13,7 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -122,8 +122,10 @@ public class ClassroomQuizPolicyService {
             since = assignment.getCreatedAt();
         }
         if (assignment.getAvailableFromDate() != null) {
-            LocalDateTime open = LocalDateTime.of(
-                    assignment.getAvailableFromDate(), LocalTime.MIN);
+            LocalDateTime open = assignment.getAvailableFromDate()
+                    .atStartOfDay(classroomProperties.calendarZoneId())
+                    .withZoneSameInstant(ZoneOffset.UTC)
+                    .toLocalDateTime();
             if (since == null || open.isAfter(since)) {
                 since = open;
             }

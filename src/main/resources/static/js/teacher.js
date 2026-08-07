@@ -896,8 +896,10 @@
             toast('Choose a book and chapter first.');
             return;
         }
-        const slotCount = Math.max(1, Number(el['quiz-slot-count'].value) || 5);
-        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const slotCount = Math.min(20, Math.max(1, Number(el['quiz-slot-count'].value) || 5));
+        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
+        el['quiz-slot-count'].value = String(slotCount);
+        el['quiz-option-count'].value = String(optionCount);
         try {
             const effective = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/effective-quiz`);
             state.quizGeneratedBase = Array.isArray(effective.generatedQuestions) ? effective.generatedQuestions : [];
@@ -932,7 +934,7 @@
     }
 
     function loadGeneratedIntoWizard() {
-        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
         if (!state.quizGeneratedBase.length) {
             toast('No generated quiz is cached for this chapter yet.');
             return;
@@ -955,8 +957,10 @@
 
     async function aiSuggestQuestions() {
         const chapterId = el['quiz-chapter'].value;
-        const count = Math.max(1, Number(el['quiz-slot-count'].value) || 5);
-        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const count = Math.min(20, Math.max(1, Number(el['quiz-slot-count'].value) || 5));
+        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
+        el['quiz-slot-count'].value = String(count);
+        el['quiz-option-count'].value = String(optionCount);
         el['quiz-ai-suggest'].disabled = true;
         try {
             const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/suggest-questions`, {
