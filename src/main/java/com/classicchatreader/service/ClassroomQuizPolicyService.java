@@ -12,10 +12,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Enforces assignment quiz pass rules (min correct + max retries) at grade time.
@@ -79,7 +80,6 @@ public class ClassroomQuizPolicyService {
             return Optional.empty();
         }
         LocalDate today = classroomProperties.today();
-        int bestCorrect = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId(chapterId, userId);
         List<AssignmentEntity> matching = assignmentRepository
                 .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
                 .stream()
@@ -87,24 +87,46 @@ public class ClassroomQuizPolicyService {
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
                 // Match student classroom context: ignore not-yet-available assignments.
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
-                // Already-passed assignments should not block retries for other open ones.
-                .filter(a -> bestCorrect < a.getQuizPassMinCorrect())
                 .toList();
         if (matching.isEmpty()) {
             return Optional.empty();
         }
 
-        long usedLong = quizAttemptRepository.countByChapterIdAndUserId(chapterId, userId);
-        int used = usedLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) usedLong;
-
         return matching.stream()
-                .map(a -> {
-                    int allowed = 1 + a.getQuizMaxRetries();
-                    int remaining = Math.max(0, allowed - used);
-                    return new AttemptBudget(a, used, allowed, remaining, a.getQuizPassMinCorrect());
-                })
+                .map(a -> toBudget(a, chapterId, userId))
+                // Already-passed assignments should not block retries for other open ones.
+                .filter(b -> b != null)
                 .min(Comparator.comparingInt(AttemptBudget::attemptsRemaining)
                         .thenComparingInt(AttemptBudget::passMinCorrect));
+    }
+
+    private AttemptBudget toBudget(AssignmentEntity assignment, String chapterId, String userId) {
+        LocalDateTime since = attemptWindowStart(assignment);
+        long usedLong = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                chapterId, userId, since);
+        int used = usedLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) usedLong;
+        int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                chapterId, userId, since);
+        int minCorrect = assignment.getQuizPassMinCorrect();
+        if (best >= minCorrect) {
+            return null;
+        }
+        int allowed = 1 + assignment.getQuizMaxRetries();
+        int remaining = Math.max(0, allowed - used);
+        return new AttemptBudget(assignment, used, allowed, remaining, minCorrect);
+    }
+
+    private LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
+        LocalDateTime since = assignment.getCreatedAt();
+        if (assignment.getAvailableFromDate() != null) {
+            LocalDateTime open = LocalDateTime.of(
+                    assignment.getAvailableFromDate(), LocalTime.MIN);
+            // Approximate calendar open day in server local; policy already gates by today().
+            if (since == null || open.isAfter(since)) {
+                since = open;
+            }
+        }
+        return since != null ? since : LocalDateTime.of(1970, 1, 1, 0, 0);
     }
 
     private String resolveActiveStudentTermId(String userId) {
