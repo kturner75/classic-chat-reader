@@ -827,7 +827,10 @@
             return `<article class="quiz-question-card" data-question-index="${index}">
                 <header>
                     <strong>Question ${index + 1}</strong>
-                    <button type="button" class="text-button" data-ai-distractors="${index}">AI distractors</button>
+                    <span class="quiz-question-actions">
+                        <button type="button" class="text-button" data-ai-distractors="${index}">AI distractors</button>
+                        <button type="button" class="text-button" data-remove-question="${index}" ${state.quizDraftQuestions.length <= 1 ? 'disabled' : ''}>Remove</button>
+                    </span>
                 </header>
                 <label>Stem<textarea data-field="question">${escapeHtml(item.question || '')}</textarea></label>
                 ${options.map((option, optionIndex) => `
@@ -837,7 +840,16 @@
                     </div>
                 `).join('')}
             </article>`;
-        }).join('');
+        }).join('') + `<div class="wizard-toolbar"><button type="button" class="secondary-button" id="quiz-add-question">Add question</button></div>`;
+        el['quiz-add-question']?.addEventListener('click', () => {
+            collectQuizDraftFromEditor();
+            if (state.quizDraftQuestions.length >= 20) {
+                toast('Maximum 20 questions.');
+                return;
+            }
+            state.quizDraftQuestions.push(blankQuestion(defaultOptionCount));
+            renderQuizQuestionEditor();
+        });
     }
 
     function collectQuizDraftFromEditor() {
@@ -894,6 +906,13 @@
                     sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
                     mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
                 }));
+                // Honor configured slot count so teachers can grow/shrink the set manually.
+                while (state.quizDraftQuestions.length < slotCount) {
+                    state.quizDraftQuestions.push(blankQuestion(optionCount));
+                }
+                if (state.quizDraftQuestions.length > slotCount) {
+                    state.quizDraftQuestions = state.quizDraftQuestions.slice(0, slotCount);
+                }
             } else {
                 state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
             }
@@ -1146,6 +1165,15 @@
         el['quiz-load-generated']?.addEventListener('click', loadGeneratedIntoWizard);
         el['quiz-ai-suggest']?.addEventListener('click', aiSuggestQuestions);
         el['quiz-question-editor']?.addEventListener('click', event => {
+            const removeButton = event.target.closest('[data-remove-question]');
+            if (removeButton) {
+                collectQuizDraftFromEditor();
+                const index = Number(removeButton.dataset.removeQuestion);
+                if (!Number.isInteger(index) || state.quizDraftQuestions.length <= 1) return;
+                state.quizDraftQuestions.splice(index, 1);
+                renderQuizQuestionEditor();
+                return;
+            }
             const button = event.target.closest('[data-ai-distractors]');
             if (!button) return;
             aiSuggestDistractors(Number(button.dataset.aiDistractors));

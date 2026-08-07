@@ -59,6 +59,8 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId("chapter-1", "user-1"))
+                .thenReturn(0);
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(assignment));
         when(quizAttemptRepository.countByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(1L);
@@ -77,6 +79,8 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId("chapter-1", "user-1"))
+                .thenReturn(0);
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(assignment));
         when(quizAttemptRepository.countByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(1L);
@@ -96,6 +100,8 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId("chapter-1", "user-1"))
+                .thenReturn(0);
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(future));
 
@@ -113,8 +119,37 @@ class ClassroomQuizPolicyServiceTest {
 
         when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
         when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId("chapter-1", "user-1"))
+                .thenReturn(0);
         when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
                 "chapter-1", "PUBLISHED")).thenReturn(List.of(otherTerm));
+
+        assertDoesNotThrow(() -> service.assertCanAttempt("chapter-1", "user-1"));
+    }
+
+    @Test
+    void assertCanAttempt_ignoresAlreadyPassedAssignments() {
+        AssignmentEntity passed = new AssignmentEntity();
+        passed.setTermId("term-1");
+        passed.setChapterId("chapter-1");
+        passed.setQuizRequired(true);
+        passed.setQuizPassMinCorrect(3);
+        passed.setQuizMaxRetries(0);
+
+        AssignmentEntity open = new AssignmentEntity();
+        open.setTermId("term-1");
+        open.setChapterId("chapter-1");
+        open.setQuizRequired(true);
+        open.setQuizPassMinCorrect(5);
+        open.setQuizMaxRetries(2);
+
+        when(classroomContextService.getContext("user-1")).thenReturn(enrolled("term-1"));
+        when(classroomProperties.today()).thenReturn(LocalDate.of(2026, 8, 7));
+        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId("chapter-1", "user-1"))
+                .thenReturn(4); // passed the first assignment, not the second
+        when(assignmentRepository.findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+                "chapter-1", "PUBLISHED")).thenReturn(List.of(passed, open));
+        when(quizAttemptRepository.countByChapterIdAndUserId("chapter-1", "user-1")).thenReturn(1L);
 
         assertDoesNotThrow(() -> service.assertCanAttempt("chapter-1", "user-1"));
     }

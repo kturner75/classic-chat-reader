@@ -202,7 +202,7 @@ public class TeacherQuizAuthoringService {
         requireTeacher(userId, termId);
         ChapterEntity chapter = requireChapter(chapterId);
         int count = request != null && request.count() != null ? request.count() : 3;
-        count = Math.max(1, Math.min(10, count));
+        count = Math.max(1, Math.min(20, count));
         int optionCount = request != null && request.optionCount() != null ? request.optionCount() : 4;
         optionCount = Math.max(2, Math.min(6, optionCount));
         if (!reasoningProvider.isAvailable()) {
@@ -283,7 +283,7 @@ public class TeacherQuizAuthoringService {
         for (JsonNode node : questions) {
             ChapterQuizPayload.Question parsed = objectMapper.treeToValue(node, ChapterQuizPayload.Question.class);
             result.add(normalizeTeacherQuestion(parsed, parsed != null ? parsed.id() : null));
-            if (result.size() >= 10) {
+            if (result.size() >= 20) {
                 break;
             }
         }

@@ -79,6 +79,7 @@ public class ClassroomQuizPolicyService {
             return Optional.empty();
         }
         LocalDate today = classroomProperties.today();
+        int bestCorrect = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserId(chapterId, userId);
         List<AssignmentEntity> matching = assignmentRepository
                 .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
                 .stream()
@@ -86,6 +87,8 @@ public class ClassroomQuizPolicyService {
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
                 // Match student classroom context: ignore not-yet-available assignments.
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
+                // Already-passed assignments should not block retries for other open ones.
+                .filter(a -> bestCorrect < a.getQuizPassMinCorrect())
                 .toList();
         if (matching.isEmpty()) {
             return Optional.empty();
