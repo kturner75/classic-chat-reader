@@ -17,7 +17,8 @@
         quizWizardStep: 1,
         quizDraftQuestions: [],
         quizGeneratedBase: [],
-        activeQuizBookOption: -1
+        activeQuizBookOption: -1,
+        activeQuizChapterOption: -1
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -651,21 +652,83 @@
     function populateQuizChapterOptions(selectedChapterId = '', bookId = '', selectedChapterIndex = null) {
         const book = bookById(bookId || el['quiz-book'].value);
         const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
-        el['quiz-chapter'].innerHTML = '<option value="">Select a chapter</option>' + chapters.map((chapter, index) => {
-            const id = chapter.id || '';
-            const title = chapter.title || `Chapter ${index + 1}`;
-            return `<option value="${escapeHtml(id)}" data-index="${index}">${escapeHtml(title)}</option>`;
-        }).join('');
-        if (selectedChapterId) {
-            el['quiz-chapter'].value = selectedChapterId;
-            return;
+        let selectedId = selectedChapterId || '';
+        if (!selectedId && Number.isInteger(selectedChapterIndex)) {
+            const match = chapters[selectedChapterIndex];
+            if (match?.id) selectedId = match.id;
         }
-        if (Number.isInteger(selectedChapterIndex)) {
-            const match = Array.from(el['quiz-chapter'].options).find(
-                option => option.dataset.index === String(selectedChapterIndex)
-            );
-            if (match) el['quiz-chapter'].value = match.value;
+        if (selectedId) {
+            const chapter = chapters.find(item => item.id === selectedId);
+            el['quiz-chapter'].value = selectedId;
+            el['quiz-chapter-search'].value = chapter
+                ? (chapter.title || `Chapter ${(chapter.index ?? chapters.indexOf(chapter)) + 1}`)
+                : '';
+        } else {
+            el['quiz-chapter'].value = '';
+            el['quiz-chapter-search'].value = '';
         }
+        closeQuizChapterOptions();
+    }
+
+    function matchingQuizChapters(query) {
+        const book = bookById(el['quiz-book'].value);
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        const normalized = String(query || '').trim().toLowerCase();
+        return chapters
+            .map((chapter, index) => ({
+                id: chapter.id,
+                title: chapter.title || `Chapter ${index + 1}`,
+                index
+            }))
+            .filter(chapter => !normalized || chapter.title.toLowerCase().includes(normalized));
+    }
+
+    function renderQuizChapterOptions() {
+        const chapters = matchingQuizChapters(el['quiz-chapter-search']?.value);
+        state.activeQuizChapterOption = -1;
+        if (!el['quiz-chapter-options']) return;
+        el['quiz-chapter-options'].innerHTML = chapters.length
+            ? chapters.map(chapter => `<button type="button" id="quiz-chapter-option-${escapeHtml(chapter.id)}" role="option" data-chapter-id="${escapeHtml(chapter.id)}" aria-selected="false">${escapeHtml(chapter.title)}</button>`).join('')
+            : '<div class="book-option-empty">No matching chapters</div>';
+        show(el['quiz-chapter-options'], true);
+        el['quiz-chapter-search'].setAttribute('aria-expanded', 'true');
+        el['quiz-chapter-search'].removeAttribute('aria-activedescendant');
+    }
+
+    function closeQuizChapterOptions() {
+        if (!el['quiz-chapter-options']) return;
+        show(el['quiz-chapter-options'], false);
+        el['quiz-chapter-search']?.setAttribute('aria-expanded', 'false');
+        el['quiz-chapter-search']?.removeAttribute('aria-activedescendant');
+        state.activeQuizChapterOption = -1;
+    }
+
+    function selectQuizChapter(chapterId) {
+        const book = bookById(el['quiz-book'].value);
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        const chapter = chapters.find(item => item.id === chapterId);
+        if (!chapter) return;
+        const index = chapters.indexOf(chapter);
+        el['quiz-chapter'].value = chapter.id;
+        el['quiz-chapter-search'].value = chapter.title || `Chapter ${index + 1}`;
+        el['quiz-chapter-search'].setCustomValidity('');
+        closeQuizChapterOptions();
+    }
+
+    function moveActiveQuizChapterOption(direction) {
+        const options = Array.from(el['quiz-chapter-options'].querySelectorAll('[role="option"]'));
+        if (options.length === 0) return;
+        if (el['quiz-chapter-options'].classList.contains('hidden')) renderQuizChapterOptions();
+        state.activeQuizChapterOption = (state.activeQuizChapterOption + direction + options.length) % options.length;
+        options.forEach((option, index) => {
+            const active = index === state.activeQuizChapterOption;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', String(active));
+            if (active) {
+                el['quiz-chapter-search'].setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
     }
 
     function renderQuizBookOptions() {
@@ -723,6 +786,8 @@
         el['quiz-option-count'].value = String(defaults.defaultQuizOptionCount || 4);
         el['quiz-book'].value = '';
         el['quiz-book-search'].value = '';
+        el['quiz-chapter'].value = '';
+        if (el['quiz-chapter-search']) el['quiz-chapter-search'].value = '';
         populateQuizChapterOptions();
         state.quizDraftQuestions = [];
         state.quizGeneratedBase = [];
@@ -1111,6 +1176,37 @@
             if (!option) return;
             event.preventDefault();
             selectQuizBook(option.dataset.bookId);
+        });
+        el['quiz-chapter-search']?.addEventListener('focus', renderQuizChapterOptions);
+        el['quiz-chapter-search']?.addEventListener('input', () => {
+            el['quiz-chapter'].value = '';
+            el['quiz-chapter-search'].setCustomValidity('Choose a chapter from the suggestions.');
+            renderQuizChapterOptions();
+        });
+        el['quiz-chapter-search']?.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveQuizChapterOption(event.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+            if (event.key === 'Enter' && state.activeQuizChapterOption >= 0) {
+                event.preventDefault();
+                const options = el['quiz-chapter-options'].querySelectorAll('[role="option"]');
+                selectQuizChapter(options[state.activeQuizChapterOption]?.dataset.chapterId);
+                return;
+            }
+            if (event.key === 'Escape' && el['quiz-chapter-search'].getAttribute('aria-expanded') === 'true') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeQuizChapterOptions();
+            }
+        });
+        el['quiz-chapter-search']?.addEventListener('blur', () => window.setTimeout(closeQuizChapterOptions, 100));
+        el['quiz-chapter-options']?.addEventListener('mousedown', event => {
+            const option = event.target.closest('[data-chapter-id]');
+            if (!option) return;
+            event.preventDefault();
+            selectQuizChapter(option.dataset.chapterId);
         });
         document.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;

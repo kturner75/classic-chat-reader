@@ -467,9 +467,13 @@ public class ClassroomAdminService {
                 request.quizMaxRetries(),
                 false);
         if (quizRequired) {
+            String chapterId = resolveChapterId(
+                    request.bookId() == null ? null : request.bookId().trim(),
+                    trimToNull(request.chapterId()),
+                    request.chapterIndex());
             validatePassMinAgainstEffectiveQuiz(
                     termId,
-                    trimToNull(request.chapterId()),
+                    chapterId,
                     request.quizPassMinCorrect());
         }
     }
@@ -495,9 +499,14 @@ public class ClassroomAdminService {
             return;
         }
         validateQuizPassRulePair(quizRequired, min, retries, true);
-        String chapterId = request.chapterId() != null
+        String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
+        String requestedChapterId = request.chapterId() != null
                 ? trimToNull(request.chapterId())
                 : existing.getChapterId();
+        Integer requestedIndex = request.chapterIndex() != null
+                ? request.chapterIndex()
+                : existing.getChapterIndex();
+        String chapterId = resolveChapterId(bookId, requestedChapterId, requestedIndex);
         validatePassMinAgainstEffectiveQuiz(existing.getTermId(), chapterId, min);
     }
 

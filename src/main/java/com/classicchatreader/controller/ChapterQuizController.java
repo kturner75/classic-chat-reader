@@ -260,6 +260,7 @@ public class ChapterQuizController {
                             chapterId,
                             request.selectedOptionIndexes(),
                             request.questionIds(),
+                            request.contentVersion(),
                             readerId,
                             identity.userId()
                     )
@@ -286,10 +287,15 @@ public class ChapterQuizController {
 
     public record QuizSubmissionRequest(
             List<Integer> selectedOptionIndexes,
-            List<String> questionIds
+            List<String> questionIds,
+            String contentVersion
     ) {
         public QuizSubmissionRequest(List<Integer> selectedOptionIndexes) {
-            this(selectedOptionIndexes, null);
+            this(selectedOptionIndexes, null, null);
+        }
+
+        public QuizSubmissionRequest(List<Integer> selectedOptionIndexes, List<String> questionIds) {
+            this(selectedOptionIndexes, questionIds, null);
         }
     }
 }

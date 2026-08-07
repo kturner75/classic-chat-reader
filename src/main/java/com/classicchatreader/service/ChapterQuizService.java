@@ -26,6 +26,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -727,7 +730,46 @@ public class ChapterQuizService {
                         question.question(),
                         question.options()))
                 .toList();
-        return new ChapterQuizViewPayload(questions);
+        return new ChapterQuizViewPayload(questions, contentVersion(payload));
+    }
+
+    /** Opaque grading-version token for the full quiz content (including correct answers). */
+    public String contentVersion(ChapterQuizPayload payload) {
+        if (payload == null || payload.questions() == null || payload.questions().isEmpty()) {
+            return null;
+        }
+        StringBuilder canonical = new StringBuilder();
+        for (ChapterQuizPayload.Question question : payload.questions()) {
+            if (question == null) {
+                continue;
+            }
+            canonical.append(nullToEmpty(question.id())).append('\u001f')
+                    .append(nullToEmpty(question.question())).append('\u001f')
+                    .append(question.correctOptionIndex() == null ? -1 : question.correctOptionIndex())
+                    .append('\u001f');
+            if (question.options() != null) {
+                for (String option : question.options()) {
+                    canonical.append(nullToEmpty(option)).append('\u001e');
+                }
+            }
+            canonical.append('\u001d');
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // Extremely unlikely on a standard JVM; fall back to canonical length marker.
+            return Integer.toHexString(canonical.toString().hashCode());
+        }
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private void maybeBackfillQuestionIds(ChapterQuizEntity entity) {

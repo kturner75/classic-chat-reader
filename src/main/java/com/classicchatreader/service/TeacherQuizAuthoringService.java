@@ -333,19 +333,39 @@ public class TeacherQuizAuthoringService {
         if (question == null || isBlank(question.question()) || question.options() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs a stem and options.");
         }
-        List<String> options = question.options().stream()
+        List<String> rawOptions = question.options().stream()
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
-                .distinct()
                 .limit(6)
                 .toList();
-        if (options.size() < 2) {
+        if (rawOptions.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least 2 options.");
         }
         int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
-        if (correct < 0 || correct >= options.size()) {
+        if (correct < 0 || correct >= rawOptions.size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
+        }
+        String correctText = rawOptions.get(correct);
+        List<String> options = new ArrayList<>();
+        for (String option : rawOptions) {
+            if (options.stream().noneMatch(existing -> existing.equalsIgnoreCase(option))) {
+                options.add(option);
+            }
+        }
+        if (options.size() < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least 2 unique options.");
+        }
+        int remappedCorrect = -1;
+        for (int i = 0; i < options.size(); i++) {
+            if (options.get(i).equalsIgnoreCase(correctText)) {
+                remappedCorrect = i;
+                break;
+            }
+        }
+        if (remappedCorrect < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "correctOptionIndex no longer matches after removing duplicate options.");
         }
         String id = !isBlank(preferredId)
                 ? preferredId.trim()
@@ -354,7 +374,7 @@ public class TeacherQuizAuthoringService {
                 id,
                 question.question().trim(),
                 options,
-                correct,
+                remappedCorrect,
                 question.citationParagraphIndex(),
                 question.citationSnippet() == null ? "" : question.citationSnippet().trim()
         );

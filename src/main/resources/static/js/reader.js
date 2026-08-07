@@ -98,6 +98,7 @@
         quizCacheOnly: false,
         quizChapterId: null,
         quizQuestions: [],
+        quizContentVersion: null,
         quizSelectedAnswers: [],
         quizSubmitting: false,
         quizResult: null,
@@ -5735,6 +5736,7 @@
         const difficultyLevel = Number.isInteger(quiz?.difficultyLevel) ? quiz.difficultyLevel : 0;
 
         state.quizQuestions = questions;
+        state.quizContentVersion = typeof payload.contentVersion === 'string' ? payload.contentVersion : null;
         state.quizDifficultyLevel = difficultyLevel;
         state.quizSelectedAnswers = questions.map((_, index) =>
             Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
@@ -5897,7 +5899,8 @@
                 selectedOptionIndexes: state.quizQuestions.map((_, index) =>
                     Number.isInteger(state.quizSelectedAnswers[index]) ? state.quizSelectedAnswers[index] : -1
                 ),
-                questionIds: state.quizQuestions.map((question) => question?.id || null)
+                questionIds: state.quizQuestions.map((question) => question?.id || null),
+                contentVersion: state.quizContentVersion || null
             };
             const response = await fetch(`/api/quizzes/chapter/${state.quizChapterId}/grade`, {
                 method: 'POST',

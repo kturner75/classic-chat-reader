@@ -3,6 +3,7 @@ package com.classicchatreader.service;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.EnrollmentEntity;
+import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.QuizAttemptRepository;
@@ -12,7 +13,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -27,16 +27,19 @@ public class ClassroomQuizPolicyService {
     private final EnrollmentRepository enrollmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final ClassroomProperties classroomProperties;
+    private final ClassroomContextService classroomContextService;
 
     public ClassroomQuizPolicyService(
             AssignmentRepository assignmentRepository,
             EnrollmentRepository enrollmentRepository,
             QuizAttemptRepository quizAttemptRepository,
-            ClassroomProperties classroomProperties) {
+            ClassroomProperties classroomProperties,
+            ClassroomContextService classroomContextService) {
         this.assignmentRepository = assignmentRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.classroomProperties = classroomProperties;
+        this.classroomContextService = classroomContextService;
     }
 
     public record AttemptBudget(
@@ -71,15 +74,15 @@ public class ClassroomQuizPolicyService {
     }
 
     public Optional<AttemptBudget> resolveStrictestBudget(String chapterId, String userId) {
-        Set<String> termIds = activeStudentTermIds(userId);
-        if (termIds.isEmpty()) {
+        String activeTermId = resolveActiveStudentTermId(userId);
+        if (activeTermId == null) {
             return Optional.empty();
         }
         LocalDate today = classroomProperties.today();
         List<AssignmentEntity> matching = assignmentRepository
                 .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
                 .stream()
-                .filter(a -> termIds.contains(a.getTermId()))
+                .filter(a -> activeTermId.equals(a.getTermId()))
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
                 // Match student classroom context: ignore not-yet-available assignments.
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
@@ -101,15 +104,17 @@ public class ClassroomQuizPolicyService {
                         .thenComparingInt(AttemptBudget::passMinCorrect));
     }
 
-    private Set<String> activeStudentTermIds(String userId) {
+    private String resolveActiveStudentTermId(String userId) {
+        ClassroomContextResponse context = classroomContextService.getContext(userId);
+        if (context != null && context.enrolled() && context.termId() != null && !context.termId().isBlank()) {
+            return context.termId();
+        }
+        // Fallback only when context is unavailable: single ACTIVE enrollment.
         List<EnrollmentEntity> enrollments = enrollmentRepository
                 .findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE");
-        Set<String> termIds = new HashSet<>();
-        for (EnrollmentEntity enrollment : enrollments) {
-            if (enrollment.getTermId() != null) {
-                termIds.add(enrollment.getTermId());
-            }
+        if (enrollments.size() == 1 && enrollments.get(0).getTermId() != null) {
+            return enrollments.get(0).getTermId();
         }
-        return termIds;
+        return null;
     }
 }

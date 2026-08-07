@@ -100,10 +100,21 @@ public class ClassroomEffectiveQuizService {
             List<String> questionIds,
             String readerId,
             String userId) {
+        return gradeQuiz(chapterId, selectedOptionIndexes, questionIds, null, readerId, userId);
+    }
+
+    @Transactional
+    public Optional<ChapterQuizGradeResponse> gradeQuiz(
+            String chapterId,
+            List<Integer> selectedOptionIndexes,
+            List<String> questionIds,
+            String contentVersion,
+            String readerId,
+            String userId) {
         Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
         ChapterQuizPayload versioned = effective.orElseGet(
                 () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
-        assertSubmissionMatchesDisplayedQuiz(versioned, questionIds);
+        assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
 
         if (effective.isEmpty()) {
             return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
@@ -113,8 +124,9 @@ public class ClassroomEffectiveQuizService {
     }
 
     private void assertSubmissionMatchesDisplayedQuiz(
-            ChapterQuizPayload payload, List<String> submittedQuestionIds) {
-        if (submittedQuestionIds == null || submittedQuestionIds.isEmpty()) {
+            ChapterQuizPayload payload, List<String> submittedQuestionIds, String contentVersion) {
+        if ((submittedQuestionIds == null || submittedQuestionIds.isEmpty())
+                && (contentVersion == null || contentVersion.isBlank())) {
             return;
         }
         List<String> currentIds = payload == null || payload.questions() == null
@@ -123,14 +135,24 @@ public class ClassroomEffectiveQuizService {
                 .filter(q -> q != null && q.id() != null && !q.id().isBlank())
                 .map(q -> q.id().trim())
                 .toList();
-        List<String> submitted = submittedQuestionIds.stream()
-                .filter(id -> id != null && !id.isBlank())
-                .map(String::trim)
-                .toList();
-        if (!currentIds.equals(submitted)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "This quiz was updated since you opened it. Reload the quiz and try again.");
+        if (submittedQuestionIds != null && !submittedQuestionIds.isEmpty()) {
+            List<String> submitted = submittedQuestionIds.stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .map(String::trim)
+                    .toList();
+            if (!currentIds.equals(submitted)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "This quiz was updated since you opened it. Reload the quiz and try again.");
+            }
+        }
+        if (contentVersion != null && !contentVersion.isBlank()) {
+            String currentVersion = chapterQuizService.contentVersion(payload);
+            if (currentVersion == null || !currentVersion.equals(contentVersion.trim())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "This quiz was updated since you opened it. Reload the quiz and try again.");
+            }
         }
     }
 

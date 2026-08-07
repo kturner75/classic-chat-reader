@@ -272,7 +272,12 @@
                             <span id="quiz-book-options" class="book-options hidden" role="listbox"></span>
                         </span>
                     </div>
-                    <label>Chapter<select id="quiz-chapter"><option value="">Select a chapter</option></select></label>
+                    <label for="quiz-chapter-search">Chapter</label>
+                    <span class="book-combobox">
+                        <input id="quiz-chapter-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="quiz-chapter-options" aria-expanded="false" autocomplete="off" placeholder="Search chapters">
+                        <input id="quiz-chapter" type="hidden">
+                        <span id="quiz-chapter-options" class="book-options hidden" role="listbox"></span>
+                    </span>
                     <label>Question slots<input id="quiz-slot-count" type="number" min="1" max="20" step="1" value="5"></label>
                     <label>Answer choices<input id="quiz-option-count" type="number" min="2" max="6" step="1" value="4"></label>
                 </div>
