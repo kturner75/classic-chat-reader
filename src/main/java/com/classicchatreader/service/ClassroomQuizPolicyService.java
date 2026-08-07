@@ -135,12 +135,14 @@ public class ClassroomQuizPolicyService {
 
     private String resolveActiveStudentTermId(String userId) {
         ClassroomContextResponse context = classroomContextService.getContext(userId);
-        if (context != null
-                && context.enrolled()
-                && "STUDENT".equalsIgnoreCase(context.role())
-                && context.termId() != null
-                && !context.termId().isBlank()) {
-            return context.termId();
+        if (context != null && context.enrolled()) {
+            // Context resolved: only student roles are gated by assignment budgets.
+            if ("STUDENT".equalsIgnoreCase(context.role())
+                    && context.termId() != null
+                    && !context.termId().isBlank()) {
+                return context.termId();
+            }
+            return null;
         }
         // Fallback only when context is unavailable: single ACTIVE enrollment.
         List<EnrollmentEntity> enrollments = enrollmentRepository

@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -109,12 +110,22 @@ public class ChapterQuizService {
 
     @PostConstruct
     public void init() {
-        if (contentVersionSecret == null || contentVersionSecret.isBlank()
-                || "classic-chat-reader-quiz-content-version".equals(contentVersionSecret.trim())) {
-            // Never ship a publicly known HMAC key. Ephemeral per process is fine for local/dev;
-            // set quiz.content-version-secret in shared/prod so in-flight content versions survive restarts.
+        boolean blank = contentVersionSecret == null || contentVersionSecret.isBlank()
+                || "classic-chat-reader-quiz-content-version".equals(contentVersionSecret.trim());
+        if (blank) {
+            // Never ship a publicly known HMAC key. Ephemeral per process is fine for local/dev only.
+            // Shared/prod multi-instance deployments must set quiz.content-version-secret (or
+            // QUIZ_CONTENT_VERSION_SECRET) so contentVersion tokens validate across replicas.
+            String profiles = System.getProperty("spring.profiles.active", "");
+            String envProfiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "");
+            boolean prodLike = (profiles + "," + envProfiles).toLowerCase(Locale.ROOT).contains("prod");
+            if (prodLike) {
+                throw new IllegalStateException(
+                        "quiz.content-version-secret must be set in production so multi-instance "
+                                + "replicas share the same contentVersion HMAC key.");
+            }
             contentVersionSecret = UUID.randomUUID().toString();
-            log.info("quiz.content-version-secret unset; using ephemeral process secret");
+            log.info("quiz.content-version-secret unset; using ephemeral process secret (non-prod)");
         }
         executor.submit(this::processQueue);
         log.info("Chapter quiz service started with background queue processor");

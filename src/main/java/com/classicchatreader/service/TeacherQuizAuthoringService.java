@@ -402,6 +402,10 @@ public class TeacherQuizAuthoringService {
         if (result.isEmpty()) {
             throw new IllegalArgumentException("No usable distractors returned");
         }
+        if (result.size() != count) {
+            throw new IllegalArgumentException(
+                    "Expected exactly " + count + " distractors but received " + result.size());
+        }
         return result;
     }
 

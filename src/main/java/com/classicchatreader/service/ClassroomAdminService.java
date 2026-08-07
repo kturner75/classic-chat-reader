@@ -390,6 +390,7 @@ public class ClassroomAdminService {
     /** Partial update: only non-null / non-blank request fields change existing row. */
     private void applyAssignmentUpdate(AssignmentEntity assignment, String userId, AssignmentWriteRequest request) {
         String previousChapterId = assignment.getChapterId();
+        LocalDate previousAvailableFrom = assignment.getAvailableFromDate();
         if (!isBlank(request.title())) {
             assignment.setTitle(request.title().trim());
         }
@@ -439,7 +440,7 @@ public class ClassroomAdminService {
         if (request.characterChatRequired() != null) {
             assignment.setCharacterChatRequired(request.characterChatRequired());
         }
-        applyQuizPassRulesOnUpdate(assignment, request, previousChapterId);
+        applyQuizPassRulesOnUpdate(assignment, request, previousChapterId, previousAvailableFrom);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -470,7 +471,10 @@ public class ClassroomAdminService {
     }
 
     private void applyQuizPassRulesOnUpdate(
-            AssignmentEntity assignment, AssignmentWriteRequest request, String previousChapterId) {
+            AssignmentEntity assignment,
+            AssignmentWriteRequest request,
+            String previousChapterId,
+            LocalDate previousAvailableFrom) {
         boolean quizRequired = request.quizRequired() != null
                 ? request.quizRequired()
                 : assignment.isQuizRequired();
@@ -497,7 +501,12 @@ public class ClassroomAdminService {
         boolean chapterChanged = !Objects.equals(previousChapterId, assignment.getChapterId());
         boolean publishedNow = "PUBLISHED".equalsIgnoreCase(nextStatus)
                 && !"PUBLISHED".equalsIgnoreCase(assignment.getStatus());
-        if (hasRules && (rulesChanged || chapterChanged || publishedNow || assignment.getQuizRulesActivatedAt() == null)
+        LocalDate nextAvailableFrom = assignment.getAvailableFromDate();
+        boolean availabilityOpenedEarlier = previousAvailableFrom != null
+                && (nextAvailableFrom == null || nextAvailableFrom.isBefore(previousAvailableFrom));
+        if (hasRules
+                && (rulesChanged || chapterChanged || publishedNow || availabilityOpenedEarlier
+                || assignment.getQuizRulesActivatedAt() == null)
                 && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
