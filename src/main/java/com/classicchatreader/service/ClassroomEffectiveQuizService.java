@@ -160,6 +160,13 @@ public class ClassroomEffectiveQuizService {
                         HttpStatus.BAD_REQUEST,
                         "Answer every question before submitting.");
             }
+            var question = payload.questions().get(i);
+            int optionCount = question == null || question.options() == null ? 0 : question.options().size();
+            if (selected >= optionCount) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Answer selection for question " + (i + 1) + " is out of range.");
+            }
         }
     }
 

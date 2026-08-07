@@ -444,14 +444,28 @@ public class TeacherQuizAuthoringService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correct option text cannot be blank.");
         }
         String correctText = correctRaw.trim();
-        List<String> rawOptions = sourceOptions.stream()
+        List<String> cleaned = sourceOptions.stream()
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
-                .limit(6)
                 .toList();
-        if (rawOptions.size() < 2) {
+        if (cleaned.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least 2 options.");
+        }
+        // Cap at 6 while always retaining the correct answer text.
+        List<String> rawOptions = new ArrayList<>();
+        if (cleaned.size() <= 6) {
+            rawOptions.addAll(cleaned);
+        } else {
+            for (String option : cleaned) {
+                if (rawOptions.size() >= 5) {
+                    break;
+                }
+                if (!option.equalsIgnoreCase(correctText)) {
+                    rawOptions.add(option);
+                }
+            }
+            rawOptions.add(correctText);
         }
         List<String> options = new ArrayList<>();
         for (String option : rawOptions) {
