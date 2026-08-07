@@ -22,23 +22,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Service
 public class ChapterQuizService {
@@ -54,6 +62,7 @@ public class ChapterQuizService {
     private final ObjectMapper objectMapper;
     private final QuizProgressService quizProgressService;
     private final QuizMetricsService quizMetricsService;
+    private final Environment environment;
     private final BlockingQueue<String> requestQueue = new LinkedBlockingQueue<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile boolean running = true;
@@ -82,6 +91,9 @@ public class ChapterQuizService {
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
+    @Value("${quiz.content-version-secret:}")
+    private String contentVersionSecret;
+
     public ChapterQuizService(
             ChapterQuizRepository chapterQuizRepository,
             ChapterRepository chapterRepository,
@@ -89,7 +101,8 @@ public class ChapterQuizService {
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
             QuizProgressService quizProgressService,
             QuizMetricsService quizMetricsService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Environment environment) {
         this.chapterQuizRepository = chapterQuizRepository;
         this.chapterRepository = chapterRepository;
         this.paragraphRepository = paragraphRepository;
@@ -97,10 +110,35 @@ public class ChapterQuizService {
         this.quizProgressService = quizProgressService;
         this.quizMetricsService = quizMetricsService;
         this.objectMapper = objectMapper;
+        this.environment = environment;
     }
 
     @PostConstruct
     public void init() {
+        boolean blank = contentVersionSecret == null || contentVersionSecret.isBlank()
+                || "classic-chat-reader-quiz-content-version".equals(contentVersionSecret.trim());
+        if (blank) {
+            // Never ship a publicly known HMAC key. Ephemeral per process is fine for local/dev only.
+            // Shared/prod multi-instance deployments must set quiz.content-version-secret (or
+            // QUIZ_CONTENT_VERSION_SECRET) so contentVersion tokens validate across replicas.
+            boolean prodLike = false;
+            if (environment != null) {
+                for (String profile : environment.getActiveProfiles()) {
+                    String p = profile == null ? "" : profile.toLowerCase(Locale.ROOT);
+                    if (p.contains("prod") || p.equals("mariadb")) {
+                        prodLike = true;
+                        break;
+                    }
+                }
+            }
+            if (prodLike) {
+                throw new IllegalStateException(
+                        "quiz.content-version-secret must be set in production so multi-instance "
+                                + "replicas share the same contentVersion HMAC key.");
+            }
+            contentVersionSecret = UUID.randomUUID().toString();
+            log.info("quiz.content-version-secret unset; using ephemeral process secret (non-prod)");
+        }
         executor.submit(this::processQueue);
         log.info("Chapter quiz service started with background queue processor");
     }
@@ -112,11 +150,13 @@ public class ChapterQuizService {
         log.info("Chapter quiz service shutting down");
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<ChapterQuizResponse> getChapterQuiz(String chapterId) {
         Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterIdWithChapterAndBook(chapterId);
         if (quizOpt.isPresent()) {
-            return Optional.of(toQuizResponse(quizOpt.get()));
+            ChapterQuizEntity entity = quizOpt.get();
+            maybeBackfillQuestionIds(entity);
+            return Optional.of(toQuizResponse(entity));
         }
 
         return chapterRepository.findByIdWithBook(chapterId)
@@ -244,17 +284,36 @@ public class ChapterQuizService {
             List<Integer> selectedOptionIndexes,
             String readerId,
             String userId) {
+        return gradeQuizWithPayload(chapterId, selectedOptionIndexes, readerId, userId, null);
+    }
+
+    @Transactional
+    public Optional<ChapterQuizGradeResponse> gradeQuizWithPayload(
+            String chapterId,
+            List<Integer> selectedOptionIndexes,
+            String readerId,
+            String userId,
+            ChapterQuizPayload payloadOverride) {
         Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterIdWithChapterAndBook(chapterId);
-        if (quizOpt.isEmpty()) {
+        ChapterEntity chapter;
+        ChapterQuizPayload payload;
+        if (quizOpt.isPresent()) {
+            ChapterQuizEntity quiz = quizOpt.get();
+            if (quiz.getStatus() != ChapterQuizStatus.COMPLETED && payloadOverride == null) {
+                throw new IllegalStateException("Quiz is not ready");
+            }
+            chapter = quiz.getChapter();
+            payload = payloadOverride != null ? payloadOverride : toPayload(quiz.getPayloadJson());
+        } else if (payloadOverride != null) {
+            chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+            if (chapter == null) {
+                return Optional.empty();
+            }
+            payload = payloadOverride;
+        } else {
             return Optional.empty();
         }
 
-        ChapterQuizEntity quiz = quizOpt.get();
-        if (quiz.getStatus() != ChapterQuizStatus.COMPLETED) {
-            throw new IllegalStateException("Quiz is not ready");
-        }
-
-        ChapterQuizPayload payload = toPayload(quiz.getPayloadJson());
         if (payload.questions().isEmpty()) {
             throw new IllegalStateException("Quiz has no questions");
         }
@@ -293,9 +352,9 @@ public class ChapterQuizService {
         int scorePercent = totalQuestions == 0
                 ? 0
                 : (int) Math.round((correctAnswers * 100.0) / totalQuestions);
-        int difficultyLevel = resolveDifficultyLevel(quiz.getChapter());
+        int difficultyLevel = resolveDifficultyLevel(chapter);
         QuizProgressService.ProgressUpdate progressUpdate = quizProgressService.recordAttemptAndEvaluate(
-                quiz.getChapter(),
+                chapter,
                 readerId,
                 userId,
                 scorePercent,
@@ -305,7 +364,7 @@ public class ChapterQuizService {
         );
 
         return Optional.of(new ChapterQuizGradeResponse(
-                quiz.getChapter().getBook().getId(),
+                chapter.getBook().getId(),
                 chapterId,
                 totalQuestions,
                 correctAnswers,
@@ -587,6 +646,7 @@ public class ChapterQuizService {
             }
 
             questions.add(new ChapterQuizPayload.Question(
+                    UUID.randomUUID().toString(),
                     buildFallbackQuestionPrompt(source.paragraphIndex(), difficultyLevel),
                     normalizedOptions,
                     correctOptionIndex,
@@ -699,19 +759,193 @@ public class ChapterQuizService {
         }
 
         List<ChapterQuizViewPayload.Question> questions = payload.questions().stream()
-                .map(question -> new ChapterQuizViewPayload.Question(question.question(), question.options()))
+                .map(question -> new ChapterQuizViewPayload.Question(
+                        question.id(),
+                        question.question(),
+                        question.options()))
                 .toList();
-        return new ChapterQuizViewPayload(questions);
+        return new ChapterQuizViewPayload(questions, contentVersion(payload));
     }
 
-    private ChapterQuizPayload toPayload(String payloadJson) {
+    /** Opaque grading-version token for the full quiz content (including correct answers).
+     * Uses HMAC so the token is not a low-entropy answer-key oracle.
+     */
+    public String contentVersion(ChapterQuizPayload payload) {
+        if (payload == null || payload.questions() == null || payload.questions().isEmpty()) {
+            return null;
+        }
+        StringBuilder canonical = new StringBuilder();
+        for (ChapterQuizPayload.Question question : payload.questions()) {
+            if (question == null) {
+                continue;
+            }
+            canonical.append(nullToEmpty(question.id())).append('\u001f')
+                    .append(nullToEmpty(question.question())).append('\u001f')
+                    .append(question.correctOptionIndex() == null ? -1 : question.correctOptionIndex())
+                    .append('\u001f');
+            if (question.options() != null) {
+                for (String option : question.options()) {
+                    canonical.append(nullToEmpty(option)).append('\u001e');
+                }
+            }
+            canonical.append('\u001d');
+        }
+        try {
+            String secret = (contentVersionSecret == null || contentVersionSecret.isBlank())
+                    ? UUID.randomUUID().toString()
+                    : contentVersionSecret;
+            // Cache any fallback so verify uses the same key within this process.
+            if (contentVersionSecret == null || contentVersionSecret.isBlank()) {
+                contentVersionSecret = secret;
+            }
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to compute quiz content version", e);
+        }
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    /**
+     * Exclusive lock for quiz content mutation (teacher publish / pass-rule validation).
+     * Locks the chapter row (always) and the chapter-quiz row when present.
+     */
+    @Transactional
+    public void lockQuizContent(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return;
+        }
+        chapterRepository.findByIdWithBookForUpdate(chapterId);
+        chapterQuizRepository.findByChapterIdForUpdate(chapterId);
+    }
+
+    /**
+     * Shared lock for grade-time coordination with publications. Multiple students can hold
+     * concurrent shared locks; exclusive publishers wait until grades finish (and vice versa).
+     */
+    @Transactional
+    public void lockQuizContentShared(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return;
+        }
+        chapterRepository.findByIdWithBookForShare(chapterId);
+        chapterQuizRepository.findByChapterIdForShare(chapterId);
+    }
+
+    private void maybeBackfillQuestionIds(ChapterQuizEntity entity) {
+        if (entity == null
+                || entity.getStatus() != ChapterQuizStatus.COMPLETED
+                || entity.getPayloadJson() == null
+                || entity.getPayloadJson().isBlank()) {
+            return;
+        }
+        if (!payloadMissingQuestionIds(entity.getPayloadJson())) {
+            return;
+        }
+        String chapterId = entity.getChapter() != null ? entity.getChapter().getId() : null;
+        ChapterQuizEntity locked = chapterId == null
+                ? entity
+                : chapterQuizRepository.findByChapterIdForUpdate(chapterId).orElse(entity);
+        if (!payloadMissingQuestionIds(locked.getPayloadJson())) {
+            return;
+        }
+        ChapterQuizPayload normalized = toPayloadWithDeterministicIds(locked.getPayloadJson(), chapterId);
+        if (!hasQuestions(normalized)) {
+            return;
+        }
+        locked.setPayloadJson(toJson(normalized));
+        chapterQuizRepository.save(locked);
+        // Keep the caller's entity view in sync when it is a different instance.
+        if (locked != entity) {
+            entity.setPayloadJson(locked.getPayloadJson());
+        }
+    }
+
+    /**
+     * Add stable question ids for legacy payloads without applying serving-time
+     * normalization. Lossy caps (max questions / option count) and empty-paragraph
+     * citation clearing must not be persisted during lazy id backfill.
+     */
+    private ChapterQuizPayload toPayloadWithDeterministicIds(String payloadJson, String chapterId) {
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return EMPTY_PAYLOAD;
+        }
+        try {
+            ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
+            if (payload == null || payload.questions() == null) {
+                return EMPTY_PAYLOAD;
+            }
+
+            List<ChapterQuizPayload.Question> withIds = new ArrayList<>();
+            int questionIndex = 0;
+            for (ChapterQuizPayload.Question question : payload.questions()) {
+                if (question == null) {
+                    continue;
+                }
+                String questionId = question.id();
+                if (questionId == null || questionId.isBlank()) {
+                    String questionText = question.question() == null ? "" : question.question().trim();
+                    List<String> seedOptions = question.options() == null
+                            ? List.of()
+                            : question.options().stream()
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(s -> !s.isBlank())
+                            .toList();
+                    String seed = (chapterId == null ? "" : chapterId)
+                            + "|" + questionIndex + "|" + questionText + "|" + String.join("|", seedOptions);
+                    questionId = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+                } else {
+                    questionId = questionId.trim();
+                }
+                withIds.add(new ChapterQuizPayload.Question(
+                        questionId,
+                        question.question(),
+                        question.options(),
+                        question.correctOptionIndex(),
+                        question.citationParagraphIndex(),
+                        question.citationSnippet()
+                ));
+                questionIndex++;
+            }
+            return withIds.isEmpty() ? EMPTY_PAYLOAD : new ChapterQuizPayload(withIds);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse quiz payload JSON", e);
+            return EMPTY_PAYLOAD;
+        }
+    }
+
+    private boolean payloadMissingQuestionIds(String payloadJson) {
+        try {
+            ChapterQuizPayload raw = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
+            if (raw == null || raw.questions() == null || raw.questions().isEmpty()) {
+                return false;
+            }
+            return raw.questions().stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(question -> question.id() == null || question.id().isBlank());
+        } catch (JsonProcessingException e) {
+            return false;
+        }
+    }
+
+    ChapterQuizPayload toPayload(String payloadJson) {
         if (payloadJson == null || payloadJson.isBlank()) {
             return EMPTY_PAYLOAD;
         }
 
         try {
             ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
-            return normalizePayload(payload, List.of());
+            return normalizePayload(payload, List.of(), null, false);
         } catch (JsonProcessingException e) {
             log.warn("Failed to parse quiz payload JSON", e);
             return EMPTY_PAYLOAD;
@@ -727,6 +961,14 @@ public class ChapterQuizService {
     }
 
     private ChapterQuizPayload normalizePayload(ChapterQuizPayload payload, List<ParagraphEntity> paragraphs) {
+        return normalizePayload(payload, paragraphs, null, false);
+    }
+
+    private ChapterQuizPayload normalizePayload(
+            ChapterQuizPayload payload,
+            List<ParagraphEntity> paragraphs,
+            String chapterId,
+            boolean deterministicMissingIds) {
         if (payload == null || payload.questions() == null) {
             return EMPTY_PAYLOAD;
         }
@@ -743,12 +985,18 @@ public class ChapterQuizService {
                         (a, b) -> a
                 ));
 
-        List<ChapterQuizPayload.Question> normalizedQuestions = payload.questions().stream()
+        List<ChapterQuizPayload.Question> source = payload.questions().stream()
                 .filter(Objects::nonNull)
                 .limit(maxAllowed)
-                .map(question -> normalizeQuestion(question, paragraphByIndex))
-                .filter(Objects::nonNull)
                 .toList();
+        List<ChapterQuizPayload.Question> normalizedQuestions = new ArrayList<>();
+        for (int i = 0; i < source.size(); i++) {
+            ChapterQuizPayload.Question normalized = normalizeQuestion(
+                    source.get(i), paragraphByIndex, chapterId, i, deterministicMissingIds);
+            if (normalized != null) {
+                normalizedQuestions.add(normalized);
+            }
+        }
 
         return normalizedQuestions.isEmpty()
                 ? EMPTY_PAYLOAD
@@ -758,6 +1006,15 @@ public class ChapterQuizService {
     private ChapterQuizPayload.Question normalizeQuestion(
             ChapterQuizPayload.Question question,
             Map<Integer, String> paragraphByIndex) {
+        return normalizeQuestion(question, paragraphByIndex, null, 0, false);
+    }
+
+    private ChapterQuizPayload.Question normalizeQuestion(
+            ChapterQuizPayload.Question question,
+            Map<Integer, String> paragraphByIndex,
+            String chapterId,
+            int questionIndex,
+            boolean deterministicMissingIds) {
         String normalizedQuestion = question.question() == null ? "" : question.question().trim();
 
         List<String> options = question.options() == null
@@ -789,13 +1046,58 @@ public class ChapterQuizService {
             citationSnippet = paragraphByIndex.getOrDefault(paragraphIndex, "");
         }
 
+        String questionId;
+        if (question.id() == null || question.id().isBlank()) {
+            if (deterministicMissingIds) {
+                String seed = (chapterId == null ? "" : chapterId)
+                        + "|" + questionIndex + "|" + normalizedQuestion + "|" + String.join("|", options);
+                questionId = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+            } else {
+                questionId = UUID.randomUUID().toString();
+            }
+        } else {
+            questionId = question.id().trim();
+        }
+
         return new ChapterQuizPayload.Question(
+                questionId,
                 normalizedQuestion,
                 options,
                 correctOptionIndex,
                 paragraphIndex,
                 trimToLength(citationSnippet, 220)
         );
+    }
+
+    /** Package-visible for classroom effective-quiz assembly and tests. */
+    public ChapterQuizPayload parsePayloadJson(String payloadJson) {
+        return toPayload(payloadJson);
+    }
+
+    /**
+     * Load a completed chapter quiz payload, persisting lazy question-id backfill when needed.
+     * Teacher override authoring and effective-quiz merge must use stable IDs from storage.
+     */
+    @Transactional
+    public ChapterQuizPayload loadCompletedPayloadWithIdBackfill(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return EMPTY_PAYLOAD;
+        }
+        Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterId(chapterId);
+        if (quizOpt.isEmpty() || quizOpt.get().getStatus() != ChapterQuizStatus.COMPLETED) {
+            return EMPTY_PAYLOAD;
+        }
+        ChapterQuizEntity entity = quizOpt.get();
+        maybeBackfillQuestionIds(entity);
+        return toPayload(entity.getPayloadJson());
+    }
+
+    public String serializePayload(ChapterQuizPayload payload) {
+        return toJson(payload);
+    }
+
+    public ChapterQuizViewPayload toStudentView(ChapterQuizPayload payload) {
+        return toViewPayload(payload);
     }
 
     private String extractJsonObject(String text) {

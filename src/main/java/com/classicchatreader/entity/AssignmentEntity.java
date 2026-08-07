@@ -50,6 +50,18 @@ public class AssignmentEntity {
     @Column(name = "character_chat_required", nullable = false)
     private boolean characterChatRequired = false;
 
+    /** Minimum correct answers required to pass when quiz is required; null = any attempt completes. */
+    @Column(name = "quiz_pass_min_correct")
+    private Integer quizPassMinCorrect;
+
+    /** Extra attempts after the first when a pass minimum is set; 0 = initial attempt only. */
+    @Column(name = "quiz_max_retries")
+    private Integer quizMaxRetries;
+
+    /** When pass rules became active for attempt-window scoping (UTC). */
+    @Column(name = "quiz_rules_activated_at")
+    private LocalDateTime quizRulesActivatedAt;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -101,6 +113,14 @@ public class AssignmentEntity {
     public boolean isCharacterChatRequired() { return characterChatRequired; }
     public void setCharacterChatRequired(boolean characterChatRequired) {
         this.characterChatRequired = characterChatRequired;
+    }
+    public Integer getQuizPassMinCorrect() { return quizPassMinCorrect; }
+    public void setQuizPassMinCorrect(Integer quizPassMinCorrect) { this.quizPassMinCorrect = quizPassMinCorrect; }
+    public Integer getQuizMaxRetries() { return quizMaxRetries; }
+    public void setQuizMaxRetries(Integer quizMaxRetries) { this.quizMaxRetries = quizMaxRetries; }
+    public LocalDateTime getQuizRulesActivatedAt() { return quizRulesActivatedAt; }
+    public void setQuizRulesActivatedAt(LocalDateTime quizRulesActivatedAt) {
+        this.quizRulesActivatedAt = quizRulesActivatedAt;
     }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }

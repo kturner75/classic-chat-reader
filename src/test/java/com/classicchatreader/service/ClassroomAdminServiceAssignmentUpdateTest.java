@@ -52,6 +52,9 @@ class ClassroomAdminServiceAssignmentUpdateTest {
     @Mock private UserRepository userRepository;
     @Mock private ClassroomProperties classroomProperties;
     @Mock private ClassroomTeacherCapabilityService teacherCapabilityService;
+    @Mock private ClassroomEffectiveQuizService classroomEffectiveQuizService;
+    @Mock private ChapterQuizService chapterQuizService;
+    @Mock private jakarta.persistence.EntityManager entityManager;
 
     private ClassroomAdminService service;
 
@@ -70,7 +73,10 @@ class ClassroomAdminServiceAssignmentUpdateTest {
                 chapterRepository,
                 userRepository,
                 classroomProperties,
-                teacherCapabilityService
+                teacherCapabilityService,
+                classroomEffectiveQuizService,
+                chapterQuizService,
+                entityManager
         );
     }
 

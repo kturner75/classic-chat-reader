@@ -142,6 +142,23 @@ tbody tr:last-child td { border-bottom: 0; }
 .form-error { color: var(--danger); font-size: .76rem; }
 .form-help { margin: .35rem 0 0; font-size: .78rem; line-height: 1.45; color: var(--muted); }
 .toast { position: fixed; z-index: 60; right: 1.2rem; bottom: 1.2rem; max-width: 360px; padding: .8rem 1rem; color: white; background: var(--ink); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.2); font-size: .8rem; }
+.quiz-defaults-panel { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.section-heading.compact { margin-bottom: .8rem; }
+.section-heading.compact h3 { margin: .1rem 0 .35rem; font: 500 1.35rem/1.15 var(--serif); }
+.quiz-defaults-grid input { width: 100%; min-height: 2.4rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.quiz-pass-rules { margin-top: .2rem; }
+.wizard-steps { display: flex; gap: 1rem; list-style: none; padding: 0; margin: 0 0 1.1rem; color: var(--muted); font-size: .78rem; font-weight: 600; }
+.wizard-steps .active { color: var(--accent-dark); }
+.wizard-toolbar { display: flex; flex-wrap: wrap; gap: .55rem; margin-bottom: .9rem; }
+.quiz-wizard-card { width: min(760px, 96vw); }
+.quiz-question-card { border: 1px solid var(--line); border-radius: 12px; padding: .9rem; margin-bottom: .75rem; background: #fff; display: grid; gap: .55rem; }
+.quiz-question-card header { display: flex; justify-content: space-between; gap: .8rem; align-items: center; }
+.quiz-question-card textarea, .quiz-question-card input[type="text"] { width: 100%; min-height: 2.4rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 10px; }
+.quiz-question-card textarea { min-height: 4.2rem; resize: vertical; }
+.quiz-option-row { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: center; }
+.quiz-review-list { display: grid; gap: .7rem; }
+.quiz-review-item { border: 1px solid var(--line); border-radius: 12px; padding: .85rem; background: #fff; }
+.quiz-review-item ol { margin: .4rem 0 0; padding-left: 1.2rem; color: var(--muted); }
 
 @media (max-width: 760px) {
     .workspace-header { grid-template-columns: 1fr auto; padding: .6rem 4vw; }

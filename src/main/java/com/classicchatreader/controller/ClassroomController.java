@@ -17,6 +17,12 @@ import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCa
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.InviteLinkService.RedeemResult;
 import com.classicchatreader.service.InviteLinkService.RedeemStatus;
+import com.classicchatreader.service.TeacherQuizAuthoringService;
+import com.classicchatreader.service.TeacherQuizAuthoringService.EffectiveQuizResponse;
+import com.classicchatreader.service.TeacherQuizAuthoringService.ReplaceOverridesRequest;
+import com.classicchatreader.service.TeacherQuizAuthoringService.SuggestDistractorsRequest;
+import com.classicchatreader.service.TeacherQuizAuthoringService.SuggestQuestionsRequest;
+import com.classicchatreader.model.ChapterQuizPayload;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,18 +48,21 @@ public class ClassroomController {
     private final InviteLinkService inviteLinkService;
     private final AccountAuthService accountAuthService;
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
+    private final TeacherQuizAuthoringService teacherQuizAuthoringService;
 
     public ClassroomController(
             ClassroomContextService classroomContextService,
             ClassroomAdminService classroomAdminService,
             InviteLinkService inviteLinkService,
             AccountAuthService accountAuthService,
-            ClassroomTeacherCapabilityService teacherCapabilityService) {
+            ClassroomTeacherCapabilityService teacherCapabilityService,
+            TeacherQuizAuthoringService teacherQuizAuthoringService) {
         this.classroomContextService = classroomContextService;
         this.classroomAdminService = classroomAdminService;
         this.inviteLinkService = inviteLinkService;
         this.accountAuthService = accountAuthService;
         this.teacherCapabilityService = teacherCapabilityService;
+        this.teacherQuizAuthoringService = teacherQuizAuthoringService;
     }
 
     @GetMapping("/context")
@@ -157,6 +166,45 @@ public class ClassroomController {
         return classroomAdminService.listRoster(requireUserId(request), termId);
     }
 
+    @GetMapping("/terms/{termId}/chapters/{chapterId}/effective-quiz")
+    public EffectiveQuizResponse getEffectiveQuiz(
+            @PathVariable String termId,
+            @PathVariable String chapterId,
+            HttpServletRequest request) {
+        return teacherQuizAuthoringService.getEffectiveQuiz(requireUserId(request), termId, chapterId);
+    }
+
+    @PutMapping("/terms/{termId}/chapters/{chapterId}/quiz-overrides")
+    public EffectiveQuizResponse replaceQuizOverrides(
+            @PathVariable String termId,
+            @PathVariable String chapterId,
+            @RequestBody ReplaceOverridesRequest body,
+            HttpServletRequest request) {
+        return teacherQuizAuthoringService.replaceOverrides(requireUserId(request), termId, chapterId, body);
+    }
+
+    @PostMapping("/terms/{termId}/chapters/{chapterId}/suggest-questions")
+    public Map<String, Object> suggestQuestions(
+            @PathVariable String termId,
+            @PathVariable String chapterId,
+            @RequestBody(required = false) SuggestQuestionsRequest body,
+            HttpServletRequest request) {
+        List<ChapterQuizPayload.Question> questions =
+                teacherQuizAuthoringService.suggestQuestions(requireUserId(request), termId, chapterId, body);
+        return Map.of("questions", questions);
+    }
+
+    @PostMapping("/terms/{termId}/chapters/{chapterId}/suggest-distractors")
+    public Map<String, Object> suggestDistractors(
+            @PathVariable String termId,
+            @PathVariable String chapterId,
+            @RequestBody SuggestDistractorsRequest body,
+            HttpServletRequest request) {
+        List<String> distractors =
+                teacherQuizAuthoringService.suggestDistractors(requireUserId(request), termId, chapterId, body);
+        return Map.of("distractors", distractors);
+    }
+
     private ResponseEntity<Map<String, Object>> mapRedeem(RedeemResult result) {
         return switch (result.status()) {
             case SUCCESS, IDEMPOTENT -> ResponseEntity.ok(Map.of(
@@ -193,7 +241,11 @@ public class ClassroomController {
                 f.isCharacterEnabled(),
                 f.isChatEnabled(),
                 f.isSpeedReadingEnabled(),
-                f.isReadingBuddyEnabled()
+                f.isReadingBuddyEnabled(),
+                f.getDefaultQuizQuestionCount(),
+                f.getDefaultQuizPassMinCorrect(),
+                f.getDefaultQuizMaxRetries(),
+                f.getDefaultQuizOptionCount()
         );
     }
 
@@ -210,7 +262,9 @@ public class ClassroomController {
                 a.isQuizRequired(),
                 a.isCharacterChatRequired(),
                 a.getSortOrder(),
-                a.getStatus()
+                a.getStatus(),
+                a.getQuizPassMinCorrect(),
+                a.getQuizMaxRetries()
         );
     }
 
@@ -243,7 +297,11 @@ public class ClassroomController {
             boolean characterEnabled,
             boolean chatEnabled,
             boolean speedReadingEnabled,
-            boolean readingBuddyEnabled
+            boolean readingBuddyEnabled,
+            int defaultQuizQuestionCount,
+            Integer defaultQuizPassMinCorrect,
+            Integer defaultQuizMaxRetries,
+            int defaultQuizOptionCount
     ) {
     }
 
@@ -259,7 +317,9 @@ public class ClassroomController {
             boolean quizRequired,
             boolean characterChatRequired,
             int sortOrder,
-            String status
+            String status,
+            Integer quizPassMinCorrect,
+            Integer quizMaxRetries
     ) {
     }
 }

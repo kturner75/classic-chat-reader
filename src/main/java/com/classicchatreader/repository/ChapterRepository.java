@@ -24,4 +24,8 @@ public interface ChapterRepository extends JpaRepository<ChapterEntity, String> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM ChapterEntity c JOIN FETCH c.book WHERE c.id = :id")
     Optional<ChapterEntity> findByIdWithBookForUpdate(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("SELECT c FROM ChapterEntity c JOIN FETCH c.book WHERE c.id = :id")
+    Optional<ChapterEntity> findByIdWithBookForShare(@Param("id") String id);
 }

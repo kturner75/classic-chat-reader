@@ -297,15 +297,15 @@ public class ClassroomContextService {
             return "Chapter " + Math.max(1, chapterIndex + 1);
         });
 
+        QuizAttemptSummary attemptSummary = studentView
+                ? resolveQuizAttemptSummary(row, chapterId, userId)
+                : QuizAttemptSummary.empty();
         QuizRequirementStatus quizStatus;
         if (!studentView) {
-            quizStatus = row.isQuizRequired() ? QuizRequirementStatus.NOT_REQUIRED : QuizRequirementStatus.NOT_REQUIRED;
             // Teachers see requirement presence without personal completion chips
-            if (row.isQuizRequired()) {
-                quizStatus = QuizRequirementStatus.UNKNOWN;
-            }
+            quizStatus = row.isQuizRequired() ? QuizRequirementStatus.UNKNOWN : QuizRequirementStatus.NOT_REQUIRED;
         } else {
-            quizStatus = resolveQuizStatus(row.isQuizRequired(), chapterId, userId);
+            quizStatus = resolveQuizStatus(row, chapterId, userId, attemptSummary);
         }
 
         // Calendar DATE only (assignments.due_date is SQL DATE / LocalDate). FE treats date-only as inclusive local due day.
@@ -324,7 +324,12 @@ public class ClassroomContextService {
                 row.isQuizRequired(),
                 quizStatus,
                 row.isCharacterChatRequired(),
-                bookOpt.isPresent()
+                bookOpt.isPresent(),
+                row.getQuizPassMinCorrect(),
+                row.getQuizMaxRetries(),
+                attemptSummary.attemptsUsed(),
+                attemptSummary.attemptsAllowed(),
+                attemptSummary.passed()
         );
     }
 
@@ -413,7 +418,12 @@ public class ClassroomContextService {
                 quizRequired,
                 quizStatus,
                 false,
-                bookOpt.isPresent()
+                bookOpt.isPresent(),
+                null,
+                null,
+                null,
+                null,
+                null
         );
     }
 
@@ -438,17 +448,87 @@ public class ClassroomContextService {
         if (chapterId == null || chapterId.isBlank()) {
             return QuizRequirementStatus.UNKNOWN;
         }
-        // KD-15: COMPLETE = any user-scoped attempt for the chapter (class-agnostic participation).
-        // Perfect score is not required for the chip; trophies remain separate.
+        // Demo / legacy path without pass rules: any attempt completes.
         if (userId != null && !userId.isBlank()) {
             return quizAttemptRepository.existsByChapterIdAndUserId(chapterId, userId)
                     ? QuizRequirementStatus.COMPLETE
                     : QuizRequirementStatus.PENDING;
         }
-        // Anonymous demo path: global exists (demo limitation)
         return quizAttemptRepository.existsByChapterId(chapterId)
                 ? QuizRequirementStatus.COMPLETE
                 : QuizRequirementStatus.PENDING;
+    }
+
+    private QuizRequirementStatus resolveQuizStatus(
+            AssignmentEntity row,
+            String chapterId,
+            String userId,
+            QuizAttemptSummary attemptSummary) {
+        if (!row.isQuizRequired()) {
+            return QuizRequirementStatus.NOT_REQUIRED;
+        }
+        if (chapterId == null || chapterId.isBlank()) {
+            return QuizRequirementStatus.UNKNOWN;
+        }
+        if (row.getQuizPassMinCorrect() == null) {
+            return resolveQuizStatus(true, chapterId, userId);
+        }
+        if (Boolean.TRUE.equals(attemptSummary.passed())) {
+            return QuizRequirementStatus.COMPLETE;
+        }
+        return QuizRequirementStatus.PENDING;
+    }
+
+    private QuizAttemptSummary resolveQuizAttemptSummary(
+            AssignmentEntity row, String chapterId, String userId) {
+        if (!row.isQuizRequired()
+                || chapterId == null
+                || chapterId.isBlank()
+                || userId == null
+                || userId.isBlank()) {
+            return QuizAttemptSummary.empty();
+        }
+        Integer minCorrect = row.getQuizPassMinCorrect();
+        Integer maxRetries = row.getQuizMaxRetries();
+        java.time.LocalDateTime since = attemptWindowStart(row);
+        long used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                chapterId, userId, since);
+        Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
+        Boolean passed = null;
+        if (minCorrect != null) {
+            int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                    chapterId, userId, since);
+            passed = best >= minCorrect;
+        } else if (used > 0) {
+            passed = true;
+        }
+        return new QuizAttemptSummary(
+                used > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) used,
+                allowed,
+                passed);
+    }
+
+    private java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
+        java.time.LocalDateTime since = assignment.getQuizRulesActivatedAt();
+        if (since == null) {
+            since = assignment.getCreatedAt();
+        }
+        if (assignment.getAvailableFromDate() != null) {
+            java.time.LocalDateTime open = assignment.getAvailableFromDate()
+                    .atStartOfDay(classroomProperties.calendarZoneId())
+                    .withZoneSameInstant(java.time.ZoneOffset.UTC)
+                    .toLocalDateTime();
+            if (since == null || open.isAfter(since)) {
+                since = open;
+            }
+        }
+        return since != null ? since : java.time.LocalDateTime.of(1970, 1, 1, 0, 0);
+    }
+
+    private record QuizAttemptSummary(Integer attemptsUsed, Integer attemptsAllowed, Boolean passed) {
+        static QuizAttemptSummary empty() {
+            return new QuizAttemptSummary(null, null, null);
+        }
     }
 
     private ClassroomFeatureStates resolveDemoFeatureStates() {

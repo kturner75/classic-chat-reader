@@ -8,6 +8,8 @@ import com.classicchatreader.model.ChapterQuizResponse;
 import com.classicchatreader.model.ChapterQuizStatusResponse;
 import com.classicchatreader.model.QuizTrophy;
 import com.classicchatreader.service.ChapterQuizService;
+import com.classicchatreader.service.ClassroomEffectiveQuizService;
+import com.classicchatreader.service.ClassroomQuizPolicyService;
 import com.classicchatreader.service.QuizMetricsService;
 import com.classicchatreader.service.QuizProgressService;
 import com.classicchatreader.service.ReaderIdentityService;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -54,16 +57,22 @@ public class ChapterQuizController {
     private final QuizProgressService quizProgressService;
     private final QuizMetricsService quizMetricsService;
     private final ReaderIdentityService readerIdentityService;
+    private final ClassroomQuizPolicyService classroomQuizPolicyService;
+    private final ClassroomEffectiveQuizService classroomEffectiveQuizService;
 
     public ChapterQuizController(
             ChapterQuizService chapterQuizService,
             QuizProgressService quizProgressService,
             QuizMetricsService quizMetricsService,
-            ReaderIdentityService readerIdentityService) {
+            ReaderIdentityService readerIdentityService,
+            ClassroomQuizPolicyService classroomQuizPolicyService,
+            ClassroomEffectiveQuizService classroomEffectiveQuizService) {
         this.chapterQuizService = chapterQuizService;
         this.quizProgressService = quizProgressService;
         this.quizMetricsService = quizMetricsService;
         this.readerIdentityService = readerIdentityService;
+        this.classroomQuizPolicyService = classroomQuizPolicyService;
+        this.classroomEffectiveQuizService = classroomEffectiveQuizService;
     }
 
     @GetMapping("/status")
@@ -125,7 +134,8 @@ public class ChapterQuizController {
     @GetMapping("/chapter/{chapterId}")
     public ResponseEntity<ChapterQuizResponse> getChapterQuiz(
             @PathVariable String chapterId,
-            HttpServletRequest request) {
+            HttpServletRequest request,
+            HttpServletResponse response) {
         String requestId = RequestCorrelation.resolveRequestId(request);
         if (!quizEnabled) {
             return ResponseEntity.status(403).build();
@@ -139,7 +149,8 @@ public class ChapterQuizController {
             return ResponseEntity.status(403).build();
         }
         try {
-            return chapterQuizService.getChapterQuiz(chapterId)
+            ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+            return classroomEffectiveQuizService.getChapterQuiz(chapterId, identity.userId())
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (Exception e) {
@@ -163,7 +174,8 @@ public class ChapterQuizController {
     @GetMapping("/chapter/{chapterId}/status")
     public ResponseEntity<ChapterQuizStatusResponse> getChapterQuizStatus(
             @PathVariable String chapterId,
-            HttpServletRequest request) {
+            HttpServletRequest request,
+            HttpServletResponse response) {
         String requestId = RequestCorrelation.resolveRequestId(request);
         if (!quizEnabled) {
             return ResponseEntity.status(403).build();
@@ -177,7 +189,8 @@ public class ChapterQuizController {
             return ResponseEntity.status(403).build();
         }
         try {
-            return chapterQuizService.getChapterQuizStatus(chapterId)
+            ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
+            return classroomEffectiveQuizService.getChapterQuizStatus(chapterId, identity.userId())
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (Exception e) {
@@ -242,14 +255,18 @@ public class ChapterQuizController {
         ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(httpRequest, httpResponse);
         String readerId = identity.accountAuthenticated() ? null : identity.readerKey();
         try {
-            return chapterQuizService.gradeQuiz(
+            return classroomEffectiveQuizService.gradeQuiz(
                             chapterId,
                             request.selectedOptionIndexes(),
+                            request.questionIds(),
+                            request.contentVersion(),
                             readerId,
                             identity.userId()
                     )
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).build();
         }
@@ -267,6 +284,17 @@ public class ChapterQuizController {
         return quizEnabled && reasoningEnabled;
     }
 
-    public record QuizSubmissionRequest(List<Integer> selectedOptionIndexes) {
+    public record QuizSubmissionRequest(
+            List<Integer> selectedOptionIndexes,
+            List<String> questionIds,
+            String contentVersion
+    ) {
+        public QuizSubmissionRequest(List<Integer> selectedOptionIndexes) {
+            this(selectedOptionIndexes, null, null);
+        }
+
+        public QuizSubmissionRequest(List<Integer> selectedOptionIndexes, List<String> questionIds) {
+            this(selectedOptionIndexes, questionIds, null);
+        }
     }
 }

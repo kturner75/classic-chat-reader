@@ -98,6 +98,7 @@
         quizCacheOnly: false,
         quizChapterId: null,
         quizQuestions: [],
+        quizContentVersion: null,
         quizSelectedAnswers: [],
         quizSubmitting: false,
         quizResult: null,
@@ -2893,7 +2894,12 @@
                     quizRequired: item.quizRequired === true,
                     characterChatRequired: item.characterChatRequired === true,
                     quizStatus: typeof item.quizStatus === 'string' ? item.quizStatus : 'UNKNOWN',
-                    bookAvailable: item.bookAvailable !== false
+                    bookAvailable: item.bookAvailable !== false,
+                    quizPassMinCorrect: Number.isInteger(item.quizPassMinCorrect) ? item.quizPassMinCorrect : null,
+                    quizMaxRetries: Number.isInteger(item.quizMaxRetries) ? item.quizMaxRetries : null,
+                    quizAttemptsUsed: Number.isInteger(item.quizAttemptsUsed) ? item.quizAttemptsUsed : null,
+                    quizAttemptsAllowed: Number.isInteger(item.quizAttemptsAllowed) ? item.quizAttemptsAllowed : null,
+                    quizPassed: typeof item.quizPassed === 'boolean' ? item.quizPassed : null
                 }))
             : [];
 
@@ -4187,7 +4193,17 @@
         if (assignment.quizStatus === 'COMPLETE') {
             quizChip = '<span class="book-progress-chip assignment-quiz-complete">Quiz complete</span>';
         } else if (assignment.quizStatus === 'PENDING') {
-            quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
+            if (Number.isInteger(assignment.quizPassMinCorrect) && Number.isInteger(assignment.quizAttemptsAllowed)) {
+                const used = Number.isInteger(assignment.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
+                const remaining = Math.max(0, assignment.quizAttemptsAllowed - used);
+                const passLabel = `Pass ${assignment.quizPassMinCorrect}+`;
+                const attemptLabel = remaining > 0
+                    ? `${remaining} attempt${remaining === 1 ? '' : 's'} left`
+                    : 'No attempts left';
+                quizChip = `<span class="book-progress-chip assignment-quiz-required">${escapeHtml(passLabel)} · ${escapeHtml(attemptLabel)}</span>`;
+            } else {
+                quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
+            }
         } else if (assignment.quizStatus === 'NOT_REQUIRED' || assignment.quizRequired === false) {
             quizChip = '';
         } else if (assignment.quizRequired) {
@@ -5716,15 +5732,25 @@
         const payload = quiz && quiz.payload ? quiz.payload : {};
         const questions = Array.isArray(payload.questions) ? payload.questions : [];
         const previousSelections = Array.isArray(state.quizSelectedAnswers) ? state.quizSelectedAnswers : [];
-        const sameQuestionCount = Array.isArray(state.quizQuestions) && state.quizQuestions.length === questions.length;
+        const previousVersion = state.quizContentVersion;
+        const previousIds = Array.isArray(state.quizQuestions)
+            ? state.quizQuestions.map(item => item && item.id ? String(item.id) : '').join('|')
+            : '';
+        const nextVersion = typeof payload.contentVersion === 'string' ? payload.contentVersion : null;
+        const nextIds = questions.map(item => item && item.id ? String(item.id) : '').join('|');
+        const sameContent = !!(previousVersion && nextVersion && previousVersion === nextVersion
+            && previousIds && previousIds === nextIds);
         const difficultyLevel = Number.isInteger(quiz?.difficultyLevel) ? quiz.difficultyLevel : 0;
 
         state.quizQuestions = questions;
+        state.quizContentVersion = nextVersion;
         state.quizDifficultyLevel = difficultyLevel;
-        state.quizSelectedAnswers = questions.map((_, index) =>
-            Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
-        );
-        if (!sameQuestionCount) {
+        if (sameContent) {
+            state.quizSelectedAnswers = questions.map((_, index) =>
+                Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
+            );
+        } else {
+            state.quizSelectedAnswers = questions.map(() => null);
             state.quizResult = null;
             renderChapterQuizFeedback(null);
         }
@@ -5801,10 +5827,11 @@
         const answeredCount = Array.isArray(state.quizSelectedAnswers)
             ? state.quizSelectedAnswers.filter(value => Number.isInteger(value)).length
             : 0;
+        const allAnswered = hasQuestions && answeredCount === state.quizQuestions.length;
         elements.chapterQuizSubmit.disabled = quizUnavailable
             || state.quizSubmitting
             || !hasQuestions
-            || answeredCount === 0;
+            || !allAnswered;
         elements.chapterQuizSubmit.textContent = state.quizSubmitting
             ? 'Checking...'
             : 'Check Answers';
@@ -5881,7 +5908,9 @@
             const payload = {
                 selectedOptionIndexes: state.quizQuestions.map((_, index) =>
                     Number.isInteger(state.quizSelectedAnswers[index]) ? state.quizSelectedAnswers[index] : -1
-                )
+                ),
+                questionIds: state.quizQuestions.map((question) => question?.id || null),
+                contentVersion: state.quizContentVersion || null
             };
             const response = await fetch(`/api/quizzes/chapter/${state.quizChapterId}/grade`, {
                 method: 'POST',
@@ -5890,9 +5919,27 @@
             });
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
-                    elements.chapterQuizStatus.textContent = response.status === 409
+                    let message = response.status === 409
                         ? 'Quiz is still generating.'
                         : 'Unable to grade quiz right now.';
+                    if (response.status === 409 || response.status === 400 || response.status === 403) {
+                        try {
+                            const errBody = await response.clone().json();
+                            const detail = errBody?.detail || errBody?.message || errBody?.error || errBody?.title;
+                            if (typeof detail === 'string' && detail.trim()) {
+                                const lower = detail.toLowerCase();
+                                if (lower.includes('attempt')
+                                    || lower.includes('reload')
+                                    || lower.includes('updated')
+                                    || lower.includes('remaining')) {
+                                    message = detail.trim();
+                                }
+                            }
+                        } catch (_) {
+                            // keep fallback message
+                        }
+                    }
+                    elements.chapterQuizStatus.textContent = message;
                 }
                 return;
             }

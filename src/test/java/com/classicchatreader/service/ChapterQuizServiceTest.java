@@ -59,6 +59,9 @@ class ChapterQuizServiceTest {
     @Mock
     private QuizMetricsService quizMetricsService;
 
+    @Mock
+    private org.springframework.core.env.Environment environment;
+
     private ChapterQuizService chapterQuizService;
 
     @BeforeEach
@@ -70,7 +73,8 @@ class ChapterQuizServiceTest {
                 reasoningProvider,
                 quizProgressService,
                 quizMetricsService,
-                new ObjectMapper()
+                new ObjectMapper(),
+                environment
         );
         ReflectionTestUtils.setField(chapterQuizService, "maxContextChars", 7000);
         ReflectionTestUtils.setField(chapterQuizService, "questionsPerChapter", 3);
@@ -109,6 +113,7 @@ class ChapterQuizServiceTest {
         entity.setModelName("grok");
         entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(List.of(
                 new ChapterQuizPayload.Question(
+                        "q1",
                         "Q1",
                         List.of("A", "B", "C", "D"),
                         0,
@@ -137,6 +142,7 @@ class ChapterQuizServiceTest {
                 "chapter-1",
                 new ChapterQuizPayload(List.of(
                         new ChapterQuizPayload.Question(
+                                "q-alice",
                                 "Where does Alice find the key?",
                                 List.of("In the drawer", "In the garden", "Under the table", "In the library"),
                                 0,
@@ -260,6 +266,7 @@ class ChapterQuizServiceTest {
         entity.setUpdatedAt(LocalDateTime.of(2026, 2, 11, 10, 1));
         entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(List.of(
                 new ChapterQuizPayload.Question(
+                        "q-holmes",
                         "What does Holmes examine?",
                         List.of("A clue", "A coin", "A map", "A letter"),
                         0,
@@ -267,6 +274,7 @@ class ChapterQuizServiceTest {
                         "Holmes studies the clue and explains his reasoning."
                 ),
                 new ChapterQuizPayload.Question(
+                        "q-watson",
                         "Who writes the report?",
                         List.of("Watson", "Holmes", "Lestrade", "Moriarty"),
                         0,
@@ -299,6 +307,56 @@ class ChapterQuizServiceTest {
         assertFalse(graded.get().results().get(1).correct());
         assertEquals("Watson", graded.get().results().get(1).correctAnswer());
         assertTrue(graded.get().results().get(1).citationSnippet().contains("Watson"));
+    }
+
+    @Test
+    void loadCompletedPayloadWithIdBackfill_preservesRawFieldsWithoutServingNormalization() throws Exception {
+        // Serving caps would drop Q6 and option F and clear citation without paragraphs.
+        ReflectionTestUtils.setField(chapterQuizService, "maxQuestions", 5);
+
+        ChapterEntity chapter = createChapter("book-1", "chapter-1", 1, "Chapter 1");
+        ChapterQuizEntity entity = new ChapterQuizEntity(chapter);
+        entity.setStatus(ChapterQuizStatus.COMPLETED);
+        List<ChapterQuizPayload.Question> legacyQuestions = new java.util.ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            legacyQuestions.add(new ChapterQuizPayload.Question(
+                    null,
+                    "Question " + i + "?",
+                    List.of("A", "B", "C", "D", "E", "F"),
+                    5,
+                    12,
+                    "Original citation for question " + i
+            ));
+        }
+        entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(legacyQuestions)));
+
+        when(chapterQuizRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(entity));
+        when(chapterQuizRepository.findByChapterIdForUpdate("chapter-1")).thenReturn(Optional.of(entity));
+        when(chapterQuizRepository.save(any(ChapterQuizEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChapterQuizPayload viewed = chapterQuizService.loadCompletedPayloadWithIdBackfill("chapter-1");
+
+        ArgumentCaptor<ChapterQuizEntity> saved = ArgumentCaptor.forClass(ChapterQuizEntity.class);
+        verify(chapterQuizRepository).save(saved.capture());
+        ChapterQuizPayload persisted = new ObjectMapper().readValue(
+                saved.getValue().getPayloadJson(),
+                ChapterQuizPayload.class
+        );
+
+        assertEquals(6, persisted.questions().size());
+        ChapterQuizPayload.Question first = persisted.questions().get(0);
+        assertNotNull(first.id());
+        assertFalse(first.id().isBlank());
+        assertEquals(List.of("A", "B", "C", "D", "E", "F"), first.options());
+        assertEquals(5, first.correctOptionIndex());
+        assertEquals(12, first.citationParagraphIndex());
+        assertEquals("Original citation for question 1", first.citationSnippet());
+        assertEquals(6, persisted.questions().get(5).options().size());
+        assertNotNull(persisted.questions().get(5).id());
+
+        // Returned view still applies serving-time normalization separately.
+        assertTrue(viewed.questions().size() <= 5);
+        assertTrue(viewed.questions().get(0).options().size() <= 4);
     }
 
     private ChapterEntity createChapter(String bookId, String chapterId, int index, String title) {
