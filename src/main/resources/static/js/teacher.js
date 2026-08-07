@@ -922,13 +922,8 @@
                     sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
                     mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
                 }));
-                // Honor configured slot count so teachers can grow/shrink the set manually.
-                while (state.quizDraftQuestions.length < slotCount) {
-                    state.quizDraftQuestions.push(blankQuestion(optionCount));
-                }
-                if (state.quizDraftQuestions.length > slotCount) {
-                    state.quizDraftQuestions = state.quizDraftQuestions.slice(0, slotCount);
-                }
+                // Keep the published size by default; only pad/trim when teacher explicitly changes slots later.
+                el['quiz-slot-count'].value = String(Math.min(20, Math.max(1, state.quizDraftQuestions.length)));
             } else {
                 state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
             }
