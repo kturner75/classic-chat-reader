@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,6 +48,7 @@ public class ClassroomAdminService {
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
     private final ClassroomEffectiveQuizService classroomEffectiveQuizService;
     private final ChapterQuizService chapterQuizService;
+    private final EntityManager entityManager;
 
     public ClassroomAdminService(
             ClassSectionRepository classSectionRepository,
@@ -63,7 +65,8 @@ public class ClassroomAdminService {
             ClassroomProperties classroomProperties,
             ClassroomTeacherCapabilityService teacherCapabilityService,
             ClassroomEffectiveQuizService classroomEffectiveQuizService,
-            ChapterQuizService chapterQuizService) {
+            ChapterQuizService chapterQuizService,
+            EntityManager entityManager) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
@@ -79,6 +82,7 @@ public class ClassroomAdminService {
         this.teacherCapabilityService = teacherCapabilityService;
         this.classroomEffectiveQuizService = classroomEffectiveQuizService;
         this.chapterQuizService = chapterQuizService;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -302,13 +306,16 @@ public class ClassroomAdminService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
         // Lock quiz content before mutation when pass rules may be validated against chapter quiz size,
-        // then reload so a concurrent publication cannot leave a stale activation timestamp in this session.
+        // then refresh so a concurrent publication cannot leave a stale activation timestamp.
+        String previousChapterId = assignment.getChapterId();
         String lockChapterId = resolveChapterIdForPassRuleLock(assignment, request);
-        if (lockChapterId != null) {
-            chapterQuizService.lockQuizContent(lockChapterId);
-            assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found."));
+        if (previousChapterId != null && !previousChapterId.isBlank()) {
+            chapterQuizService.lockQuizContent(previousChapterId);
         }
+        if (lockChapterId != null && !lockChapterId.equals(previousChapterId)) {
+            chapterQuizService.lockQuizContent(lockChapterId);
+        }
+        entityManager.refresh(assignment);
         validateAssignmentForUpdate(request, assignment);
         boolean effectiveCharacterChatRequired = request.characterChatRequired() != null
                 ? request.characterChatRequired()

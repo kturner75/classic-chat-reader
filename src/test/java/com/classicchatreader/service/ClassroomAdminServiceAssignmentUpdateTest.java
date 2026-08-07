@@ -54,6 +54,7 @@ class ClassroomAdminServiceAssignmentUpdateTest {
     @Mock private ClassroomTeacherCapabilityService teacherCapabilityService;
     @Mock private ClassroomEffectiveQuizService classroomEffectiveQuizService;
     @Mock private ChapterQuizService chapterQuizService;
+    @Mock private jakarta.persistence.EntityManager entityManager;
 
     private ClassroomAdminService service;
 
@@ -74,7 +75,8 @@ class ClassroomAdminServiceAssignmentUpdateTest {
                 classroomProperties,
                 teacherCapabilityService,
                 classroomEffectiveQuizService,
-                chapterQuizService
+                chapterQuizService,
+                entityManager
         );
     }
 
