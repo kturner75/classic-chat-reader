@@ -29,6 +29,10 @@ public interface ChapterQuizRepository extends JpaRepository<ChapterQuizEntity, 
     @Query("SELECT cq FROM ChapterQuizEntity cq WHERE cq.chapter.id = :chapterId")
     Optional<ChapterQuizEntity> findByChapterIdForUpdate(@Param("chapterId") String chapterId);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("SELECT cq FROM ChapterQuizEntity cq WHERE cq.chapter.id = :chapterId")
+    Optional<ChapterQuizEntity> findByChapterIdForShare(@Param("chapterId") String chapterId);
+
     @Modifying
     @Query("DELETE FROM ChapterQuizEntity cq WHERE cq.chapter.book.id = :bookId")
     void deleteByBookId(@Param("bookId") String bookId);

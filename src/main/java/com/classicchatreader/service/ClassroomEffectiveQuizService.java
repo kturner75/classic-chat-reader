@@ -124,9 +124,9 @@ public class ClassroomEffectiveQuizService {
         synchronized (lockKey) {
             return transactionTemplate.execute(status -> {
                 // Shared content lock with teacher republish (chapter + quiz rows).
-                chapterQuizService.lockQuizContent(chapterId);
-                // Lock assignment attempt rows first so a concurrent quiz republish
-                // cannot swap content after version check but before budget reservation.
+                // PESSIMISTIC_READ so classmates grade concurrently; publishers still exclusive.
+                chapterQuizService.lockQuizContentShared(chapterId);
+                // Per-user attempt budget reservation (not shared assignment locks).
                 classroomQuizPolicyService.assertCanAttempt(chapterId, userId);
                 Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
                 ChapterQuizPayload versioned = effective.orElseGet(

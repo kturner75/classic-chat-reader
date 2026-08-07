@@ -816,8 +816,8 @@ public class ChapterQuizService {
     }
 
     /**
-     * Shared DB lock for grade/republish coordination. Locks the chapter row (always)
-     * and the chapter-quiz row when present so concurrent content mutation serializes.
+     * Exclusive lock for quiz content mutation (teacher publish / pass-rule validation).
+     * Locks the chapter row (always) and the chapter-quiz row when present.
      */
     @Transactional
     public void lockQuizContent(String chapterId) {
@@ -826,6 +826,19 @@ public class ChapterQuizService {
         }
         chapterRepository.findByIdWithBookForUpdate(chapterId);
         chapterQuizRepository.findByChapterIdForUpdate(chapterId);
+    }
+
+    /**
+     * Shared lock for grade-time coordination with publications. Multiple students can hold
+     * concurrent shared locks; exclusive publishers wait until grades finish (and vice versa).
+     */
+    @Transactional
+    public void lockQuizContentShared(String chapterId) {
+        if (chapterId == null || chapterId.isBlank()) {
+            return;
+        }
+        chapterRepository.findByIdWithBookForShare(chapterId);
+        chapterQuizRepository.findByChapterIdForShare(chapterId);
     }
 
     private void maybeBackfillQuestionIds(ChapterQuizEntity entity) {
