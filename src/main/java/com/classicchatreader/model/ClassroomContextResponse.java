@@ -63,9 +63,14 @@ public record ClassroomContextResponse(
             boolean quizRequired,
             QuizRequirementStatus quizStatus,
             boolean characterChatRequired,
-            boolean bookAvailable
+            boolean bookAvailable,
+            Integer quizPassMinCorrect,
+            Integer quizMaxRetries,
+            Integer quizAttemptsUsed,
+            Integer quizAttemptsAllowed,
+            Boolean quizPassed
     ) {
-        /** Backward-compatible constructor without character-chat requirement. */
+        /** Backward-compatible constructor without character-chat / pass-rule fields. */
         public ClassAssignment(
                 String assignmentId,
                 String title,
@@ -92,7 +97,49 @@ public record ClassroomContextResponse(
                     quizRequired,
                     quizStatus,
                     false,
-                    bookAvailable
+                    bookAvailable,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
+
+        /** Backward-compatible constructor with character-chat but without pass-rule fields. */
+        public ClassAssignment(
+                String assignmentId,
+                String title,
+                String bookId,
+                String bookTitle,
+                String bookAuthor,
+                String chapterId,
+                Integer chapterIndex,
+                String chapterTitle,
+                String dueAt,
+                boolean quizRequired,
+                QuizRequirementStatus quizStatus,
+                boolean characterChatRequired,
+                boolean bookAvailable) {
+            this(
+                    assignmentId,
+                    title,
+                    bookId,
+                    bookTitle,
+                    bookAuthor,
+                    chapterId,
+                    chapterIndex,
+                    chapterTitle,
+                    dueAt,
+                    quizRequired,
+                    quizStatus,
+                    characterChatRequired,
+                    bookAvailable,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
             );
         }
     }

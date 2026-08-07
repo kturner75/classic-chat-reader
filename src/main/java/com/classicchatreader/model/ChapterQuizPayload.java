@@ -6,6 +6,7 @@ public record ChapterQuizPayload(
         List<Question> questions
 ) {
     public record Question(
+            String id,
             String question,
             List<String> options,
             Integer correctOptionIndex,

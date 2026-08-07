@@ -8,6 +8,8 @@ import com.classicchatreader.model.QuizProgress;
 import com.classicchatreader.model.QuizTrophy;
 import com.classicchatreader.service.QuizProgressService;
 import com.classicchatreader.service.ChapterQuizService;
+import com.classicchatreader.service.ClassroomEffectiveQuizService;
+import com.classicchatreader.service.ClassroomQuizPolicyService;
 import com.classicchatreader.service.QuizMetricsService;
 import com.classicchatreader.service.ReaderIdentityService;
 import org.junit.jupiter.api.Test;
@@ -50,6 +52,12 @@ class ChapterQuizControllerTest {
 
     @MockitoBean
     private ReaderIdentityService readerIdentityService;
+
+    @MockitoBean
+    private ClassroomQuizPolicyService classroomQuizPolicyService;
+
+    @MockitoBean
+    private ClassroomEffectiveQuizService classroomEffectiveQuizService;
 
     @Test
     void getStatus_returnsFeatureState() throws Exception {
@@ -98,13 +106,16 @@ class ChapterQuizControllerTest {
                 1,
                 new ChapterQuizViewPayload(List.of(
                         new ChapterQuizViewPayload.Question(
+                                "q-holmes",
                                 "What does Holmes examine?",
                                 List.of("A clue", "A coin", "A map", "A letter")
                         )
                 ))
         );
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
-        when(chapterQuizService.getChapterQuiz("chapter-1")).thenReturn(Optional.of(response));
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(classroomEffectiveQuizService.getChapterQuiz("chapter-1", null)).thenReturn(Optional.of(response));
 
         mockMvc.perform(get("/api/quizzes/chapter/chapter-1"))
                 .andExpect(status().isOk())
@@ -116,7 +127,10 @@ class ChapterQuizControllerTest {
     @Test
     void getChapterQuiz_whenServiceFails_returnsServerError() throws Exception {
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
-        when(chapterQuizService.getChapterQuiz("chapter-1")).thenThrow(new RuntimeException("db unavailable"));
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(classroomEffectiveQuizService.getChapterQuiz("chapter-1", null))
+                .thenThrow(new RuntimeException("db unavailable"));
 
         mockMvc.perform(get("/api/quizzes/chapter/chapter-1"))
                 .andExpect(status().isInternalServerError());
@@ -135,7 +149,9 @@ class ChapterQuizControllerTest {
                 LocalDateTime.of(2026, 2, 11, 9, 0)
         );
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
-        when(chapterQuizService.getChapterQuizStatus("chapter-1")).thenReturn(Optional.of(response));
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(classroomEffectiveQuizService.getChapterQuizStatus("chapter-1", null)).thenReturn(Optional.of(response));
 
         mockMvc.perform(get("/api/quizzes/chapter/chapter-1/status"))
                 .andExpect(status().isOk())
@@ -147,7 +163,10 @@ class ChapterQuizControllerTest {
     @Test
     void getChapterQuizStatus_whenServiceFails_returnsServerError() throws Exception {
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
-        when(chapterQuizService.getChapterQuizStatus("chapter-1")).thenThrow(new RuntimeException("db unavailable"));
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+        when(classroomEffectiveQuizService.getChapterQuizStatus("chapter-1", null))
+                .thenThrow(new RuntimeException("db unavailable"));
 
         mockMvc.perform(get("/api/quizzes/chapter/chapter-1/status"))
                 .andExpect(status().isInternalServerError());
@@ -192,7 +211,7 @@ class ChapterQuizControllerTest {
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
         when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
-        when(chapterQuizService.gradeQuiz("chapter-1", List.of(1, 0, 2), "reader-1", null))
+        when(classroomEffectiveQuizService.gradeQuiz("chapter-1", List.of(1, 0, 2), "reader-1", null))
                 .thenReturn(Optional.of(graded));
 
         mockMvc.perform(post("/api/quizzes/chapter/chapter-1/grade")

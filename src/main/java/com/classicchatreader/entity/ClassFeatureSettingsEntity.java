@@ -42,6 +42,18 @@ public class ClassFeatureSettingsEntity {
     @Column(name = "reading_buddy_enabled", nullable = false)
     private boolean readingBuddyEnabled = true;
 
+    @Column(name = "default_quiz_question_count", nullable = false)
+    private int defaultQuizQuestionCount = 5;
+
+    @Column(name = "default_quiz_pass_min_correct")
+    private Integer defaultQuizPassMinCorrect;
+
+    @Column(name = "default_quiz_max_retries")
+    private Integer defaultQuizMaxRetries;
+
+    @Column(name = "default_quiz_option_count", nullable = false)
+    private int defaultQuizOptionCount = 4;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -72,6 +84,22 @@ public class ClassFeatureSettingsEntity {
     public void setSpeedReadingEnabled(boolean speedReadingEnabled) { this.speedReadingEnabled = speedReadingEnabled; }
     public boolean isReadingBuddyEnabled() { return readingBuddyEnabled; }
     public void setReadingBuddyEnabled(boolean readingBuddyEnabled) { this.readingBuddyEnabled = readingBuddyEnabled; }
+    public int getDefaultQuizQuestionCount() { return defaultQuizQuestionCount; }
+    public void setDefaultQuizQuestionCount(int defaultQuizQuestionCount) {
+        this.defaultQuizQuestionCount = defaultQuizQuestionCount;
+    }
+    public Integer getDefaultQuizPassMinCorrect() { return defaultQuizPassMinCorrect; }
+    public void setDefaultQuizPassMinCorrect(Integer defaultQuizPassMinCorrect) {
+        this.defaultQuizPassMinCorrect = defaultQuizPassMinCorrect;
+    }
+    public Integer getDefaultQuizMaxRetries() { return defaultQuizMaxRetries; }
+    public void setDefaultQuizMaxRetries(Integer defaultQuizMaxRetries) {
+        this.defaultQuizMaxRetries = defaultQuizMaxRetries;
+    }
+    public int getDefaultQuizOptionCount() { return defaultQuizOptionCount; }
+    public void setDefaultQuizOptionCount(int defaultQuizOptionCount) {
+        this.defaultQuizOptionCount = defaultQuizOptionCount;
+    }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public String getUpdatedByUserId() { return updatedByUserId; }

@@ -109,6 +109,7 @@ class ChapterQuizServiceTest {
         entity.setModelName("grok");
         entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(List.of(
                 new ChapterQuizPayload.Question(
+                        "q1",
                         "Q1",
                         List.of("A", "B", "C", "D"),
                         0,
@@ -137,6 +138,7 @@ class ChapterQuizServiceTest {
                 "chapter-1",
                 new ChapterQuizPayload(List.of(
                         new ChapterQuizPayload.Question(
+                                "q-alice",
                                 "Where does Alice find the key?",
                                 List.of("In the drawer", "In the garden", "Under the table", "In the library"),
                                 0,
@@ -260,6 +262,7 @@ class ChapterQuizServiceTest {
         entity.setUpdatedAt(LocalDateTime.of(2026, 2, 11, 10, 1));
         entity.setPayloadJson(new ObjectMapper().writeValueAsString(new ChapterQuizPayload(List.of(
                 new ChapterQuizPayload.Question(
+                        "q-holmes",
                         "What does Holmes examine?",
                         List.of("A clue", "A coin", "A map", "A letter"),
                         0,
@@ -267,6 +270,7 @@ class ChapterQuizServiceTest {
                         "Holmes studies the clue and explains his reasoning."
                 ),
                 new ChapterQuizPayload.Question(
+                        "q-watson",
                         "Who writes the report?",
                         List.of("Watson", "Holmes", "Lestrade", "Moriarty"),
                         0,

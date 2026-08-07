@@ -169,9 +169,62 @@ public class ClassroomAdminService {
             if (request.chatEnabled() != null) features.setChatEnabled(request.chatEnabled());
             if (request.speedReadingEnabled() != null) features.setSpeedReadingEnabled(request.speedReadingEnabled());
             if (request.readingBuddyEnabled() != null) features.setReadingBuddyEnabled(request.readingBuddyEnabled());
+            applyQuizDefaults(features, request);
         }
         features.setUpdatedByUserId(userId);
         return classFeatureSettingsRepository.save(features);
+    }
+
+    private void applyQuizDefaults(ClassFeatureSettingsEntity features, FeatureUpdateRequest request) {
+        if (request.defaultQuizQuestionCount() != null) {
+            int count = request.defaultQuizQuestionCount();
+            if (count < 1 || count > 20) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "defaultQuizQuestionCount must be between 1 and 20.");
+            }
+            features.setDefaultQuizQuestionCount(count);
+        }
+        if (request.defaultQuizOptionCount() != null) {
+            int options = request.defaultQuizOptionCount();
+            if (options < 2 || options > 6) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "defaultQuizOptionCount must be between 2 and 6.");
+            }
+            features.setDefaultQuizOptionCount(options);
+        }
+        if (Boolean.TRUE.equals(request.clearDefaultQuizPassRules())) {
+            features.setDefaultQuizPassMinCorrect(null);
+            features.setDefaultQuizMaxRetries(null);
+        } else {
+            if (request.defaultQuizPassMinCorrect() != null) {
+                int min = request.defaultQuizPassMinCorrect();
+                if (min < 1) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "defaultQuizPassMinCorrect must be at least 1.");
+                }
+                features.setDefaultQuizPassMinCorrect(min);
+            }
+            if (request.defaultQuizMaxRetries() != null) {
+                int retries = request.defaultQuizMaxRetries();
+                if (retries < 0) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "defaultQuizMaxRetries cannot be negative.");
+                }
+                features.setDefaultQuizMaxRetries(retries);
+            }
+        }
+        Integer min = features.getDefaultQuizPassMinCorrect();
+        Integer retries = features.getDefaultQuizMaxRetries();
+        if (min != null && retries == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "defaultQuizMaxRetries is required when defaultQuizPassMinCorrect is set (use 0 for no retries).");
+        }
+        if (min == null && retries != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "defaultQuizMaxRetries requires defaultQuizPassMinCorrect.");
+        }
     }
 
     private void validateFeatureUpdate(String termId, FeatureUpdateRequest request) {
@@ -205,6 +258,7 @@ public class ClassroomAdminService {
         validateCharacterChatRequirement(
                 termId,
                 Boolean.TRUE.equals(request != null ? request.characterChatRequired() : null));
+        validateQuizPassRulesForCreate(request);
         AssignmentEntity assignment = new AssignmentEntity();
         applyAssignmentCreate(assignment, termId, userId, request);
         if (isBlank(assignment.getStatus())) {
@@ -232,6 +286,7 @@ public class ClassroomAdminService {
                 ? request.characterChatRequired()
                 : assignment.isCharacterChatRequired();
         validateCharacterChatRequirement(assignment.getTermId(), effectiveCharacterChatRequired);
+        validateQuizPassRulesForUpdate(request, assignment);
         applyAssignmentUpdate(assignment, userId, request);
         return assignmentRepository.save(assignment);
     }
@@ -297,6 +352,7 @@ public class ClassroomAdminService {
         assignment.setAvailableFromDate(request.availableFromDate());
         assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
         assignment.setCharacterChatRequired(Boolean.TRUE.equals(request.characterChatRequired()));
+        applyQuizPassRulesOnCreate(assignment, request);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -341,6 +397,7 @@ public class ClassroomAdminService {
         if (request.characterChatRequired() != null) {
             assignment.setCharacterChatRequired(request.characterChatRequired());
         }
+        applyQuizPassRulesOnUpdate(assignment, request);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -349,6 +406,104 @@ public class ClassroomAdminService {
         }
         if (assignment.getCreatedByUserId() == null) {
             assignment.setCreatedByUserId(userId);
+        }
+    }
+
+    private void applyQuizPassRulesOnCreate(AssignmentEntity assignment, AssignmentWriteRequest request) {
+        if (!assignment.isQuizRequired()) {
+            assignment.setQuizPassMinCorrect(null);
+            assignment.setQuizMaxRetries(null);
+            return;
+        }
+        assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
+        assignment.setQuizMaxRetries(request.quizMaxRetries());
+    }
+
+    private void applyQuizPassRulesOnUpdate(AssignmentEntity assignment, AssignmentWriteRequest request) {
+        boolean quizRequired = request.quizRequired() != null
+                ? request.quizRequired()
+                : assignment.isQuizRequired();
+        if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
+            assignment.setQuizPassMinCorrect(null);
+            assignment.setQuizMaxRetries(null);
+            return;
+        }
+        if (request.quizPassMinCorrect() != null) {
+            assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
+        }
+        if (request.quizMaxRetries() != null) {
+            assignment.setQuizMaxRetries(request.quizMaxRetries());
+        }
+    }
+
+    private void validateQuizPassRulesForCreate(AssignmentWriteRequest request) {
+        boolean quizRequired = Boolean.TRUE.equals(request.quizRequired());
+        validateQuizPassRulePair(
+                quizRequired,
+                request.quizPassMinCorrect(),
+                request.quizMaxRetries(),
+                false);
+    }
+
+    private void validateQuizPassRulesForUpdate(AssignmentWriteRequest request, AssignmentEntity existing) {
+        boolean quizRequired = request.quizRequired() != null
+                ? request.quizRequired()
+                : existing.isQuizRequired();
+        if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
+            return;
+        }
+        Integer min = request.quizPassMinCorrect() != null
+                ? request.quizPassMinCorrect()
+                : existing.getQuizPassMinCorrect();
+        Integer retries = request.quizMaxRetries() != null
+                ? request.quizMaxRetries()
+                : existing.getQuizMaxRetries();
+        // Only validate when teacher is touching pass-rule fields or enabling quiz.
+        boolean touching = request.quizPassMinCorrect() != null
+                || request.quizMaxRetries() != null
+                || Boolean.TRUE.equals(request.quizRequired());
+        if (!touching && min == null && retries == null) {
+            return;
+        }
+        validateQuizPassRulePair(quizRequired, min, retries, true);
+    }
+
+    private void validateQuizPassRulePair(
+            boolean quizRequired,
+            Integer minCorrect,
+            Integer maxRetries,
+            boolean allowBothNull) {
+        if (!quizRequired) {
+            if (minCorrect != null || maxRetries != null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Quiz pass rules require quizRequired=true.");
+            }
+            return;
+        }
+        if (minCorrect == null && maxRetries == null) {
+            if (allowBothNull) {
+                return;
+            }
+            return;
+        }
+        if (minCorrect == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "quizPassMinCorrect is required when quizMaxRetries is set.");
+        }
+        if (maxRetries == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "quizMaxRetries is required when quizPassMinCorrect is set (use 0 for no retries).");
+        }
+        if (minCorrect < 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "quizPassMinCorrect must be at least 1.");
+        }
+        if (maxRetries < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "quizMaxRetries cannot be negative.");
         }
     }
 
@@ -497,8 +652,37 @@ public class ClassroomAdminService {
             Boolean characterEnabled,
             Boolean chatEnabled,
             Boolean speedReadingEnabled,
-            Boolean readingBuddyEnabled
+            Boolean readingBuddyEnabled,
+            Integer defaultQuizQuestionCount,
+            Integer defaultQuizPassMinCorrect,
+            Integer defaultQuizMaxRetries,
+            Integer defaultQuizOptionCount,
+            Boolean clearDefaultQuizPassRules
     ) {
+        public FeatureUpdateRequest(
+                Boolean quizEnabled,
+                Boolean recapEnabled,
+                Boolean ttsEnabled,
+                Boolean illustrationEnabled,
+                Boolean characterEnabled,
+                Boolean chatEnabled,
+                Boolean speedReadingEnabled,
+                Boolean readingBuddyEnabled) {
+            this(
+                    quizEnabled,
+                    recapEnabled,
+                    ttsEnabled,
+                    illustrationEnabled,
+                    characterEnabled,
+                    chatEnabled,
+                    speedReadingEnabled,
+                    readingBuddyEnabled,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
     }
 
     public record AssignmentWriteRequest(
@@ -515,7 +699,10 @@ public class ClassroomAdminService {
             /** When true on update, clears dueDate even if dueDate is null. */
             Boolean clearDueDate,
             /** When true on update, clears availableFromDate even if availableFromDate is null. */
-            Boolean clearAvailableFromDate
+            Boolean clearAvailableFromDate,
+            Integer quizPassMinCorrect,
+            Integer quizMaxRetries,
+            Boolean clearQuizPassRules
     ) {
         public AssignmentWriteRequest(
                 String title,
@@ -528,7 +715,7 @@ public class ClassroomAdminService {
                 Integer sortOrder,
                 String status) {
             this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, null, sortOrder, status, null, null);
+                    quizRequired, null, sortOrder, status, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -543,7 +730,25 @@ public class ClassroomAdminService {
                 Integer sortOrder,
                 String status) {
             this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, characterChatRequired, sortOrder, status, null, null);
+                    quizRequired, characterChatRequired, sortOrder, status, null, null, null, null, null);
+        }
+
+        public AssignmentWriteRequest(
+                String title,
+                String bookId,
+                String chapterId,
+                Integer chapterIndex,
+                LocalDate dueDate,
+                LocalDate availableFromDate,
+                Boolean quizRequired,
+                Boolean characterChatRequired,
+                Integer sortOrder,
+                String status,
+                Boolean clearDueDate,
+                Boolean clearAvailableFromDate) {
+            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, characterChatRequired, sortOrder, status,
+                    clearDueDate, clearAvailableFromDate, null, null, null);
         }
     }
 

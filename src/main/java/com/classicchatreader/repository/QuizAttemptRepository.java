@@ -36,6 +36,17 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
 
     boolean existsByChapterIdAndUserId(String chapterId, String userId);
 
+    long countByChapterIdAndUserId(String chapterId, String userId);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.correctAnswers), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId AND qa.userId = :userId
+            """)
+    int findMaxCorrectAnswersByChapterIdAndUserId(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId);
+
     /** Classroom assignment COMPLETE: require a perfect (100%) attempt for the user. */
     boolean existsByChapterIdAndUserIdAndPerfectTrue(String chapterId, String userId);
 

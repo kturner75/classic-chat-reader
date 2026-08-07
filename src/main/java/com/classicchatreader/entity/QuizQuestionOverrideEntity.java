@@ -9,13 +9,18 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 @Entity
-@Table(name = "assignments")
-public class AssignmentEntity {
+@Table(name = "quiz_question_overrides")
+public class QuizQuestionOverrideEntity {
+
+    public static final String OPERATION_ADD = "ADD";
+    public static final String OPERATION_OVERRIDE = "OVERRIDE";
+    public static final String OPERATION_DISABLE = "DISABLE";
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_ARCHIVED = "ARCHIVED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -24,45 +29,32 @@ public class AssignmentEntity {
     @Column(name = "term_id", nullable = false)
     private String termId;
 
-    @Column(nullable = false)
-    private String title;
-
     @Column(name = "book_id", nullable = false)
     private String bookId;
 
-    @Column(name = "chapter_id")
+    @Column(name = "chapter_id", nullable = false)
     private String chapterId;
 
-    @Column(name = "chapter_index")
-    private Integer chapterIndex;
+    @Column(nullable = false, length = 16)
+    private String operation;
 
-    /** Calendar day only (SQL DATE); not an instant. */
-    @Column(name = "due_date", columnDefinition = "DATE")
-    private LocalDate dueDate;
+    @Column(name = "source_question_id", length = 128)
+    private String sourceQuestionId;
 
-    /** Inclusive open calendar day (SQL DATE); not an instant. */
-    @Column(name = "available_from_date", columnDefinition = "DATE")
-    private LocalDate availableFromDate;
-
-    @Column(name = "quiz_required", nullable = false)
-    private boolean quizRequired = false;
-
-    @Column(name = "character_chat_required", nullable = false)
-    private boolean characterChatRequired = false;
-
-    /** Minimum correct answers required to pass when quiz is required; null = any attempt completes. */
-    @Column(name = "quiz_pass_min_correct")
-    private Integer quizPassMinCorrect;
-
-    /** Extra attempts after the first when a pass minimum is set; 0 = initial attempt only. */
-    @Column(name = "quiz_max_retries")
-    private Integer quizMaxRetries;
+    @Column(name = "overlay_key", nullable = false, length = 160)
+    private String overlayKey;
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
+    @Column(name = "question_json", columnDefinition = "TEXT")
+    private String questionJson;
+
     @Column(nullable = false, length = 32)
-    private String status = "DRAFT";
+    private String status = STATUS_ACTIVE;
+
+    @Column(name = "base_prompt_version", length = 100)
+    private String basePromptVersion;
 
     @Column(name = "created_by_user_id")
     private String createdByUserId;
@@ -76,11 +68,18 @@ public class AssignmentEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(length = 500)
+    private String notes;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        if (createdAt == null) createdAt = now;
-        if (updatedAt == null) updatedAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
     }
 
     @PreUpdate
@@ -92,32 +91,24 @@ public class AssignmentEntity {
     public void setId(String id) { this.id = id; }
     public String getTermId() { return termId; }
     public void setTermId(String termId) { this.termId = termId; }
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
     public String getBookId() { return bookId; }
     public void setBookId(String bookId) { this.bookId = bookId; }
     public String getChapterId() { return chapterId; }
     public void setChapterId(String chapterId) { this.chapterId = chapterId; }
-    public Integer getChapterIndex() { return chapterIndex; }
-    public void setChapterIndex(Integer chapterIndex) { this.chapterIndex = chapterIndex; }
-    public LocalDate getDueDate() { return dueDate; }
-    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
-    public LocalDate getAvailableFromDate() { return availableFromDate; }
-    public void setAvailableFromDate(LocalDate availableFromDate) { this.availableFromDate = availableFromDate; }
-    public boolean isQuizRequired() { return quizRequired; }
-    public void setQuizRequired(boolean quizRequired) { this.quizRequired = quizRequired; }
-    public boolean isCharacterChatRequired() { return characterChatRequired; }
-    public void setCharacterChatRequired(boolean characterChatRequired) {
-        this.characterChatRequired = characterChatRequired;
-    }
-    public Integer getQuizPassMinCorrect() { return quizPassMinCorrect; }
-    public void setQuizPassMinCorrect(Integer quizPassMinCorrect) { this.quizPassMinCorrect = quizPassMinCorrect; }
-    public Integer getQuizMaxRetries() { return quizMaxRetries; }
-    public void setQuizMaxRetries(Integer quizMaxRetries) { this.quizMaxRetries = quizMaxRetries; }
+    public String getOperation() { return operation; }
+    public void setOperation(String operation) { this.operation = operation; }
+    public String getSourceQuestionId() { return sourceQuestionId; }
+    public void setSourceQuestionId(String sourceQuestionId) { this.sourceQuestionId = sourceQuestionId; }
+    public String getOverlayKey() { return overlayKey; }
+    public void setOverlayKey(String overlayKey) { this.overlayKey = overlayKey; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public String getQuestionJson() { return questionJson; }
+    public void setQuestionJson(String questionJson) { this.questionJson = questionJson; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getBasePromptVersion() { return basePromptVersion; }
+    public void setBasePromptVersion(String basePromptVersion) { this.basePromptVersion = basePromptVersion; }
     public String getCreatedByUserId() { return createdByUserId; }
     public void setCreatedByUserId(String createdByUserId) { this.createdByUserId = createdByUserId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -126,4 +117,6 @@ public class AssignmentEntity {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
 }

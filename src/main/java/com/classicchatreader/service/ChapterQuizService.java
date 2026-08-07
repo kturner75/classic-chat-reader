@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -112,11 +113,13 @@ public class ChapterQuizService {
         log.info("Chapter quiz service shutting down");
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<ChapterQuizResponse> getChapterQuiz(String chapterId) {
         Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterIdWithChapterAndBook(chapterId);
         if (quizOpt.isPresent()) {
-            return Optional.of(toQuizResponse(quizOpt.get()));
+            ChapterQuizEntity entity = quizOpt.get();
+            maybeBackfillQuestionIds(entity);
+            return Optional.of(toQuizResponse(entity));
         }
 
         return chapterRepository.findByIdWithBook(chapterId)
@@ -244,17 +247,36 @@ public class ChapterQuizService {
             List<Integer> selectedOptionIndexes,
             String readerId,
             String userId) {
+        return gradeQuizWithPayload(chapterId, selectedOptionIndexes, readerId, userId, null);
+    }
+
+    @Transactional
+    public Optional<ChapterQuizGradeResponse> gradeQuizWithPayload(
+            String chapterId,
+            List<Integer> selectedOptionIndexes,
+            String readerId,
+            String userId,
+            ChapterQuizPayload payloadOverride) {
         Optional<ChapterQuizEntity> quizOpt = chapterQuizRepository.findByChapterIdWithChapterAndBook(chapterId);
-        if (quizOpt.isEmpty()) {
+        ChapterEntity chapter;
+        ChapterQuizPayload payload;
+        if (quizOpt.isPresent()) {
+            ChapterQuizEntity quiz = quizOpt.get();
+            if (quiz.getStatus() != ChapterQuizStatus.COMPLETED && payloadOverride == null) {
+                throw new IllegalStateException("Quiz is not ready");
+            }
+            chapter = quiz.getChapter();
+            payload = payloadOverride != null ? payloadOverride : toPayload(quiz.getPayloadJson());
+        } else if (payloadOverride != null) {
+            chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+            if (chapter == null) {
+                return Optional.empty();
+            }
+            payload = payloadOverride;
+        } else {
             return Optional.empty();
         }
 
-        ChapterQuizEntity quiz = quizOpt.get();
-        if (quiz.getStatus() != ChapterQuizStatus.COMPLETED) {
-            throw new IllegalStateException("Quiz is not ready");
-        }
-
-        ChapterQuizPayload payload = toPayload(quiz.getPayloadJson());
         if (payload.questions().isEmpty()) {
             throw new IllegalStateException("Quiz has no questions");
         }
@@ -293,9 +315,9 @@ public class ChapterQuizService {
         int scorePercent = totalQuestions == 0
                 ? 0
                 : (int) Math.round((correctAnswers * 100.0) / totalQuestions);
-        int difficultyLevel = resolveDifficultyLevel(quiz.getChapter());
+        int difficultyLevel = resolveDifficultyLevel(chapter);
         QuizProgressService.ProgressUpdate progressUpdate = quizProgressService.recordAttemptAndEvaluate(
-                quiz.getChapter(),
+                chapter,
                 readerId,
                 userId,
                 scorePercent,
@@ -305,7 +327,7 @@ public class ChapterQuizService {
         );
 
         return Optional.of(new ChapterQuizGradeResponse(
-                quiz.getChapter().getBook().getId(),
+                chapter.getBook().getId(),
                 chapterId,
                 totalQuestions,
                 correctAnswers,
@@ -587,6 +609,7 @@ public class ChapterQuizService {
             }
 
             questions.add(new ChapterQuizPayload.Question(
+                    UUID.randomUUID().toString(),
                     buildFallbackQuestionPrompt(source.paragraphIndex(), difficultyLevel),
                     normalizedOptions,
                     correctOptionIndex,
@@ -699,12 +722,47 @@ public class ChapterQuizService {
         }
 
         List<ChapterQuizViewPayload.Question> questions = payload.questions().stream()
-                .map(question -> new ChapterQuizViewPayload.Question(question.question(), question.options()))
+                .map(question -> new ChapterQuizViewPayload.Question(
+                        question.id(),
+                        question.question(),
+                        question.options()))
                 .toList();
         return new ChapterQuizViewPayload(questions);
     }
 
-    private ChapterQuizPayload toPayload(String payloadJson) {
+    private void maybeBackfillQuestionIds(ChapterQuizEntity entity) {
+        if (entity == null
+                || entity.getStatus() != ChapterQuizStatus.COMPLETED
+                || entity.getPayloadJson() == null
+                || entity.getPayloadJson().isBlank()) {
+            return;
+        }
+        if (!payloadMissingQuestionIds(entity.getPayloadJson())) {
+            return;
+        }
+        ChapterQuizPayload normalized = toPayload(entity.getPayloadJson());
+        if (!hasQuestions(normalized)) {
+            return;
+        }
+        entity.setPayloadJson(toJson(normalized));
+        chapterQuizRepository.save(entity);
+    }
+
+    private boolean payloadMissingQuestionIds(String payloadJson) {
+        try {
+            ChapterQuizPayload raw = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
+            if (raw == null || raw.questions() == null || raw.questions().isEmpty()) {
+                return false;
+            }
+            return raw.questions().stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(question -> question.id() == null || question.id().isBlank());
+        } catch (JsonProcessingException e) {
+            return false;
+        }
+    }
+
+    ChapterQuizPayload toPayload(String payloadJson) {
         if (payloadJson == null || payloadJson.isBlank()) {
             return EMPTY_PAYLOAD;
         }
@@ -789,13 +847,31 @@ public class ChapterQuizService {
             citationSnippet = paragraphByIndex.getOrDefault(paragraphIndex, "");
         }
 
+        String questionId = question.id() == null || question.id().isBlank()
+                ? UUID.randomUUID().toString()
+                : question.id().trim();
+
         return new ChapterQuizPayload.Question(
+                questionId,
                 normalizedQuestion,
                 options,
                 correctOptionIndex,
                 paragraphIndex,
                 trimToLength(citationSnippet, 220)
         );
+    }
+
+    /** Package-visible for classroom effective-quiz assembly and tests. */
+    public ChapterQuizPayload parsePayloadJson(String payloadJson) {
+        return toPayload(payloadJson);
+    }
+
+    public String serializePayload(ChapterQuizPayload payload) {
+        return toJson(payload);
+    }
+
+    public ChapterQuizViewPayload toStudentView(ChapterQuizPayload payload) {
+        return toViewPayload(payload);
     }
 
     private String extractJsonObject(String text) {

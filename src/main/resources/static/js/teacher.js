@@ -13,7 +13,11 @@
         readingBuddyStatus: null,
         editingAssignmentId: null,
         featureSaveTimer: null,
-        activeBookOption: -1
+        activeBookOption: -1,
+        quizWizardStep: 1,
+        quizDraftQuestions: [],
+        quizGeneratedBase: [],
+        activeQuizBookOption: -1
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -43,7 +47,7 @@
             payload = await response.json();
         }
         if (!response.ok) {
-            const message = payload?.message || payload?.error || `Request failed (${response.status})`;
+            const message = payload?.detail || payload?.message || payload?.error || `Request failed (${response.status})`;
             const error = new Error(message);
             error.status = response.status;
             throw error;
@@ -247,7 +251,13 @@
         el['assignment-list'].innerHTML = assignments.map(item => {
             const details = [assignmentTarget(item)];
             if (item.dueDate) details.push(`Due ${formatDate(item.dueDate)}`);
-            if (item.quizRequired) details.push('Quiz required');
+            if (item.quizRequired) {
+                if (item.quizPassMinCorrect != null && item.quizMaxRetries != null) {
+                    details.push(`Quiz pass ${item.quizPassMinCorrect}+ correct, ${item.quizMaxRetries} retries`);
+                } else {
+                    details.push('Quiz required');
+                }
+            }
             if (item.characterChatRequired) details.push('Character chat required');
             return `<article class="assignment-card">
                 <div>
@@ -264,17 +274,28 @@
 
     function renderFeatures() {
         Array.from(el['features-form'].elements).forEach(input => {
-            if (input.type !== 'checkbox') return;
-            input.checked = state.features?.[input.name] !== false;
-            if (input.name === 'readingBuddyEnabled') {
-                const available = state.readingBuddyStatus?.available === true;
-                input.disabled = !available;
-                input.closest('.feature-control')?.classList.toggle('feature-unavailable', !available);
-                el['reading-buddy-feature-description'].textContent = available
-                    ? 'Available in this deployment; this saved policy controls student access'
-                    : `Unavailable in this deployment. Saved classroom policy: ${input.checked ? 'On' : 'Off'}; it will apply automatically when available.`;
+            if (input.type === 'checkbox') {
+                input.checked = state.features?.[input.name] !== false;
+                if (input.name === 'readingBuddyEnabled') {
+                    const available = state.readingBuddyStatus?.available === true;
+                    input.disabled = !available;
+                    input.closest('.feature-control')?.classList.toggle('feature-unavailable', !available);
+                    el['reading-buddy-feature-description'].textContent = available
+                        ? 'Available in this deployment; this saved policy controls student access'
+                        : `Unavailable in this deployment. Saved classroom policy: ${input.checked ? 'On' : 'Off'}; it will apply automatically when available.`;
+                }
+                return;
+            }
+            if (input.type === 'number') {
+                const value = state.features?.[input.name];
+                input.value = value == null || value === '' ? '' : String(value);
             }
         });
+    }
+
+    function syncAssignmentPassRuleVisibility() {
+        const required = el['assignment-quiz-required']?.checked === true;
+        show(el['assignment-quiz-pass-rules'], required);
     }
 
     function resetInvite() {
@@ -481,7 +502,18 @@
             el['assignment-form'].elements.status.value = assignment.status || 'DRAFT';
             el['assignment-form'].elements.quizRequired.checked = assignment.quizRequired === true;
             el['assignment-form'].elements.characterChatRequired.checked = assignment.characterChatRequired === true;
+            el['assignment-form'].elements.quizPassMinCorrect.value =
+                assignment.quizPassMinCorrect != null ? String(assignment.quizPassMinCorrect) : '';
+            el['assignment-form'].elements.quizMaxRetries.value =
+                assignment.quizMaxRetries != null ? String(assignment.quizMaxRetries) : '';
+        } else {
+            const defaults = state.features || {};
+            el['assignment-form'].elements.quizPassMinCorrect.value =
+                defaults.defaultQuizPassMinCorrect != null ? String(defaults.defaultQuizPassMinCorrect) : '';
+            el['assignment-form'].elements.quizMaxRetries.value =
+                defaults.defaultQuizMaxRetries != null ? String(defaults.defaultQuizMaxRetries) : '';
         }
+        syncAssignmentPassRuleVisibility();
         show(el['assignment-form-error'], false);
         show(el['assignment-modal'], true);
         window.setTimeout(() => el['assignment-title'].focus(), 0);
@@ -515,6 +547,19 @@
             characterChatRequired: form.get('characterChatRequired') === 'on',
             status: String(form.get('status') || 'DRAFT')
         };
+        const minCorrectRaw = String(form.get('quizPassMinCorrect') || '').trim();
+        const maxRetriesRaw = String(form.get('quizMaxRetries') || '').trim();
+        if (body.quizRequired) {
+            body.quizPassMinCorrect = minCorrectRaw ? Number(minCorrectRaw) : null;
+            body.quizMaxRetries = maxRetriesRaw ? Number(maxRetriesRaw) : null;
+            if (body.quizPassMinCorrect == null) {
+                body.clearQuizPassRules = true;
+            }
+        } else {
+            body.clearQuizPassRules = true;
+            body.quizPassMinCorrect = null;
+            body.quizMaxRetries = null;
+        }
         if (state.editingAssignmentId) {
             // Null date fields mean "leave unchanged" on the API; explicit clear flags allow removal.
             body.clearDueDate = !dueDateRaw;
@@ -547,8 +592,28 @@
         el['feature-save-status'].textContent = 'Saving…';
         const body = {};
         Array.from(el['features-form'].elements).forEach(input => {
-            if (input.type === 'checkbox') body[input.name] = input.checked;
+            if (input.type === 'checkbox') {
+                body[input.name] = input.checked;
+                return;
+            }
+            if (input.type === 'number') {
+                const raw = String(input.value || '').trim();
+                if (input.name === 'defaultQuizPassMinCorrect' || input.name === 'defaultQuizMaxRetries') {
+                    if (!raw) {
+                        // Cleared together below when both empty.
+                        return;
+                    }
+                    body[input.name] = Number(raw);
+                    return;
+                }
+                if (raw) body[input.name] = Number(raw);
+            }
         });
+        const minEmpty = !String(el['features-form'].elements.defaultQuizPassMinCorrect?.value || '').trim();
+        const retriesEmpty = !String(el['features-form'].elements.defaultQuizMaxRetries?.value || '').trim();
+        if (minEmpty && retriesEmpty) {
+            body.clearDefaultQuizPassRules = true;
+        }
         try {
             state.features = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/features`, {
                 method: 'PUT', body: JSON.stringify(body)
@@ -558,6 +623,333 @@
         } catch (error) {
             el['feature-save-status'].textContent = 'Could not save';
             toast(error.message);
+        }
+    }
+
+    function blankQuestion(optionCount) {
+        const options = Array.from({ length: Math.max(2, optionCount || 4) }, () => '');
+        return {
+            id: crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}-${Math.random()}`,
+            question: '',
+            options,
+            correctOptionIndex: 0,
+            sourceQuestionId: null,
+            mode: 'add'
+        };
+    }
+
+    function setQuizWizardStep(step) {
+        state.quizWizardStep = step;
+        show(el['quiz-wizard-step-1'], step === 1);
+        show(el['quiz-wizard-step-2'], step === 2);
+        show(el['quiz-wizard-step-3'], step === 3);
+        [1, 2, 3].forEach(index => {
+            el[`quiz-step-indicator-${index}`]?.classList.toggle('active', index === step);
+        });
+    }
+
+    function populateQuizChapterOptions(selectedChapterId = '', bookId = '', selectedChapterIndex = null) {
+        const book = bookById(bookId || el['quiz-book'].value);
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        el['quiz-chapter'].innerHTML = '<option value="">Select a chapter</option>' + chapters.map((chapter, index) => {
+            const id = chapter.id || '';
+            const title = chapter.title || `Chapter ${index + 1}`;
+            return `<option value="${escapeHtml(id)}" data-index="${index}">${escapeHtml(title)}</option>`;
+        }).join('');
+        if (selectedChapterId) {
+            el['quiz-chapter'].value = selectedChapterId;
+            return;
+        }
+        if (Number.isInteger(selectedChapterIndex)) {
+            const match = Array.from(el['quiz-chapter'].options).find(
+                option => option.dataset.index === String(selectedChapterIndex)
+            );
+            if (match) el['quiz-chapter'].value = match.value;
+        }
+    }
+
+    function renderQuizBookOptions() {
+        const query = String(el['quiz-book-search'].value || '').trim().toLowerCase();
+        const books = sortedBooks().filter(book => {
+            if (!query) return true;
+            return `${book.title || ''} ${book.author || ''}`.toLowerCase().includes(query);
+        });
+        state.activeQuizBookOption = -1;
+        el['quiz-book-options'].innerHTML = books.length
+            ? books.map((book, index) => `<button type="button" role="option" data-book-id="${escapeHtml(book.id)}" data-index="${index}">${escapeHtml(bookDisplayName(book))}</button>`).join('')
+            : '<div class="book-option-empty">No matching books</div>';
+        show(el['quiz-book-options'], true);
+        el['quiz-book-search'].setAttribute('aria-expanded', 'true');
+    }
+
+    function selectQuizBook(bookId) {
+        const book = bookById(bookId);
+        if (!book) return;
+        el['quiz-book'].value = book.id;
+        el['quiz-book-search'].value = bookDisplayName(book);
+        el['quiz-book-search'].setCustomValidity('');
+        show(el['quiz-book-options'], false);
+        el['quiz-book-search'].setAttribute('aria-expanded', 'false');
+        populateQuizChapterOptions('', book.id);
+    }
+
+    function openQuizWizard() {
+        if (!state.selectedClass) return;
+        const defaults = state.features || {};
+        el['quiz-slot-count'].value = String(defaults.defaultQuizQuestionCount || 5);
+        el['quiz-option-count'].value = String(defaults.defaultQuizOptionCount || 4);
+        el['quiz-book'].value = '';
+        el['quiz-book-search'].value = '';
+        populateQuizChapterOptions();
+        state.quizDraftQuestions = [];
+        state.quizGeneratedBase = [];
+        setQuizWizardStep(1);
+        show(el['quiz-wizard-modal'], true);
+        window.setTimeout(() => el['quiz-book-search'].focus(), 0);
+    }
+
+    function closeQuizWizard() {
+        show(el['quiz-wizard-modal'], false);
+        state.quizWizardStep = 1;
+        state.quizDraftQuestions = [];
+        state.quizGeneratedBase = [];
+    }
+
+    function renderQuizQuestionEditor() {
+        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        el['quiz-question-editor'].innerHTML = state.quizDraftQuestions.map((item, index) => {
+            const options = Array.from({ length: optionCount }, (_, optionIndex) => item.options?.[optionIndex] || '');
+            return `<article class="quiz-question-card" data-question-index="${index}">
+                <header>
+                    <strong>Question ${index + 1}</strong>
+                    <button type="button" class="text-button" data-ai-distractors="${index}">AI distractors</button>
+                </header>
+                <label>Stem<textarea data-field="question">${escapeHtml(item.question || '')}</textarea></label>
+                ${options.map((option, optionIndex) => `
+                    <div class="quiz-option-row">
+                        <input type="radio" name="correct-${index}" value="${optionIndex}" ${Number(item.correctOptionIndex) === optionIndex ? 'checked' : ''} aria-label="Mark option ${optionIndex + 1} correct">
+                        <input type="text" data-field="option" data-option-index="${optionIndex}" value="${escapeHtml(option)}" placeholder="Option ${optionIndex + 1}">
+                    </div>
+                `).join('')}
+            </article>`;
+        }).join('');
+    }
+
+    function collectQuizDraftFromEditor() {
+        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const cards = Array.from(el['quiz-question-editor'].querySelectorAll('.quiz-question-card'));
+        state.quizDraftQuestions = cards.map((card, index) => {
+            const existing = state.quizDraftQuestions[index] || blankQuestion(optionCount);
+            const question = card.querySelector('[data-field="question"]')?.value?.trim() || '';
+            const options = Array.from(card.querySelectorAll('[data-field="option"]'))
+                .map(input => String(input.value || '').trim());
+            const correct = Number(card.querySelector(`input[name="correct-${index}"]:checked`)?.value || 0);
+            return {
+                ...existing,
+                question,
+                options,
+                correctOptionIndex: Number.isInteger(correct) ? correct : 0
+            };
+        });
+    }
+
+    function renderQuizReview() {
+        el['quiz-review-list'].innerHTML = state.quizDraftQuestions.map((item, index) => `
+            <article class="quiz-review-item">
+                <strong>${index + 1}. ${escapeHtml(item.question || '(empty)')}</strong>
+                <ol>${(item.options || []).map((option, optionIndex) =>
+                    `<li${optionIndex === item.correctOptionIndex ? ' style="color: var(--success); font-weight: 600;"' : ''}>${escapeHtml(option || '(blank)')}</li>`
+                ).join('')}</ol>
+            </article>
+        `).join('');
+    }
+
+    async function continueQuizWizardFromStep1() {
+        const bookId = el['quiz-book'].value;
+        const chapterId = el['quiz-chapter'].value;
+        if (!bookId || !chapterId) {
+            toast('Choose a book and chapter first.');
+            return;
+        }
+        const slotCount = Math.max(1, Number(el['quiz-slot-count'].value) || 5);
+        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        try {
+            const effective = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/effective-quiz`);
+            state.quizGeneratedBase = Array.isArray(effective.generatedQuestions) ? effective.generatedQuestions : [];
+            if (Array.isArray(effective.effectiveQuestions) && effective.effectiveQuestions.length > 0) {
+                state.quizDraftQuestions = effective.effectiveQuestions.map(question => ({
+                    id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
+                    question: question.question || '',
+                    options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
+                    correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+                    sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
+                    mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
+                }));
+            } else {
+                state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
+            }
+            renderQuizQuestionEditor();
+            setQuizWizardStep(2);
+        } catch (error) {
+            toast(error.message);
+        }
+    }
+
+    function loadGeneratedIntoWizard() {
+        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        if (!state.quizGeneratedBase.length) {
+            toast('No generated quiz is cached for this chapter yet.');
+            return;
+        }
+        state.quizDraftQuestions = state.quizGeneratedBase.map(question => ({
+            id: question.id,
+            question: question.question || '',
+            options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
+            correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+            sourceQuestionId: question.id,
+            mode: 'override'
+        }));
+        renderQuizQuestionEditor();
+        toast('Loaded generated questions. Edit freely before publishing.');
+    }
+
+    async function aiSuggestQuestions() {
+        const chapterId = el['quiz-chapter'].value;
+        const count = Math.max(1, Number(el['quiz-slot-count'].value) || 5);
+        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        el['quiz-ai-suggest'].disabled = true;
+        try {
+            const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/suggest-questions`, {
+                method: 'POST',
+                body: JSON.stringify({ count, optionCount })
+            });
+            const questions = Array.isArray(result.questions) ? result.questions : [];
+            if (!questions.length) {
+                toast('AI returned no questions.');
+                return;
+            }
+            state.quizDraftQuestions = questions.map(question => ({
+                id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
+                question: question.question || '',
+                options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
+                correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+                sourceQuestionId: null,
+                mode: 'add'
+            }));
+            renderQuizQuestionEditor();
+            toast('AI suggestions loaded. Review and edit before publishing.');
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            el['quiz-ai-suggest'].disabled = false;
+        }
+    }
+
+    async function aiSuggestDistractors(index) {
+        collectQuizDraftFromEditor();
+        const item = state.quizDraftQuestions[index];
+        if (!item?.question) {
+            toast('Enter a question stem first.');
+            return;
+        }
+        const correct = item.options?.[item.correctOptionIndex] || '';
+        if (!correct) {
+            toast('Mark and fill the correct answer first.');
+            return;
+        }
+        const chapterId = el['quiz-chapter'].value;
+        const needed = Math.max(1, (item.options?.length || 4) - 1);
+        try {
+            const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/suggest-distractors`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    question: item.question,
+                    correctAnswer: correct,
+                    count: needed
+                })
+            });
+            const distractors = Array.isArray(result.distractors) ? result.distractors : [];
+            const nextOptions = [...(item.options || [])];
+            let distractorIndex = 0;
+            for (let i = 0; i < nextOptions.length; i++) {
+                if (i === item.correctOptionIndex) continue;
+                if (distractorIndex < distractors.length) {
+                    nextOptions[i] = distractors[distractorIndex++];
+                }
+            }
+            state.quizDraftQuestions[index] = { ...item, options: nextOptions };
+            renderQuizQuestionEditor();
+            toast('Distractors filled. Adjust as needed.');
+        } catch (error) {
+            toast(error.message);
+        }
+    }
+
+    async function publishQuizWizard() {
+        collectQuizDraftFromEditor();
+        const chapterId = el['quiz-chapter'].value;
+        const incomplete = state.quizDraftQuestions.some(item =>
+            !item.question
+            || !Array.isArray(item.options)
+            || item.options.some(option => !option)
+            || !Number.isInteger(item.correctOptionIndex)
+        );
+        if (incomplete) {
+            el['quiz-wizard-step3-error'].textContent = 'Every question needs a stem, all options filled, and a correct answer.';
+            show(el['quiz-wizard-step3-error'], true);
+            return;
+        }
+        const generatedIds = new Set(state.quizGeneratedBase.map(item => item.id).filter(Boolean));
+        const operations = [];
+        // Disable generated questions that are no longer represented as overrides.
+        const keptSourceIds = new Set(
+            state.quizDraftQuestions
+                .filter(item => item.sourceQuestionId && generatedIds.has(item.sourceQuestionId))
+                .map(item => item.sourceQuestionId)
+        );
+        generatedIds.forEach(sourceId => {
+            if (!keptSourceIds.has(sourceId)) {
+                operations.push({ operation: 'DISABLE', sourceQuestionId: sourceId, sortOrder: 0 });
+            }
+        });
+        state.quizDraftQuestions.forEach((item, index) => {
+            const question = {
+                id: item.id,
+                question: item.question,
+                options: item.options,
+                correctOptionIndex: item.correctOptionIndex,
+                citationParagraphIndex: null,
+                citationSnippet: ''
+            };
+            if (item.sourceQuestionId && generatedIds.has(item.sourceQuestionId)) {
+                operations.push({
+                    operation: 'OVERRIDE',
+                    sourceQuestionId: item.sourceQuestionId,
+                    sortOrder: index,
+                    question: { ...question, id: item.sourceQuestionId }
+                });
+            } else {
+                operations.push({
+                    operation: 'ADD',
+                    sortOrder: index,
+                    question
+                });
+            }
+        });
+        el['quiz-wizard-publish'].disabled = true;
+        show(el['quiz-wizard-step3-error'], false);
+        try {
+            await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/quiz-overrides`, {
+                method: 'PUT',
+                body: JSON.stringify({ operations })
+            });
+            closeQuizWizard();
+            toast('Class quiz published for this chapter.');
+        } catch (error) {
+            el['quiz-wizard-step3-error'].textContent = error.message;
+            show(el['quiz-wizard-step3-error'], true);
+        } finally {
+            el['quiz-wizard-publish'].disabled = false;
         }
     }
 
@@ -625,11 +1017,50 @@
         });
         el['assignment-form'].addEventListener('submit', saveAssignment);
         document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignmentModal));
+        el['assignment-quiz-required']?.addEventListener('change', syncAssignmentPassRuleVisibility);
         el['features-form'].addEventListener('change', saveFeatures);
+        el['open-quiz-wizard']?.addEventListener('click', openQuizWizard);
+        document.querySelectorAll('[data-close-quiz-wizard]').forEach(node => node.addEventListener('click', closeQuizWizard));
+        el['quiz-wizard-next-1']?.addEventListener('click', continueQuizWizardFromStep1);
+        el['quiz-wizard-back-2']?.addEventListener('click', () => setQuizWizardStep(1));
+        el['quiz-wizard-next-2']?.addEventListener('click', () => {
+            collectQuizDraftFromEditor();
+            renderQuizReview();
+            show(el['quiz-wizard-step2-error'], false);
+            setQuizWizardStep(3);
+        });
+        el['quiz-wizard-back-3']?.addEventListener('click', () => {
+            renderQuizQuestionEditor();
+            setQuizWizardStep(2);
+        });
+        el['quiz-wizard-publish']?.addEventListener('click', publishQuizWizard);
+        el['quiz-load-generated']?.addEventListener('click', loadGeneratedIntoWizard);
+        el['quiz-ai-suggest']?.addEventListener('click', aiSuggestQuestions);
+        el['quiz-question-editor']?.addEventListener('click', event => {
+            const button = event.target.closest('[data-ai-distractors]');
+            if (!button) return;
+            aiSuggestDistractors(Number(button.dataset.aiDistractors));
+        });
+        el['quiz-book-search']?.addEventListener('focus', renderQuizBookOptions);
+        el['quiz-book-search']?.addEventListener('input', () => {
+            el['quiz-book'].value = '';
+            renderQuizBookOptions();
+        });
+        el['quiz-book-search']?.addEventListener('blur', () => window.setTimeout(() => {
+            show(el['quiz-book-options'], false);
+            el['quiz-book-search'].setAttribute('aria-expanded', 'false');
+        }, 100));
+        el['quiz-book-options']?.addEventListener('mousedown', event => {
+            const option = event.target.closest('[data-book-id]');
+            if (!option) return;
+            event.preventDefault();
+            selectQuizBook(option.dataset.bookId);
+        });
         document.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;
             closeClassModal();
             closeAssignmentModal();
+            closeQuizWizard();
         });
     }
 

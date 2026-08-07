@@ -9,6 +9,7 @@ import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.service.InviteLinkService;
+import com.classicchatreader.service.TeacherQuizAuthoringService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -47,6 +48,9 @@ class ClassroomControllerTest {
 
     @MockitoBean
     private ClassroomTeacherCapabilityService teacherCapabilityService;
+
+    @MockitoBean
+    private TeacherQuizAuthoringService teacherQuizAuthoringService;
 
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {

@@ -2893,7 +2893,12 @@
                     quizRequired: item.quizRequired === true,
                     characterChatRequired: item.characterChatRequired === true,
                     quizStatus: typeof item.quizStatus === 'string' ? item.quizStatus : 'UNKNOWN',
-                    bookAvailable: item.bookAvailable !== false
+                    bookAvailable: item.bookAvailable !== false,
+                    quizPassMinCorrect: Number.isInteger(item.quizPassMinCorrect) ? item.quizPassMinCorrect : null,
+                    quizMaxRetries: Number.isInteger(item.quizMaxRetries) ? item.quizMaxRetries : null,
+                    quizAttemptsUsed: Number.isInteger(item.quizAttemptsUsed) ? item.quizAttemptsUsed : null,
+                    quizAttemptsAllowed: Number.isInteger(item.quizAttemptsAllowed) ? item.quizAttemptsAllowed : null,
+                    quizPassed: typeof item.quizPassed === 'boolean' ? item.quizPassed : null
                 }))
             : [];
 
@@ -4187,7 +4192,17 @@
         if (assignment.quizStatus === 'COMPLETE') {
             quizChip = '<span class="book-progress-chip assignment-quiz-complete">Quiz complete</span>';
         } else if (assignment.quizStatus === 'PENDING') {
-            quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
+            if (Number.isInteger(assignment.quizPassMinCorrect) && Number.isInteger(assignment.quizAttemptsAllowed)) {
+                const used = Number.isInteger(assignment.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
+                const remaining = Math.max(0, assignment.quizAttemptsAllowed - used);
+                const passLabel = `Pass ${assignment.quizPassMinCorrect}+`;
+                const attemptLabel = remaining > 0
+                    ? `${remaining} attempt${remaining === 1 ? '' : 's'} left`
+                    : 'No attempts left';
+                quizChip = `<span class="book-progress-chip assignment-quiz-required">${escapeHtml(passLabel)} · ${escapeHtml(attemptLabel)}</span>`;
+            } else {
+                quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
+            }
         } else if (assignment.quizStatus === 'NOT_REQUIRED' || assignment.quizRequired === false) {
             quizChip = '';
         } else if (assignment.quizRequired) {
