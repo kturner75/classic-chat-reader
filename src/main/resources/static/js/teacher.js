@@ -17,6 +17,7 @@
         quizWizardStep: 1,
         quizDraftQuestions: [],
         quizGeneratedBase: [],
+        quizContentVersion: null,
         activeQuizBookOption: -1,
         activeQuizChapterOption: -1
     };
@@ -801,6 +802,7 @@
         populateQuizChapterOptions();
         state.quizDraftQuestions = [];
         state.quizGeneratedBase = [];
+        state.quizContentVersion = null;
         setQuizWizardStep(1);
         show(el['quiz-wizard-modal'], true);
         window.setTimeout(() => el['quiz-book-search'].focus(), 0);
@@ -811,6 +813,7 @@
         state.quizWizardStep = 1;
         state.quizDraftQuestions = [];
         state.quizGeneratedBase = [];
+        state.quizContentVersion = null;
     }
 
     function questionOptionCount(item, defaultOptionCount) {
@@ -909,6 +912,7 @@
         try {
             const effective = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/effective-quiz`);
             state.quizGeneratedBase = Array.isArray(effective.generatedQuestions) ? effective.generatedQuestions : [];
+            state.quizContentVersion = effective.contentVersion || null;
             if (Array.isArray(effective.effectiveQuestions) && effective.effectiveQuestions.length > 0) {
                 state.quizDraftQuestions = effective.effectiveQuestions.map(question => ({
                     id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
@@ -1092,7 +1096,10 @@
         try {
             await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/quiz-overrides`, {
                 method: 'PUT',
-                body: JSON.stringify({ operations })
+                body: JSON.stringify({
+                    expectedContentVersion: state.quizContentVersion,
+                    operations
+                })
             });
             closeQuizWizard();
             toast('Class quiz published for this chapter.');

@@ -85,7 +85,8 @@ public class TeacherQuizAuthoringService {
                 toTeacherQuestions(generated),
                 active.stream().map(this::toOverrideView).toList(),
                 toTeacherQuestions(merged.effective()),
-                merged.staleOverrideIds()
+                merged.staleOverrideIds(),
+                chapterQuizService.contentVersion(merged.effective())
         );
     }
 
@@ -104,8 +105,18 @@ public class TeacherQuizAuthoringService {
         }
 
         EffectiveQuizResponse previousEffective = getEffectiveQuiz(userId, termId, chapterId);
-        String previousContentVersion = chapterQuizService.contentVersion(
-                toPayload(previousEffective.effectiveQuestions()));
+        String previousContentVersion = previousEffective.contentVersion();
+        String expectedVersion = request.expectedContentVersion() == null
+                ? null
+                : request.expectedContentVersion().trim();
+        if (expectedVersion != null && expectedVersion.isEmpty()) {
+            expectedVersion = null;
+        }
+        if (!Objects.equals(previousContentVersion, expectedVersion)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This class quiz was updated since you opened it. Reload the quiz wizard and try again.");
+        }
 
         ChapterQuizPayload generated = loadGeneratedPayload(chapterId);
         var generatedIds = EffectiveQuizAssembler.generatedQuestionIds(generated);
@@ -205,8 +216,7 @@ public class TeacherQuizAuthoringService {
                     "Effective quiz cannot exceed 20 questions.");
         }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
-        String nextContentVersion = chapterQuizService.contentVersion(
-                toPayload(effective.effectiveQuestions()));
+        String nextContentVersion = effective.contentVersion();
         // Only invalidate attempt windows when the effective quiz content actually changed.
         if (!Objects.equals(previousContentVersion, nextContentVersion)) {
             LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
@@ -640,7 +650,8 @@ public class TeacherQuizAuthoringService {
             List<TeacherQuestionView> generatedQuestions,
             List<OverrideView> overrides,
             List<TeacherQuestionView> effectiveQuestions,
-            List<String> staleOverrideIds
+            List<String> staleOverrideIds,
+            String contentVersion
     ) {
     }
 
@@ -666,6 +677,7 @@ public class TeacherQuizAuthoringService {
 
     public record ReplaceOverridesRequest(
             String basePromptVersion,
+            String expectedContentVersion,
             List<OverrideOperation> operations
     ) {
     }
