@@ -211,7 +211,7 @@ class ChapterQuizControllerTest {
         when(chapterQuizService.findBookIdForChapter("chapter-1")).thenReturn(Optional.of("book-1"));
         when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
-        when(classroomEffectiveQuizService.gradeQuiz("chapter-1", List.of(1, 0, 2), "reader-1", null))
+        when(classroomEffectiveQuizService.gradeQuiz("chapter-1", List.of(1, 0, 2), null, "reader-1", null))
                 .thenReturn(Optional.of(graded));
 
         mockMvc.perform(post("/api/quizzes/chapter/chapter-1/grade")

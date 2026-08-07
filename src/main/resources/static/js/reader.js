@@ -5896,7 +5896,8 @@
             const payload = {
                 selectedOptionIndexes: state.quizQuestions.map((_, index) =>
                     Number.isInteger(state.quizSelectedAnswers[index]) ? state.quizSelectedAnswers[index] : -1
-                )
+                ),
+                questionIds: state.quizQuestions.map((question) => question?.id || null)
             };
             const response = await fetch(`/api/quizzes/chapter/${state.quizChapterId}/grade`, {
                 method: 'POST',
@@ -5905,9 +5906,27 @@
             });
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
-                    elements.chapterQuizStatus.textContent = response.status === 409
+                    let message = response.status === 409
                         ? 'Quiz is still generating.'
                         : 'Unable to grade quiz right now.';
+                    if (response.status === 409 || response.status === 400 || response.status === 403) {
+                        try {
+                            const errBody = await response.clone().json();
+                            const detail = errBody?.detail || errBody?.message || errBody?.error || errBody?.title;
+                            if (typeof detail === 'string' && detail.trim()) {
+                                const lower = detail.toLowerCase();
+                                if (lower.includes('attempt')
+                                    || lower.includes('reload')
+                                    || lower.includes('updated')
+                                    || lower.includes('remaining')) {
+                                    message = detail.trim();
+                                }
+                            }
+                        } catch (_) {
+                            // keep fallback message
+                        }
+                    }
+                    elements.chapterQuizStatus.textContent = message;
                 }
                 return;
             }

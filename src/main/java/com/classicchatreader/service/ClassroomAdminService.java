@@ -349,8 +349,16 @@ public class ClassroomAdminService {
         assignment.setTermId(termId);
         assignment.setTitle(request.title().trim());
         assignment.setBookId(request.bookId().trim());
-        assignment.setChapterId(trimToNull(request.chapterId()));
-        assignment.setChapterIndex(request.chapterIndex());
+        String chapterId = resolveChapterId(
+                request.bookId().trim(), trimToNull(request.chapterId()), request.chapterIndex());
+        assignment.setChapterId(chapterId);
+        if (request.chapterIndex() != null) {
+            assignment.setChapterIndex(request.chapterIndex());
+        } else if (chapterId != null) {
+            chapterRepository.findById(chapterId).ifPresent(ch -> assignment.setChapterIndex(ch.getChapterIndex()));
+        } else {
+            assignment.setChapterIndex(null);
+        }
         assignment.setDueDate(request.dueDate());
         assignment.setAvailableFromDate(request.availableFromDate());
         assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
@@ -373,16 +381,28 @@ public class ClassroomAdminService {
         if (!isBlank(request.bookId())) {
             assignment.setBookId(request.bookId().trim());
         }
-        if (request.chapterId() != null) {
-            // Explicit empty string clears chapter link.
-            String chapterId = trimToNull(request.chapterId());
-            assignment.setChapterId(chapterId);
-            if (chapterId == null) {
+        if (request.chapterId() != null || request.chapterIndex() != null || !isBlank(request.bookId())) {
+            String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : assignment.getBookId();
+            String requestedChapterId = request.chapterId() != null
+                    ? trimToNull(request.chapterId())
+                    : assignment.getChapterId();
+            Integer requestedIndex = request.chapterIndex() != null
+                    ? request.chapterIndex()
+                    : assignment.getChapterIndex();
+            // Explicit empty chapterId clears chapter targeting.
+            if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
+                assignment.setChapterId(null);
                 assignment.setChapterIndex(null);
+            } else {
+                String resolved = resolveChapterId(bookId, requestedChapterId, requestedIndex);
+                assignment.setChapterId(resolved);
+                if (request.chapterIndex() != null) {
+                    assignment.setChapterIndex(request.chapterIndex());
+                } else if (resolved != null && assignment.getChapterIndex() == null) {
+                    chapterRepository.findById(resolved)
+                            .ifPresent(ch -> assignment.setChapterIndex(ch.getChapterIndex()));
+                }
             }
-        }
-        if (request.chapterIndex() != null) {
-            assignment.setChapterIndex(request.chapterIndex());
         }
         if (Boolean.TRUE.equals(request.clearDueDate())) {
             assignment.setDueDate(null);
@@ -591,6 +611,20 @@ public class ClassroomAdminService {
                         HttpStatus.BAD_REQUEST, "chapterIndex does not exist for the given bookId.");
             }
         }
+    }
+
+    /** Prefer explicit chapterId; otherwise resolve durable id from bookId + chapterIndex. */
+    private String resolveChapterId(String bookId, String chapterId, Integer chapterIndex) {
+        String explicit = trimToNull(chapterId);
+        if (explicit != null) {
+            return explicit;
+        }
+        if (bookId == null || bookId.isBlank() || chapterIndex == null) {
+            return null;
+        }
+        return chapterRepository.findByBookIdAndChapterIndex(bookId, Math.max(0, chapterIndex))
+                .map(ChapterEntity::getId)
+                .orElse(null);
     }
 
     private void validateAssignmentStatus(String statusRaw) {

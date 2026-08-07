@@ -738,10 +738,23 @@
         state.quizGeneratedBase = [];
     }
 
+    function questionOptionCount(item, defaultOptionCount) {
+        const existingCount = Array.isArray(item?.options) ? item.options.length : 0;
+        return Math.max(2, Number(defaultOptionCount) || 0, existingCount);
+    }
+
+    function normalizeQuestionOptions(question, defaultOptionCount) {
+        const existing = Array.isArray(question?.options)
+            ? question.options.map(option => String(option ?? ''))
+            : [];
+        const count = questionOptionCount({ options: existing }, defaultOptionCount);
+        return Array.from({ length: count }, (_, i) => existing[i] || '');
+    }
+
     function renderQuizQuestionEditor() {
-        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const defaultOptionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
         el['quiz-question-editor'].innerHTML = state.quizDraftQuestions.map((item, index) => {
-            const options = Array.from({ length: optionCount }, (_, optionIndex) => item.options?.[optionIndex] || '');
+            const options = normalizeQuestionOptions(item, defaultOptionCount);
             return `<article class="quiz-question-card" data-question-index="${index}">
                 <header>
                     <strong>Question ${index + 1}</strong>
@@ -759,19 +772,23 @@
     }
 
     function collectQuizDraftFromEditor() {
-        const optionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
+        const defaultOptionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
         const cards = Array.from(el['quiz-question-editor'].querySelectorAll('.quiz-question-card'));
         state.quizDraftQuestions = cards.map((card, index) => {
-            const existing = state.quizDraftQuestions[index] || blankQuestion(optionCount);
+            const existing = state.quizDraftQuestions[index] || blankQuestion(defaultOptionCount);
             const question = card.querySelector('[data-field="question"]')?.value?.trim() || '';
             const options = Array.from(card.querySelectorAll('[data-field="option"]'))
                 .map(input => String(input.value || '').trim());
-            const correct = Number(card.querySelector(`input[name="correct-${index}"]:checked`)?.value || 0);
+            const checked = card.querySelector(`input[name="correct-${index}"]:checked`);
+            let correct = checked != null ? Number(checked.value) : existing.correctOptionIndex;
+            if (!Number.isInteger(correct) || correct < 0 || correct >= options.length) {
+                correct = 0;
+            }
             return {
                 ...existing,
                 question,
                 options,
-                correctOptionIndex: Number.isInteger(correct) ? correct : 0
+                correctOptionIndex: correct
             };
         });
     }
@@ -803,7 +820,7 @@
                 state.quizDraftQuestions = effective.effectiveQuestions.map(question => ({
                     id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
                     question: question.question || '',
-                    options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
+                    options: normalizeQuestionOptions(question, optionCount),
                     correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
                     sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
                     mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
@@ -827,7 +844,7 @@
         state.quizDraftQuestions = state.quizGeneratedBase.map(question => ({
             id: question.id,
             question: question.question || '',
-            options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
+            options: normalizeQuestionOptions(question, optionCount),
             correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
             sourceQuestionId: question.id,
             mode: 'override'

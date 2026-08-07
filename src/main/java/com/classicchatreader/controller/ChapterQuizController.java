@@ -259,6 +259,7 @@ public class ChapterQuizController {
             return classroomEffectiveQuizService.gradeQuiz(
                             chapterId,
                             request.selectedOptionIndexes(),
+                            request.questionIds(),
                             readerId,
                             identity.userId()
                     )
@@ -283,6 +284,12 @@ public class ChapterQuizController {
         return quizEnabled && reasoningEnabled;
     }
 
-    public record QuizSubmissionRequest(List<Integer> selectedOptionIndexes) {
+    public record QuizSubmissionRequest(
+            List<Integer> selectedOptionIndexes,
+            List<String> questionIds
+    ) {
+        public QuizSubmissionRequest(List<Integer> selectedOptionIndexes) {
+            this(selectedOptionIndexes, null);
+        }
     }
 }
