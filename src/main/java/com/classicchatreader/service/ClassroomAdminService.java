@@ -213,6 +213,10 @@ public class ClassroomAdminService {
                     throw new ResponseStatusException(
                             HttpStatus.BAD_REQUEST, "defaultQuizMaxRetries cannot be negative.");
                 }
+                if (retries > 20) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "defaultQuizMaxRetries cannot exceed 20.");
+                }
                 features.setDefaultQuizMaxRetries(retries);
             }
         }

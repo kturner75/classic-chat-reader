@@ -12,7 +12,9 @@ import com.classicchatreader.repository.QuizQuestionOverrideRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -30,6 +32,7 @@ public class ClassroomEffectiveQuizService {
     private final ChapterQuizService chapterQuizService;
     private final ClassroomQuizPolicyService classroomQuizPolicyService;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public ClassroomEffectiveQuizService(
             ClassroomContextService classroomContextService,
@@ -37,13 +40,15 @@ public class ClassroomEffectiveQuizService {
             ChapterRepository chapterRepository,
             ChapterQuizService chapterQuizService,
             ClassroomQuizPolicyService classroomQuizPolicyService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
         this.classroomContextService = classroomContextService;
         this.overrideRepository = overrideRepository;
         this.chapterRepository = chapterRepository;
         this.chapterQuizService = chapterQuizService;
         this.classroomQuizPolicyService = classroomQuizPolicyService;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional
@@ -106,7 +111,6 @@ public class ClassroomEffectiveQuizService {
         return gradeQuiz(chapterId, selectedOptionIndexes, questionIds, null, readerId, userId);
     }
 
-    @Transactional
     public Optional<ChapterQuizGradeResponse> gradeQuiz(
             String chapterId,
             List<Integer> selectedOptionIndexes,
@@ -114,20 +118,23 @@ public class ClassroomEffectiveQuizService {
             String contentVersion,
             String readerId,
             String userId) {
-        // Serialize last-attempt races for the same student/chapter on this JVM.
+        // Hold the lock around the full transaction so concurrent last-attempt
+        // submissions cannot both observe the pre-commit attempt count.
         String lockKey = ((userId == null ? "" : userId) + "\u0000" + (chapterId == null ? "" : chapterId)).intern();
         synchronized (lockKey) {
-            Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
-            ChapterQuizPayload versioned = effective.orElseGet(
-                    () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
-            assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
-            classroomQuizPolicyService.assertCanAttempt(chapterId, userId);
+            return transactionTemplate.execute(status -> {
+                Optional<ChapterQuizPayload> effective = resolveEffectivePayload(chapterId, userId);
+                ChapterQuizPayload versioned = effective.orElseGet(
+                        () -> chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId));
+                assertSubmissionMatchesDisplayedQuiz(versioned, questionIds, contentVersion);
+                classroomQuizPolicyService.assertCanAttempt(chapterId, userId);
 
-            if (effective.isEmpty()) {
-                return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
-            }
-            return chapterQuizService.gradeQuizWithPayload(
-                    chapterId, selectedOptionIndexes, readerId, userId, effective.get());
+                if (effective.isEmpty()) {
+                    return chapterQuizService.gradeQuiz(chapterId, selectedOptionIndexes, readerId, userId);
+                }
+                return chapterQuizService.gradeQuizWithPayload(
+                        chapterId, selectedOptionIndexes, readerId, userId, effective.get());
+            });
         }
     }
 
