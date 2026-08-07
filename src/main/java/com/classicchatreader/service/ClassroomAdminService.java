@@ -309,11 +309,15 @@ public class ClassroomAdminService {
         // then refresh so a concurrent publication cannot leave a stale activation timestamp.
         String previousChapterId = assignment.getChapterId();
         String lockChapterId = resolveChapterIdForPassRuleLock(assignment, request);
+        java.util.TreeSet<String> lockOrder = new java.util.TreeSet<>();
         if (previousChapterId != null && !previousChapterId.isBlank()) {
-            chapterQuizService.lockQuizContent(previousChapterId);
+            lockOrder.add(previousChapterId);
         }
-        if (lockChapterId != null && !lockChapterId.equals(previousChapterId)) {
-            chapterQuizService.lockQuizContent(lockChapterId);
+        if (lockChapterId != null && !lockChapterId.isBlank()) {
+            lockOrder.add(lockChapterId);
+        }
+        for (String chapterToLock : lockOrder) {
+            chapterQuizService.lockQuizContent(chapterToLock);
         }
         entityManager.refresh(assignment);
         validateAssignmentForUpdate(request, assignment);
