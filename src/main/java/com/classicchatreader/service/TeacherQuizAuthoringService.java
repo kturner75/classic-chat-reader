@@ -164,6 +164,11 @@ public class TeacherQuizAuthoringService {
         }
 
         EffectiveQuizResponse effective = getEffectiveQuiz(userId, termId, chapterId);
+        if (effective.effectiveQuestions() == null || effective.effectiveQuestions().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Effective quiz cannot be empty. Keep at least one question or clear overrides.");
+        }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
         return effective;
     }

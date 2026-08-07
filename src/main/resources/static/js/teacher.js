@@ -614,6 +614,10 @@
         const retriesEmpty = !String(el['features-form'].elements.defaultQuizMaxRetries?.value || '').trim();
         if (minEmpty && retriesEmpty) {
             body.clearDefaultQuizPassRules = true;
+        } else if (minEmpty || retriesEmpty) {
+            el['feature-save-status'].textContent = 'Could not save';
+            toast('Set both pass defaults, or clear both fields.');
+            return;
         }
         try {
             state.features = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/features`, {

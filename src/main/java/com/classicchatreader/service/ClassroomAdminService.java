@@ -397,6 +397,9 @@ public class ClassroomAdminService {
             if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
                 assignment.setChapterId(null);
                 assignment.setChapterIndex(null);
+                // Whole-book assignments cannot carry chapter pass rules.
+                assignment.setQuizPassMinCorrect(null);
+                assignment.setQuizMaxRetries(null);
             } else {
                 String resolved = resolveChapterId(bookId, requestedChapterId, requestedIndex);
                 assignment.setChapterId(resolved);
@@ -504,6 +507,16 @@ public class ClassroomAdminService {
         }
         validateQuizPassRulePair(quizRequired, min, retries, true);
         String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
+        boolean clearingChapter = request.chapterId() != null && trimToNull(request.chapterId()) == null;
+        if (clearingChapter) {
+            if (min != null || retries != null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Clear quiz pass rules when converting an assignment to whole-book "
+                                + "(or set clearQuizPassRules=true).");
+            }
+            return;
+        }
         String requestedChapterId = request.chapterId() != null
                 ? trimToNull(request.chapterId())
                 : existing.getChapterId();
