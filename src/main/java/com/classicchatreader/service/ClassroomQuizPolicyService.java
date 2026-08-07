@@ -7,6 +7,7 @@ import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.EnrollmentRepository;
 import com.classicchatreader.repository.QuizAttemptRepository;
+import com.classicchatreader.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,6 +28,7 @@ public class ClassroomQuizPolicyService {
     private final AssignmentRepository assignmentRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final UserRepository userRepository;
     private final ClassroomProperties classroomProperties;
     private final ClassroomContextService classroomContextService;
 
@@ -34,11 +36,13 @@ public class ClassroomQuizPolicyService {
             AssignmentRepository assignmentRepository,
             EnrollmentRepository enrollmentRepository,
             QuizAttemptRepository quizAttemptRepository,
+            UserRepository userRepository,
             ClassroomProperties classroomProperties,
             ClassroomContextService classroomContextService) {
         this.assignmentRepository = assignmentRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
+        this.userRepository = userRepository;
         this.classroomProperties = classroomProperties;
         this.classroomContextService = classroomContextService;
     }
@@ -79,11 +83,16 @@ public class ClassroomQuizPolicyService {
         if (activeTermId == null) {
             return Optional.empty();
         }
+        // Serialize one student's concurrent grade submissions without locking shared
+        // assignment configuration rows (which would serialize the whole class/chapter).
+        if (userId != null && !userId.isBlank()) {
+            userRepository.findByIdForUpdate(userId);
+        }
         LocalDate today = classroomProperties.today();
         List<AssignmentEntity> matching = assignmentRepository
-                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNullForUpdate(chapterId, "PUBLISHED")
+                .findByTermIdAndChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+                        activeTermId, chapterId, "PUBLISHED")
                 .stream()
-                .filter(a -> activeTermId.equals(a.getTermId()))
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
                 // Match student classroom context: ignore not-yet-available assignments.
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
