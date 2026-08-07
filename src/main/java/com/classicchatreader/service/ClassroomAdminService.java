@@ -46,6 +46,7 @@ public class ClassroomAdminService {
     private final ClassroomProperties classroomProperties;
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
     private final ClassroomEffectiveQuizService classroomEffectiveQuizService;
+    private final ChapterQuizService chapterQuizService;
 
     public ClassroomAdminService(
             ClassSectionRepository classSectionRepository,
@@ -61,7 +62,8 @@ public class ClassroomAdminService {
             UserRepository userRepository,
             ClassroomProperties classroomProperties,
             ClassroomTeacherCapabilityService teacherCapabilityService,
-            ClassroomEffectiveQuizService classroomEffectiveQuizService) {
+            ClassroomEffectiveQuizService classroomEffectiveQuizService,
+            ChapterQuizService chapterQuizService) {
         this.classSectionRepository = classSectionRepository;
         this.termRepository = termRepository;
         this.classRoleMembershipRepository = classRoleMembershipRepository;
@@ -76,6 +78,7 @@ public class ClassroomAdminService {
         this.classroomProperties = classroomProperties;
         this.teacherCapabilityService = teacherCapabilityService;
         this.classroomEffectiveQuizService = classroomEffectiveQuizService;
+        this.chapterQuizService = chapterQuizService;
     }
 
     @Transactional
@@ -625,6 +628,8 @@ public class ClassroomAdminService {
                     HttpStatus.BAD_REQUEST,
                     "quizPassMinCorrect requires a chapter-targeted assignment (not whole-book).");
         }
+        // Hold the same content lock as quiz publication through assignment save.
+        chapterQuizService.lockQuizContent(chapterId);
         Optional<Integer> known = classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId);
         if (known.isEmpty()) {
             throw new ResponseStatusException(

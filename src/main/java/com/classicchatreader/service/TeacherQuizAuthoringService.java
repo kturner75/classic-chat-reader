@@ -239,9 +239,10 @@ public class TeacherQuizAuthoringService {
                         + " correct. Lower that assignment pass threshold (or keep enough questions) before publishing.");
     }
 
-    @Transactional(readOnly = true)
     public List<ChapterQuizPayload.Question> suggestQuestions(
             String userId, String termId, String chapterId, SuggestQuestionsRequest request) {
+        // Intentionally not @Transactional: load auth/context in short repo calls, then call AI
+        // outside any open DB transaction so provider latency does not hold a connection.
         requireTeacher(userId, termId);
         ChapterEntity chapter = requireChapter(chapterId);
         int count = request != null && request.count() != null ? request.count() : 3;
@@ -253,6 +254,10 @@ public class TeacherQuizAuthoringService {
         }
         List<ParagraphEntity> paragraphs = paragraphRepository.findByChapterIdOrderByParagraphIndex(chapterId);
         String context = buildChapterContext(paragraphs);
+        String bookTitle = chapter.getBook().getTitle();
+        String chapterTitle = chapter.getTitle() == null
+                ? ("Chapter " + (chapter.getChapterIndex() + 1))
+                : chapter.getTitle();
         String prompt = """
                 You are helping a teacher author a multiple-choice chapter quiz.
                 Book: %s
@@ -264,8 +269,8 @@ public class TeacherQuizAuthoringService {
                 Chapter text:
                 %s
                 """.formatted(
-                chapter.getBook().getTitle(),
-                chapter.getTitle() == null ? ("Chapter " + (chapter.getChapterIndex() + 1)) : chapter.getTitle(),
+                bookTitle,
+                chapterTitle,
                 count,
                 optionCount,
                 context
@@ -279,9 +284,9 @@ public class TeacherQuizAuthoringService {
         }
     }
 
-    @Transactional(readOnly = true)
     public List<String> suggestDistractors(
             String userId, String termId, String chapterId, SuggestDistractorsRequest request) {
+        // Intentionally not @Transactional: avoid holding a DB connection across AI latency.
         requireTeacher(userId, termId);
         requireChapter(chapterId);
         if (request == null || isBlank(request.question()) || isBlank(request.correctAnswer())) {

@@ -53,6 +53,7 @@ class ClassroomAdminServiceAssignmentUpdateTest {
     @Mock private ClassroomProperties classroomProperties;
     @Mock private ClassroomTeacherCapabilityService teacherCapabilityService;
     @Mock private ClassroomEffectiveQuizService classroomEffectiveQuizService;
+    @Mock private ChapterQuizService chapterQuizService;
 
     private ClassroomAdminService service;
 
@@ -72,7 +73,8 @@ class ClassroomAdminServiceAssignmentUpdateTest {
                 userRepository,
                 classroomProperties,
                 teacherCapabilityService,
-                classroomEffectiveQuizService
+                classroomEffectiveQuizService,
+                chapterQuizService
         );
     }
 
