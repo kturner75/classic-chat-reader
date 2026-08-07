@@ -133,7 +133,11 @@ public class ClassroomQuizPolicyService {
 
     private String resolveActiveStudentTermId(String userId) {
         ClassroomContextResponse context = classroomContextService.getContext(userId);
-        if (context != null && context.enrolled() && context.termId() != null && !context.termId().isBlank()) {
+        if (context != null
+                && context.enrolled()
+                && "STUDENT".equalsIgnoreCase(context.role())
+                && context.termId() != null
+                && !context.termId().isBlank()) {
             return context.termId();
         }
         // Fallback only when context is unavailable: single ACTIVE enrollment.

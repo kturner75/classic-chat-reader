@@ -192,6 +192,19 @@ public class TeacherQuizAuthoringService {
                     "Effective quiz cannot be empty. Keep at least one question or clear overrides.");
         }
         assertCompatibleWithPublishedPassRules(termId, chapterId, effective);
+        // Content replacement invalidates prior attempt scores for this chapter's pass rules.
+        LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
+        for (AssignmentEntity assignment : assignmentRepository
+                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")) {
+            if (!termId.equals(assignment.getTermId())) {
+                continue;
+            }
+            if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
+                continue;
+            }
+            assignment.setQuizRulesActivatedAt(activated);
+            assignmentRepository.save(assignment);
+        }
         return effective;
     }
 
