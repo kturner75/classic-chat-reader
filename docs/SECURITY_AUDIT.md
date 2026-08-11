@@ -6,6 +6,8 @@
 **Scope:** OWASP Top 10–aligned review of authentication, access control, injection/XSS, SSRF, misconfiguration, secrets, client-side risks, and dependency CVEs.  
 **Method:** Static review of controllers/services/config/frontend plus non-destructive live probes. No broad cleanup; this document is the deliverable backlog.
 
+**FERPA / student-PII tracking:** A separate FERPA privacy review (same date) is tracked in product backlog epic **`BL-043`** (`docs/product/backlog.md`) with companion checklist updates in `docs/product/bl-025-classroom-data-model.md`. Do **not** duplicate that FERPA work tracker here. Overlapping findings that matter for both lanes — especially **C-01**, **H-04**, **H-07**, **M-03**, **M-04**, **L-01**, **L-02**, **L-05** — should be remediated once and accepted against both this audit and `BL-043` criteria.
+
 ---
 
 ## Executive summary

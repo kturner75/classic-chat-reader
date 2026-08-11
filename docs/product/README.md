@@ -5,15 +5,18 @@ This folder is the source of truth for product scope and planning.
 ## Files
 
 - `current-features.md`: implemented capabilities verified against code.
-- `backlog.md`: prioritized work queue (features, improvements, tech debt).
+- `backlog.md`: prioritized work queue (features, improvements, tech debt). Includes **`BL-043`** FERPA / student-PII work tracker (2026-08-11 privacy review).
 - `bl-023-qa-checklist.md`: mobile QA + desktop regression checklist for adaptive reader behavior.
 - `bl-021-auth-architecture-adr.md`: auth and security decision record for user registration/account rollout.
+- `bl-025-classroom-data-model.md`: classroom domain model + FERPA schema hooks / companion checklist (runtime policy owned by `BL-043`).
 - `landing-ranking.md`: deterministic ranking rules for personalized landing queues.
 - `discover-affinity.md`: deterministic recommendation model for the `Discover` rail.
 - `my-chats-spec.md`: implemented behavior, privacy rules, resume semantics, and API contract for **My Chats** (`BL-032`, `BL-039`, `BL-049`).
 - `classroom-landing-usage.md`: setup and usage guide for classroom-aware landing mode (`BL-018.6`).
 - `classroom-pilot-pitch.md`: partner/grant-facing classroom pilot pitch and demo storyboard (Jessica Evans / multi-class pilot).
 - `reading-buddy-mode.md`: design document for Reading Buddy Mode (canned personas, sparse commentary, memory, PR plan).
+
+Related (outside this folder): `docs/SECURITY_AUDIT.md` is the OWASP security-audit backlog. FERPA / student-PII work is tracked under `BL-043` in `backlog.md`, not as a second OWASP list.
 
 ## Backlog Workflow
 
