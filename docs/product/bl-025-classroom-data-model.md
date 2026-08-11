@@ -697,12 +697,29 @@ Schema provides **hooks** (`deleted_at`, `retention_purge_after`, `retain_until`
 
 ### BL-043 companion checklist before pilot prod usage/export
 
-- [ ] Legal retention duration default agreed
-- [ ] Account-delete vs enrollment hold decision documented
-- [ ] Purge job owner + runbook
-- [ ] Access log retention
-- [ ] Data controller / DPA for pilot college
-- [ ] Teacher export access rules finalized
+Policy / Discovery (still open — keep `BL-025.6` / `.7` teacher bulk / `.10` gated):
+
+- [ ] Legal retention duration default agreed (`BL-043.13`)
+- [ ] Account-delete vs enrollment hold decision documented (`BL-043.6` / `BL-043.13`)
+- [ ] Purge job owner + runbook (`BL-043.6`)
+- [ ] Access log retention (`BL-043.5` / `BL-043.13`)
+- [ ] Data controller / DPA for pilot college + LLM subprocessors (`BL-043.3` / `BL-043.11`)
+- [ ] Teacher export access rules finalized (`BL-043.7` / `BL-043.13`)
+- [ ] School-admin education-record access remains deny-by-default unless policy explicitly allows (`KD-16`, `BL-043.13`)
+- [ ] K-12 / parental model explicitly out of pilot scope (`BL-043.20`)
+
+Runtime gaps vs this schema (2026-08-11 FERPA / student-PII privacy review — triage in `docs/product/backlog.md` → `BL-043` work tracker):
+
+- [ ] Prod auth gate fail-closed (`deployment.mode=public` + Secure cookies) — `BL-043.1` (overlaps `SECURITY_AUDIT` C-01 / H-07)
+- [ ] Google OAuth email auto-link requires re-auth/consent — `BL-043.2` (overlaps H-04)
+- [ ] Invite default TTL + max uses + revoke API wired through `ClassroomAdminService` — `BL-043.4` / `BL-025.2` (overlaps M-03)
+- [ ] Java writers for `education_record_access_logs` (incl. `VIEW_ROSTER`) — `BL-043.5` (**schema-only today**)
+- [ ] Account delete API + term purge job honoring `retention_purge_after` — `BL-043.6` (**hooks unused today**)
+- [ ] Term-scoped server chat-export API writing `chat_export_jobs` + access logs; expire artifacts — `BL-043.7` (**schema-only today**; client local export is not sufficient)
+- [ ] Pin `classroom.mode=database` and `classroom.demo.enabled=false` in prod — `BL-043.14`
+- [ ] Production DB backup custody (encrypt / access / retention) — `BL-043.15`
+
+**Already good (do not re-open as schema work):** deny-by-default classroom authz; school-admin education-record deny until BL-043; hashed invite codes; hashed auth-audit email/IP; owner-scoped account chats; Reading Buddy server history; no client analytics SDKs. General OWASP remains in `docs/SECURITY_AUDIT.md`.
 
 ---
 
@@ -953,3 +970,4 @@ PR-1 ─┼─► PR-2 ─► PR-5 ─► PR-6 ─► PR-7
 | 2026-07-10 | Rename `join_links` → `invite_links` (and `invite_link_id`, `InviteLinkService`) for clarity vs SQL JOIN |
 | 2026-07-10 | **Implementation slice 1 (API/schema):** V14 migration, JPA entities/repos, `ClassroomAuthorizationService`, `InviteLinkService`, `ClassroomAdminService`, context dual-read + `classroom.mode`, feature/assignment/roster APIs. No FE. Pickup checklist: see `docs/product/backlog.md` → Implementation handoff (classroom). |
 | 2026-07-14 | **Teacher capability slice:** V15 `account_capabilities`, durable `CREATE_CLASSROOM` grants, capability API, backend creation enforcement, role-aware Library/Teaching UI, direct-access denial for students, and operator grant/revoke/status tooling by account email. |
+| 2026-08-11 | FERPA / student-PII privacy review: companion checklist expanded with runtime gaps vs schema hooks; triage ownership points to `BL-043` work tracker in `docs/product/backlog.md` (docs only). |

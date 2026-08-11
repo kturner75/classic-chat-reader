@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 ## Implementation handoff (classroom)
 
@@ -103,10 +103,11 @@ Last updated: 2026-08-07
 8. Roster **display name** (optional student self + teacher override) on `BL-025.2`; `BL-025.10` v1 teacher→student overview (assignments current/complete, book progress, time-in-book, quiz scores/attempts, assignment opened state) with `BL-025.6` usage events as needed.
 9. **`BL-042` (ops/pricing)** + **`BL-053` (capacity):** AI usage metering / cost model and droplet concurrent-load answer before multi-teacher week (**2026-08-17**) and fall start (**2026-08-24**) where practical.
 10. **`BL-052`:** when Jessica sends short-story list → gutendex IDs, curated catalog, import/pregen/transfer as needed (early-semester path).
-11. Invite redeem rate limits (BL-028 pattern)
-12. FERPA-gated: usage events, teacher chat export, dashboard broad rollout (after BL-043 draft)
+11. Invite redeem rate limits (BL-028 pattern) + invite TTL / max uses / revoke (`BL-043.4` / `BL-025.2`)
+12. **`BL-043` FERPA P0 pilot blockers** (2026-08-11 privacy review): prod auth gate, OAuth link consent, LLM DPA/subprocessors, invite lifecycle, access-log writers, account delete + retention purge, server chat-export API — triage from `BL-043` work tracker before fall start (**2026-08-24**)
+13. FERPA-gated after Discovery exit + P0 remediations: usage events (`BL-025.6`), teacher chat export (`BL-025.7`), dashboard broad rollout (`BL-025.10`)
 
-**Not started:** roster display name + teacher→student drill-down (`BL-025.2` name / `BL-025.10` / `BL-025.6`), **AI cost metering (`BL-042`)**, **classroom concurrent capacity (`BL-053`)**, **partner short-story curation (`BL-052`, blocked on list)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard, reader browser-Back convenience (`BL-051`).
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display name + teacher→student drill-down (`BL-025.2` name / `BL-025.10` / `BL-025.6`), **AI cost metering (`BL-042`)**, **classroom concurrent capacity (`BL-053`)**, **partner short-story curation (`BL-052`, blocked on list)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard, reader browser-Back convenience (`BL-051`).
 
 **Done (2026-08-07 / BL-025.5 + .12 + .13 teacher quiz demo pack):**
 - PR-0 stable `id` on quiz questions with lazy backfill; `EffectiveQuizAssembler` + `quiz_question_overrides` JPA.
@@ -127,7 +128,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path: teacher quiz authoring + pass rules/defaults, roster identity, student drill-down/progress, invite hardening, and FERPA-gated reporting/export. Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**); `BL-052` short-story curation when partner list arrives.
+- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**); `BL-052` short-story curation when partner list arrives. General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -141,6 +142,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-23: Reconciled the partner-readiness slice after merge and regression verification: My Chats, cross-device chat persistence, font-size re-pagination, BL-047 assignment progress refresh, and BL-048 Reading Buddy availability are shipped on `main`; 596 backend, 91 frontend, and 24 Playwright tests pass locally.
 - 2026-08-06: Educator partner call (Jessica) — My Chats demo on prod went well. Full call capture in handoff partner block: quiz authoring/pass rules/defaults (`BL-025.5`/`.12`/`.13`); roster display name + teacher→student overview (`BL-025.2`/`.10`/`.6`); multi-teacher + AI council week of **2026-08-17–21** with cost-backed pricing (`BL-042`); fall semester **2026-08-24** with early optional use and **short stories before mid-semester books** (`BL-052`, await partner list); droplet **concurrent classroom capacity** concern (`BL-053`); reader browser-Back convenience (`BL-051`).
 - 2026-08-07: Implemented teacher quiz demo pack (`BL-025.5` / `.12` / `.13`): stable question ids, effective-quiz assembler/overrides, V21 defaults + pass rules, teacher wizard with AI assist, student effective quiz + attempt gating, Library pass/attempt chips. Ready for Jessica 1:1 and Aug 17–21 group demo after deploy + manual walkthrough.
+- 2026-08-11: Completed a FERPA / student-PII privacy review of classic-chat-reader. Findings folded into `BL-043` (work tracker + Discovery gaps vs schema) with cross-links to `BL-025.2`/`.7`, `BL-021` retention, `docs/product/bl-025-classroom-data-model.md`, and overlapping `docs/SECURITY_AUDIT.md` IDs. Docs/tracking only — no runtime remediations in that update.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -328,6 +330,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-19: Removed global `Escape` shortcut that forced back-to-library navigation to prevent accidental reader exits during search/navigation flows.
 - 2026-02-19: Completed BL-021.6 by adding staged account rollout controls (`account.auth.rollout.mode` with internal allow-list support), wiring migration/auth telemetry into `/health/details` (`accountMetrics`), extending account status payload with rollout metadata, and adding Playwright E2E coverage for register/login/logout plus anonymous-to-account claim-sync behavior.
 - 2026-03-23: Added Google reader account sign-in on top of the existing BL-021 session model by introducing provider-backed identity tables (`user_local_credentials`, `user_auth_identities`), Google OAuth start/callback endpoints, Google-aware account UI, and production/local config support for dedicated Flyway migrator credentials plus Google auth env vars.
+- 2026-08-11: FERPA privacy review notes ADR §6 account hard-delete (24h) and backup retention are **policy-documented but not runtime-complete** (no deleteAccount API; `retention_purge_after` unused). Runtime fulfillment tracked under `BL-043.6` (do not reopen this epic). OAuth silent email auto-link risk tracked under `BL-043.2` / `SECURITY_AUDIT` H-04.
 
 ### BL-022 - Reader Chapter Summary Feedback (AI Coach)
 - Type: Feature
@@ -429,12 +432,12 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
 | BL-025.1 Classroom Domain Model + Roles | In Progress | Define entities/relationships for teacher (admin), school, class, semester/term, student enrollment, and role-based access boundaries | ADR + schema draft approved and role checks mapped to API surfaces |
-| BL-025.2 Teacher Onboarding + Roster Management | In Progress | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import). Include **optional student display name**: student may set at register/profile; teacher may set a **roster override** so the class list is identifiable when email alone is insufficient. Email remains the required account identifier. | Teacher can create a class, share a join link, and manage an active roster without manual DB operations; roster shows email plus optional name/override; teacher can edit override without changing login email |
+| BL-025.2 Teacher Onboarding + Roster Management | In Progress | Build teacher class setup flow, shareable classroom-ID join link for student self-registration, and roster management (add/remove/import). Include **optional student display name**: student may set at register/profile; teacher may set a **roster override** so the class list is identifiable when email alone is insufficient. Email remains the required account identifier. **Invite lifecycle (FERPA `BL-043.4`):** default TTL + max uses on create, revoke API/UI, rotate on create (InviteLinkService already supports model fields; ClassroomAdminService currently passes null,null). Roster PII minimization / TA role / `VIEW_ROSTER` logging tracked under `BL-043.5` / `BL-043.8`. | Teacher can create a class, share a join link, and manage an active roster without manual DB operations; roster shows email plus optional name/override; teacher can edit override without changing login email; invites expire / revoke / rotate per `BL-043.4` |
 | BL-025.3 Class Feature Controls | In Progress | Add independent class-level toggles (quiz/recap/AI/media capabilities, each settable on its own — for example recap off + quiz on) with policy enforcement in UI + API | Teacher can set recap off and quiz on (or any other independent combination) and student feature availability matches per class |
 | BL-025.4 Assignment Workflow v1 | In Progress | Support assigning books/chapters, due windows, and required completion/quiz states (quiz-oriented v1; not character-chat requirements). Pass threshold + retry policy is `BL-025.12` (extends this slice). Durable **assignment opened** / first-interaction timestamps feed `BL-025.10`. | Teacher can publish assignments and students see clear due/required states in app |
 | BL-025.5 Teacher-Authored Quiz Authoring (MC Wizard) | Done | Class-scoped **multiple-choice** quiz authoring for a book/chapter via a **stepped wizard**: stub N default slots; teacher may manually enter stems/options/correct answer, use AI to suggest questions from chapter content (full override), and/or use AI to generate wrong answers. Layered on generated quiz per design overlay model (not format expansion beyond MC). | Teacher can define or override the effective MC question set for a book/chapter for their class; students in that class receive that set; AI assists never publish without teacher confirmation |
 | BL-025.6 Student Usage Logging | Proposed | Persist per-student activity events (books/chapters read, progress %, **session / time-in-book**) scoped to class/term. Powers teacher drill-down time-spent and later cost attribution. | Usage events are queryable per student and roll up cleanly per class/term; time-in-book can be shown on `BL-025.10` with defined measurement rules |
-| BL-025.7 Chat History Export | Proposed | Add download/export of AI chat history, self-service for students and bulk/per-student for teachers | Student can export their own chat history; teacher can export any enrolled student's history in their class |
+| BL-025.7 Chat History Export | Proposed | Add download/export of AI chat history, self-service for students and bulk/per-student for teachers. **Gap (2026-08-11 FERPA review):** V14 `chat_export_jobs` is schema-only; client `character-chat-export.js` is local-only (BL-025.11 Slice A). Server term-scoped export + access logs + artifact expiry tracked as `BL-043.7`. Teacher bulk remains gated by `BL-043` Discovery exit (`BL-043.13`). | Eligible student can server-export their own term-scoped chat history with access logs; teacher can export enrolled students’ history in their class only after FERPA gates; artifacts expire; local-only download is not the sole path |
 | BL-025.8 School and Teacher Account Tiers | Proposed | Add account ownership model distinguishing School (multi-teacher) and Teacher (single-class-owner) tiers | A school-tier account can view/manage classes across its teachers; a teacher-only account is scoped to its own classes |
 | BL-025.9 Semester/Term-Scoped Rosters | Proposed | Add term boundaries to classes so rosters can change across semesters while preserving historical term data | Teacher can start a new term for a class with a fresh roster without losing prior-term student history/reporting |
 | BL-025.10 Teacher Dashboard + Student Drill-Down | Proposed | Teacher dashboard with roster entry into a **Teacher→Student overview**. v1 student overview must list: (1) **current assignments**, (2) **completed assignments**, (3) **time spent in the book** (labeled engagement proxy; partner-requested), (4) **progress by book** (chapter n/n and/or % complete), (5) **quizzes for the book** — N complete, **scores**, **retry attempts**, (6) **assignment progress including opened/not-opened** (whether the student has clicked into the assignment at all). Class aggregate widgets optional if drill-down is complete. | Teacher can open any rostered student and see the six overview sections without external tooling; opened vs not-opened is accurate server-side; time-in-book and quiz stats match underlying events/attempts |
@@ -444,7 +447,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - BL-021 (`User Registration and Account System`) is a prerequisite for BL-025.2 onward.
 - BL-025.3 and BL-025.4 should extend BL-018.6 classroom context hooks with full class policy + assignment signal integration.
-- BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) exit criteria are drafted, since these are exactly the data flows FERPA constrains.
+- BL-025.6/.7/.10 (usage logging, chat export, dashboard drill-down) should be sequenced after BL-043 (FERPA) Discovery exit criteria are met (`BL-043.13`) and relevant P0 remediations land — see 2026-08-11 FERPA work tracker. Schema hooks alone do not unlock these slices.
 - BL-042 (token usage/cost calculator) depends on BL-025.6's usage logging for per-student/per-class token attribution.
 - BL-025.11 depends on BL-025.4 foundations and, for durable completion/export, on server-persisted character chat (`BL-049`, not localStorage-only) plus BL-043/BL-025.7 policy if teachers access student–character conversations. **Not required for BL-025.1 data model freeze or pilot assignment v1.** Local download + soft require shipped 2026-07.
 - BL-025.5 depends on stable question ids (design **PR-0** in `docs/product/bl-025-classroom-data-model.md`) for OVERRIDE/DISABLE merge; MC-only wizard can ship ADD/manual paths earlier if product accepts temporary constraints — prefer PR-0 first.
@@ -458,6 +461,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-07-14: Teacher access moved from “any authenticated account” to a durable capability model. V15 stores `CREATE_CLASSROOM`; the capability endpoint gates Library/Teaching UI, direct student access is denied, and class creation requires the capability server-side. Existing teacher memberships still grant access to their Teaching workspace.
 - 2026-07-16: Partner call confirmed assignment/chapter open bug under real progress (resume path). Product: optional character-chat requirement + downloadable student transcript for show-and-tell elevates BL-025.11.
 - 2026-08-06: Partner call (Jessica) expanded quiz depth: MC-only teacher authoring wizard (`BL-025.5`), assignment min score + max retries with `0` = no retries (`BL-025.12`), and teacher quiz defaults (`BL-025.13`). Same call: optional student display name + teacher roster override (`BL-025.2`); teacher→student overview checklist on `BL-025.10` (current/completed assignments, time-in-book, book progress, quiz scores/retries, assignment opened state) with `BL-025.6` for time metrics. More call notes still incoming.
+- 2026-08-11: FERPA / student-PII privacy review cross-linked invite lifecycle hardening and server chat-export gaps into `BL-025.2` / `BL-025.7` (owned for triage under `BL-043`); usage/export/dashboard gates unchanged until `BL-043.13` + P0 remediations.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -861,31 +865,91 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
 ### BL-043 - FERPA Compliance for Classroom Data
 - Type: Tech Debt
-- Priority: P1
-- Effort: L
+- Priority: P0
+- Effort: XL
 - Status: Discovery
-- Problem: Classroom deployment involves minors' and students' education records (reading activity, quiz results, chat history); this data is subject to FERPA and the product currently has no compliance review or controls for it.
+- Problem: Classroom deployment involves students' education records (roster PII, reading activity, quiz results, chat history); FERPA-relevant controls were incomplete, and a 2026-08-11 privacy review found pilot-blocking gaps between V14 schema hooks and runtime policy/enforcement.
 - Scope Buckets:
-- Data classification: identify which stored fields (roster PII, usage logs, chat history, quiz results) qualify as education records under FERPA.
-- Access controls: ensure only the enrolled student, their instructor(s) of record, and authorized school officials can view a student's records.
-- Consent/disclosure model: define what, if anything, requires parental/guardian consent (relevant for K-12 partners vs. college-age students).
-- Data retention and deletion policy for student records after a semester/term ends or a student leaves a class.
-- Audit logging for access to student education records (who viewed/exported what, and when).
+- Data classification: identify which stored/API fields (roster PII, usage logs, chat history, quiz results) qualify as education records vs directory information under FERPA.
+- Access controls: ensure only the enrolled student, their instructor(s) of record, and authorized school officials (when policy allows) can view a student's records.
+- Consent/disclosure model: college-age pilot first; parental/guardian consent model for any later K-12 partners.
+- Data retention and deletion policy for student records after a semester/term ends, a student leaves a class, or an account is deleted (`BL-021` 24h hard-delete promise).
+- Audit logging for access to student education records (who viewed/exported what, and when) — schema exists; writers must run.
+- Third-party subprocessors (OpenAI/xAI and voice/realtime): DPAs, notice, minimization; hold uncovered voice until covered.
+- Prod deployment fail-closed for student-data paths (auth gate, classroom mode pins, Secure cookies) — FERPA acceptance; overlapping OWASP detail stays in `docs/SECURITY_AUDIT.md`.
+- Privacy Review (2026-08-11) — already good (do not re-litigate):
+- Deny-by-default `ClassroomAuthorizationService`; school-admin education-record access denied until this epic’s policy (`KD-16` in `bl-025-classroom-data-model.md`).
+- Roster gated; owner-scoped account chats; Reading Buddy server history; hashed auth-audit email/IP; hashed invite codes.
+- V14 schema hooks designed (`education_record_access_logs`, `chat_export_jobs`, `classroom_usage_events`, `retention_purge_after`, soft-delete columns).
+- No product analytics SDKs found in client; teacher bulk export already backlog-gated behind this epic.
+- Out of scope for this epic:
+- General OWASP Top 10 remediations (Sentry / `docs/SECURITY_AUDIT.md`) except where a finding is restated here for FERPA/student-PII acceptance.
+- ADA / accessibility (`BL-044`, `BL-013`).
+- Inventing legal policy text — track work items and acceptance criteria only; counsel/partner supply DPA and notice language.
 - Discovery Questions:
 - Is the initial partner/pilot audience college-level (FERPA applies, but student is the rights-holder at 18+) or does K-12 need to be supported later (parental consent implications)?
 - What is the minimum data retention window needed for legitimate educational/reporting purposes, and when must data be purged?
 - Does chat history export (`BL-025.7`) need additional access logging or restrictions beyond normal read access?
 - Do we need a signed data processing agreement / district agreement template for school customers?
+- Account-delete vs active-enrollment hold: block delete while ACTIVE enrollment, or force export-before-delete notice?
+- School-admin “school official” education-record access: remain deny-by-default for pilot, or document a narrow allow?
+- Discovery Answers / lean (2026-08-11 review — still Discovery until product signs exit criteria):
+- Pilot audience is **college-age** (student rights-holder). **No parental/guardian model** in schema — **block K-12** until designed (`BL-043.20`).
+- Chat export and roster/education-record reads **do** need access logging for v1 (schema-only today is insufficient) — see `BL-043.5` / `BL-043.7`.
+- DPAs / subprocessor disclosure for OpenAI/xAI (and voice when enabled) are **required before** treating classroom AI chat as pilot-safe — see `BL-043.3`.
+- Retention duration default, purge job owner, and account-delete-vs-enrollment hold remain **open** (companion checklist in `bl-025-classroom-data-model.md`); schema hooks alone are not compliance.
 - Current Direction (2026-07-09):
 - Raised directly by the educator partner as a hard requirement for any real classroom pilot, not a later nice-to-have.
 - Treat this as blocking for BL-025 slices that touch student-identifiable data (usage logging, dashboard drill-down, chat export) until an access-control and retention model is agreed.
+- Current Direction (2026-08-11 FERPA / student-PII privacy review):
+- Review completed; findings captured in the Work Tracker below. **Priority elevated to P0** for fall pilot urgency (~**2026-08-24** semester start; multi-teacher week **2026-08-17–21**).
+- Status remains **Discovery** because policy exit criteria (retention duration, school-admin allow, account-delete hold, notice/DPA ownership) are not signed — but engineering gaps vs schema are inventoried and triageable.
+- Prefer remediating overlapping auth/cookie/invite items once and accepting them against both `SECURITY_AUDIT` and this epic’s criteria; do not fork a second OWASP backlog.
+- Finish Discovery exit criteria (`BL-043.13`) **before** shipping usage-event ingestion, teacher drill-down PII surfaces, or teacher bulk chat export (keep existing gates on `BL-025.6` / `.7` / `.10`).
 - Exit Criteria for Discovery:
-- Data classification of which classroom-related fields are FERPA-covered education records.
-- Documented access-control model (who can see/export a given student's data).
-- Retention/deletion policy decision for post-term and post-enrollment student data.
-- Decision on whether an audit log for student-record access is required for v1 or can follow shortly after.
+- Data classification of which classroom-related fields are FERPA-covered education records vs directory information (draft table exists in `bl-025-classroom-data-model.md`; finalize API-field gaps in `BL-043.17`).
+- Documented access-control model (who can see/export a given student's data) — teacher/student matrix largely designed; school-admin + eligible-student export rules still open.
+- Retention/deletion policy decision for post-term and post-enrollment student data, plus account-delete reconciliation with `BL-021` 24h hard-delete.
+- Decision that audit logging for student-record access/export is **required for v1** (not optional follow-on).
+- DPA / subprocessor notice path agreed for pilot (no legal text invented in-repo; tracking + disclosure surface only).
+- Work Tracker:
+| Slice | Status | Priority | Scope | Done When |
+| --- | --- | --- | --- | --- |
+| BL-043.1 Prod auth gate for student-data paths | Proposed | P0 | Live `/api/auth/status` showed `publicMode:false` / `canAccessSensitive:true`; `deployment.mode=local` default and `application-prod.properties` does not force `public`. Affects student chat/quiz pipelines. Overlaps `SECURITY_AUDIT` **C-01** / **H-07**. | Prod forces `deployment.mode=public` + Secure cookies; fail closed without auth material; re-verify status endpoint shows gated sensitive access |
+| BL-043.2 Google OAuth email auto-link consent | Proposed | P0 | `AccountAuthService.resolveUserForExternalIdentity` links verified Google email to existing password accounts with no re-auth/consent → account takeover of education records. Overlaps `SECURITY_AUDIT` **H-04**. | Linking requires password re-auth or explicit link step; sessions invalidated on link; regression tests cover no silent takeover |
+| BL-043.3 LLM subprocessors / DPA / disclosure | Proposed | P0 | CharacterChatService, ReadingBuddyChatService, OpenAiLlmProvider, XaiLlmProvider, voice/realtime send student content to OpenAI/xAI without in-repo privacy/DPA/subprocessor tracking. | DPAs (no-train/zero-retention where required) tracked; subprocessors disclosed in product docs surface; prompts minimized; voice/realtime held until covered |
+| BL-043.4 Classroom invite TTL / max uses / revoke | Proposed | P0 | `ClassroomAdminService.createInvite` passes null,null though `InviteLinkService` supports expiry/max/revoke. Overlaps `SECURITY_AUDIT` **M-03** (FERPA elevates). Also `BL-025.2`. | Default expiry + max uses on create; revoke API + UI; rotate on create; leaked codes stop working after TTL/revoke |
+| BL-043.5 Education-record access logging runtime | Proposed | P0 | V14 `education_record_access_logs` (and related export/usage tables) are schema-only — no Java writers; `listRoster` does not log `VIEW_ROSTER`. | Access logging on education-record reads/exports (incl. roster view); tests prove rows written; audit retention hook honored |
+| BL-043.6 Account delete + retention purge runtime | Proposed | P0 | `BL-021` ADR promises 24h hard-delete; no `deleteAccount` API; `retention_purge_after` unused. | Account delete API + term purge job; honor retention matrix in `bl-025-classroom-data-model.md`; enrollment-hold or export-before-delete decision implemented |
+| BL-043.7 Term-scoped server chat-export API | Proposed | P0 | Export jobs schema only; client `character-chat-export.js` is local-only. Student eligible-student export + teacher path per `BL-025.7`; always write access logs; expire artifacts. | Term-scoped server export with authz + access logs; artifacts expire; local-only download is not the sole compliance path |
+| BL-043.8 Roster PII minimization + TA role | Proposed | P1 | Roster returns student emails; TA treated as teacher-like; no access log (`ClassroomAdminService.listRoster`). | Roster fields minimized/classified; TA permissions explicit and narrower than teacher where required; `VIEW_ROSTER` logged (`BL-043.5`) |
+| BL-043.9 LLM error-log hygiene | Proposed | P1 | OpenAiLlmProvider / XaiLlmProvider `log.error` may capture provider bodies / prompt fragments. Overlaps `SECURITY_AUDIT` **L-05**. | Error logs omit prompt/PII/provider bodies (or redact); tests/docs state allowed log fields |
+| BL-043.10 Server-authoritative character chat history | Proposed | P1 | Character chat trusts client `conversationHistory` before third-party LLM. Overlaps `SECURITY_AUDIT` **M-04**; prefer `BL-049` server history pattern (Reading Buddy already ignores client history). | Server loads/clamps history for LLM calls; client-supplied history not authoritative in classroom mode |
+| BL-043.11 Privacy / FERPA notice + subprocessor list | Proposed | P1 | No privacy policy / FERPA notice / subprocessor list in product docs. | Tracked notice + subprocessor list published/linked for pilot (legal copy from counsel/partner; engineering owns surface + accuracy checklist) |
+| BL-043.12 Session Secure cookies + TTL review | Proposed | P1 | Account session cookies default `Secure=false`; `session.ttl-minutes=43200`. Overlaps `SECURITY_AUDIT` **H-07** / **L-02**. | Prod Secure cookies enforced; TTL/rotation decision documented and applied for classroom accounts |
+| BL-043.13 Finish Discovery policy gates | Proposed | P1 | Retention, school-admin education-record policy, parent/eligible-student rules still Discovery. | Exit criteria above signed; unlocks broad `BL-025.6` / `.7` teacher bulk / `.10` rollout (keep gates until then) |
+| BL-043.14 Pin classroom mode in prod | Proposed | P1 | Hybrid default risk: pin `classroom.mode=database` and `classroom.demo.enabled=false` in prod. | Prod properties fail closed to database mode with demo off; tests/config review prevent demo/hybrid prod drift |
+| BL-043.15 Production DB backup custody | Proposed | P1 | `scripts/backup_production_db.sh` → `~/Backups/classic-chat-reader/` needs FERPA custody (encrypt, access, retention). | Backup runbook documents encryption, access control, and retention aligned with education-record policy |
+| BL-043.16 Hash/restrict auth-audit userId | Proposed | P1 | Auth audit logs plaintext `userId` (email/IP already hashed). | userId hashed or access-restricted consistently with other auth-audit fields |
+| BL-043.17 Directory-info vs education-record classification | Proposed | P2 | API fields not classified; teacher email exposed as `teacherName`. | Field-level classification table finalized; directory vs education-record handling documented for roster/context APIs |
+| BL-043.18 Classroom-mode claim/persistence gate | Proposed | P2 | Anonymous reader claim can move quiz/buddy history onto an account. | Classroom mode requires account before persistence of quiz/buddy education-adjacent history (or equivalent control) |
+| BL-043.19 CSRF defense-in-depth (classroom/account) | Proposed | P2 | Cookie mutating classroom/account routes rely on SameSite=Lax. Overlaps `SECURITY_AUDIT` **L-01**. | Additional CSRF control on cookie-authenticated mutating classroom/account routes |
+| BL-043.20 Block K-12 until guardian model | Proposed | P2 | Pilot assumes college-age; no parental/guardian model. | Product/docs explicitly limit pilot to college-age; K-12 blocked until guardian/consent design lands |
+| BL-043.21 Server log-sink retention policy | Proposed | P2 | No client analytics SDKs found (good); still need server log-sink retention. | Ops retention policy for server logs/sinks documented and applied |
+- Acceptance Criteria:
+- Kevin can triage FERPA/student-PII work from this epic’s Work Tracker without a parallel spreadsheet.
+- P0 slices (`BL-043.1`–`.7`) are clearly marked as fall-pilot blockers relative to **2026-08-24**.
+- Discovery exit criteria remain the gate for broad usage events, teacher bulk export, and dashboard PII drill-down.
+- Schema-vs-runtime gap is explicit: V14 hooks exist; writers, purge, delete, and notice/DPA work are tracked here.
 - Dependency Notes:
-- Gates `BL-025.6` (usage logging), `BL-025.7` (chat export), and `BL-025.10` (dashboard drill-down) — those slices should not ship broadly until this epic's exit criteria are met.
+- Gates `BL-025.6` (usage logging), `BL-025.7` (chat export — especially teacher bulk), and `BL-025.10` (dashboard drill-down) — those slices should not ship broadly until Discovery exit criteria (`BL-043.13`) are met and relevant P0 remediations land.
+- `BL-025.2` invite lifecycle (expiry/max/revoke) implements `BL-043.4`.
+- `BL-021` ADR retention/delete promises are fulfilled via `BL-043.6` (do not reopen BL-021 as In Progress solely for delete).
+- Companion checklist + lifecycle matrix: `docs/product/bl-025-classroom-data-model.md` § Privacy / FERPA hooks.
+- Overlapping OWASP IDs: `docs/SECURITY_AUDIT.md` (**C-01**, **H-04**, **H-07**, **M-03**, **M-04**, **L-01**, **L-02**, **L-05**) — implement once; accept against FERPA criteria here.
+- Session Log:
+- 2026-07-09: Epic opened from educator partner FERPA requirement; gates usage/export/dashboard.
+- 2026-08-11: FERPA / student-PII privacy review completed. Elevated priority to P0; added Work Tracker for P0–P2 findings; recorded what’s already good; cross-linked schema companion checklist and SECURITY_AUDIT overlaps. Docs/tracking only.
 
 ### BL-044 - ADA/Accessibility Compliance for Classroom Deployment
 - Type: Tech Debt
@@ -1030,7 +1094,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - No teacher bulk read path in this epic (track under `BL-025.7` / FERPA).
 - Dependency Notes:
 - Unblocks truthful **My Chats** (`BL-039`/`BL-032`) and durable `BL-025.11` completion beyond local heuristics.
-- Align retention/access notes with `BL-043` before any non-student consumers.
+- Align retention/access notes with `BL-043` before any non-student consumers. Server export path: `BL-043.7` / `BL-025.7`. Client-history trust gap for LLM prompts: `BL-043.10` (prefer this epic’s server history as authoritative).
 - Reading Buddy already has server message persistence patterns to reuse conceptually (do not couple schemas).
 - Delivered (2026-07-22): authenticated owner-scoped load/send APIs, database-backed client synchronization, retry-safe idempotency, cross-device restoration, and isolation/order/rollback regression coverage. Legacy account-less localStorage transcripts are discarded rather than automatically claimed because ownership cannot be established safely.
 
