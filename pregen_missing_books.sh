@@ -4,6 +4,8 @@ cd /Users/kevinturner/IdeaProjects/classic-chat-reader
 NEW_GUTENBERG_IDS=(
   45 23 829 69087 3268 67098 12 203 583 696 289 4276
   22120 932 6124 77 610 6053 2787 2265 56621 70841 66084 64636 778
+  # BL-052 ENGL 1020 short fiction/drama + verified poetry containers
+  1063 3189 512 10623 1041 8601 16376 12242 1459
 )
 
 API_BASE_URL="http://localhost:8080"

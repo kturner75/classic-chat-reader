@@ -93,7 +93,37 @@ public class CuratedCatalogService {
             new CuratedCatalogBook(70841, "Robinson Crusoe", "Daniel Defoe", 27_000, List.of("Adventure stories"), List.of("Adventure")),
             new CuratedCatalogBook(66084, "Sir Gawain and the Green Knight", "Jessie L. Weston", 26_000, List.of("Arthurian romances"), List.of("Mythology")),
             new CuratedCatalogBook(64636, "Rip Van Winkle", "Washington Irving", 25_000, List.of("Fantasy fiction"), List.of("Short Stories")),
-            new CuratedCatalogBook(778, "Five Children and It", "E. Nesbit", 24_000, List.of("Wishes -- Fiction"), List.of("Children"))
+            new CuratedCatalogBook(778, "Five Children and It", "E. Nesbit", 24_000, List.of("Wishes -- Fiction"), List.of("Children")),
+            // BL-052 partner ENGL 1020 Fall 2026 early short fiction / drama (verified PG IDs).
+            // Anthology volumes: assigned classroom story is noted in subjects for discovery.
+            new CuratedCatalogBook(1063, "The Cask of Amontillado", "Edgar Allan Poe", 23_000,
+                    List.of("Horror tales, American", "Revenge -- Fiction", "The Cask of Amontillado"),
+                    List.of("Short Stories", "Horror")),
+            new CuratedCatalogBook(3189, "Sketches New and Old", "Mark Twain", 22_000,
+                    List.of("Humorous stories, American", "The Celebrated Jumping Frog of Calaveras County"),
+                    List.of("Short Stories")),
+            new CuratedCatalogBook(512, "Mosses from an Old Manse", "Nathaniel Hawthorne", 21_000,
+                    List.of("Short stories, American", "Rappaccini's Daughter"),
+                    List.of("Short Stories", "Gothic")),
+            new CuratedCatalogBook(10623, "Plays", "Susan Glaspell", 20_000,
+                    List.of("American drama", "Trifles"),
+                    List.of("Plays", "One Act Plays")),
+            // BL-052 poetry containers (verified; shepherd pair + Brontë poem remain TBD / deferred).
+            new CuratedCatalogBook(1041, "Shakespeare's Sonnets", "William Shakespeare", 19_000,
+                    List.of("English poetry", "Sonnets, English", "Sonnet 18", "Sonnet 73", "Sonnet 116", "Sonnet 130"),
+                    List.of("Poetry")),
+            new CuratedCatalogBook(8601, "The Early Poems of Alfred Lord Tennyson", "Alfred Tennyson", 18_000,
+                    List.of("English poetry -- 19th century", "Ulysses"),
+                    List.of("Poetry")),
+            new CuratedCatalogBook(16376, "Browning's Shorter Poems", "Robert Browning", 17_000,
+                    List.of("English poetry", "My Last Duchess"),
+                    List.of("Poetry")),
+            new CuratedCatalogBook(12242, "Poems by Emily Dickinson, Three Series, Complete", "Emily Dickinson", 16_000,
+                    List.of("American poetry", "Because I could not stop for Death", "I'm Nobody! Who are you?"),
+                    List.of("Poetry")),
+            new CuratedCatalogBook(1459, "Prufrock and Other Observations", "T. S. Eliot", 15_000,
+                    List.of("Poetry", "The Love Song of J. Alfred Prufrock"),
+                    List.of("Poetry"))
     );
 
     private static final Comparator<CuratedCatalogBook> POPULARITY_ORDER =
@@ -122,9 +152,15 @@ public class CuratedCatalogService {
     private boolean matches(CuratedCatalogBook book, String normalizedQuery) {
         String normalizedTitle = normalize(book.title());
         String normalizedAuthor = normalize(book.author());
-        return normalizedTitle.contains(normalizedQuery)
+        if (normalizedTitle.contains(normalizedQuery)
                 || normalizedAuthor.contains(normalizedQuery)
-                || (normalizedTitle + " " + normalizedAuthor).contains(normalizedQuery);
+                || (normalizedTitle + " " + normalizedAuthor).contains(normalizedQuery)) {
+            return true;
+        }
+        // Subjects carry assigned short-work names for anthology containers (BL-052).
+        return book.subjects().stream()
+                .map(this::normalize)
+                .anyMatch(subject -> subject.contains(normalizedQuery));
     }
 
     private String normalize(String value) {

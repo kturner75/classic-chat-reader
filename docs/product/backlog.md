@@ -73,7 +73,7 @@ Last updated: 2026-08-11
 - **Multi-teacher / AI council demo window:** teachers meet the week of **2026-08-17 – 2026-08-21**; expect to schedule a **group demo** with Jessica + other teachers + **AI council** members — classroom + assignment walkthrough on prod. Need **reasonable pricing that at least covers costs** for that conversation (not necessarily a polished storefront).
 - **AI usage + cost metrics (`BL-042`, lower product priority than classroom UX but time-bound for pricing):** track **user activity** with emphasis on **AI usage** so cost estimates are evidence-based. Fixed monthly floor is known (DigitalOcean **droplet**, **Spaces**, **managed DB**); **variable cost is AI tokens/requests** (chat, voice, quiz gen, etc.). Need real measured usage to support **per-term / seat + pooled AI budget** pricing lean before the group demo.
 - **Fall 2026 pilot timing:** semester starts **2026-08-24**. Jessica would **like** to use the site at the **beginning of the semester**, but if not fully ready that is OK — the class **does not start reading books until mid-semester**; they **begin with short stories**.
-- **Short stories for curated catalog (`BL-052`):** Kevin asked Jessica for the **list of short stories scheduled for her class** so they can be added to the **curated** list (import + flags + assets as needed). **Schedule received 2026-08-11** (ENGL 1020 Fall 2026 weekly reading list); curation/import can proceed — early-semester short stories remain **P1**.
+- **Short stories for curated catalog (`BL-052`):** Kevin asked Jessica for the **list of short stories scheduled for her class** so they can be added to the **curated** list (import + flags + assets as needed). **Schedule received 2026-08-11**; **2026-08-12:** verified PG IDs + curated-catalog entries for P1 short fiction/drama (except Chopin Week1 — no Gutenberg text) and verified poetry containers; prod import/pregen/transfer (`BL-052.3`) still open.
 - **Classroom scalability / droplet capacity (`BL-053`):** Kevin concern (also reflected in pricing lean): will the current **1GB-class DO droplet** hold a real classroom concurrent load? Need a measured answer for **how many concurrent users** before performance degrades (and a scale-up path). Complements `BL-042` cost work; this is **capacity/latency**, not token $.
 - **Misc convenience (`BL-051`):** while in the **reader**, override the **browser Back** button so it returns to the **previously accessed in-app page** when available, otherwise **Library** by default (instead of leaving the site / unexpected history).
 
@@ -102,12 +102,12 @@ Last updated: 2026-08-11
 7. ~~`BL-025.5` / `.12` / `.13` teacher quiz authoring + pass rules + defaults~~ shipped locally (2026-08-07): PR-0 question ids, effective-quiz overlays, teacher wizard + AI assist, assignment min-correct/max-retries, teacher quiz defaults. Demo walkthrough before Jessica / Aug 17–21 group.
 8. Roster **display name** (optional student self + teacher override) on `BL-025.2`; `BL-025.10` v1 teacher→student overview (assignments current/complete, book progress, time-in-book, quiz scores/attempts, assignment opened state) with `BL-025.6` usage events as needed.
 9. **`BL-042` (ops/pricing)** + **`BL-053` (capacity):** AI usage metering / cost model and droplet concurrent-load answer before multi-teacher week (**2026-08-17**) and fall start (**2026-08-24**) where practical.
-10. **`BL-052`:** partner Fall 2026 reading list received (2026-08-11) → verify gutendex/PG IDs, curated catalog for missing titles, import/pregen/transfer as needed (early-semester short stories still **P1**).
+10. **`BL-052`:** ~~verify PG IDs + curated catalog for early short works~~ catalog PR in flight (2026-08-12); next = prod import/pregen/transfer (`BL-052.3`) + Chopin Week1 gap (no PG text for “Story of an Hour”).
 11. Invite redeem rate limits (BL-028 pattern) + invite TTL / max uses / revoke (`BL-043.4` / `BL-025.2`)
 12. **`BL-043` FERPA P0 pilot blockers** (2026-08-11 privacy review): prod auth gate, OAuth link consent, LLM DPA/subprocessors, invite lifecycle, access-log writers, account delete + retention purge, server chat-export API — triage from `BL-043` work tracker before fall start (**2026-08-24**)
 13. FERPA-gated after Discovery exit + P0 remediations: usage events (`BL-025.6`), teacher chat export (`BL-025.7`), dashboard broad rollout (`BL-025.10`)
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display name + teacher→student drill-down (`BL-025.2` name / `BL-025.10` / `BL-025.6`), **AI cost metering (`BL-042`)**, **classroom concurrent capacity (`BL-053`)**, **partner short-story curation (`BL-052`, Ready — list received; missing titles need curation)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard, reader browser-Back convenience (`BL-051`).
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display name + teacher→student drill-down (`BL-025.2` name / `BL-025.10` / `BL-025.6`), **AI cost metering (`BL-042`)**, **classroom concurrent capacity (`BL-053`)**, **`BL-052.3`/`.4` prod import/pregen/verify** (catalog membership largely done; Chopin Week1 still deferred — no PG text), full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, usage/export/dashboard, reader browser-Back convenience (`BL-051`).
 
 **Done (2026-08-07 / BL-025.5 + .12 + .13 teacher quiz demo pack):**
 - PR-0 stable `id` on quiz questions with lazy backfill; `EffectiveQuizAssembler` + `quiz_question_overrides` JPA.
@@ -128,7 +128,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**); `BL-052` short-story / reading-list curation (**Ready** — partner schedule received 2026-08-11; early-semester titles still P1). General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
+- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**); `BL-052` short-story curation (**In Progress** — catalog IDs verified/added 2026-08-12; prod pregen/transfer + Chopin gap remain). General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -144,6 +144,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-07: Implemented teacher quiz demo pack (`BL-025.5` / `.12` / `.13`): stable question ids, effective-quiz assembler/overrides, V21 defaults + pass rules, teacher wizard with AI assist, student effective quiz + attempt gating, Library pass/attempt chips. Ready for Jessica 1:1 and Aug 17–21 group demo after deploy + manual walkthrough.
 - 2026-08-11: Completed a FERPA / student-PII privacy review of classic-chat-reader. Findings folded into `BL-043` (work tracker + Discovery gaps vs schema) with cross-links to `BL-025.2`/`.7`, `BL-021` retention, `docs/product/bl-025-classroom-data-model.md`, and overlapping `docs/SECURITY_AUDIT.md` IDs. Docs/tracking only — no runtime remediations in that update.
 - 2026-08-11: Jessica’s ENGL 1020 Fall 2026 weekly reading schedule received (docx). Unblocked `BL-052`: recorded already-curated vs missing titles + suggested PG container IDs; early-semester short fiction remains P1 for curation/import.
+- 2026-08-12: `BL-052.1`/`.2` — verified PG IDs via Gutenberg RDF/catalog/text; added curated catalog entries for P1 short fiction/drama containers (except Chopin) + verified poetry; deferred Story of an Hour / shepherd pair / Brontë poem; prod import/pregen still open.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1151,7 +1152,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature / Content ops
 - Priority: P1 (time-bound to early fall if partner wants day-one use; otherwise P2 before mid-semester books)
 - Effort: M (depends on list length and public-domain availability)
-- Status: **Ready** — partner Fall 2026 reading schedule received; curation/import can proceed
+- Status: **In Progress** — PG IDs verified + curated catalog membership added for early short fiction/drama (except Chopin) and verified poetry; prod import/pregen/transfer still open
 - Problem: Partner’s fall class **starts with short stories**, not full novels. Early-semester classroom use needs those titles **discoverable and classroom-ready** (curated catalog + import + feature flags + assets), not only long-form classics already prepped for demos.
 - Context (2026-08-06):
 - Fall semester starts **2026-08-24**.
@@ -1162,28 +1163,42 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - List recorded below with **Already curated** vs **Missing** status against `CuratedCatalogService`, plus suggested Project Gutenberg container IDs for missing items (**verify title/author before import** — IDs are suggestions, not sacred).
 - **CCR imports whole Gutenberg books** (often anthologies/collections). Short assigned works may therefore land as **multi-work volumes** rather than a single short story/poem — treat anthology UX as a documented product gap (see Acceptance Criteria).
 - Week-by-week order (prioritization): Week1 Story of an Hour → Week2 Cask of Amontillado + Rip Van Winkle → Week3 Jumping Frog → Week4 Rappaccini’s Daughter → Week5 Trifles + Hamlet Act1 → Weeks5–7 Hamlet → Week7 shepherd poems → Week8 sonnets → Week9 Ulysses + My Last Duchess → Week10 Dickinson + Brontë poem → Week10 Prufrock → Weeks11–14 Northanger Abbey. Early-semester short fiction remains **P1**.
+- Context (2026-08-12 verification):
+- Verified candidate IDs against Project Gutenberg **RDF + offline `pg_catalog.csv` + full-text** (gutendex.com blocked by Cloudflare from this environment).
+- **Wrong-container catch:** suggested Chopin PG **160** (*The Awakening, and Selected Short Stories*) does **not** contain “The Story of an Hour” (TOC/text confirmed). Kate Chopin’s other PG volumes (**23724**, **23810**, **46650**, **63025**) also lack it. No PG catalog title matches “Story/Dream of an Hour”. Standard Ebooks sources the story from **HathiTrust**, not Gutenberg. **Deferred** until an approved non-PG import path exists (CCR import is Gutenberg/gutendex-only today).
+- **Trifles edition choice:** PG **10623** (*Plays*, Glaspell sole author; Trifles leads; recently updated) preferred over **59432** (larger 1916-era collection with Cook collaborations). Both contain Trifles.
+- Anthology → assigned-work map (for operators / partner):
+  - “Cask of Amontillado” → standalone PG **1063**
+  - “Jumping Frog…” → inside PG **3189** *Sketches New and Old*
+  - “Rappaccini’s Daughter” → inside PG **512** *Mosses from an Old Manse*
+  - *Trifles* → inside PG **10623** *Plays*
+  - Sonnets 18/73/116/130 → inside PG **1041**
+  - “Ulysses” → inside PG **8601**
+  - “My Last Duchess” → inside PG **16376**
+  - Dickinson pair → inside PG **12242**
+  - “Prufrock” → inside PG **1459**
 - Fall 2026 reading list checklist:
-  - **Already in CCR curated catalog** (3):
+  - **Already in CCR curated catalog** (3; unchanged):
     - [x] *Rip Van Winkle* — Washington Irving — PG **64636**
     - [x] *Hamlet* — William Shakespeare — PG **2265**
     - [x] *Northanger Abbey* — Jane Austen — PG **121**
-  - **Missing from curated catalog — short fiction / drama** (5; suggested PG containers — verify before import):
-    - [ ] “The Story of an Hour” — Kate Chopin → PG **160** (*The Awakening, and Selected Short Stories*)
-    - [ ] “The Cask of Amontillado” — Edgar Allan Poe → PG **1063**
-    - [ ] “The Celebrated Jumping Frog of Calaveras County” — Mark Twain → PG **3189** (*Sketches New and Old*)
-    - [ ] “Rappaccini’s Daughter” — Nathaniel Hawthorne → PG **512** (*Mosses from an Old Manse*)
-    - [ ] *Trifles* — Susan Glaspell → PG **10623** or **59432** (*Plays*) — pick/verify which edition is cleaner
-  - **Missing from curated catalog — poetry** (7; collections common; anthology UX implications):
-    - [ ] Marlowe “The Passionate Shepherd to His Love” + Raleigh “The Nymph’s Reply to the Shepherd” — PG ID **TBD** (find a clean public-domain pair/anthology; leave TBD until verified)
-    - [ ] Shakespeare Sonnets 18, 73, 116, 130 → PG **1041** (*Shakespeare’s Sonnets*)
-    - [ ] Tennyson “Ulysses” → PG **8601** (*The Early Poems of Alfred Lord Tennyson*)
-    - [ ] Browning “My Last Duchess” → PG **16376** (*Browning’s Shorter Poems*)
-    - [ ] Dickinson “Because I could not stop for Death” and “I’m Nobody! Who are you?” → PG **12242** (*Poems by Emily Dickinson, Three Series, Complete*)
-    - [ ] Emily Brontë “The night is darkening round me” — collection **TBD**
-    - [ ] T. S. Eliot “The Love Song of J. Alfred Prufrock” → PG **1459** (*Prufrock and Other Observations*)
+  - **Short fiction / drama:**
+    - [ ] “The Story of an Hour” — Kate Chopin — **DEFERRED** (no Project Gutenberg ebook contains this text; suggested PG **160** is a wrong container — Awakening + other shorts only)
+    - [x] “The Cask of Amontillado” — Edgar Allan Poe — PG **1063** (standalone; verified title/author/HTML)
+    - [x] “The Celebrated Jumping Frog of Calaveras County” — Mark Twain — PG **3189** (*Sketches New and Old*; story present in text)
+    - [x] “Rappaccini’s Daughter” — Nathaniel Hawthorne — PG **512** (*Mosses from an Old Manse*; story present in text)
+    - [x] *Trifles* — Susan Glaspell — PG **10623** (*Plays*; chose over 59432)
+  - **Poetry:**
+    - [ ] Marlowe “The Passionate Shepherd…” + Raleigh “The Nymph’s Reply…” — **DEFERRED / TBD** (PG **20356** has Marlowe’s shepherd poem only; Raleigh reply not verified in that volume; no clean paired anthology found)
+    - [x] Shakespeare Sonnets 18, 73, 116, 130 → PG **1041** (*Shakespeare’s Sonnets*; texts verified)
+    - [x] Tennyson “Ulysses” → PG **8601** (*The Early Poems of Alfred Lord Tennyson*; poem verified)
+    - [x] Browning “My Last Duchess” → PG **16376** (*Browning’s Shorter Poems*; poem verified)
+    - [x] Dickinson “Because I could not stop for Death” and “I’m Nobody! Who are you?” → PG **12242** (*Poems by Emily Dickinson, Three Series, Complete*; poems verified)
+    - [ ] Emily Brontë “The night is darkening round me” — **DEFERRED / TBD** (not in PG **1019** *Poems by Currer, Ellis, and Acton Bell*; no clean verified container yet)
+    - [x] T. S. Eliot “The Love Song of J. Alfred Prufrock” → PG **1459** (*Prufrock and Other Observations*; verified)
 - Scope Buckets:
 - Track partner reading list (title/author/edition notes) — **received 2026-08-11**; keep checklist above current.
-- Resolve each missing item to a **correct Gutenberg (or other approved) ID** via gutendex (do not trust unverified suggestions — see Scarlet Letter 25344 lesson); close TBD poetry IDs.
+- Resolve each missing item to a **correct Gutenberg (or other approved) ID** via gutendex/PG metadata (do not trust unverified suggestions — see Scarlet Letter 25344 lesson + Chopin 160 wrong-container catch); close TBD poetry IDs.
 - Curated-catalog membership + prod import path; enable needed flags (characters/illustrations/quiz as appropriate for short works).
 - Content readiness: chapter/structure quality for short works, progressive character discovery if chat is used, quiz/pregen only where it makes sense for single-sitting texts.
 - Teaching path: confirm assignments can target a short work / its “chapters” without novel-centric assumptions breaking UX.
@@ -1191,10 +1206,10 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-052.1 Resolve / verify PG IDs | Ready | Confirm suggested containers for missing titles; choose Trifles edition; find shepherd-pair + Brontë collection (or defer with reason) | Each checklist row has verified ID or explicit TBD/defer |
-| BL-052.2 Curated catalog | Ready | Add missing verified titles to `CuratedCatalogService` (title/author match) | Missing must-have early-semester works are curated |
-| BL-052.3 Import / pregen / transfer | Proposed | Follow `ccr-production-ops` publish path (flags + DB + Spaces) for curated IDs | Titles importable on the pilot path without manual DB surgery |
-| BL-052.4 Prod verify | Proposed | Spot-check title/author, structure, and assignability for early weeks | Partner can assign Week1–early short works on prod; gaps documented |
+| BL-052.1 Resolve / verify PG IDs | Done | Confirmed containers for P1 short fiction/drama + poetry; chose Trifles **10623**; deferred Chopin / shepherd pair / Brontë with reasons | Each checklist row has verified ID or explicit TBD/defer |
+| BL-052.2 Curated catalog | Done | Added verified titles to `CuratedCatalogService`; subject search finds assigned short-work names inside anthologies; `pregen_missing_books.sh` ID list updated | Missing must-have early-semester works (except deferred Chopin) are curated |
+| BL-052.3 Import / pregen / transfer | Proposed | Follow `ccr-production-ops` publish path (flags + DB + Spaces) for curated IDs — **not run from this catalog PR** (needs prod/Spaces credentials) | Titles importable on the pilot path without manual DB surgery |
+| BL-052.4 Prod verify | Proposed | Spot-check title/author, structure, and assignability for early weeks | Partner can assign Week2+ early short works on prod; Week1 Chopin gap documented |
 - Acceptance Criteria:
 - Each list item is either **live on prod curated/importable with verified ID and title/author match**, or explicitly **deferred** with reason (rights, missing text, bad parse).
 - Partner can assign at least the must-have early-semester stories without manual DB surgery.
@@ -1205,6 +1220,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-06: Created; blocked on partner list.
 - 2026-08-11: Partner ENGL 1020 Fall 2026 weekly schedule received (docx). Status → **Ready**. Recorded already-curated (3: Rip Van Winkle 64636, Hamlet 2265, Northanger Abbey 121) vs missing (12: 5 short fiction/drama + 7 poetry items) with suggested PG container IDs; noted whole-book/anthology import gap; prioritized early-semester short fiction.
+- 2026-08-12: Status → **In Progress**. Verified PG IDs via Gutenberg RDF/catalog/text. **Rejected** suggested Chopin PG 160 (does not contain “Story of an Hour”; no PG ebook found — deferred). Curated: 1063, 3189, 512, 10623 (Trifles over 59432), plus poetry 1041/8601/16376/12242/1459. Deferred shepherd pair + Brontë poem (TBD). Extended curated search to match subjects so anthology story names resolve. Updated `pregen_missing_books.sh`. **Deferred from this PR:** live prod import/pregen/Spaces transfer (`BL-052.3`) — document-only here; run via `ccr-production-ops` / `scripts/publish_book_remote.sh` when credentials available.
 
 ### BL-053 - Classroom Concurrent Load / Droplet Capacity Validation
 - Type: Ops / Tech Debt
