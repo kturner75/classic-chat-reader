@@ -3,6 +3,8 @@ package com.classicchatreader.service;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,5 +21,55 @@ class CuratedCatalogServiceTest {
         assertTrue(douglassResults.stream().anyMatch(book -> book.gutenbergId() == 23));
         assertTrue(gaskellResults.stream().anyMatch(book -> book.gutenbergId() == 4276));
         assertTrue(wildeResults.stream().anyMatch(book -> book.gutenbergId() == 844));
+    }
+
+    @Test
+    void searchFindsAnthologyVolumesByContainedShortWorkAlias() {
+        assertTrue(curatedCatalogService.search("amontillado").stream()
+                .anyMatch(book -> book.gutenbergId() == 1063));
+        assertTrue(curatedCatalogService.search("jumping frog").stream()
+                .anyMatch(book -> book.gutenbergId() == 3189));
+        assertTrue(curatedCatalogService.search("rappaccini").stream()
+                .anyMatch(book -> book.gutenbergId() == 512));
+        assertTrue(curatedCatalogService.search("trifles").stream()
+                .anyMatch(book -> book.gutenbergId() == 10623));
+    }
+
+    @Test
+    void searchFindsPoetryVolumesByContainedPoemAlias() {
+        assertTrue(curatedCatalogService.search("sonnet 18").stream()
+                .anyMatch(book -> book.gutenbergId() == 1041));
+        assertTrue(curatedCatalogService.search("ulysses").stream()
+                .anyMatch(book -> book.gutenbergId() == 8601 && book.author().contains("Tennyson")));
+        assertTrue(curatedCatalogService.search("my last duchess").stream()
+                .anyMatch(book -> book.gutenbergId() == 16376));
+        assertTrue(curatedCatalogService.search("because i could not stop for death").stream()
+                .anyMatch(book -> book.gutenbergId() == 12242));
+        assertTrue(curatedCatalogService.search("prufrock").stream()
+                .anyMatch(book -> book.gutenbergId() == 1459));
+    }
+
+    @Test
+    void curatedCatalogIncludesVerifiedPartnerShortWorkContainers() {
+        Set<Integer> curatedIds = curatedCatalogService.getPopularBooks().stream()
+                .map(CuratedCatalogService.CuratedCatalogBook::gutenbergId)
+                .collect(Collectors.toSet());
+
+        Set<Integer> expectedPartnerContainers = Set.of(
+                1063,   // The Cask of Amontillado
+                3189,   // Sketches New and Old (Jumping Frog)
+                512,    // Mosses from an Old Manse (Rappaccini's Daughter)
+                10623,  // Plays (Trifles)
+                1041,   // Shakespeare's Sonnets
+                8601,   // Early Poems (Ulysses)
+                16376,  // Browning's Shorter Poems (My Last Duchess)
+                12242,  // Dickinson poems
+                1459    // Prufrock and Other Observations
+        );
+        assertTrue(curatedIds.containsAll(expectedPartnerContainers));
+        assertTrue(curatedCatalogService.getPopularBooks().stream()
+                .filter(book -> book.gutenbergId() == 3189)
+                .anyMatch(book -> book.aliases().stream()
+                        .anyMatch(alias -> alias.toLowerCase().contains("jumping frog"))));
     }
 }
