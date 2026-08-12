@@ -8,13 +8,20 @@ import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
+import com.classicchatreader.service.ClassroomUsageService;
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.TeacherQuizAuthoringService;
+import com.classicchatreader.service.TeacherStudentOverviewService;
+import com.classicchatreader.service.TeacherStudentOverviewService.StudentIdentity;
+import com.classicchatreader.service.TeacherStudentOverviewService.StudentOverviewResponse;
+import com.classicchatreader.service.TeacherStudentOverviewService.TimeInReaderSummary;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -51,6 +58,12 @@ class ClassroomControllerTest {
 
     @MockitoBean
     private TeacherQuizAuthoringService teacherQuizAuthoringService;
+
+    @MockitoBean
+    private TeacherStudentOverviewService teacherStudentOverviewService;
+
+    @MockitoBean
+    private ClassroomUsageService classroomUsageService;
 
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
@@ -164,5 +177,43 @@ class ClassroomControllerTest {
                 .andExpect(jsonPath("$[0].displayNameOverride").value("Alex Rivera"))
                 .andExpect(jsonPath("$[0].email").value("student@example.test"))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    @Test
+    void studentOverviewReturnsTeacherDrillDownPayload() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(teacherStudentOverviewService.getOverview("teacher-1", "term-1", "student-1"))
+                .thenReturn(new StudentOverviewResponse(
+                        "term-1",
+                        new StudentIdentity("student-1", "student@example.test", "Alex Rivera", "2026-08-24"),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        new TimeInReaderSummary(
+                                "Approximate time in reader",
+                                "Engagement proxy",
+                                60000L,
+                                List.of()),
+                        "Pilot teacher drill-down"
+                ));
+
+        mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.student.email").value("student@example.test"))
+                .andExpect(jsonPath("$.timeInReader.approximateTotalMs").value(60000))
+                .andExpect(jsonPath("$.ferpaNote").exists());
+    }
+
+    @Test
+    void studentOverviewForbiddenForNonTeacher() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("student-2", "other@example.test")));
+        when(teacherStudentOverviewService.getOverview("student-2", "term-1", "student-1"))
+                .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required."));
+
+        mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview"))
+                .andExpect(status().isForbidden());
     }
 }

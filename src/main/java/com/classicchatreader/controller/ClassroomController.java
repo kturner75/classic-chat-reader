@@ -14,6 +14,10 @@ import com.classicchatreader.service.ClassroomAdminService.FeatureUpdateRequest;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCapabilities;
+import com.classicchatreader.service.ClassroomUsageService;
+import com.classicchatreader.service.ClassroomUsageService.HeartbeatRequest;
+import com.classicchatreader.service.ClassroomUsageService.HeartbeatResult;
+import com.classicchatreader.service.ClassroomUsageService.OpenedResult;
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.InviteLinkService.RedeemResult;
 import com.classicchatreader.service.InviteLinkService.RedeemStatus;
@@ -22,6 +26,8 @@ import com.classicchatreader.service.TeacherQuizAuthoringService.EffectiveQuizRe
 import com.classicchatreader.service.TeacherQuizAuthoringService.ReplaceOverridesRequest;
 import com.classicchatreader.service.TeacherQuizAuthoringService.SuggestDistractorsRequest;
 import com.classicchatreader.service.TeacherQuizAuthoringService.SuggestQuestionsRequest;
+import com.classicchatreader.service.TeacherStudentOverviewService;
+import com.classicchatreader.service.TeacherStudentOverviewService.StudentOverviewResponse;
 import com.classicchatreader.model.ChapterQuizPayload;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -49,6 +55,8 @@ public class ClassroomController {
     private final AccountAuthService accountAuthService;
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
     private final TeacherQuizAuthoringService teacherQuizAuthoringService;
+    private final TeacherStudentOverviewService teacherStudentOverviewService;
+    private final ClassroomUsageService classroomUsageService;
 
     public ClassroomController(
             ClassroomContextService classroomContextService,
@@ -56,13 +64,17 @@ public class ClassroomController {
             InviteLinkService inviteLinkService,
             AccountAuthService accountAuthService,
             ClassroomTeacherCapabilityService teacherCapabilityService,
-            TeacherQuizAuthoringService teacherQuizAuthoringService) {
+            TeacherQuizAuthoringService teacherQuizAuthoringService,
+            TeacherStudentOverviewService teacherStudentOverviewService,
+            ClassroomUsageService classroomUsageService) {
         this.classroomContextService = classroomContextService;
         this.classroomAdminService = classroomAdminService;
         this.inviteLinkService = inviteLinkService;
         this.accountAuthService = accountAuthService;
         this.teacherCapabilityService = teacherCapabilityService;
         this.teacherQuizAuthoringService = teacherQuizAuthoringService;
+        this.teacherStudentOverviewService = teacherStudentOverviewService;
+        this.classroomUsageService = classroomUsageService;
     }
 
     @GetMapping("/context")
@@ -164,6 +176,31 @@ public class ClassroomController {
     @GetMapping("/terms/{termId}/roster")
     public List<EnrollmentRow> roster(@PathVariable String termId, HttpServletRequest request) {
         return classroomAdminService.listRoster(requireUserId(request), termId);
+    }
+
+    /** Pilot teacher→student overview (BL-025.10). Teacher of term only. */
+    @GetMapping("/terms/{termId}/students/{userId}/overview")
+    public StudentOverviewResponse studentOverview(
+            @PathVariable String termId,
+            @PathVariable String userId,
+            HttpServletRequest request) {
+        return teacherStudentOverviewService.getOverview(requireUserId(request), termId, userId);
+    }
+
+    /** Durable first-open for an assignment (student of that term). */
+    @PostMapping("/assignments/{assignmentId}/opened")
+    public OpenedResult markAssignmentOpened(
+            @PathVariable String assignmentId,
+            HttpServletRequest request) {
+        return classroomUsageService.markAssignmentOpened(requireUserId(request), assignmentId);
+    }
+
+    /** Thin reader heartbeat (BL-025.6 minimum) for approximate time-in-reader. */
+    @PostMapping("/usage/heartbeat")
+    public HeartbeatResult recordHeartbeat(
+            @RequestBody HeartbeatRequest body,
+            HttpServletRequest request) {
+        return classroomUsageService.recordReadingHeartbeat(requireUserId(request), body);
     }
 
     @GetMapping("/terms/{termId}/chapters/{chapterId}/effective-quiz")

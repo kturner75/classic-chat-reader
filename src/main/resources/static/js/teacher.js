@@ -19,7 +19,8 @@
         quizGeneratedBase: [],
         quizContentVersion: null,
         activeQuizBookOption: -1,
-        activeQuizChapterOption: -1
+        activeQuizChapterOption: -1,
+        studentOverviewUserId: null
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -229,12 +230,177 @@
         el['roster-body'].innerHTML = state.roster.map(row => {
             const preferredName = row.displayNameOverride || row.email || 'Student';
             const secondary = row.displayNameOverride && row.email ? row.email : '';
-            return `<tr>
+            const userId = row.userId || '';
+            return `<tr class="roster-row" data-user-id="${escapeHtml(userId)}" tabindex="0" role="button" aria-label="Open overview for ${escapeHtml(preferredName)}">
                 <td><span class="student-name">${escapeHtml(preferredName)}</span>${secondary ? `<span class="student-email">${escapeHtml(secondary)}</span>` : ''}</td>
                 <td>${escapeHtml(formatDate(row.joinedDate))}</td>
                 <td><span class="status-pill">${escapeHtml((row.status || 'active').toLowerCase())}</span></td>
+                <td><button class="secondary-button roster-open-button" type="button" data-open-student="${escapeHtml(userId)}">Overview</button></td>
             </tr>`;
         }).join('');
+    }
+
+    function formatDuration(ms) {
+        const totalSeconds = Math.max(0, Math.round(Number(ms) / 1000));
+        if (totalSeconds < 60) return `${totalSeconds}s`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const remMinutes = minutes % 60;
+        return remMinutes ? `${hours}h ${remMinutes}m` : `${hours}h`;
+    }
+
+    function formatDateTime(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return new Intl.DateTimeFormat(undefined, {
+            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+        }).format(date);
+    }
+
+    function statusPillClass(label) {
+        const normalized = String(label || '').toLowerCase();
+        if (normalized.includes('complete')) return 'completed';
+        if (normalized.includes('progress')) return 'in-progress';
+        return 'not-started';
+    }
+
+    function renderAssignmentOverviewList(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '<p class="overview-empty">None</p>';
+        }
+        return `<ul class="overview-list">${items.map(item => {
+            const openLabel = item.opened ? 'Opened' : 'Not opened';
+            const openClass = item.opened ? 'opened' : 'not-opened';
+            const quizBits = [];
+            if (item.quizRequired) {
+                quizBits.push(`Quiz ${item.quizStatus || 'PENDING'}`);
+                if (item.quizAttemptsUsed != null) {
+                    const allowed = item.quizAttemptsAllowed != null ? `/${item.quizAttemptsAllowed}` : '';
+                    quizBits.push(`Attempts ${item.quizAttemptsUsed}${allowed}`);
+                }
+            }
+            return `<li class="overview-item">
+                <strong>${escapeHtml(item.title || 'Assignment')}</strong>
+                <div class="meta">
+                    <span>${escapeHtml(item.bookTitle || 'Book')}</span>
+                    ${item.chapterTitle ? `<span>${escapeHtml(item.chapterTitle)}</span>` : ''}
+                    ${item.dueDate ? `<span>Due ${escapeHtml(formatDate(item.dueDate))}</span>` : ''}
+                    <span class="status-pill ${statusPillClass(item.statusLabel)}">${escapeHtml(item.statusLabel || '—')}</span>
+                    <span class="status-pill ${openClass}">${openLabel}${item.firstOpenedAt ? ` · ${escapeHtml(formatDateTime(item.firstOpenedAt))}` : ''}</span>
+                    ${quizBits.map(bit => `<span>${escapeHtml(bit)}</span>`).join('')}
+                </div>
+            </li>`;
+        }).join('')}</ul>`;
+    }
+
+    function renderStudentOverview(overview) {
+        const student = overview.student || {};
+        const preferred = student.displayNameOverride || student.email || 'Student';
+        el['student-overview-title'].textContent = preferred;
+        el['student-overview-subtitle'].textContent = student.displayNameOverride && student.email
+            ? student.email
+            : (student.joinedDate ? `Joined ${formatDate(student.joinedDate)}` : 'Rostered student');
+
+        const time = overview.timeInReader || {};
+        const timeBooks = Array.isArray(time.byBook) ? time.byBook : [];
+        const progress = Array.isArray(overview.progressByBook) ? overview.progressByBook : [];
+        const quizzes = Array.isArray(overview.quizzesForBook) ? overview.quizzesForBook : [];
+
+        el['student-overview-body'].innerHTML = `
+            <section class="overview-section">
+                <h3>Current assignments</h3>
+                ${renderAssignmentOverviewList(overview.currentAssignments)}
+            </section>
+            <section class="overview-section">
+                <h3>Completed assignments</h3>
+                ${renderAssignmentOverviewList(overview.completedAssignments)}
+            </section>
+            <section class="overview-section">
+                <h3>Progress by book</h3>
+                ${progress.length === 0 ? '<p class="overview-empty">No assigned books yet.</p>' : `<ul class="overview-list">${progress.map(row => `
+                    <li class="overview-item">
+                        <strong>${escapeHtml(row.bookTitle || 'Book')}</strong>
+                        <div class="meta">
+                            <span>Chapter ${escapeHtml(row.chapterLabel || '—')}</span>
+                            <span>${escapeHtml(String(row.percentComplete ?? 0))}% complete</span>
+                            ${row.lastReadAt ? `<span>Last read ${escapeHtml(formatDateTime(row.lastReadAt))}</span>` : ''}
+                        </div>
+                    </li>`).join('')}</ul>`}
+            </section>
+            <section class="overview-section">
+                <h3>Quizzes for the book</h3>
+                ${quizzes.length === 0 ? '<p class="overview-empty">No quiz-required assignments.</p>' : `<ul class="overview-list">${quizzes.map(quiz => {
+                    const score = quiz.totalQuestions != null
+                        ? `${quiz.bestCorrectAnswers}/${quiz.totalQuestions} (${quiz.bestScorePercent}%)`
+                        : `${quiz.bestScorePercent}%`;
+                    const retries = quiz.retryAttemptsUsed != null ? quiz.retryAttemptsUsed : Math.max(0, (quiz.attemptsUsed || 0) - 1);
+                    const allowed = quiz.attemptsAllowed != null ? ` of ${quiz.attemptsAllowed}` : '';
+                    return `<li class="overview-item">
+                        <strong>${escapeHtml(quiz.assignmentTitle || quiz.chapterTitle || 'Quiz')}</strong>
+                        <div class="meta">
+                            <span>${escapeHtml(quiz.bookTitle || 'Book')}</span>
+                            ${quiz.chapterTitle ? `<span>${escapeHtml(quiz.chapterTitle)}</span>` : ''}
+                            <span class="status-pill ${quiz.complete ? 'completed' : 'in-progress'}">${quiz.complete ? 'Complete' : 'Incomplete'}</span>
+                            <span>Best score ${escapeHtml(score)}</span>
+                            <span>Attempts ${escapeHtml(String(quiz.attemptsUsed || 0))}${escapeHtml(allowed)}</span>
+                            <span>Retries used ${escapeHtml(String(retries))}</span>
+                            ${quiz.latestAttemptAt ? `<span>Latest ${escapeHtml(formatDateTime(quiz.latestAttemptAt))}</span>` : ''}
+                        </div>
+                    </li>`;
+                }).join('')}</ul>`}
+            </section>
+            <section class="overview-section">
+                <h3>${escapeHtml(time.label || 'Approximate time in reader')}</h3>
+                <p class="hint">${escapeHtml(time.caveat || 'Approximate engagement proxy from reader heartbeats.')}</p>
+                <ul class="overview-list">
+                    <li class="overview-item">
+                        <strong>${escapeHtml(formatDuration(time.approximateTotalMs || 0))} total</strong>
+                        <div class="meta">
+                            ${timeBooks.length === 0
+                                ? '<span>No heartbeat time recorded yet for this term.</span>'
+                                : timeBooks.map(row => `<span>${escapeHtml(row.bookTitle || 'Book')}: ${escapeHtml(formatDuration(row.approximateMs || 0))}</span>`).join('')}
+                        </div>
+                    </li>
+                </ul>
+            </section>
+        `;
+        el['student-overview-ferpa'].textContent = overview.ferpaNote || '';
+        show(el['student-overview-ferpa'], Boolean(overview.ferpaNote));
+        show(el['student-overview-body'], true);
+    }
+
+    async function openStudentOverview(userId) {
+        if (!state.selectedClass?.termId || !userId) return;
+        state.studentOverviewUserId = userId;
+        const rosterRow = state.roster.find(row => row.userId === userId);
+        const preferred = rosterRow?.displayNameOverride || rosterRow?.email || 'Student';
+        el['student-overview-title'].textContent = preferred;
+        el['student-overview-subtitle'].textContent = 'Loading…';
+        show(el['student-overview-modal'], true);
+        show(el['student-overview-loading'], true);
+        show(el['student-overview-error'], false);
+        show(el['student-overview-body'], false);
+        show(el['student-overview-ferpa'], false);
+        try {
+            const overview = await api(
+                `/api/classroom/terms/${encodeURIComponent(state.selectedClass.termId)}/students/${encodeURIComponent(userId)}/overview`
+            );
+            if (state.studentOverviewUserId !== userId) return;
+            renderStudentOverview(overview);
+        } catch (error) {
+            el['student-overview-error'].textContent = error.message || 'Unable to load student overview.';
+            show(el['student-overview-error'], true);
+        } finally {
+            show(el['student-overview-loading'], false);
+        }
+    }
+
+    function closeStudentOverview() {
+        state.studentOverviewUserId = null;
+        show(el['student-overview-modal'], false);
     }
 
     function assignmentTarget(assignment) {
@@ -1132,6 +1298,24 @@
         el['roster-invite-button'].addEventListener('click', () => {
             document.getElementById('overview').scrollIntoView({ behavior: 'smooth' });
             if (el['invite-link'].value) copyInvite(); else generateInvite();
+        });
+        el['roster-body'].addEventListener('click', event => {
+            const button = event.target.closest('[data-open-student]');
+            const row = event.target.closest('tr[data-user-id]');
+            const userId = button?.dataset.openStudent || row?.dataset.userId;
+            if (!userId) return;
+            event.preventDefault();
+            openStudentOverview(userId);
+        });
+        el['roster-body'].addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const row = event.target.closest('tr[data-user-id]');
+            if (!row || event.target.closest('button')) return;
+            event.preventDefault();
+            openStudentOverview(row.dataset.userId);
+        });
+        document.querySelectorAll('[data-close-student-overview]').forEach(node => {
+            node.addEventListener('click', closeStudentOverview);
         });
         el['copy-invite'].addEventListener('click', copyInvite);
         el['new-assignment-button'].addEventListener('click', () => openAssignmentModal());

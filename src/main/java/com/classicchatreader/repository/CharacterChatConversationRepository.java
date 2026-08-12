@@ -36,6 +36,19 @@ public interface CharacterChatConversationRepository extends JpaRepository<Chara
     List<CharacterChatConversationEntity> findByUserIdOrderByUpdatedAtDesc(String userId, Pageable pageable);
 
     @Query("""
+            SELECT COUNT(conversation)
+            FROM CharacterChatConversationEntity conversation
+            JOIN CharacterEntity character ON character.id = conversation.characterId
+            WHERE conversation.userId = :userId
+              AND character.book.id = :bookId
+              AND EXISTS (SELECT userMessage.id FROM CharacterChatMessageEntity userMessage
+                          WHERE userMessage.conversationId = conversation.id
+                            AND userMessage.userId = :userId
+                            AND userMessage.role = com.classicchatreader.entity.CharacterChatMessageRole.USER)
+            """)
+    long countVisibleByUserIdAndBookId(@Param("userId") String userId, @Param("bookId") String bookId);
+
+    @Query("""
             SELECT conversation FROM CharacterChatConversationEntity conversation
             JOIN CharacterEntity character ON character.id = conversation.characterId
             JOIN character.book book

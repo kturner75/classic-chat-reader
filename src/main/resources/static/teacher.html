@@ -130,7 +130,7 @@
                     <div class="table-card">
                         <div id="roster-empty" class="empty-row">No students have joined yet.</div>
                         <table id="roster-table" class="hidden">
-                            <thead><tr><th>Student</th><th>Joined</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Student</th><th>Joined</th><th>Status</th><th><span class="sr-only">Overview</span></th></tr></thead>
                             <tbody id="roster-body"></tbody>
                         </table>
                     </div>
@@ -306,6 +306,24 @@
                     <button id="quiz-wizard-publish" class="primary-button" type="button">Publish for class</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="student-overview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="student-overview-title">
+        <button class="modal-backdrop" type="button" data-close-student-overview aria-label="Close student overview"></button>
+        <div class="modal-card student-overview-card">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">Student overview</p>
+                    <h2 id="student-overview-title">Student</h2>
+                    <p id="student-overview-subtitle" class="section-description">Class-scoped pilot drill-down</p>
+                </div>
+                <button class="close-button" type="button" data-close-student-overview aria-label="Close">×</button>
+            </div>
+            <div id="student-overview-loading" class="overview-loading hidden">Loading student overview…</div>
+            <div id="student-overview-error" class="form-error hidden" role="alert"></div>
+            <div id="student-overview-body" class="student-overview-body hidden"></div>
+            <p id="student-overview-ferpa" class="overview-ferpa hidden"></p>
         </div>
     </div>
 

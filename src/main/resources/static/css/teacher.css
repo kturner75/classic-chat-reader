@@ -87,7 +87,31 @@ th { color: var(--muted); background: #f3f1ec; font-size: .68rem; letter-spacing
 tbody tr:last-child td { border-bottom: 0; }
 .student-name { display: block; font-weight: 600; }
 .student-email { color: var(--muted); font-size: .72rem; }
+.roster-row { cursor: pointer; }
+.roster-row:hover, .roster-row:focus-within { background: #f3f1ec; }
+.roster-row:focus { outline: 2px solid rgba(91,79,138,.25); outline-offset: -2px; }
+.roster-open-button { padding: .4rem .65rem; font-size: .72rem; }
 .empty-row, .empty-card { padding: 2rem; color: var(--muted); text-align: center; font-size: .85rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+.student-overview-card { width: min(820px, 96vw); }
+.student-overview-body { display: grid; gap: 1.25rem; }
+.overview-loading { padding: 1rem 0; color: var(--muted); font-size: .85rem; }
+.overview-section h3 { margin: 0 0 .45rem; font: 500 1.25rem var(--serif); }
+.overview-section p.hint { margin: 0 0 .55rem; color: var(--muted); font-size: .75rem; line-height: 1.4; }
+.overview-list { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; }
+.overview-item {
+    display: grid; gap: .2rem; padding: .7rem .8rem; background: #fff; border: 1px solid var(--line); border-radius: 10px;
+}
+.overview-item strong { font: 500 1.02rem var(--serif); }
+.overview-item .meta { color: var(--muted); font-size: .72rem; display: flex; flex-wrap: wrap; gap: .35rem .75rem; }
+.overview-empty { color: var(--muted); font-size: .8rem; padding: .35rem 0; }
+.overview-ferpa { margin: 1rem 0 0; color: var(--muted); font-size: .7rem; line-height: 1.4; }
+.status-pill.not-started { color: var(--muted); background: #efede7; }
+.status-pill.in-progress { color: #6a5520; background: #f4ecd7; }
+.status-pill.completed { color: var(--success); background: #e8f2e9; }
+.status-pill.opened { color: var(--accent-dark); background: var(--accent-soft); }
+.status-pill.not-opened { color: #7a3f3f; background: #f6e8e8; }
 
 .assignment-list { display: grid; gap: .65rem; }
 .assignment-card { padding: 1rem 1.1rem; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
