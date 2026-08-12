@@ -309,18 +309,18 @@
         </div>
     </div>
 
-    <div id="student-overview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="student-overview-title">
-        <button class="modal-backdrop" type="button" data-close-student-overview aria-label="Close student overview"></button>
-        <div class="modal-card student-overview-card">
+    <div id="student-overview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="student-overview-title" aria-busy="false">
+        <button class="modal-backdrop" type="button" tabindex="-1" data-close-student-overview aria-label="Close student overview"></button>
+        <div class="modal-card student-overview-card" tabindex="-1">
             <div class="modal-heading">
                 <div>
                     <p class="eyebrow">Student overview</p>
                     <h2 id="student-overview-title">Student</h2>
                     <p id="student-overview-subtitle" class="section-description">Class-scoped pilot drill-down</p>
                 </div>
-                <button class="close-button" type="button" data-close-student-overview aria-label="Close">×</button>
+                <button id="student-overview-close" class="close-button" type="button" data-close-student-overview aria-label="Close">×</button>
             </div>
-            <div id="student-overview-loading" class="overview-loading hidden">Loading student overview…</div>
+            <div id="student-overview-loading" class="overview-loading hidden" role="status" aria-live="polite">Loading student overview…</div>
             <div id="student-overview-error" class="form-error hidden" role="alert"></div>
             <div id="student-overview-body" class="student-overview-body hidden"></div>
             <p id="student-overview-ferpa" class="overview-ferpa hidden"></p>

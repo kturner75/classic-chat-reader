@@ -20,7 +20,8 @@
         quizContentVersion: null,
         activeQuizBookOption: -1,
         activeQuizChapterOption: -1,
-        studentOverviewUserId: null
+        studentOverviewUserId: null,
+        studentOverviewReturnFocus: null
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -231,13 +232,45 @@
             const preferredName = row.displayNameOverride || row.email || 'Student';
             const secondary = row.displayNameOverride && row.email ? row.email : '';
             const userId = row.userId || '';
-            return `<tr class="roster-row" data-user-id="${escapeHtml(userId)}" tabindex="0" role="button" aria-label="Open overview for ${escapeHtml(preferredName)}">
+            // Row click is progressive enhancement only — the Overview button is the accessible control.
+            return `<tr class="roster-row" data-user-id="${escapeHtml(userId)}">
                 <td><span class="student-name">${escapeHtml(preferredName)}</span>${secondary ? `<span class="student-email">${escapeHtml(secondary)}</span>` : ''}</td>
                 <td>${escapeHtml(formatDate(row.joinedDate))}</td>
                 <td><span class="status-pill">${escapeHtml((row.status || 'active').toLowerCase())}</span></td>
-                <td><button class="secondary-button roster-open-button" type="button" data-open-student="${escapeHtml(userId)}">Overview</button></td>
+                <td><button class="secondary-button roster-open-button" type="button" data-open-student="${escapeHtml(userId)}" aria-label="Open overview for ${escapeHtml(preferredName)}">Overview</button></td>
             </tr>`;
         }).join('');
+    }
+
+    function isModalOpen(node) {
+        return Boolean(node && !node.classList.contains('hidden'));
+    }
+
+    function getStudentOverviewFocusables() {
+        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
+        if (!card) return [];
+        return Array.from(card.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true');
+    }
+
+    function focusStudentOverviewClose() {
+        const closeButton = el['student-overview-close']
+            || el['student-overview-modal']?.querySelector('[data-close-student-overview].close-button');
+        if (closeButton && typeof closeButton.focus === 'function') {
+            closeButton.focus();
+            return;
+        }
+        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
+        if (card && typeof card.focus === 'function') {
+            card.focus();
+        }
+    }
+
+    function setStudentOverviewBusy(busy) {
+        const modal = el['student-overview-modal'];
+        if (!modal) return;
+        modal.setAttribute('aria-busy', busy ? 'true' : 'false');
     }
 
     function formatDuration(ms) {
@@ -372,18 +405,24 @@
         show(el['student-overview-body'], true);
     }
 
-    async function openStudentOverview(userId) {
+    async function openStudentOverview(userId, activator = null) {
         if (!state.selectedClass?.termId || !userId) return;
+        const preferredActivator = activator
+            || el['roster-body']?.querySelector(`[data-open-student="${CSS.escape(userId)}"]`)
+            || document.activeElement;
+        state.studentOverviewReturnFocus = preferredActivator instanceof HTMLElement ? preferredActivator : null;
         state.studentOverviewUserId = userId;
         const rosterRow = state.roster.find(row => row.userId === userId);
         const preferred = rosterRow?.displayNameOverride || rosterRow?.email || 'Student';
         el['student-overview-title'].textContent = preferred;
         el['student-overview-subtitle'].textContent = 'Loading…';
         show(el['student-overview-modal'], true);
+        setStudentOverviewBusy(true);
         show(el['student-overview-loading'], true);
         show(el['student-overview-error'], false);
         show(el['student-overview-body'], false);
         show(el['student-overview-ferpa'], false);
+        focusStudentOverviewClose();
         try {
             const overview = await api(
                 `/api/classroom/terms/${encodeURIComponent(state.selectedClass.termId)}/students/${encodeURIComponent(userId)}/overview`
@@ -395,12 +434,87 @@
             show(el['student-overview-error'], true);
         } finally {
             show(el['student-overview-loading'], false);
+            setStudentOverviewBusy(false);
+            if (state.studentOverviewUserId === userId && isModalOpen(el['student-overview-modal'])) {
+                focusStudentOverviewClose();
+            }
         }
     }
 
     function closeStudentOverview() {
+        if (!isModalOpen(el['student-overview-modal'])) {
+            return;
+        }
+        const returnUserId = state.studentOverviewUserId;
         state.studentOverviewUserId = null;
+        setStudentOverviewBusy(false);
         show(el['student-overview-modal'], false);
+        // Prefer the stored activator; fall back to that student's Overview button.
+        const stored = state.studentOverviewReturnFocus;
+        if (stored && typeof stored.focus === 'function' && document.contains(stored)) {
+            state.studentOverviewReturnFocus = null;
+            stored.focus();
+            return;
+        }
+        state.studentOverviewReturnFocus = null;
+        const fallback = returnUserId
+            ? el['roster-body']?.querySelector(`[data-open-student="${CSS.escape(returnUserId)}"]`)
+            : null;
+        if (fallback && typeof fallback.focus === 'function') {
+            fallback.focus();
+        }
+    }
+
+    function trapStudentOverviewFocus(event) {
+        if (event.key !== 'Tab' || !isModalOpen(el['student-overview-modal'])) {
+            return;
+        }
+        const card = el['student-overview-modal'].querySelector('.student-overview-card');
+        const focusables = getStudentOverviewFocusables();
+        if (focusables.length === 0) {
+            event.preventDefault();
+            focusStudentOverviewClose();
+            return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        const outsideCard = !card || !card.contains(active);
+        if (event.shiftKey) {
+            if (active === first || outsideCard) {
+                event.preventDefault();
+                last.focus();
+            }
+            return;
+        }
+        if (active === last || outsideCard) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function closeTopmostModalOnEscape(event) {
+        if (event.key !== 'Escape') return;
+        // Close only the topmost open modal (student overview stacks above the others for this surface).
+        if (isModalOpen(el['student-overview-modal'])) {
+            event.preventDefault();
+            closeStudentOverview();
+            return;
+        }
+        if (isModalOpen(el['quiz-wizard-modal'])) {
+            event.preventDefault();
+            closeQuizWizard();
+            return;
+        }
+        if (isModalOpen(el['assignment-modal'])) {
+            event.preventDefault();
+            closeAssignmentModal();
+            return;
+        }
+        if (isModalOpen(el['class-modal'])) {
+            event.preventDefault();
+            closeClassModal();
+        }
     }
 
     function assignmentTarget(assignment) {
@@ -1301,22 +1415,23 @@
         });
         el['roster-body'].addEventListener('click', event => {
             const button = event.target.closest('[data-open-student]');
+            if (button) {
+                event.preventDefault();
+                openStudentOverview(button.dataset.openStudent, button);
+                return;
+            }
+            // Progressive enhancement: clicking the row (not a nested control) opens overview.
             const row = event.target.closest('tr[data-user-id]');
-            const userId = button?.dataset.openStudent || row?.dataset.userId;
+            if (!row || event.target.closest('a, button, input, select, textarea, label')) return;
+            const userId = row.dataset.userId;
             if (!userId) return;
-            event.preventDefault();
-            openStudentOverview(userId);
-        });
-        el['roster-body'].addEventListener('keydown', event => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            const row = event.target.closest('tr[data-user-id]');
-            if (!row || event.target.closest('button')) return;
-            event.preventDefault();
-            openStudentOverview(row.dataset.userId);
+            const overviewButton = row.querySelector(`[data-open-student="${CSS.escape(userId)}"]`);
+            openStudentOverview(userId, overviewButton || null);
         });
         document.querySelectorAll('[data-close-student-overview]').forEach(node => {
             node.addEventListener('click', closeStudentOverview);
         });
+        el['student-overview-modal']?.addEventListener('keydown', trapStudentOverviewFocus);
         el['copy-invite'].addEventListener('click', copyInvite);
         el['new-assignment-button'].addEventListener('click', () => openAssignmentModal());
         el['assignment-list'].addEventListener('click', event => {
@@ -1454,12 +1569,7 @@
             event.preventDefault();
             selectQuizChapter(option.dataset.chapterId);
         });
-        document.addEventListener('keydown', event => {
-            if (event.key !== 'Escape') return;
-            closeClassModal();
-            closeAssignmentModal();
-            closeQuizWizard();
-        });
+        document.addEventListener('keydown', closeTopmostModalOnEscape);
     }
 
     bindEvents();
