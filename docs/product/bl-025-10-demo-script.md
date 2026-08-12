@@ -18,6 +18,10 @@ Provision teaching access if needed:
 1. Sign in as teacher → `/teacher` → select class/term.
 2. **Roster** → click a student (or **Overview**).
 3. Confirm the panel shows all six sections:
+
+> **Regression note:** `ClassSummary` / selected class uses `activeTermId` (not `termId`). Overview must resolve
+> `state.selectedClass.activeTermId || state.selectedClass.termId` before calling
+> `GET /api/classroom/terms/{termId}/students/{userId}/overview`. Guarding on `.termId` alone silently no-ops.
    - Current assignments
    - Completed assignments
    - Progress by book (chapter n/n and %)
