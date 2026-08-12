@@ -38,6 +38,8 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
 
     long countByChapterIdAndUserId(String chapterId, String userId);
 
+    List<QuizAttemptEntity> findByChapterIdAndUserIdOrderByCreatedAtDesc(String chapterId, String userId);
+
     @Query("""
             SELECT COALESCE(MAX(qa.correctAnswers), 0)
             FROM QuizAttemptEntity qa
@@ -46,6 +48,18 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
     int findMaxCorrectAnswersByChapterIdAndUserId(
             @Param("chapterId") String chapterId,
             @Param("userId") String userId);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.scorePercent), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+            """)
+    int findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
 
     @Query("""
             SELECT COUNT(qa)

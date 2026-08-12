@@ -169,6 +169,11 @@
         classroomAssignments: [],
         classroomCanTeach: false,
         classroomCanCreateClass: false,
+        activeClassroomAssignmentId: null,
+        classroomHeartbeatTimer: null,
+        classroomHeartbeatSessionId: null,
+        classroomHeartbeatLastSentAt: 0,
+        classroomHeartbeatSeq: 0,
         achievementsLoading: false,
         achievementsLoaded: false,
         achievementsSummary: '',
@@ -3433,6 +3438,101 @@
         }
     }
 
+    async function markClassroomAssignmentOpened(assignmentId) {
+        if (!assignmentId || !state.accountAuthenticated) {
+            return;
+        }
+        try {
+            await nativeFetch(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/opened`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}'
+            });
+        } catch (error) {
+            console.debug('Failed to mark assignment opened:', error);
+        }
+    }
+
+    function ensureClassroomHeartbeatSession() {
+        if (!state.classroomHeartbeatSessionId) {
+            state.classroomHeartbeatSessionId = `reader-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+        return state.classroomHeartbeatSessionId;
+    }
+
+    function stopClassroomHeartbeat() {
+        if (state.classroomHeartbeatTimer) {
+            window.clearInterval(state.classroomHeartbeatTimer);
+            state.classroomHeartbeatTimer = null;
+        }
+    }
+
+    function startClassroomHeartbeat() {
+        stopClassroomHeartbeat();
+        if (!canSendClassroomHeartbeat()) {
+            return;
+        }
+        ensureClassroomHeartbeatSession();
+        state.classroomHeartbeatLastSentAt = Date.now();
+        state.classroomHeartbeatTimer = window.setInterval(() => {
+            void sendClassroomReadingHeartbeat();
+        }, 60000);
+    }
+
+    function canSendClassroomHeartbeat() {
+        return Boolean(
+            state.accountAuthenticated
+            && state.classroomContext?.enrolled
+            && state.classroomContext?.termId
+            && state.classroomContext?.role === 'STUDENT'
+            && state.currentBook?.id
+            && document.visibilityState !== 'hidden'
+        );
+    }
+
+    async function sendClassroomReadingHeartbeat(options = {}) {
+        if (!canSendClassroomHeartbeat() && !options.force) {
+            return;
+        }
+        if (!state.accountAuthenticated
+            || !state.classroomContext?.enrolled
+            || !state.classroomContext?.termId
+            || state.classroomContext?.role !== 'STUDENT'
+            || !state.currentBook?.id) {
+            return;
+        }
+        const now = Date.now();
+        const last = state.classroomHeartbeatLastSentAt || now;
+        let durationMs = Math.max(0, now - last);
+        if (durationMs < 1000 && !options.force) {
+            return;
+        }
+        // Server clamps to 120s; send at most that much per tick.
+        durationMs = Math.min(durationMs, 120000);
+        state.classroomHeartbeatLastSentAt = now;
+        state.classroomHeartbeatSeq += 1;
+        const sessionId = ensureClassroomHeartbeatSession();
+        const chapter = Array.isArray(state.chapters) ? state.chapters[state.currentChapterIndex] : null;
+        const payload = {
+            termId: state.classroomContext.termId,
+            bookId: state.currentBook.id,
+            chapterId: chapter?.id || null,
+            assignmentId: state.activeClassroomAssignmentId || null,
+            durationMs,
+            sessionId,
+            idempotencyKey: `${sessionId}:${state.classroomHeartbeatSeq}`
+        };
+        try {
+            await nativeFetch('/api/classroom/usage/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } catch (error) {
+            console.debug('Failed to send classroom reading heartbeat:', error);
+        }
+    }
+
     async function openClassroomAssignment(assignment) {
         if (!assignment?.bookId) {
             return;
@@ -3445,9 +3545,14 @@
             });
             return;
         }
+        if (assignment.assignmentId) {
+            state.activeClassroomAssignmentId = assignment.assignmentId;
+            void markClassroomAssignmentOpened(assignment.assignmentId);
+        }
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);
+        startClassroomHeartbeat();
     }
 
     function persistCurrentBookActivity() {
@@ -4541,6 +4646,23 @@
                     console.debug('Book character prefetch request failed:', error);
                 });
         }
+
+        // Thin BL-025.6 heartbeat while an enrolled student is in the reader.
+        if (!(assignmentContextActiveForBook(book.id))) {
+            state.activeClassroomAssignmentId = null;
+        }
+        startClassroomHeartbeat();
+    }
+
+    function assignmentContextActiveForBook(bookId) {
+        if (!state.activeClassroomAssignmentId || !bookId) {
+            return false;
+        }
+        return (state.classroomAssignments || []).some(
+            (item) => item
+                && item.assignmentId === state.activeClassroomAssignmentId
+                && item.bookId === bookId
+        );
     }
 
     // Load chapter content
@@ -6395,6 +6517,9 @@
             event.preventDefault();
         }
         persistCurrentBookActivity();
+        void sendClassroomReadingHeartbeat({ force: true });
+        stopClassroomHeartbeat();
+        state.activeClassroomAssignmentId = null;
         state.lastBookActivitySignature = '';
         ttsStop();
         closeMobileHeaderMenu();
@@ -9719,6 +9844,14 @@
 
         // Back to library
         elements.backToLibrary.addEventListener('click', backToLibrary);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                void sendClassroomReadingHeartbeat({ force: true });
+                stopClassroomHeartbeat();
+            } else if (!elements.readerView.classList.contains('hidden')) {
+                startClassroomHeartbeat();
+            }
+        });
         if (elements.favoriteToggle) {
             elements.favoriteToggle.addEventListener('click', () => {
                 if (!state.currentBook?.id) return;

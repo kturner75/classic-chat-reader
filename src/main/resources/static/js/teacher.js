@@ -19,7 +19,9 @@
         quizGeneratedBase: [],
         quizContentVersion: null,
         activeQuizBookOption: -1,
-        activeQuizChapterOption: -1
+        activeQuizChapterOption: -1,
+        studentOverviewUserId: null,
+        studentOverviewReturnFocus: null
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -229,12 +231,290 @@
         el['roster-body'].innerHTML = state.roster.map(row => {
             const preferredName = row.displayNameOverride || row.email || 'Student';
             const secondary = row.displayNameOverride && row.email ? row.email : '';
-            return `<tr>
+            const userId = row.userId || '';
+            // Row click is progressive enhancement only — the Overview button is the accessible control.
+            return `<tr class="roster-row" data-user-id="${escapeHtml(userId)}">
                 <td><span class="student-name">${escapeHtml(preferredName)}</span>${secondary ? `<span class="student-email">${escapeHtml(secondary)}</span>` : ''}</td>
                 <td>${escapeHtml(formatDate(row.joinedDate))}</td>
                 <td><span class="status-pill">${escapeHtml((row.status || 'active').toLowerCase())}</span></td>
+                <td><button class="secondary-button roster-open-button" type="button" data-open-student="${escapeHtml(userId)}" aria-label="Open overview for ${escapeHtml(preferredName)}">Overview</button></td>
             </tr>`;
         }).join('');
+    }
+
+    function isModalOpen(node) {
+        return Boolean(node && !node.classList.contains('hidden'));
+    }
+
+    function getStudentOverviewFocusables() {
+        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
+        if (!card) return [];
+        return Array.from(card.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true');
+    }
+
+    function focusStudentOverviewClose() {
+        const closeButton = el['student-overview-close']
+            || el['student-overview-modal']?.querySelector('[data-close-student-overview].close-button');
+        if (closeButton && typeof closeButton.focus === 'function') {
+            closeButton.focus();
+            return;
+        }
+        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
+        if (card && typeof card.focus === 'function') {
+            card.focus();
+        }
+    }
+
+    function setStudentOverviewBusy(busy) {
+        const modal = el['student-overview-modal'];
+        if (!modal) return;
+        modal.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+
+    function formatDuration(ms) {
+        const totalSeconds = Math.max(0, Math.round(Number(ms) / 1000));
+        if (totalSeconds < 60) return `${totalSeconds}s`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const remMinutes = minutes % 60;
+        return remMinutes ? `${hours}h ${remMinutes}m` : `${hours}h`;
+    }
+
+    function formatDateTime(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return new Intl.DateTimeFormat(undefined, {
+            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+        }).format(date);
+    }
+
+    function statusPillClass(label) {
+        const normalized = String(label || '').toLowerCase();
+        if (normalized.includes('complete')) return 'completed';
+        if (normalized.includes('progress')) return 'in-progress';
+        return 'not-started';
+    }
+
+    function renderAssignmentOverviewList(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '<p class="overview-empty">None</p>';
+        }
+        return `<ul class="overview-list">${items.map(item => {
+            const openLabel = item.opened ? 'Opened' : 'Not opened';
+            const openClass = item.opened ? 'opened' : 'not-opened';
+            const quizBits = [];
+            if (item.quizRequired) {
+                quizBits.push(`Quiz ${item.quizStatus || 'PENDING'}`);
+                if (item.quizAttemptsUsed != null) {
+                    const allowed = item.quizAttemptsAllowed != null ? `/${item.quizAttemptsAllowed}` : '';
+                    quizBits.push(`Attempts ${item.quizAttemptsUsed}${allowed}`);
+                }
+            }
+            return `<li class="overview-item">
+                <strong>${escapeHtml(item.title || 'Assignment')}</strong>
+                <div class="meta">
+                    <span>${escapeHtml(item.bookTitle || 'Book')}</span>
+                    ${item.chapterTitle ? `<span>${escapeHtml(item.chapterTitle)}</span>` : ''}
+                    ${item.dueDate ? `<span>Due ${escapeHtml(formatDate(item.dueDate))}</span>` : ''}
+                    <span class="status-pill ${statusPillClass(item.statusLabel)}">${escapeHtml(item.statusLabel || '—')}</span>
+                    <span class="status-pill ${openClass}">${openLabel}${item.firstOpenedAt ? ` · ${escapeHtml(formatDateTime(item.firstOpenedAt))}` : ''}</span>
+                    ${quizBits.map(bit => `<span>${escapeHtml(bit)}</span>`).join('')}
+                </div>
+            </li>`;
+        }).join('')}</ul>`;
+    }
+
+    function renderStudentOverview(overview) {
+        const student = overview.student || {};
+        const preferred = student.displayNameOverride || student.email || 'Student';
+        el['student-overview-title'].textContent = preferred;
+        el['student-overview-subtitle'].textContent = student.displayNameOverride && student.email
+            ? student.email
+            : (student.joinedDate ? `Joined ${formatDate(student.joinedDate)}` : 'Rostered student');
+
+        const time = overview.timeInReader || {};
+        const timeBooks = Array.isArray(time.byBook) ? time.byBook : [];
+        const progress = Array.isArray(overview.progressByBook) ? overview.progressByBook : [];
+        const quizzes = Array.isArray(overview.quizzesForBook) ? overview.quizzesForBook : [];
+
+        el['student-overview-body'].innerHTML = `
+            <section class="overview-section">
+                <h3>Current assignments</h3>
+                ${renderAssignmentOverviewList(overview.currentAssignments)}
+            </section>
+            <section class="overview-section">
+                <h3>Completed assignments</h3>
+                ${renderAssignmentOverviewList(overview.completedAssignments)}
+            </section>
+            <section class="overview-section">
+                <h3>Progress by book</h3>
+                ${progress.length === 0 ? '<p class="overview-empty">No assigned books yet.</p>' : `<ul class="overview-list">${progress.map(row => `
+                    <li class="overview-item">
+                        <strong>${escapeHtml(row.bookTitle || 'Book')}</strong>
+                        <div class="meta">
+                            <span>Chapter ${escapeHtml(row.chapterLabel || '—')}</span>
+                            <span>${escapeHtml(String(row.percentComplete ?? 0))}% complete</span>
+                            ${row.lastReadAt ? `<span>Last read ${escapeHtml(formatDateTime(row.lastReadAt))}</span>` : ''}
+                        </div>
+                    </li>`).join('')}</ul>`}
+            </section>
+            <section class="overview-section">
+                <h3>Quizzes for the book</h3>
+                ${quizzes.length === 0 ? '<p class="overview-empty">No quiz-required assignments.</p>' : `<ul class="overview-list">${quizzes.map(quiz => {
+                    const score = quiz.totalQuestions != null
+                        ? `${quiz.bestCorrectAnswers}/${quiz.totalQuestions} (${quiz.bestScorePercent}%)`
+                        : `${quiz.bestScorePercent}%`;
+                    const retries = quiz.retryAttemptsUsed != null ? quiz.retryAttemptsUsed : Math.max(0, (quiz.attemptsUsed || 0) - 1);
+                    const allowed = quiz.attemptsAllowed != null ? ` of ${quiz.attemptsAllowed}` : '';
+                    return `<li class="overview-item">
+                        <strong>${escapeHtml(quiz.assignmentTitle || quiz.chapterTitle || 'Quiz')}</strong>
+                        <div class="meta">
+                            <span>${escapeHtml(quiz.bookTitle || 'Book')}</span>
+                            ${quiz.chapterTitle ? `<span>${escapeHtml(quiz.chapterTitle)}</span>` : ''}
+                            <span class="status-pill ${quiz.complete ? 'completed' : 'in-progress'}">${quiz.complete ? 'Complete' : 'Incomplete'}</span>
+                            <span>Best score ${escapeHtml(score)}</span>
+                            <span>Attempts ${escapeHtml(String(quiz.attemptsUsed || 0))}${escapeHtml(allowed)}</span>
+                            <span>Retries used ${escapeHtml(String(retries))}</span>
+                            ${quiz.latestAttemptAt ? `<span>Latest ${escapeHtml(formatDateTime(quiz.latestAttemptAt))}</span>` : ''}
+                        </div>
+                    </li>`;
+                }).join('')}</ul>`}
+            </section>
+            <section class="overview-section">
+                <h3>${escapeHtml(time.label || 'Approximate time in reader')}</h3>
+                <p class="hint">${escapeHtml(time.caveat || 'Approximate engagement proxy from reader heartbeats.')}</p>
+                <ul class="overview-list">
+                    <li class="overview-item">
+                        <strong>${escapeHtml(formatDuration(time.approximateTotalMs || 0))} total</strong>
+                        <div class="meta">
+                            ${timeBooks.length === 0
+                                ? '<span>No heartbeat time recorded yet for this term.</span>'
+                                : timeBooks.map(row => `<span>${escapeHtml(row.bookTitle || 'Book')}: ${escapeHtml(formatDuration(row.approximateMs || 0))}</span>`).join('')}
+                        </div>
+                    </li>
+                </ul>
+            </section>
+        `;
+        el['student-overview-ferpa'].textContent = overview.ferpaNote || '';
+        show(el['student-overview-ferpa'], Boolean(overview.ferpaNote));
+        show(el['student-overview-body'], true);
+    }
+
+    async function openStudentOverview(userId, activator = null) {
+        if (!state.selectedClass?.termId || !userId) return;
+        const preferredActivator = activator
+            || el['roster-body']?.querySelector(`[data-open-student="${CSS.escape(userId)}"]`)
+            || document.activeElement;
+        state.studentOverviewReturnFocus = preferredActivator instanceof HTMLElement ? preferredActivator : null;
+        state.studentOverviewUserId = userId;
+        const rosterRow = state.roster.find(row => row.userId === userId);
+        const preferred = rosterRow?.displayNameOverride || rosterRow?.email || 'Student';
+        el['student-overview-title'].textContent = preferred;
+        el['student-overview-subtitle'].textContent = 'Loading…';
+        show(el['student-overview-modal'], true);
+        setStudentOverviewBusy(true);
+        show(el['student-overview-loading'], true);
+        show(el['student-overview-error'], false);
+        show(el['student-overview-body'], false);
+        show(el['student-overview-ferpa'], false);
+        focusStudentOverviewClose();
+        try {
+            const overview = await api(
+                `/api/classroom/terms/${encodeURIComponent(state.selectedClass.termId)}/students/${encodeURIComponent(userId)}/overview`
+            );
+            if (state.studentOverviewUserId !== userId) return;
+            renderStudentOverview(overview);
+        } catch (error) {
+            el['student-overview-error'].textContent = error.message || 'Unable to load student overview.';
+            show(el['student-overview-error'], true);
+        } finally {
+            show(el['student-overview-loading'], false);
+            setStudentOverviewBusy(false);
+            if (state.studentOverviewUserId === userId && isModalOpen(el['student-overview-modal'])) {
+                focusStudentOverviewClose();
+            }
+        }
+    }
+
+    function closeStudentOverview() {
+        if (!isModalOpen(el['student-overview-modal'])) {
+            return;
+        }
+        const returnUserId = state.studentOverviewUserId;
+        state.studentOverviewUserId = null;
+        setStudentOverviewBusy(false);
+        show(el['student-overview-modal'], false);
+        // Prefer the stored activator; fall back to that student's Overview button.
+        const stored = state.studentOverviewReturnFocus;
+        if (stored && typeof stored.focus === 'function' && document.contains(stored)) {
+            state.studentOverviewReturnFocus = null;
+            stored.focus();
+            return;
+        }
+        state.studentOverviewReturnFocus = null;
+        const fallback = returnUserId
+            ? el['roster-body']?.querySelector(`[data-open-student="${CSS.escape(returnUserId)}"]`)
+            : null;
+        if (fallback && typeof fallback.focus === 'function') {
+            fallback.focus();
+        }
+    }
+
+    function trapStudentOverviewFocus(event) {
+        if (event.key !== 'Tab' || !isModalOpen(el['student-overview-modal'])) {
+            return;
+        }
+        const card = el['student-overview-modal'].querySelector('.student-overview-card');
+        const focusables = getStudentOverviewFocusables();
+        if (focusables.length === 0) {
+            event.preventDefault();
+            focusStudentOverviewClose();
+            return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        const outsideCard = !card || !card.contains(active);
+        if (event.shiftKey) {
+            if (active === first || outsideCard) {
+                event.preventDefault();
+                last.focus();
+            }
+            return;
+        }
+        if (active === last || outsideCard) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function closeTopmostModalOnEscape(event) {
+        if (event.key !== 'Escape') return;
+        // Close only the topmost open modal (student overview stacks above the others for this surface).
+        if (isModalOpen(el['student-overview-modal'])) {
+            event.preventDefault();
+            closeStudentOverview();
+            return;
+        }
+        if (isModalOpen(el['quiz-wizard-modal'])) {
+            event.preventDefault();
+            closeQuizWizard();
+            return;
+        }
+        if (isModalOpen(el['assignment-modal'])) {
+            event.preventDefault();
+            closeAssignmentModal();
+            return;
+        }
+        if (isModalOpen(el['class-modal'])) {
+            event.preventDefault();
+            closeClassModal();
+        }
     }
 
     function assignmentTarget(assignment) {
@@ -1133,6 +1413,25 @@
             document.getElementById('overview').scrollIntoView({ behavior: 'smooth' });
             if (el['invite-link'].value) copyInvite(); else generateInvite();
         });
+        el['roster-body'].addEventListener('click', event => {
+            const button = event.target.closest('[data-open-student]');
+            if (button) {
+                event.preventDefault();
+                openStudentOverview(button.dataset.openStudent, button);
+                return;
+            }
+            // Progressive enhancement: clicking the row (not a nested control) opens overview.
+            const row = event.target.closest('tr[data-user-id]');
+            if (!row || event.target.closest('a, button, input, select, textarea, label')) return;
+            const userId = row.dataset.userId;
+            if (!userId) return;
+            const overviewButton = row.querySelector(`[data-open-student="${CSS.escape(userId)}"]`);
+            openStudentOverview(userId, overviewButton || null);
+        });
+        document.querySelectorAll('[data-close-student-overview]').forEach(node => {
+            node.addEventListener('click', closeStudentOverview);
+        });
+        el['student-overview-modal']?.addEventListener('keydown', trapStudentOverviewFocus);
         el['copy-invite'].addEventListener('click', copyInvite);
         el['new-assignment-button'].addEventListener('click', () => openAssignmentModal());
         el['assignment-list'].addEventListener('click', event => {
@@ -1270,12 +1569,7 @@
             event.preventDefault();
             selectQuizChapter(option.dataset.chapterId);
         });
-        document.addEventListener('keydown', event => {
-            if (event.key !== 'Escape') return;
-            closeClassModal();
-            closeAssignmentModal();
-            closeQuizWizard();
-        });
+        document.addEventListener('keydown', closeTopmostModalOnEscape);
     }
 
     bindEvents();
