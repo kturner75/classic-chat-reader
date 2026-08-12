@@ -135,3 +135,75 @@ test('global-on/classroom-on keeps the Reading Buddy policy usable', async ({ pa
   await expect(toggle).toBeEnabled();
   await expect(page.locator('#reading-buddy-feature-description')).toContainText('Available in this deployment');
 });
+
+test('BL-025.10 roster Overview uses activeTermId (ClassSummary has no termId)', async ({ page }) => {
+  let overviewPath = null;
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/account/status') {
+      return json(route, { authenticated: true, email: 'teacher@example.com' });
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/capabilities') {
+      return json(route, { canTeach: true, canCreateClass: true });
+    }
+    if (request.method() === 'GET' && path === '/api/library') {
+      return json(route, []);
+    }
+    if (request.method() === 'GET' && path === '/api/reading-buddy/status') {
+      return json(route, { available: true, enabled: true, chatEnabled: true, providerAvailable: true });
+    }
+    // Intentionally omit termId — production ClassSummary only sets activeTermId.
+    if (request.method() === 'GET' && path === '/api/classroom/classes') {
+      return json(route, [{ classId: 'class-1', className: 'Literature 101', activeTermId: 'term-1', activeTermName: 'Fall' }]);
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/roster') {
+      return json(route, [{
+        userId: 'student-1',
+        email: 'student@example.com',
+        displayNameOverride: 'Alex Student',
+        joinedDate: '2026-08-01',
+        status: 'ACTIVE'
+      }]);
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/assignments') {
+      return json(route, []);
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/features') {
+      return json(route, { readingBuddyEnabled: true });
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/students/student-1/overview') {
+      overviewPath = path;
+      return json(route, {
+        termId: 'term-1',
+        student: {
+          userId: 'student-1',
+          email: 'student@example.com',
+          displayNameOverride: 'Alex Student',
+          joinedDate: '2026-08-01'
+        },
+        currentAssignments: [],
+        completedAssignments: [],
+        progressByBook: [],
+        quizzesForBook: [],
+        timeInReader: {
+          label: 'Approximate time in reader',
+          caveat: 'Engagement proxy',
+          approximateTotalMs: 0,
+          byBook: []
+        },
+        ferpaNote: 'Pilot teacher drill-down (BL-025.10).'
+      });
+    }
+    return json(route, { error: `Unhandled route: ${request.method()} ${path}` }, 404);
+  });
+
+  await page.goto('/teacher.html');
+  await expect(page.locator('#roster-table')).toBeVisible();
+  await page.locator('[data-open-student="student-1"]').click();
+
+  await expect(page.locator('#student-overview-modal')).toBeVisible();
+  await expect(page.locator('#student-overview-title')).toHaveText('Alex Student');
+  await expect(page.locator('#student-overview-body')).toBeVisible();
+  expect(overviewPath).toBe('/api/classroom/terms/term-1/students/student-1/overview');
+});

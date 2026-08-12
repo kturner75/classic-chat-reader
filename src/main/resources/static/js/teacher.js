@@ -406,7 +406,9 @@
     }
 
     async function openStudentOverview(userId, activator = null) {
-        if (!state.selectedClass?.termId || !userId) return;
+        // ClassSummary exposes activeTermId (not termId); prefer it for consistency with loadSelectedClass/invites/etc.
+        const termId = state.selectedClass?.activeTermId || state.selectedClass?.termId;
+        if (!termId || !userId) return;
         const preferredActivator = activator
             || el['roster-body']?.querySelector(`[data-open-student="${CSS.escape(userId)}"]`)
             || document.activeElement;
@@ -425,7 +427,7 @@
         focusStudentOverviewClose();
         try {
             const overview = await api(
-                `/api/classroom/terms/${encodeURIComponent(state.selectedClass.termId)}/students/${encodeURIComponent(userId)}/overview`
+                `/api/classroom/terms/${encodeURIComponent(termId)}/students/${encodeURIComponent(userId)}/overview`
             );
             if (state.studentOverviewUserId !== userId) return;
             renderStudentOverview(overview);
