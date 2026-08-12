@@ -94,36 +94,44 @@ public class CuratedCatalogService {
             new CuratedCatalogBook(66084, "Sir Gawain and the Green Knight", "Jessie L. Weston", 26_000, List.of("Arthurian romances"), List.of("Mythology")),
             new CuratedCatalogBook(64636, "Rip Van Winkle", "Washington Irving", 25_000, List.of("Fantasy fiction"), List.of("Short Stories")),
             new CuratedCatalogBook(778, "Five Children and It", "E. Nesbit", 24_000, List.of("Wishes -- Fiction"), List.of("Children")),
-            // BL-052 partner ENGL 1020 Fall 2026 early short fiction / drama (verified PG IDs).
-            // Anthology volumes: assigned classroom story is noted in subjects for discovery.
+            // Partner ENGL 1020 Fall 2026 early short fiction / drama (verified PG IDs).
+            // Anthology volumes: keep subjects LCSH-like; put assigned classroom works in aliases.
             new CuratedCatalogBook(1063, "The Cask of Amontillado", "Edgar Allan Poe", 23_000,
-                    List.of("Horror tales, American", "Revenge -- Fiction", "The Cask of Amontillado"),
+                    List.of("Horror tales, American", "Revenge -- Fiction"),
                     List.of("Short Stories", "Horror")),
             new CuratedCatalogBook(3189, "Sketches New and Old", "Mark Twain", 22_000,
-                    List.of("Humorous stories, American", "The Celebrated Jumping Frog of Calaveras County"),
-                    List.of("Short Stories")),
+                    List.of("Humorous stories, American"),
+                    List.of("Short Stories"),
+                    List.of("The Celebrated Jumping Frog of Calaveras County")),
             new CuratedCatalogBook(512, "Mosses from an Old Manse", "Nathaniel Hawthorne", 21_000,
-                    List.of("Short stories, American", "Rappaccini's Daughter"),
-                    List.of("Short Stories", "Gothic")),
+                    List.of("Short stories, American"),
+                    List.of("Short Stories", "Gothic"),
+                    List.of("Rappaccini's Daughter")),
             new CuratedCatalogBook(10623, "Plays", "Susan Glaspell", 20_000,
-                    List.of("American drama", "Trifles"),
-                    List.of("Plays", "One Act Plays")),
-            // BL-052 poetry containers (verified; shepherd pair + Brontë poem remain TBD / deferred).
+                    List.of("American drama"),
+                    List.of("Plays", "One Act Plays"),
+                    List.of("Trifles")),
+            // Poetry containers (verified; shepherd pair + Brontë poem remain TBD / deferred).
             new CuratedCatalogBook(1041, "Shakespeare's Sonnets", "William Shakespeare", 19_000,
-                    List.of("English poetry", "Sonnets, English", "Sonnet 18", "Sonnet 73", "Sonnet 116", "Sonnet 130"),
-                    List.of("Poetry")),
+                    List.of("English poetry", "Sonnets, English"),
+                    List.of("Poetry"),
+                    List.of("Sonnet 18", "Sonnet 73", "Sonnet 116", "Sonnet 130")),
             new CuratedCatalogBook(8601, "The Early Poems of Alfred Lord Tennyson", "Alfred Tennyson", 18_000,
-                    List.of("English poetry -- 19th century", "Ulysses"),
-                    List.of("Poetry")),
+                    List.of("English poetry -- 19th century"),
+                    List.of("Poetry"),
+                    List.of("Ulysses")),
             new CuratedCatalogBook(16376, "Browning's Shorter Poems", "Robert Browning", 17_000,
-                    List.of("English poetry", "My Last Duchess"),
-                    List.of("Poetry")),
+                    List.of("English poetry"),
+                    List.of("Poetry"),
+                    List.of("My Last Duchess")),
             new CuratedCatalogBook(12242, "Poems by Emily Dickinson, Three Series, Complete", "Emily Dickinson", 16_000,
-                    List.of("American poetry", "Because I could not stop for Death", "I'm Nobody! Who are you?"),
-                    List.of("Poetry")),
+                    List.of("American poetry"),
+                    List.of("Poetry"),
+                    List.of("Because I could not stop for Death", "I'm Nobody! Who are you?")),
             new CuratedCatalogBook(1459, "Prufrock and Other Observations", "T. S. Eliot", 15_000,
-                    List.of("Poetry", "The Love Song of J. Alfred Prufrock"),
-                    List.of("Poetry"))
+                    List.of("Poetry"),
+                    List.of("Poetry"),
+                    List.of("The Love Song of J. Alfred Prufrock"))
     );
 
     private static final Comparator<CuratedCatalogBook> POPULARITY_ORDER =
@@ -157,10 +165,9 @@ public class CuratedCatalogService {
                 || (normalizedTitle + " " + normalizedAuthor).contains(normalizedQuery)) {
             return true;
         }
-        // Subjects carry assigned short-work names for anthology containers (BL-052).
-        return book.subjects().stream()
+        return book.aliases().stream()
                 .map(this::normalize)
-                .anyMatch(subject -> subject.contains(normalizedQuery));
+                .anyMatch(alias -> alias.contains(normalizedQuery));
     }
 
     private String normalize(String value) {
@@ -173,12 +180,36 @@ public class CuratedCatalogService {
                 .trim();
     }
 
+    /**
+     * @param subjects LCSH-like topical descriptors (not classroom search aliases)
+     * @param bookshelves shelf / genre labels for discovery UI
+     * @param aliases optional search aliases for contained short works or common titles
+     *                that differ from the Gutenberg volume title
+     */
     public record CuratedCatalogBook(
             int gutenbergId,
             String title,
             String author,
             int downloadCount,
             List<String> subjects,
-            List<String> bookshelves
-    ) {}
+            List<String> bookshelves,
+            List<String> aliases
+    ) {
+        public CuratedCatalogBook {
+            subjects = subjects == null ? List.of() : List.copyOf(subjects);
+            bookshelves = bookshelves == null ? List.of() : List.copyOf(bookshelves);
+            aliases = aliases == null ? List.of() : List.copyOf(aliases);
+        }
+
+        public CuratedCatalogBook(
+                int gutenbergId,
+                String title,
+                String author,
+                int downloadCount,
+                List<String> subjects,
+                List<String> bookshelves
+        ) {
+            this(gutenbergId, title, author, downloadCount, subjects, bookshelves, List.of());
+        }
+    }
 }

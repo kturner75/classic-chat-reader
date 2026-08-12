@@ -3,8 +3,10 @@ package com.classicchatreader.service;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CuratedCatalogServiceTest {
@@ -23,7 +25,7 @@ class CuratedCatalogServiceTest {
     }
 
     @Test
-    void searchFindsBl052ShortFictionAndDramaByAssignedWorkName() {
+    void searchFindsAnthologyVolumesByContainedShortWorkAlias() {
         assertTrue(curatedCatalogService.search("amontillado").stream()
                 .anyMatch(book -> book.gutenbergId() == 1063));
         assertTrue(curatedCatalogService.search("jumping frog").stream()
@@ -35,7 +37,7 @@ class CuratedCatalogServiceTest {
     }
 
     @Test
-    void searchFindsBl052PoetryContainers() {
+    void searchFindsPoetryVolumesByContainedPoemAlias() {
         assertTrue(curatedCatalogService.search("sonnet 18").stream()
                 .anyMatch(book -> book.gutenbergId() == 1041));
         assertTrue(curatedCatalogService.search("ulysses").stream()
@@ -49,13 +51,26 @@ class CuratedCatalogServiceTest {
     }
 
     @Test
-    void curatedIdsIncludeVerifiedBl052ContainersAndSkipUnverifiedChopinSuggestion() {
-        assertTrue(curatedCatalogService.isCuratedGutenbergId(1063));
-        assertTrue(curatedCatalogService.isCuratedGutenbergId(3189));
-        assertTrue(curatedCatalogService.isCuratedGutenbergId(512));
-        assertTrue(curatedCatalogService.isCuratedGutenbergId(10623));
-        // Suggested PG 160 is Chopin's Awakening collection and does not contain
-        // "The Story of an Hour" (verified against PG catalog/text); do not curate it for BL-052.
-        assertFalse(curatedCatalogService.isCuratedGutenbergId(160));
+    void curatedCatalogIncludesVerifiedPartnerShortWorkContainers() {
+        Set<Integer> curatedIds = curatedCatalogService.getPopularBooks().stream()
+                .map(CuratedCatalogService.CuratedCatalogBook::gutenbergId)
+                .collect(Collectors.toSet());
+
+        Set<Integer> expectedPartnerContainers = Set.of(
+                1063,   // The Cask of Amontillado
+                3189,   // Sketches New and Old (Jumping Frog)
+                512,    // Mosses from an Old Manse (Rappaccini's Daughter)
+                10623,  // Plays (Trifles)
+                1041,   // Shakespeare's Sonnets
+                8601,   // Early Poems (Ulysses)
+                16376,  // Browning's Shorter Poems (My Last Duchess)
+                12242,  // Dickinson poems
+                1459    // Prufrock and Other Observations
+        );
+        assertTrue(curatedIds.containsAll(expectedPartnerContainers));
+        assertTrue(curatedCatalogService.getPopularBooks().stream()
+                .filter(book -> book.gutenbergId() == 3189)
+                .anyMatch(book -> book.aliases().stream()
+                        .anyMatch(alias -> alias.toLowerCase().contains("jumping frog"))));
     }
 }

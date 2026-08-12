@@ -1207,7 +1207,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
 | BL-052.1 Resolve / verify PG IDs | Done | Confirmed containers for P1 short fiction/drama + poetry; chose Trifles **10623**; deferred Chopin / shepherd pair / Brontë with reasons | Each checklist row has verified ID or explicit TBD/defer |
-| BL-052.2 Curated catalog | Done | Added verified titles to `CuratedCatalogService`; subject search finds assigned short-work names inside anthologies; `pregen_missing_books.sh` ID list updated | Missing must-have early-semester works (except deferred Chopin) are curated |
+| BL-052.2 Curated catalog | Done | Added verified titles to `CuratedCatalogService`; dedicated `aliases` for assigned short-work names inside anthologies; `pregen_missing_books.sh` ID list updated | Missing must-have early-semester works (except deferred Chopin) are curated |
 | BL-052.3 Import / pregen / transfer | Proposed | Follow `ccr-production-ops` publish path (flags + DB + Spaces) for curated IDs — **not run from this catalog PR** (needs prod/Spaces credentials) | Titles importable on the pilot path without manual DB surgery |
 | BL-052.4 Prod verify | Proposed | Spot-check title/author, structure, and assignability for early weeks | Partner can assign Week2+ early short works on prod; Week1 Chopin gap documented |
 - Acceptance Criteria:
@@ -1220,7 +1220,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-06: Created; blocked on partner list.
 - 2026-08-11: Partner ENGL 1020 Fall 2026 weekly schedule received (docx). Status → **Ready**. Recorded already-curated (3: Rip Van Winkle 64636, Hamlet 2265, Northanger Abbey 121) vs missing (12: 5 short fiction/drama + 7 poetry items) with suggested PG container IDs; noted whole-book/anthology import gap; prioritized early-semester short fiction.
-- 2026-08-12: Status → **In Progress**. Verified PG IDs via Gutenberg RDF/catalog/text. **Rejected** suggested Chopin PG 160 (does not contain “Story of an Hour”; no PG ebook found — deferred). Curated: 1063, 3189, 512, 10623 (Trifles over 59432), plus poetry 1041/8601/16376/12242/1459. Deferred shepherd pair + Brontë poem (TBD). Extended curated search to match subjects so anthology story names resolve. Updated `pregen_missing_books.sh`. **Deferred from this PR:** live prod import/pregen/Spaces transfer (`BL-052.3`) — document-only here; run via `ccr-production-ops` / `scripts/publish_book_remote.sh` when credentials available.
+- 2026-08-12: Status → **In Progress**. Verified PG IDs via Gutenberg RDF/catalog/text. **Rejected** suggested Chopin PG 160 (does not contain “Story of an Hour”; no PG ebook found — deferred). Curated: 1063, 3189, 512, 10623 (Trifles over 59432), plus poetry 1041/8601/16376/12242/1459. Deferred shepherd pair + Brontë poem (TBD). Added dedicated curated `aliases` (separate from LCSH-like `subjects`) so anthology story/poem names resolve in search. Updated `pregen_missing_books.sh`. **Deferred from this PR:** live prod import/pregen/Spaces transfer (`BL-052.3`) — document-only here; run via `ccr-production-ops` / `scripts/publish_book_remote.sh` when credentials available.
 
 ### BL-053 - Classroom Concurrent Load / Droplet Capacity Validation
 - Type: Ops / Tech Debt
