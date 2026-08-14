@@ -255,7 +255,13 @@ public class TtsService {
                 return audio;
             }
         }
-        return findAnyCachedParagraphAudio(bookKey, chapterIndex, paragraphIndex, preferred);
+        // Only scan other voice dirs when the requested id is not on the current
+        // provider roster (provider switch / leftover OpenAI id). A current-catalog
+        // miss should generate or hit CDN instead of playing an unrelated voice.
+        if (!isServedByCurrentProvider(requestedVoice)) {
+            return findAnyCachedParagraphAudio(bookKey, chapterIndex, paragraphIndex, preferred);
+        }
+        return null;
     }
 
     public int estimateCost(int characterCount) {

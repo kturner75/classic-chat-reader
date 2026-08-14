@@ -373,8 +373,14 @@ public class TeacherStudentOverviewService {
         if (row.getQuizPassMinCorrect() == null) {
             if (userId != null && !userId.isBlank()) {
                 LocalDateTime since = attemptWindowStart(row);
-                return quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
-                        row.getId(), userId, since) > 0
+                long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                        row.getId(), userId, since);
+                if (used == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
+                        && row.singleChapterId() != null) {
+                    used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                            row.singleChapterId(), userId, since);
+                }
+                return used > 0
                         ? QuizRequirementStatus.COMPLETE
                         : QuizRequirementStatus.PENDING;
             }
@@ -395,11 +401,21 @@ public class TeacherStudentOverviewService {
         LocalDateTime since = attemptWindowStart(row);
         long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                 row.getId(), userId, since);
+        if (used == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
+                && row.singleChapterId() != null) {
+            used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                    row.singleChapterId(), userId, since);
+        }
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
         if (minCorrect != null) {
             int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                     row.getId(), userId, since);
+            if (best == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
+                    && row.singleChapterId() != null) {
+                best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        row.singleChapterId(), userId, since);
+            }
             passed = best >= minCorrect;
         } else if (used > 0) {
             passed = true;

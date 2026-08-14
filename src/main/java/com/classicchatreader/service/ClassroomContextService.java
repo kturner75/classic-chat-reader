@@ -511,11 +511,11 @@ public class ClassroomContextService {
         if (!row.isQuizRequired()) {
             return QuizRequirementStatus.NOT_REQUIRED;
         }
+        java.time.LocalDateTime since = attemptWindowStart(row);
+        long used = countAssignmentAttempts(row, userId, since);
         if (row.getQuizPassMinCorrect() == null) {
             if (userId != null && !userId.isBlank()) {
-                java.time.LocalDateTime since = attemptWindowStart(row);
-                return quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
-                        row.getId(), userId, since) > 0
+                return used > 0
                         ? QuizRequirementStatus.COMPLETE
                         : QuizRequirementStatus.PENDING;
             }
@@ -534,19 +534,16 @@ public class ClassroomContextService {
         Integer minCorrect = row.getQuizPassMinCorrect();
         Integer maxRetries = row.getQuizMaxRetries();
         java.time.LocalDateTime since = attemptWindowStart(row);
-        long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
-                row.getId(), userId, since);
+        long used = countAssignmentAttempts(row, userId, since);
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
         Integer bestScorePercent = null;
         if (used > 0) {
-            int bestScore = quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
-                    row.getId(), userId, since);
+            int bestScore = maxAssignmentScorePercent(row, userId, since);
             bestScorePercent = bestScore;
         }
         if (minCorrect != null) {
-            int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
-                    row.getId(), userId, since);
+            int best = maxAssignmentCorrectAnswers(row, userId, since);
             passed = best >= minCorrect;
         } else if (used > 0) {
             passed = true;
@@ -556,6 +553,48 @@ public class ClassroomContextService {
                 allowed,
                 passed,
                 bestScorePercent);
+    }
+
+    private long countAssignmentAttempts(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        if (userId == null || userId.isBlank()) {
+            return 0;
+        }
+        long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (used == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        chapterId, userId, since);
+            }
+        }
+        return used;
+    }
+
+    private int maxAssignmentScorePercent(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        int best = quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (best == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                best = quizAttemptRepository.findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        chapterId, userId, since);
+            }
+        }
+        return best;
+    }
+
+    private int maxAssignmentCorrectAnswers(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (best == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        chapterId, userId, since);
+            }
+        }
+        return best;
     }
 
     private java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {

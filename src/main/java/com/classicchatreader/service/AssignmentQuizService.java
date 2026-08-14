@@ -157,13 +157,16 @@ public class AssignmentQuizService {
         row.setPayloadJson(chapterQuizService.serializePayload(payload));
         row.setCreatedByUserId(userId);
         assignmentQuizRepository.save(row);
-        assignment.setQuizRequired(true);
-        assignment.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
-        if ("PUBLISHED".equalsIgnoreCase(assignment.getStatus())
-                && !java.util.Objects.equals(previousVersion, nextVersion)) {
-            assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        boolean alreadyCustom = AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(assignment.getQuizSource());
+        boolean published = "PUBLISHED".equalsIgnoreCase(assignment.getStatus());
+        if (alreadyCustom || !published) {
+            assignment.setQuizRequired(true);
+            assignment.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
+            if (published && !java.util.Objects.equals(previousVersion, nextVersion)) {
+                assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+            }
+            assignmentRepository.save(assignment);
         }
-        assignmentRepository.save(assignment);
         return getEffectiveQuiz(userId, assignmentId);
     }
 

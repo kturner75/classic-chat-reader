@@ -201,7 +201,7 @@ class TtsServiceTest {
         byte[] byCurrentVoice = service.getCachedSpeechForParagraph("book-one", 0, 1, "orion");
 
         assertEquals("legacy-audio", new String(byLegacyName, StandardCharsets.UTF_8));
-        assertEquals("legacy-audio", new String(byCurrentVoice, StandardCharsets.UTF_8));
+        assertNull(byCurrentVoice);
     }
 
     @Test
@@ -214,7 +214,7 @@ class TtsServiceTest {
     }
 
     @Test
-    void generateSpeechForParagraph_reusesCachedAudioFromAnotherVoice() throws Exception {
+    void generateSpeechForParagraph_reusesCachedAudioForLegacyVoice() throws Exception {
         List<String> authHeaders = new ArrayList<>();
         List<String> paths = new ArrayList<>();
         TtsService service = service("api-key", null, recordingWebClient(authHeaders, paths, "should-not-call"));
@@ -224,7 +224,7 @@ class TtsServiceTest {
 
         byte[] audio = service.generateSpeechForParagraph(
                 "book-one", 0, 1, "The thousand injuries of Fortunato...",
-                new VoiceSettings("orion", 1.0, null, null, "xai"));
+                new VoiceSettings("fable", 1.0, null, null, "openai"));
 
         assertEquals("legacy-audio", new String(audio, StandardCharsets.UTF_8));
         assertTrue(authHeaders.isEmpty());
