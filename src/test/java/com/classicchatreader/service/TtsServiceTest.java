@@ -205,6 +205,18 @@ class TtsServiceTest {
     }
 
     @Test
+    void getCachedSpeechForParagraph_doesNotUseDefaultVoiceForAnotherCatalogVoice() throws Exception {
+        TtsService service = service("api-key", null);
+        Path defaultFile = cacheDir.resolve("book-one/audio/orion/chapters/0/1.mp3");
+        java.nio.file.Files.createDirectories(defaultFile.getParent());
+        java.nio.file.Files.writeString(defaultFile, "orion-audio");
+
+        assertNull(service.getCachedSpeechForParagraph("book-one", 0, 1, "eve"));
+        assertEquals("orion-audio", new String(
+                service.getCachedSpeechForParagraph("book-one", 0, 1, "orion"), StandardCharsets.UTF_8));
+    }
+
+    @Test
     void getCachedSpeechForParagraph_ignoresPathTraversalVoice() throws Exception {
         TtsService service = service("api-key", null);
         Path secret = cacheDir.resolve("secret.mp3");

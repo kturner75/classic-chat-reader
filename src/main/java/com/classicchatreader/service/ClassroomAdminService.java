@@ -652,7 +652,7 @@ public class ClassroomAdminService {
             return;
         }
         if (request != null && request.customQuizQuestions() != null && !request.customQuizQuestions().isEmpty()) {
-            int proposedSize = request.customQuizQuestions().size();
+            int proposedSize = normalizeCustomQuizQuestions(request.customQuizQuestions()).size();
             if (minCorrect > proposedSize) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
@@ -677,19 +677,7 @@ public class ClassroomAdminService {
         if (request == null || request.customQuizQuestions() == null || request.customQuizQuestions().isEmpty()) {
             return;
         }
-        if (request.customQuizQuestions().size() > 20) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignment quiz cannot exceed 20 questions.");
-        }
-        List<ChapterQuizPayload.Question> normalized = new ArrayList<>();
-        for (ChapterQuizPayload.Question question : request.customQuizQuestions()) {
-            ChapterQuizPayload.Question next = normalizeCustomQuizQuestion(question);
-            if (next != null) {
-                normalized.add(next);
-            }
-        }
-        if (normalized.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one question is required.");
-        }
+        List<ChapterQuizPayload.Question> normalized = normalizeCustomQuizQuestions(request.customQuizQuestions());
         ChapterQuizPayload payload = new ChapterQuizPayload(normalized);
         String nextVersion = chapterQuizService.contentVersion(payload);
         String previousVersion = assignmentQuizRepository.findByAssignmentId(assignment.getId())
@@ -709,6 +697,24 @@ public class ClassroomAdminService {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
             assignmentRepository.save(assignment);
         }
+    }
+
+    private List<ChapterQuizPayload.Question> normalizeCustomQuizQuestions(
+            List<ChapterQuizPayload.Question> questions) {
+        if (questions.size() > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignment quiz cannot exceed 20 questions.");
+        }
+        List<ChapterQuizPayload.Question> normalized = new ArrayList<>();
+        for (ChapterQuizPayload.Question question : questions) {
+            ChapterQuizPayload.Question next = normalizeCustomQuizQuestion(question);
+            if (next != null) {
+                normalized.add(next);
+            }
+        }
+        if (normalized.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one question is required.");
+        }
+        return normalized;
     }
 
     private ChapterQuizPayload.Question normalizeCustomQuizQuestion(ChapterQuizPayload.Question question) {

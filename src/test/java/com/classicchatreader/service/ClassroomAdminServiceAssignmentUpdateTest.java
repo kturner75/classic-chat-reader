@@ -839,4 +839,38 @@ class ClassroomAdminServiceAssignmentUpdateTest {
         assertEquals(AssignmentEntity.QUIZ_SOURCE_CUSTOM, updated.getQuizSource());
         verify(assignmentQuizRepository).save(any(AssignmentQuizEntity.class));
     }
+
+    @Test
+    void updateAssignment_rejectsPassMinAgainstBlankCustomQuestions() {
+        AssignmentEntity existing = baseAssignment();
+        existing.setStatus("PUBLISHED");
+        existing.setQuizRequired(true);
+        existing.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
+        existing.setQuizPassMinCorrect(3);
+        existing.setQuizMaxRetries(1);
+
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+
+        List<com.classicchatreader.model.ChapterQuizPayload.Question> questions = List.of(
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q1", "One?", List.of("A", "B"), 0, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q2", "  ", List.of("A", "B"), 0, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q3", "", List.of("A", "B"), 0, null, null)
+        );
+        ClassroomAdminService.AssignmentWriteRequest request = new ClassroomAdminService.AssignmentWriteRequest(
+                null, null, null, null, null, null, null,
+                true, false, null, "PUBLISHED",
+                null, null, 3, 1, null,
+                AssignmentEntity.QUIZ_SOURCE_CUSTOM,
+                questions
+        );
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.updateAssignment("teacher-1", "assign-1", request)
+        );
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        assertTrue(String.valueOf(error.getReason()).contains("cannot exceed the effective quiz size"));
+    }
 }

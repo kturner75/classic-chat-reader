@@ -334,7 +334,8 @@ public class TtsService {
             preferred.add(safeVoice);
             preferred.add(safeVoice.toLowerCase(Locale.ROOT));
         }
-        if (defaultVoice != null && !defaultVoice.isBlank()) {
+        if (!isServedByCurrentProvider(requestedVoice)
+                && defaultVoice != null && !defaultVoice.isBlank()) {
             preferred.add(defaultVoice);
         }
         return preferred;
