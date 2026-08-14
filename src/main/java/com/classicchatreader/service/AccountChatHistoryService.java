@@ -822,7 +822,9 @@ public class AccountChatHistoryService {
                 && (!classroom.features().characterEnabled() || !classroom.features().chatEnabled())) {
             reason = "CLASSROOM_POLICY";
         }
-        return new Resume(reason == null, "/my-chats?session=" + session.getId(), reason);
+        boolean chatAvailable = reason == null;
+        boolean voiceCallAvailable = chatAvailable && character.getCharacterType() == CharacterType.PRIMARY;
+        return new Resume(chatAvailable, "/my-chats?session=" + session.getId(), reason, voiceCallAvailable);
     }
 
     /**

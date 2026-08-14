@@ -208,7 +208,7 @@ test('voice call action uses the reader availability, policy, and browser gates'
     const detail = {
         session: {
             character: { id: 'character-1' },
-            resume: { available: true }
+            resume: { available: true, voiceCallAvailable: true }
         }
     };
     const status = {
@@ -225,7 +225,7 @@ test('voice call action uses the reader availability, policy, and browser gates'
 
     assert.equal(canStartVoiceCall(detail, status, browser), true);
     assert.equal(canStartVoiceCall({
-        session: { ...detail.session, resume: { available: false } }
+        session: { ...detail.session, resume: { available: true, voiceCallAvailable: false } }
     }, status, browser), false);
     assert.equal(canStartVoiceCall(detail, { ...status, voiceCallAvailable: false }, browser), false);
     assert.equal(canStartVoiceCall(detail, status, {
