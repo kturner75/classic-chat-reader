@@ -745,12 +745,18 @@ public class AssignmentQuizService {
             throw new IllegalArgumentException("Missing distractors array");
         }
         List<String> result = new ArrayList<>();
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(correctAnswer.toLowerCase(java.util.Locale.ROOT));
         for (JsonNode item : node) {
             if (item == null || !item.isTextual()) {
                 continue;
             }
             String value = item.asText("").trim();
-            if (value.isBlank() || value.equalsIgnoreCase(correctAnswer)) {
+            if (value.isBlank()) {
+                continue;
+            }
+            String key = value.toLowerCase(java.util.Locale.ROOT);
+            if (!seen.add(key)) {
                 continue;
             }
             result.add(value);
