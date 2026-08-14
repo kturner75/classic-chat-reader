@@ -679,14 +679,17 @@ public class ClassroomAdminService {
         }
         List<ChapterQuizPayload.Question> normalized = normalizeCustomQuizQuestions(request.customQuizQuestions());
         ChapterQuizPayload payload = new ChapterQuizPayload(normalized);
+        Optional<AssignmentQuizEntity> locked = assignmentQuizRepository.findByAssignmentIdForUpdate(assignment.getId());
+        if (assignment.singleChapterId() != null) {
+            chapterQuizService.lockQuizContent(assignment.singleChapterId());
+        }
         String nextVersion = chapterQuizService.contentVersion(payload);
-        String previousVersion = assignmentQuizRepository.findByAssignmentId(assignment.getId())
+        String previousVersion = locked
                 .map(AssignmentQuizEntity::getPayloadJson)
                 .map(chapterQuizService::parsePayloadJson)
                 .map(chapterQuizService::contentVersion)
                 .orElse(null);
-        AssignmentQuizEntity row = assignmentQuizRepository.findByAssignmentId(assignment.getId())
-                .orElseGet(AssignmentQuizEntity::new);
+        AssignmentQuizEntity row = locked.orElseGet(AssignmentQuizEntity::new);
         row.setAssignmentId(assignment.getId());
         row.setPayloadJson(chapterQuizService.serializePayload(payload));
         row.setCreatedByUserId(userId);

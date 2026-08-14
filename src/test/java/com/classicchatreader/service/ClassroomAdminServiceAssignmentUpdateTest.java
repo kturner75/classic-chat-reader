@@ -811,7 +811,7 @@ class ClassroomAdminServiceAssignmentUpdateTest {
         when(userRepository.existsById("teacher-1")).thenReturn(true);
         when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
         when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
-        when(assignmentQuizRepository.findByAssignmentId("assign-1")).thenReturn(Optional.of(currentQuiz));
+        when(assignmentQuizRepository.findByAssignmentIdForUpdate("assign-1")).thenReturn(Optional.of(currentQuiz));
         when(assignmentQuizRepository.save(any(AssignmentQuizEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(assignmentQuizRepository.existsByAssignmentId("assign-1")).thenReturn(true);
         when(chapterQuizService.parsePayloadJson(any())).thenReturn(new com.classicchatreader.model.ChapterQuizPayload(List.of()));
