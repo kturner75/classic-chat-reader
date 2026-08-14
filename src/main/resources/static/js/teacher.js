@@ -1186,6 +1186,8 @@
         const currentlyPublished = String(existingAssignment?.status || '').toUpperCase() === 'PUBLISHED';
         const alreadyHasCustomQuiz = String(existingAssignment?.quizSource || '').toUpperCase() === 'CUSTOM';
         const stageQuizBeforePublish = needsCustomQuiz && currentlyPublished && !alreadyHasCustomQuiz;
+        const saveQuizFirst = needsCustomQuiz && state.editingAssignmentId
+                && (stageQuizBeforePublish || alreadyHasCustomQuiz);
         if (needsCustomQuiz && requestedStatus === 'PUBLISHED' && !currentlyPublished) {
             body.status = 'DRAFT';
         }
@@ -1195,12 +1197,12 @@
         el['assignment-submit'].disabled = true;
         show(el['assignment-form-error'], false);
         try {
-            if (stageQuizBeforePublish && state.editingAssignmentId) {
+            if (saveQuizFirst) {
                 await publishAssignmentQuiz(state.editingAssignmentId);
             }
             let saved = await api(path, { method: state.editingAssignmentId ? 'PUT' : 'POST', body: JSON.stringify(body) });
             state.editingAssignmentId = saved.assignmentId;
-            if (needsCustomQuiz && !stageQuizBeforePublish) {
+            if (needsCustomQuiz && !saveQuizFirst) {
                 await publishAssignmentQuiz(saved.assignmentId);
             }
             if (needsCustomQuiz && requestedStatus === 'PUBLISHED' && !currentlyPublished) {

@@ -134,19 +134,20 @@ public class ClassroomQuizPolicyService {
         LocalDateTime since = attemptWindowStart(assignment);
         long usedLong = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                 assignment.getId(), userId, since);
-        if (usedLong == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
                 && assignment.singleChapterId() != null) {
-            usedLong = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                    assignment.singleChapterId(), userId, since);
+            usedLong += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+                    assignment.singleChapterId(), userId, since, assignment.getId());
         }
         int used = usedLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) usedLong;
         int bestScorePercent = quizAttemptRepository
                 .findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                         assignment.getId(), userId, since);
-        if (bestScorePercent == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
                 && assignment.singleChapterId() != null) {
-            bestScorePercent = quizAttemptRepository.findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                    assignment.singleChapterId(), userId, since);
+            bestScorePercent = Math.max(bestScorePercent, quizAttemptRepository
+                    .findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+                            assignment.singleChapterId(), userId, since, assignment.getId()));
         }
         int minCorrect = assignment.getQuizPassMinCorrect();
         int allowed = 1 + assignment.getQuizMaxRetries();

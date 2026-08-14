@@ -561,11 +561,11 @@ public class ClassroomContextService {
         }
         long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                 row.getId(), userId, since);
-        if (used == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
-                used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                        chapterId, userId, since);
+                used += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+                        chapterId, userId, since, row.getId());
             }
         }
         return used;
@@ -574,11 +574,12 @@ public class ClassroomContextService {
     private int maxAssignmentScorePercent(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
         int best = quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                 row.getId(), userId, since);
-        if (best == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
-                best = quizAttemptRepository.findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                        chapterId, userId, since);
+                best = Math.max(best, quizAttemptRepository
+                        .findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+                                chapterId, userId, since, row.getId()));
             }
         }
         return best;
@@ -587,11 +588,12 @@ public class ClassroomContextService {
     private int maxAssignmentCorrectAnswers(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
         int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                 row.getId(), userId, since);
-        if (best == 0 && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
-                best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                        chapterId, userId, since);
+                best = Math.max(best, quizAttemptRepository
+                        .findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+                                chapterId, userId, since, row.getId()));
             }
         }
         return best;

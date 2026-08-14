@@ -125,6 +125,48 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
             @Param("userId") String userId,
             @Param("since") java.time.LocalDateTime since);
 
+    @Query("""
+            SELECT COUNT(qa)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+            """)
+    long countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since,
+            @Param("assignmentId") String assignmentId);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.scorePercent), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+            """)
+    int findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since,
+            @Param("assignmentId") String assignmentId);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.correctAnswers), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+            """)
+    int findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since,
+            @Param("assignmentId") String assignmentId);
+
     /** Classroom assignment COMPLETE: require a perfect (100%) attempt for the user. */
     boolean existsByChapterIdAndUserIdAndPerfectTrue(String chapterId, String userId);
 

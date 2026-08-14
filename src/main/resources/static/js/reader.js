@@ -6311,7 +6311,8 @@
             persistCurrentBookActivity();
             await runAccountClaimSync(true);
             let response = await fetch(`/api/quizzes/assignment/${encodeURIComponent(assignmentId)}`, { cache: 'no-store' });
-            if (!response.ok && (response.status === 401 || response.status === 404) && state.quizChapterId) {
+            if (!response.ok && (response.status === 401 || response.status === 404)
+                    && state.quizChapterId && isSyntheticDemoAssignmentId(assignmentId)) {
                 await refreshChapterQuizOverlay(state.quizChapterId);
                 return;
             }
@@ -6558,6 +6559,10 @@
         ) || activeClassroomAssignment();
     }
 
+    function isSyntheticDemoAssignmentId(assignmentId) {
+        return typeof assignmentId === 'string' && /^assignment-\d+$/.test(assignmentId);
+    }
+
     function assignmentQuizPassed(result, assignment) {
         const correctAnswers = Number.isFinite(result?.correctAnswers) ? result.correctAnswers : 0;
         const totalQuestions = Number.isFinite(result?.totalQuestions) ? result.totalQuestions : 0;
@@ -6784,7 +6789,8 @@
                 body: JSON.stringify(payload)
             });
             if (!response.ok && state.quizAssignmentId && state.quizChapterId
-                    && (response.status === 401 || response.status === 404)) {
+                    && (response.status === 401 || response.status === 404)
+                    && isSyntheticDemoAssignmentId(state.quizAssignmentId)) {
                 gradeUrl = `/api/quizzes/chapter/${state.quizChapterId}/grade`;
                 response = await fetch(gradeUrl, {
                     method: 'POST',

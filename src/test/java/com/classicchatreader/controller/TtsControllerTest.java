@@ -234,7 +234,7 @@ class TtsControllerTest {
         when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1")).thenReturn(List.of(paragraph));
         when(assetKeyService.buildBookKey(book)).thenReturn("book-one");
-        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "orion")).thenReturn(null);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(ttsService.isCacheOnly()).thenReturn(true);
         when(cdnAssetService.isEnabled()).thenReturn(true);
         when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
@@ -264,7 +264,7 @@ class TtsControllerTest {
         stubSpeakParagraphLookup(book, chapter, paragraph);
         when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
-        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "orion")).thenReturn(cachedAudio);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(cachedAudio);
 
         mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
                 .andExpect(status().isOk())
@@ -283,7 +283,7 @@ class TtsControllerTest {
         stubSpeakParagraphLookup(book, chapter, paragraph);
         when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
-        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "orion")).thenReturn(null);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(sessionAuthService.isAuthenticated(any())).thenReturn(false);
 
         mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
@@ -303,7 +303,7 @@ class TtsControllerTest {
         stubSpeakParagraphLookup(book, chapter, paragraph);
         when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
-        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "orion")).thenReturn(null);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(ttsService.isConfigured()).thenReturn(true);
         when(ttsService.currentProvider()).thenReturn("xai");
         when(ttsService.generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any()))
