@@ -26,6 +26,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -1078,7 +1079,7 @@ public class ChapterQuizService {
      * Load a completed chapter quiz payload, persisting lazy question-id backfill when needed.
      * Teacher override authoring and effective-quiz merge must use stable IDs from storage.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ChapterQuizPayload loadCompletedPayloadWithIdBackfill(String chapterId) {
         if (chapterId == null || chapterId.isBlank()) {
             return EMPTY_PAYLOAD;

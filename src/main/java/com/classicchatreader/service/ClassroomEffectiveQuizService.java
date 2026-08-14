@@ -247,7 +247,7 @@ public class ClassroomEffectiveQuizService {
         return Optional.of(merged.effective().questions().size());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<ChapterQuizPayload> loadEffectivePayloadForTerm(String termId, String chapterId) {
         if (termId == null || termId.isBlank() || chapterId == null || chapterId.isBlank()) {
             return Optional.empty();
