@@ -436,6 +436,7 @@ public class ClassroomAdminService {
                 .map(AssignmentChapterEntity::getChapterId)
                 .toList();
         LocalDate previousAvailableFrom = assignment.getAvailableFromDate();
+        String previousQuizSource = assignment.getQuizSource();
         if (!isBlank(request.title())) {
             assignment.setTitle(request.title().trim());
         }
@@ -465,7 +466,7 @@ public class ClassroomAdminService {
         if (request.quizSource() != null || request.quizRequired() != null || requestTouchesChapters(request)) {
             assignment.setQuizSource(resolveQuizSource(assignment, request, false));
         }
-        applyQuizPassRulesOnUpdate(assignment, request, previousChapterIds, previousAvailableFrom);
+        applyQuizPassRulesOnUpdate(assignment, request, previousChapterIds, previousAvailableFrom, previousQuizSource);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -499,7 +500,8 @@ public class ClassroomAdminService {
             AssignmentEntity assignment,
             AssignmentWriteRequest request,
             List<String> previousChapterIds,
-            LocalDate previousAvailableFrom) {
+            LocalDate previousAvailableFrom,
+            String previousQuizSource) {
         boolean quizRequired = request.quizRequired() != null
                 ? request.quizRequired()
                 : assignment.isQuizRequired();
@@ -532,8 +534,12 @@ public class ClassroomAdminService {
         LocalDate nextAvailableFrom = assignment.getAvailableFromDate();
         boolean availabilityOpenedEarlier = previousAvailableFrom != null
                 && (nextAvailableFrom == null || nextAvailableFrom.isBefore(previousAvailableFrom));
+        boolean quizSourceChanged = !Objects.equals(
+                previousQuizSource == null ? null : previousQuizSource.trim().toUpperCase(),
+                assignment.getQuizSource() == null ? null : assignment.getQuizSource().trim().toUpperCase());
         if (hasRules
                 && (rulesChanged || chapterChanged || publishedNow || availabilityOpenedEarlier
+                || quizSourceChanged
                 || assignment.getQuizRulesActivatedAt() == null)
                 && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));

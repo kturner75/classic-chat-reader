@@ -266,6 +266,55 @@ class ClassroomAdminServiceAssignmentUpdateTest {
     }
 
     @Test
+    void updateAssignment_resetsAttemptWindowWhenQuizSourceChanges() {
+        AssignmentEntity existing = baseAssignment();
+        existing.setStatus("PUBLISHED");
+        existing.setQuizRequired(true);
+        existing.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
+        existing.setQuizPassMinCorrect(1);
+        existing.setQuizMaxRetries(2);
+        existing.setQuizRulesActivatedAt(java.time.LocalDateTime.of(2026, 8, 1, 12, 0));
+        existing.replaceChapters(List.of(chapterRow("ch-1", 0)));
+        ChapterEntity chapter = chapterForBook("ch-1", "book-1");
+
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(bookRepository.existsById("book-1")).thenReturn(true);
+        when(chapterRepository.findByIdWithBook("ch-1")).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of(chapter));
+        when(classroomEffectiveQuizService.resolveEffectiveQuestionCount("term-1", "ch-1"))
+                .thenReturn(Optional.of(4));
+        when(assignmentRepository.save(any(AssignmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ClassroomAdminService.AssignmentWriteRequest request =
+                new ClassroomAdminService.AssignmentWriteRequest(
+                        null,
+                        "book-1",
+                        null,
+                        "ch-1",
+                        0,
+                        null,
+                        null,
+                        true,
+                        false,
+                        null,
+                        "PUBLISHED",
+                        null,
+                        null,
+                        1,
+                        2,
+                        null,
+                        AssignmentEntity.QUIZ_SOURCE_CHAPTER
+                );
+
+        AssignmentEntity updated = service.updateAssignment("teacher-1", "assign-1", request);
+
+        assertEquals(AssignmentEntity.QUIZ_SOURCE_CHAPTER, updated.getQuizSource());
+        assertTrue(updated.getQuizRulesActivatedAt().isAfter(java.time.LocalDateTime.of(2026, 8, 1, 12, 0)));
+    }
+
+    @Test
     void updateAssignment_resolvesIndexOnlyChapterToJoinRow() {
         AssignmentEntity existing = baseAssignment();
         ChapterEntity chapterThree = chapterForBook("ch-3", "book-1", 2, "Chapter Three");

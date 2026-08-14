@@ -922,7 +922,7 @@
         el['assignment-chapter-options'].innerHTML = matches.map(chapter => {
             const checked = selected.has(chapter.id) ? ' checked' : '';
             const disabled = wholeBook ? ' disabled' : '';
-            return `<label class="chapter-option" role="option" aria-selected="${selected.has(chapter.id)}">
+            return `<label class="chapter-option">
                 <input type="checkbox" data-chapter-id="${escapeHtml(chapter.id)}"${checked}${disabled}>
                 <span>${escapeHtml(chapter.title || 'Untitled chapter')}</span>
             </label>`;
@@ -1012,11 +1012,13 @@
             return;
         }
         const questions = activeQuizQuestions();
+        const noThreshold = state.quizHost === 'assignment' && !hasExplicitPassMin();
         const passMin = currentPassMin();
         const retries = currentMaxRetries();
         const source = usingDefaultQuiz() ? 'Default quiz' : 'Override quiz';
+        const passLabel = noThreshold ? 'any attempt completes' : `pass ${passMin}`;
         el['assignment-quiz-attached'].textContent =
-            `${source} · ${questions.length} questions · pass ${passMin} · ${retries} retr${retries === 1 ? 'y' : 'ies'}.`;
+            `${source} · ${questions.length} questions · ${passLabel} · ${retries} retr${retries === 1 ? 'y' : 'ies'}.`;
     }
 
     function openAssignmentModal(assignment = null) {
@@ -1180,7 +1182,10 @@
             body.clearAvailableFromDate = !availableFromRaw;
         }
         const needsCustomQuiz = quizRequired && quizSource === 'CUSTOM';
-        if (needsCustomQuiz && requestedStatus === 'PUBLISHED') {
+        const currentlyPublished = String(
+            state.assignments.find(item => item.assignmentId === state.editingAssignmentId)?.status || ''
+        ).toUpperCase() === 'PUBLISHED';
+        if (needsCustomQuiz && requestedStatus === 'PUBLISHED' && !currentlyPublished) {
             body.status = 'DRAFT';
         }
         const path = state.editingAssignmentId
@@ -1445,10 +1450,18 @@
         return state.quizDraftQuestions.length > 0 && state.quizDraftQuestions.every(questionComplete);
     }
 
+    function hasExplicitPassMin() {
+        if (state.quizHost === 'assignment') {
+            return String(el['assignment-form']?.elements?.quizPassMinCorrect?.value || '').trim() !== '';
+        }
+        return state.features?.defaultQuizPassMinCorrect != null;
+    }
+
     function currentPassMin() {
         if (state.quizHost === 'assignment') {
             const raw = Number(el['assignment-form']?.elements?.quizPassMinCorrect?.value);
             if (Number.isFinite(raw) && raw >= 1) return raw;
+            return 0;
         } else if (state.features?.defaultQuizPassMinCorrect != null) {
             return Number(state.features.defaultQuizPassMinCorrect);
         }
@@ -2083,18 +2096,25 @@
         const host = simHost();
         if (!host.body) return;
         const questions = activeQuizQuestions();
+        const noThreshold = state.quizHost === 'assignment' && !hasExplicitPassMin();
         const passMin = currentPassMin();
         const retries = currentMaxRetries();
         const totalAttempts = 1 + retries;
         if (state.quizSimPhase === 'result') {
-            const passed = state.quizSimScore >= passMin;
-            host.body.innerHTML = `<div class="quiz-callout ${passed ? 'success' : 'warning'}">
-                <strong>${passed ? 'Passed' : 'Not yet'} · ${state.quizSimScore}/${questions.length}</strong>
-                <p class="form-help">${passed
+            const passed = noThreshold || state.quizSimScore >= passMin;
+            const heading = noThreshold
+                ? `Submitted · ${state.quizSimScore}/${questions.length}`
+                : `${passed ? 'Passed' : 'Not yet'} · ${state.quizSimScore}/${questions.length}`;
+            const detail = noThreshold
+                ? 'No pass threshold. Any submitted attempt completes the student requirement.'
+                : passed
                     ? 'This is the student pass experience.'
                     : state.quizSimAttempt < totalAttempts
                         ? `${totalAttempts - state.quizSimAttempt} retr${totalAttempts - state.quizSimAttempt === 1 ? 'y' : 'ies'} remaining.`
-                        : 'Retries exhausted. The assignment quiz requirement would stay unmet.'}</p>
+                        : 'Retries exhausted. The assignment quiz requirement would stay unmet.';
+            host.body.innerHTML = `<div class="quiz-callout ${passed ? 'success' : 'warning'}">
+                <strong>${heading}</strong>
+                <p class="form-help">${detail}</p>
             </div>`;
             show(host.prev, false);
             if (host.next) {
@@ -2107,7 +2127,7 @@
         if (!question) return;
         const choices = simOptions(question, state.quizSimIndex);
         host.body.innerHTML = `
-            <p class="wizard-progress">Question ${state.quizSimIndex + 1} of ${questions.length} · Attempt ${state.quizSimAttempt} of ${totalAttempts} · pass ${passMin}/${questions.length}</p>
+            <p class="wizard-progress">Question ${state.quizSimIndex + 1} of ${questions.length} · Attempt ${state.quizSimAttempt} of ${totalAttempts} · ${noThreshold ? 'any attempt completes' : `pass ${passMin}/${questions.length}`}</p>
             <p><strong>${escapeHtml(question.question)}</strong></p>
             <div class="choice-stack">
                 ${choices.map((choice, optionIndex) => `
@@ -2137,9 +2157,10 @@
     function goSimQuestion(delta) {
         const questions = activeQuizQuestions();
         if (state.quizSimPhase === 'result') {
+            const noThreshold = state.quizHost === 'assignment' && !hasExplicitPassMin();
             const passMin = currentPassMin();
             const retries = currentMaxRetries();
-            if (state.quizSimScore < passMin && state.quizSimAttempt < 1 + retries) {
+            if (!noThreshold && state.quizSimScore < passMin && state.quizSimAttempt < 1 + retries) {
                 state.quizSimAttempt += 1;
                 state.quizSimIndex = 0;
                 state.quizSimAnswers = Array.from({ length: questions.length }, () => -1);
@@ -2169,7 +2190,7 @@
 
     function openQuizSummary() {
         const questions = activeQuizQuestions();
-        const html = `<p>${usingDefaultQuiz() ? 'Using the default chapter quiz.' : 'Assignment quiz ready to publish.'} ${questions.length} questions · pass ${currentPassMin()} · ${currentMaxRetries()} retr${currentMaxRetries() === 1 ? 'y' : 'ies'}.</p>`
+        const html = `<p>${usingDefaultQuiz() ? 'Using the default chapter quiz.' : 'Assignment quiz ready to publish.'} ${questions.length} questions · ${state.quizHost === 'assignment' && !hasExplicitPassMin() ? 'any attempt completes' : `pass ${currentPassMin()}`} · ${currentMaxRetries()} retr${currentMaxRetries() === 1 ? 'y' : 'ies'}.</p>`
             + questions.map((question, index) => `
                 <article class="quiz-review-item">
                     <strong>${index + 1}. ${escapeHtml(question.question || '(empty)')}</strong>
