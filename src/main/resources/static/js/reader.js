@@ -167,6 +167,9 @@
         accountRequired: false,
         accountClaimSyncedFor: null,
         accountSyncInFlight: false,
+        accountSyncPromise: null,
+        accountStateRevision: 0,
+        accountStateSyncedRevision: 0,
         lastBookActivitySignature: '',
         favoriteBookIds: new Set(),
         favoriteBookOrder: [],
@@ -2033,7 +2036,12 @@
             localStorage.setItem(STORAGE_KEYS.FAVORITE_BOOKS, JSON.stringify(snapshot.favoriteBookIds));
         }
         if (snapshot.bookActivity && typeof snapshot.bookActivity === 'object') {
-            localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(snapshot.bookActivity));
+            const incoming = snapshot.bookActivity;
+            const merged = libraryProgressHelpers
+                && typeof libraryProgressHelpers.unionBookActivityStores === 'function'
+                ? libraryProgressHelpers.unionBookActivityStores(incoming, readBookActivityStore())
+                : incoming;
+            localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(merged));
         }
         if (snapshot.readerPreferences && typeof snapshot.readerPreferences === 'object') {
             const normalized = normalizeReaderPreferences(snapshot.readerPreferences);
@@ -2081,14 +2089,42 @@
             return;
         }
         const syncKey = state.accountEmail || 'signed-in-account';
-        if (!force && state.accountClaimSyncedFor === syncKey) {
-            return;
-        }
-        if (state.accountSyncInFlight) {
-            return;
-        }
 
-        state.accountSyncInFlight = true;
+        while (true) {
+            if (state.accountSyncPromise) {
+                try {
+                    await state.accountSyncPromise;
+                } catch (ignored) {
+                }
+                if (!force) {
+                    return;
+                }
+                continue;
+            }
+            if (!force && state.accountClaimSyncedFor === syncKey) {
+                return;
+            }
+            if (force
+                    && state.accountClaimSyncedFor === syncKey
+                    && state.accountStateRevision <= state.accountStateSyncedRevision) {
+                return;
+            }
+
+            const startedRevision = state.accountStateRevision;
+            state.accountSyncInFlight = true;
+            const job = performAccountClaimSync(syncKey, startedRevision);
+            state.accountSyncPromise = job.finally(() => {
+                if (state.accountSyncPromise === job) {
+                    state.accountSyncPromise = null;
+                    state.accountSyncInFlight = false;
+                }
+            });
+            await job;
+            return;
+        }
+    }
+
+    async function performAccountClaimSync(syncKey, startedRevision) {
         if (isAccountModalVisible()) {
             setAccountStatusMessage('Syncing your reader data...');
         }
@@ -2112,6 +2148,7 @@
                 applyAccountStateSnapshot(payload.state);
             }
             state.accountClaimSyncedFor = syncKey;
+            state.accountStateSyncedRevision = startedRevision;
 
             if (payload?.claimApplied) {
                 showAppToast({
@@ -2140,8 +2177,6 @@
             if (isAccountModalVisible()) {
                 setAccountStatusMessage('Unable to sync account data right now.', 'error');
             }
-        } finally {
-            state.accountSyncInFlight = false;
         }
     }
 
@@ -3973,6 +4008,7 @@
                 openCount: Math.max(1, normalized.openCount)
             };
         });
+        state.accountStateRevision += 1;
     }
 
     function syncBookActivityWithLocalBooks() {

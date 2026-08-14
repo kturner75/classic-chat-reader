@@ -148,6 +148,35 @@
             .sort((left, right) => left - right);
     }
 
+    function unionBookActivityStores(serverStore, localStore) {
+        const result = { ...(serverStore && typeof serverStore === 'object' ? serverStore : {}) };
+        Object.entries(localStore && typeof localStore === 'object' ? localStore : {}).forEach(([bookId, local]) => {
+            if (!local || typeof local !== 'object') {
+                return;
+            }
+            const server = result[bookId];
+            if (!server || typeof server !== 'object') {
+                result[bookId] = local;
+                return;
+            }
+            result[bookId] = {
+                ...server,
+                ...local,
+                completedChapterIndexes: uniqueCompletedChapterIndexes([
+                    ...(server.completedChapterIndexes || []),
+                    ...(local.completedChapterIndexes || [])
+                ]),
+                maxProgressRatio: Math.max(
+                    toFiniteNumber(server.maxProgressRatio, 0),
+                    toFiniteNumber(local.maxProgressRatio, 0)
+                ),
+                completed: Boolean(server.completed || local.completed),
+                completedAt: server.completedAt || local.completedAt || null
+            };
+        });
+        return result;
+    }
+
     function finishedLastAssignedChapter(activity, targetIndex) {
         const chapterCount = Math.max(1, clampInteger(activity.chapterCount, 1, Number.MAX_SAFE_INTEGER));
         const needed = (targetIndex + 1) / chapterCount;
@@ -408,6 +437,7 @@
         assignmentChatActionLabel,
         isAssignmentFullyComplete,
         isAssignmentQuizPerfect,
-        hasAssignmentQuizAttemptsRemaining
+        hasAssignmentQuizAttemptsRemaining,
+        unionBookActivityStores
     };
 });

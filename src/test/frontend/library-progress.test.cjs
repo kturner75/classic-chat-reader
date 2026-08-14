@@ -11,7 +11,8 @@ const {
     isWholeBookAssignment,
     canChatForAssignment,
     assignmentChatActionLabel,
-    isAssignmentFullyComplete
+    isAssignmentFullyComplete,
+    unionBookActivityStores
 } = require('../../main/resources/static/js/library-progress.js');
 
 test('returns not-started snapshot at 0% progress', () => {
@@ -441,4 +442,29 @@ test('assignment is fully complete only when reading, quiz, and required chat ar
         ...assignment,
         quizStatus: 'COMPLETE'
     }, read, true), true);
+});
+
+test('unionBookActivityStores keeps local completed chapters from a later persist', () => {
+    const merged = unionBookActivityStores({
+        'book-1': {
+            lastChapterIndex: 0,
+            lastPage: 0,
+            totalPages: 2,
+            completedChapterIndexes: [],
+            maxProgressRatio: 0.1,
+            completed: false
+        }
+    }, {
+        'book-1': {
+            lastChapterIndex: 0,
+            lastPage: 1,
+            totalPages: 2,
+            completedChapterIndexes: [0],
+            maxProgressRatio: 0.5,
+            completed: false
+        }
+    });
+    assert.deepEqual(merged['book-1'].completedChapterIndexes, [0]);
+    assert.equal(merged['book-1'].lastPage, 1);
+    assert.equal(merged['book-1'].maxProgressRatio, 0.5);
 });
