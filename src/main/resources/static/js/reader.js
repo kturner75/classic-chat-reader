@@ -5940,6 +5940,7 @@
         state.recapChatChapterIndex = state.currentChapterIndex;
         state.quizChapterId = currentChapter.id;
         state.quizAssignmentId = null;
+        applyRecapPreferenceGating();
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
         state.quizQuestionIndex = 0;
@@ -6248,6 +6249,7 @@
 
     async function openAssignmentQuizOverlay(assignment) {
         state.quizAssignmentId = assignment.assignmentId;
+        applyRecapPreferenceGating();
         state.quizChapterId = assignment.chapterId || assignment.chapters?.[0]?.chapterId || null;
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
@@ -6944,6 +6946,7 @@
         state.recapChatChapterIndex = null;
         state.quizChapterId = null;
         state.quizAssignmentId = null;
+        applyRecapPreferenceGating();
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
         state.quizQuestionIndex = 0;
@@ -9124,7 +9127,8 @@
 
     function applyRecapPreferenceGating() {
         state.recapAvailable = !!state.recapBackendAvailable && !!state.readerPreferences?.recapTabEnabled;
-        state.quizAvailable = !!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled;
+        state.quizAvailable = !!state.quizBackendAvailable
+            && (!!state.quizAssignmentId || !!state.readerPreferences?.quizTabEnabled);
         state.recapChatAvailable = !!state.recapChatBackendAvailable && !!state.readerPreferences?.chatTabEnabled;
     }
 

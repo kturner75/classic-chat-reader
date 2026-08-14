@@ -1412,11 +1412,12 @@
         if (Array.isArray(item.savedOptions)
                 && Number.isInteger(item.savedCorrectIndex)
                 && sameChoiceSet(item.savedOptions, currentChoices)) {
+            const remappedIndex = item.savedOptions.indexOf(String(item.correct || ''));
             return {
                 id: item.id,
                 question: item.question,
                 options: item.savedOptions.slice(),
-                correctOptionIndex: item.savedCorrectIndex,
+                correctOptionIndex: remappedIndex >= 0 ? remappedIndex : item.savedCorrectIndex,
                 citationParagraphIndex: Number.isInteger(item.citationParagraphIndex) ? item.citationParagraphIndex : null,
                 citationSnippet: item.citationSnippet || ''
             };

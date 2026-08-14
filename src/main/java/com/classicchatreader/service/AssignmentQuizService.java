@@ -560,7 +560,12 @@ public class AssignmentQuizService {
         if (question == null || question.question() == null || question.question().isBlank()) {
             return null;
         }
-        List<String> options = question.options() == null ? List.of() : question.options().stream()
+        List<String> rawOptions = question.options() == null ? List.of() : question.options();
+        int requestedCorrect = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
+        String correctAnswer = requestedCorrect >= 0 && requestedCorrect < rawOptions.size()
+                ? rawOptions.get(requestedCorrect)
+                : null;
+        List<String> options = rawOptions.stream()
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -568,8 +573,10 @@ public class AssignmentQuizService {
         if (options.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least two options.");
         }
-        int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
-        if (correct < 0 || correct >= options.size()) {
+        int correct = correctAnswer == null || correctAnswer.isBlank()
+                ? -1
+                : options.indexOf(correctAnswer.trim());
+        if (correct < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
         }
         String id = question.id() == null || question.id().isBlank() ? UUID.randomUUID().toString() : question.id();

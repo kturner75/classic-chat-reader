@@ -317,8 +317,8 @@ public class ClassroomAdminService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
-        // Lock quiz content before mutation when pass rules may be validated against quiz size,
-        // then refresh so a concurrent publication cannot leave a stale activation timestamp.
+        // Lock assignment-quiz row before chapter content so grade/publish share one order.
+        assignmentQuizRepository.findByAssignmentIdForUpdate(assignmentId);
         java.util.TreeSet<String> lockOrder = new java.util.TreeSet<>();
         for (AssignmentChapterEntity chapter : assignment.getChapters()) {
             if (chapter.getChapterId() != null && !chapter.getChapterId().isBlank()) {
@@ -724,7 +724,12 @@ public class ClassroomAdminService {
         if (question == null || question.question() == null || question.question().isBlank()) {
             return null;
         }
-        List<String> options = question.options() == null ? List.of() : question.options().stream()
+        List<String> rawOptions = question.options() == null ? List.of() : question.options();
+        int requestedCorrect = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
+        String correctAnswer = requestedCorrect >= 0 && requestedCorrect < rawOptions.size()
+                ? rawOptions.get(requestedCorrect)
+                : null;
+        List<String> options = rawOptions.stream()
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -732,8 +737,10 @@ public class ClassroomAdminService {
         if (options.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least two options.");
         }
-        int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
-        if (correct < 0 || correct >= options.size()) {
+        int correct = correctAnswer == null || correctAnswer.isBlank()
+                ? -1
+                : options.indexOf(correctAnswer.trim());
+        if (correct < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
         }
         String id = question.id() == null || question.id().isBlank()
