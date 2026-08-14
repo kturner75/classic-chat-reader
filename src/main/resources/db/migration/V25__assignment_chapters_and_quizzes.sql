@@ -43,10 +43,17 @@ UPDATE quiz_attempts
 SET assignment_id = (
     SELECT a.id
     FROM assignments a
+    LEFT JOIN enrollments e
+      ON e.term_id = a.term_id
+     AND e.user_id = quiz_attempts.user_id
+     AND e.deleted_at IS NULL
+     AND e.status = 'ACTIVE'
     WHERE a.chapter_id = quiz_attempts.chapter_id
       AND a.quiz_required = TRUE
       AND a.deleted_at IS NULL
-    ORDER BY CASE WHEN a.status = 'PUBLISHED' THEN 0 ELSE 1 END, a.created_at
+    ORDER BY CASE WHEN e.user_id IS NOT NULL THEN 0 ELSE 1 END,
+             CASE WHEN a.status = 'PUBLISHED' THEN 0 ELSE 1 END,
+             a.created_at
     LIMIT 1
 )
 WHERE assignment_id IS NULL

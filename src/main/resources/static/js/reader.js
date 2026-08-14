@@ -6308,10 +6308,24 @@
 
     async function refreshAssignmentQuizOverlay(assignmentId) {
         try {
+            persistCurrentBookActivity();
+            await runAccountClaimSync(true);
             const response = await fetch(`/api/quizzes/assignment/${encodeURIComponent(assignmentId)}`, { cache: 'no-store' });
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
-                    elements.chapterQuizStatus.textContent = 'Quiz unavailable right now.';
+                    let message = 'Quiz unavailable right now.';
+                    if (response.status === 409) {
+                        message = 'Finish the assigned reading before taking this quiz.';
+                        try {
+                            const errBody = await response.clone().json();
+                            const detail = errBody?.detail || errBody?.message || errBody?.error;
+                            if (typeof detail === 'string' && detail.trim()) {
+                                message = detail.trim();
+                            }
+                        } catch (ignored) {
+                        }
+                    }
+                    elements.chapterQuizStatus.textContent = message;
                 }
                 state.quizQuestions = [];
                 renderChapterQuizQuestions();
@@ -6748,6 +6762,8 @@
         setQuizControls();
 
         try {
+            persistCurrentBookActivity();
+            await runAccountClaimSync(true);
             const payload = {
                 selectedOptionIndexes: state.quizQuestions.map((_, index) =>
                     Number.isInteger(state.quizSelectedAnswers[index]) ? state.quizSelectedAnswers[index] : -1
