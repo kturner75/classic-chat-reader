@@ -204,15 +204,9 @@ public class AssignmentQuizService {
         BookEntity book = bookRepository.findById(assignment.getBookId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId."));
         List<ChapterEntity> chapters = resolveScopedChapters(
-                assignment,
-                request != null ? request.bookId() : null,
-                request != null ? request.chapterIds() : null);
+                assignment, request != null ? request.chapterIds() : null);
         String context = buildChapterText(chapters);
-        String scope = describeVerifiedScope(
-                assignment,
-                request != null ? request.bookId() : null,
-                request != null ? request.chapterIds() : null,
-                chapters);
+        String scope = describeVerifiedScope(assignment, request != null ? request.chapterIds() : null, chapters);
         String prompt = """
                 You are helping a teacher author a multiple-choice assignment quiz.
                 Book: %s
@@ -252,10 +246,7 @@ public class AssignmentQuizService {
         if (!reasoningProvider.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Quiz AI provider is unavailable.");
         }
-        List<ChapterEntity> chapters = resolveScopedChapters(
-                assignment,
-                request.bookId(),
-                request.chapterIds());
+        List<ChapterEntity> chapters = resolveScopedChapters(assignment, request.chapterIds());
         String context = buildChapterText(chapters);
         String excludeText = TeacherQuizAuthoringService.formatExcludedChoices(request.exclude());
         String prompt = """
@@ -591,23 +582,17 @@ public class AssignmentQuizService {
         return assignment;
     }
 
+    /** Assignment book only. Empty proposedChapterIds means that whole book, never a client bookId. */
     private List<ChapterEntity> resolveScopedChapters(
-            AssignmentEntity assignment, String proposedBookId, List<String> proposedChapterIds) {
+            AssignmentEntity assignment, List<String> proposedChapterIds) {
         String bookId = assignment.getBookId();
-        boolean proposedBookOk = proposedBookMatchesAssignment(assignment, proposedBookId);
-        if (proposedChapterIds != null && proposedBookOk) {
-            if (proposedChapterIds.isEmpty()) {
-                return chapterRepository.findByBookIdOrderByChapterIndex(bookId);
-            }
-            return loadProposedChaptersForBook(proposedChapterIds, bookId);
+        if (proposedChapterIds == null) {
+            return assignmentDefaultChapters(assignment, bookId);
         }
-        if (proposedChapterIds != null) {
-            if (proposedChapterIds.isEmpty()) {
-                return assignmentDefaultChapters(assignment, bookId);
-            }
-            return loadProposedChaptersForBook(proposedChapterIds, bookId);
+        if (proposedChapterIds.isEmpty()) {
+            return chapterRepository.findByBookIdOrderByChapterIndex(bookId);
         }
-        return assignmentDefaultChapters(assignment, bookId);
+        return loadProposedChaptersForBook(proposedChapterIds, bookId);
     }
 
     private List<ChapterEntity> assignmentDefaultChapters(AssignmentEntity assignment, String bookId) {
@@ -660,12 +645,6 @@ public class AssignmentQuizService {
         return sb.toString();
     }
 
-    private static boolean proposedBookMatchesAssignment(AssignmentEntity assignment, String proposedBookId) {
-        return proposedBookId == null
-                || proposedBookId.isBlank()
-                || (assignment.getBookId() != null && assignment.getBookId().equals(proposedBookId.trim()));
-    }
-
     private static boolean belongsToBook(ChapterEntity chapter, String bookId) {
         return chapter != null
                 && bookId != null
@@ -674,15 +653,10 @@ public class AssignmentQuizService {
     }
 
     private static String describeVerifiedScope(
-            AssignmentEntity assignment,
-            String proposedBookId,
-            List<String> proposedChapterIds,
-            List<ChapterEntity> verified) {
-        boolean proposedBookOk = proposedBookMatchesAssignment(assignment, proposedBookId);
-        boolean wholeBook = (proposedChapterIds != null && proposedChapterIds.isEmpty() && proposedBookOk)
-                || ((proposedChapterIds == null || (proposedChapterIds.isEmpty() && !proposedBookOk))
-                        && assignment.isWholeBook());
-        if (wholeBook) {
+            AssignmentEntity assignment, List<String> proposedChapterIds, List<ChapterEntity> verified) {
+        boolean wholeAssignmentBook = (proposedChapterIds != null && proposedChapterIds.isEmpty())
+                || (proposedChapterIds == null && assignment.isWholeBook());
+        if (wholeAssignmentBook) {
             return "the whole book";
         }
         int count = verified == null ? 0 : verified.size();

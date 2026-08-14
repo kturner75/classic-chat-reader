@@ -315,7 +315,7 @@ class AssignmentQuizServiceTest {
     }
 
     @Test
-    void suggestQuestions_filtersProposedChaptersToRequestedBook() {
+    void suggestQuestions_filtersProposedChaptersToAssignmentBook() {
         AssignmentEntity assignment = publishedAssignment("CUSTOM");
         BookEntity assignedBook = new BookEntity("Assigned", "Author", "manual");
         assignedBook.setId("book-1");
@@ -357,7 +357,7 @@ class AssignmentQuizServiceTest {
     }
 
     @Test
-    void suggestQuestions_ignoresProposedBookWhenItIsNotTheAssignmentBook() {
+    void suggestQuestions_emptyChapterIdsLoadsAssignmentBookNotProposedBook() {
         AssignmentEntity assignment = publishedAssignment("CUSTOM");
         BookEntity assignedBook = new BookEntity("Assigned", "Author", "manual");
         assignedBook.setId("book-1");
