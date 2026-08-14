@@ -15,6 +15,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,8 @@ import java.util.Objects;
 import java.util.UUID;
 @Service
 public class TeacherQuizAuthoringService {
+
+    private static final Logger log = LoggerFactory.getLogger(TeacherQuizAuthoringService.class);
 
     private final ClassroomAuthorizationService authorizationService;
     private final QuizQuestionOverrideRepository overrideRepository;
@@ -299,6 +303,12 @@ public class TeacherQuizAuthoringService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
             return parseSuggestedQuestions(raw, count, optionCount);
         } catch (Exception e) {
+            log.error(
+                    "event=chapter_suggest_questions_failed termId={} chapterId={} errorType={}",
+                    termId,
+                    chapterId,
+                    e.getClass().getSimpleName(),
+                    e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions.", e);
         }
     }
@@ -334,6 +344,12 @@ public class TeacherQuizAuthoringService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
             return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
+            log.error(
+                    "event=chapter_suggest_distractors_failed termId={} chapterId={} errorType={}",
+                    termId,
+                    chapterId,
+                    e.getClass().getSimpleName(),
+                    e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest distractors.", e);
         }
     }

@@ -349,9 +349,45 @@ class AssignmentQuizServiceTest {
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(reasoningProvider).generate(prompt.capture(), any());
         assertTrue(prompt.getValue().contains("Assigned-book secret text."));
+        assertTrue(prompt.getValue().contains("1 selected chapter(s)"));
+        assertFalse(prompt.getValue().contains("2 selected chapter(s)"));
         assertFalse(prompt.getValue().contains("Other-book chapter"));
         verify(paragraphRepository, org.mockito.Mockito.never())
                 .findByChapterIdOrderByParagraphIndex("ch-other-book");
+    }
+
+    @Test
+    void suggestQuestions_ignoresProposedBookWhenItIsNotTheAssignmentBook() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        BookEntity assignedBook = new BookEntity("Assigned", "Author", "manual");
+        assignedBook.setId("book-1");
+        ChapterEntity assignedChapter = new ChapterEntity(0, "Assignment chapter");
+        assignedChapter.setId("ch-assigned");
+        assignedChapter.setBook(assignedBook);
+
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(assignedBook));
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of(assignedChapter));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("ch-assigned"))
+                .thenReturn(List.of(new ParagraphEntity(0, "Assignment-book only text.")));
+        when(reasoningProvider.isAvailable()).thenReturn(true);
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                {"questions":[{"id":"q1","question":"Who?","options":["A","B","C","D"],"correctOptionIndex":0}]}
+                """);
+
+        service.suggestQuestions(
+                "teacher-1",
+                "asg-1",
+                new TeacherQuizAuthoringService.SuggestQuestionsRequest(1, 4, "book-2", List.of()));
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(reasoningProvider).generate(prompt.capture(), any());
+        assertTrue(prompt.getValue().contains("Book: Assigned"));
+        assertTrue(prompt.getValue().contains("the whole book"));
+        assertTrue(prompt.getValue().contains("Assignment-book only text."));
+        verify(bookRepository, org.mockito.Mockito.never()).findById("book-2");
+        verify(chapterRepository, org.mockito.Mockito.never()).findByBookIdOrderByChapterIndex("book-2");
     }
 
     @Test
