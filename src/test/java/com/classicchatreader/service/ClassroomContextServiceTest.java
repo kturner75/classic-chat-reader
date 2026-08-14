@@ -147,7 +147,7 @@ class ClassroomContextServiceTest {
     }
 
     @Test
-    void getContextMarksQuizStatusUnknownWhenRequiredChapterMissing() {
+    void getContextDoesNotRequireQuizWhenConfiguredChapterIsMissing() {
         properties.setEnabled(true);
 
         ClassroomDemoProperties.Assignment assignment = new ClassroomDemoProperties.Assignment();
@@ -164,7 +164,8 @@ class ClassroomContextServiceTest {
         ClassroomContextResponse context = classroomContextService.getContext();
 
         assertEquals(1, context.assignments().size());
-        assertEquals(ClassroomContextResponse.QuizRequirementStatus.UNKNOWN, context.assignments().get(0).quizStatus());
+        assertEquals(ClassroomContextResponse.QuizRequirementStatus.NOT_REQUIRED, context.assignments().get(0).quizStatus());
+        assertFalse(context.assignments().get(0).quizRequired());
         verify(quizAttemptRepository, never()).existsByChapterId(org.mockito.ArgumentMatchers.anyString());
     }
 

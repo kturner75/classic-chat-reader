@@ -509,7 +509,7 @@ public class ClassroomAdminService {
         boolean quizRequired = request.quizRequired() != null
                 ? request.quizRequired()
                 : assignment.isQuizRequired();
-        if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
+        if (!quizRequired) {
             assignment.setQuizPassMinCorrect(null);
             assignment.setQuizMaxRetries(null);
             assignment.setQuizRulesActivatedAt(null);
@@ -517,11 +517,16 @@ public class ClassroomAdminService {
         }
         Integer previousMin = assignment.getQuizPassMinCorrect();
         Integer previousRetries = assignment.getQuizMaxRetries();
-        if (request.quizPassMinCorrect() != null) {
-            assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
-        }
-        if (request.quizMaxRetries() != null) {
-            assignment.setQuizMaxRetries(request.quizMaxRetries());
+        if (Boolean.TRUE.equals(request.clearQuizPassRules())) {
+            assignment.setQuizPassMinCorrect(null);
+            assignment.setQuizMaxRetries(null);
+        } else {
+            if (request.quizPassMinCorrect() != null) {
+                assignment.setQuizPassMinCorrect(request.quizPassMinCorrect());
+            }
+            if (request.quizMaxRetries() != null) {
+                assignment.setQuizMaxRetries(request.quizMaxRetries());
+            }
         }
         String nextStatus = !isBlank(request.status())
                 ? request.status().trim().toUpperCase()

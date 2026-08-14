@@ -1385,6 +1385,8 @@
             correct,
             distractors,
             locked: distractors.map(value => Boolean(String(value || '').trim())),
+            savedOptions: options.slice(),
+            savedCorrectIndex: correctIndex,
             sourceQuestionId: sourceId,
             mode: sourceId ? 'override' : 'add',
             citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
@@ -1406,7 +1408,22 @@
                 citationSnippet: item.citationSnippet || ''
             };
         }
+        const currentChoices = [item.correct, ...(item.distractors || [])].map(value => String(value || ''));
+        if (Array.isArray(item.savedOptions)
+                && Number.isInteger(item.savedCorrectIndex)
+                && sameChoiceSet(item.savedOptions, currentChoices)) {
+            return {
+                id: item.id,
+                question: item.question,
+                options: item.savedOptions.slice(),
+                correctOptionIndex: item.savedCorrectIndex,
+                citationParagraphIndex: Number.isInteger(item.citationParagraphIndex) ? item.citationParagraphIndex : null,
+                citationSnippet: item.citationSnippet || ''
+            };
+        }
         const shuffled = shuffleChoices(item.correct, item.distractors);
+        item.savedOptions = shuffled.options.slice();
+        item.savedCorrectIndex = shuffled.correctOptionIndex;
         return {
             id: item.id,
             question: item.question,
@@ -1429,6 +1446,22 @@
             options,
             correctOptionIndex: Math.max(0, options.indexOf(String(correct || '')))
         };
+    }
+
+    function sameChoiceSet(left, right) {
+        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+            return false;
+        }
+        const counts = new Map();
+        left.forEach(value => counts.set(value, (counts.get(value) || 0) + 1));
+        for (const value of right) {
+            const remaining = counts.get(value);
+            if (!remaining) {
+                return false;
+            }
+            counts.set(value, remaining - 1);
+        }
+        return true;
     }
 
     function questionComplete(item) {
