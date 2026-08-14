@@ -372,7 +372,9 @@ public class TeacherStudentOverviewService {
         }
         if (row.getQuizPassMinCorrect() == null) {
             if (userId != null && !userId.isBlank()) {
-                return quizAttemptRepository.existsByAssignmentIdAndUserId(row.getId(), userId)
+                LocalDateTime since = attemptWindowStart(row);
+                return quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                        row.getId(), userId, since) > 0
                         ? QuizRequirementStatus.COMPLETE
                         : QuizRequirementStatus.PENDING;
             }

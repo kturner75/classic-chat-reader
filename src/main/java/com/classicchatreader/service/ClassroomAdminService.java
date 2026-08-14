@@ -537,11 +537,10 @@ public class ClassroomAdminService {
         boolean quizSourceChanged = !Objects.equals(
                 previousQuizSource == null ? null : previousQuizSource.trim().toUpperCase(),
                 assignment.getQuizSource() == null ? null : assignment.getQuizSource().trim().toUpperCase());
-        if (hasRules
-                && (rulesChanged || chapterChanged || publishedNow || availabilityOpenedEarlier
-                || quizSourceChanged
-                || assignment.getQuizRulesActivatedAt() == null)
-                && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
+        boolean shouldResetWindow = quizSourceChanged
+                || (hasRules && (rulesChanged || chapterChanged || publishedNow || availabilityOpenedEarlier
+                || assignment.getQuizRulesActivatedAt() == null));
+        if (shouldResetWindow && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
     }

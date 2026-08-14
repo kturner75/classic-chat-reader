@@ -7,6 +7,8 @@ import com.classicchatreader.entity.AssignmentQuizEntity;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
+import com.classicchatreader.entity.UserReaderStateEntity;
+import com.classicchatreader.model.AccountStateSnapshot;
 import com.classicchatreader.model.ChapterQuizGradeResponse;
 import com.classicchatreader.model.ChapterQuizPayload;
 import com.classicchatreader.model.ChapterQuizViewPayload;
@@ -15,6 +17,7 @@ import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
+import com.classicchatreader.repository.UserReaderStateRepository;
 import com.classicchatreader.service.llm.LlmOptions;
 import com.classicchatreader.service.llm.LlmProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -24,7 +27,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -47,8 +52,10 @@ public class AssignmentQuizService {
     private final ClassroomQuizPolicyService classroomQuizPolicyService;
     private final QuizProgressService quizProgressService;
     private final ClassroomProperties classroomProperties;
+    private final UserReaderStateRepository userReaderStateRepository;
     private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${quiz.generation.max-context-chars:7000}")
     private int maxContextChars;
@@ -65,8 +72,10 @@ public class AssignmentQuizService {
             ClassroomQuizPolicyService classroomQuizPolicyService,
             QuizProgressService quizProgressService,
             ClassroomProperties classroomProperties,
+            UserReaderStateRepository userReaderStateRepository,
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
         this.authorizationService = authorizationService;
         this.assignmentRepository = assignmentRepository;
         this.assignmentQuizRepository = assignmentQuizRepository;
@@ -78,8 +87,10 @@ public class AssignmentQuizService {
         this.classroomQuizPolicyService = classroomQuizPolicyService;
         this.quizProgressService = quizProgressService;
         this.classroomProperties = classroomProperties;
+        this.userReaderStateRepository = userReaderStateRepository;
         this.reasoningProvider = reasoningProvider;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -108,6 +119,7 @@ public class AssignmentQuizService {
     public AssignmentEffectiveQuizResponse saveCustomQuiz(
             String userId, String assignmentId, SaveAssignmentQuizRequest request) {
         AssignmentEntity assignment = requireTeacherAssignment(userId, assignmentId);
+        lockAssignmentQuizExclusive(assignment);
         if (request == null || request.questions() == null || request.questions().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one question is required.");
         }
@@ -147,8 +159,7 @@ public class AssignmentQuizService {
         assignmentQuizRepository.save(row);
         assignment.setQuizRequired(true);
         assignment.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
-        if (assignment.getQuizPassMinCorrect() != null && assignment.getQuizMaxRetries() != null
-                && "PUBLISHED".equalsIgnoreCase(assignment.getStatus())
+        if ("PUBLISHED".equalsIgnoreCase(assignment.getStatus())
                 && !java.util.Objects.equals(previousVersion, nextVersion)) {
             assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
@@ -237,6 +248,9 @@ public class AssignmentQuizService {
     @Transactional(readOnly = true)
     public Optional<AssignmentQuizViewResponse> getStudentQuiz(String userId, String assignmentId) {
         AssignmentEntity assignment = requireStudentAssignment(userId, assignmentId);
+        if (!authorizationService.canManageTerm(userId, assignment.getTermId())) {
+            assertReadingComplete(userId, assignment);
+        }
         if (!assignment.isQuizRequired()) {
             return Optional.empty();
         }
@@ -253,7 +267,6 @@ public class AssignmentQuizService {
         ));
     }
 
-    @Transactional
     public Optional<ChapterQuizGradeResponse> gradeStudentQuiz(
             String userId,
             String assignmentId,
@@ -261,10 +274,29 @@ public class AssignmentQuizService {
             List<String> questionIds,
             String contentVersion,
             String readerId) {
+        String identityKey = (userId != null && !userId.isBlank()) ? userId : (readerId == null ? "" : readerId);
+        String lockKey = (identityKey + "\u0000" + (assignmentId == null ? "" : assignmentId)).intern();
+        synchronized (lockKey) {
+            return transactionTemplate.execute(status ->
+                    gradeStudentQuizInTx(userId, assignmentId, selectedOptionIndexes, questionIds, contentVersion, readerId));
+        }
+    }
+
+    private Optional<ChapterQuizGradeResponse> gradeStudentQuizInTx(
+            String userId,
+            String assignmentId,
+            List<Integer> selectedOptionIndexes,
+            List<String> questionIds,
+            String contentVersion,
+            String readerId) {
         AssignmentEntity assignment = requireStudentAssignment(userId, assignmentId);
+        if (!authorizationService.canManageTerm(userId, assignment.getTermId())) {
+            assertReadingComplete(userId, assignment);
+        }
         if (!assignment.isQuizRequired()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This assignment does not require a quiz.");
         }
+        lockAssignmentQuizShared(assignment);
         classroomQuizPolicyService.assertCanAttemptAssignment(assignmentId, userId);
         ChapterQuizPayload payload = resolvePayload(assignment).orElse(null);
         if (payload == null || payload.questions() == null || payload.questions().isEmpty()) {
@@ -360,6 +392,71 @@ public class AssignmentQuizService {
         } catch (Exception e) {
             return new ChapterQuizPayload(List.of());
         }
+    }
+
+    private void lockAssignmentQuizExclusive(AssignmentEntity assignment) {
+        assignmentQuizRepository.findByAssignmentIdForUpdate(assignment.getId());
+        String chapterId = assignment.singleChapterId();
+        if (chapterId != null) {
+            chapterQuizService.lockQuizContent(chapterId);
+        }
+    }
+
+    private void lockAssignmentQuizShared(AssignmentEntity assignment) {
+        assignmentQuizRepository.findByAssignmentIdForShare(assignment.getId());
+        String chapterId = assignment.singleChapterId();
+        if (chapterId != null) {
+            chapterQuizService.lockQuizContentShared(chapterId);
+        }
+    }
+
+    private void assertReadingComplete(String userId, AssignmentEntity assignment) {
+        if (!hasCompletedAssignedReading(userId, assignment)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Finish the assigned reading before taking this quiz.");
+        }
+    }
+
+    private boolean hasCompletedAssignedReading(String userId, AssignmentEntity assignment) {
+        AccountStateSnapshot.BookActivity activity = loadBookActivity(userId, assignment.getBookId());
+        if (activity == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(activity.completed())
+                || activity.completedAt() != null
+                || Math.max(
+                activity.maxProgressRatio() == null ? 0d : activity.maxProgressRatio(),
+                activity.progressRatio() == null ? 0d : activity.progressRatio()) >= 0.999) {
+            return true;
+        }
+        if (assignment.isWholeBook() || assignment.getChapters() == null || assignment.getChapters().isEmpty()) {
+            return false;
+        }
+        int targetIndex = assignment.getChapters().stream()
+                .mapToInt(AssignmentChapterEntity::getChapterIndex)
+                .max()
+                .orElse(-1);
+        Integer reached = activity.lastChapterIndex();
+        return reached != null && targetIndex >= 0 && reached >= targetIndex;
+    }
+
+    private AccountStateSnapshot.BookActivity loadBookActivity(String userId, String bookId) {
+        if (userId == null || userId.isBlank() || bookId == null || bookId.isBlank()) {
+            return null;
+        }
+        return userReaderStateRepository.findById(userId)
+                .map(UserReaderStateEntity::getStateJson)
+                .map(json -> {
+                    try {
+                        return objectMapper.readValue(json, AccountStateSnapshot.class);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .map(AccountStateSnapshot::bookActivity)
+                .map(map -> map == null ? null : map.get(bookId))
+                .orElse(null);
     }
 
     private AssignmentEntity requireTeacherAssignment(String userId, String assignmentId) {

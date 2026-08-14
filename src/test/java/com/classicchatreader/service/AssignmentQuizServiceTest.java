@@ -4,6 +4,7 @@ import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentQuizEntity;
+import com.classicchatreader.entity.UserReaderStateEntity;
 import com.classicchatreader.model.ChapterQuizGradeResponse;
 import com.classicchatreader.model.ChapterQuizPayload;
 import com.classicchatreader.model.ChapterQuizViewPayload;
@@ -13,6 +14,7 @@ import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
+import com.classicchatreader.repository.UserReaderStateRepository;
 import com.classicchatreader.service.llm.LlmProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +23,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -51,6 +57,7 @@ class AssignmentQuizServiceTest {
     @Mock private ClassroomQuizPolicyService classroomQuizPolicyService;
     @Mock private QuizProgressService quizProgressService;
     @Mock private ClassroomProperties classroomProperties;
+    @Mock private UserReaderStateRepository userReaderStateRepository;
     @Mock private LlmProvider reasoningProvider;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -70,14 +77,40 @@ class AssignmentQuizServiceTest {
                 classroomQuizPolicyService,
                 quizProgressService,
                 classroomProperties,
+                userReaderStateRepository,
                 reasoningProvider,
-                objectMapper
+                objectMapper,
+                passthroughTransactionManager()
         );
+    }
+
+    private static PlatformTransactionManager passthroughTransactionManager() {
+        return new PlatformTransactionManager() {
+            @Override
+            public TransactionStatus getTransaction(TransactionDefinition definition) {
+                return new SimpleTransactionStatus();
+            }
+
+            @Override
+            public void commit(TransactionStatus status) {
+            }
+
+            @Override
+            public void rollback(TransactionStatus status) {
+            }
+        };
+    }
+
+    private void stubReadingComplete() {
+        UserReaderStateEntity state = new UserReaderStateEntity();
+        state.setStateJson("{\"bookActivity\":{\"book-1\":{\"completed\":true}}}");
+        when(userReaderStateRepository.findById("user-1")).thenReturn(Optional.of(state));
     }
 
     @Test
     void getStudentQuiz_usesCustomPayload() throws Exception {
         AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        stubReadingComplete();
         AssignmentQuizEntity quiz = new AssignmentQuizEntity();
         quiz.setAssignmentId("asg-1");
         quiz.setPayloadJson(objectMapper.writeValueAsString(samplePayload("Custom Q")));
@@ -99,6 +132,7 @@ class AssignmentQuizServiceTest {
     @Test
     void getStudentQuiz_fallsBackToChapterQuiz() {
         AssignmentEntity assignment = publishedAssignment("CHAPTER");
+        stubReadingComplete();
         assignment.replaceChapters(List.of(chapterRow("chapter-1", 0)));
         when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
         when(authorizationService.isActiveStudentOnTerm("user-1", "term-1")).thenReturn(true);
@@ -133,6 +167,7 @@ class AssignmentQuizServiceTest {
     @Test
     void gradeStudentQuiz_recordsAssignmentScopedAttempt() {
         AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        stubReadingComplete();
         AssignmentQuizEntity quiz = new AssignmentQuizEntity();
         quiz.setAssignmentId("asg-1");
         quiz.setPayloadJson("""
