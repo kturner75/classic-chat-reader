@@ -6310,7 +6310,11 @@
         try {
             persistCurrentBookActivity();
             await runAccountClaimSync(true);
-            const response = await fetch(`/api/quizzes/assignment/${encodeURIComponent(assignmentId)}`, { cache: 'no-store' });
+            let response = await fetch(`/api/quizzes/assignment/${encodeURIComponent(assignmentId)}`, { cache: 'no-store' });
+            if (!response.ok && (response.status === 401 || response.status === 404) && state.quizChapterId) {
+                await refreshChapterQuizOverlay(state.quizChapterId);
+                return;
+            }
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
                     let message = 'Quiz unavailable right now.';
@@ -6771,14 +6775,23 @@
                 questionIds: state.quizQuestions.map((question) => question?.id || null),
                 contentVersion: state.quizContentVersion || null
             };
-            const gradeUrl = state.quizAssignmentId
+            let gradeUrl = state.quizAssignmentId
                 ? `/api/quizzes/assignment/${encodeURIComponent(state.quizAssignmentId)}/grade`
                 : `/api/quizzes/chapter/${state.quizChapterId}/grade`;
-            const response = await fetch(gradeUrl, {
+            let response = await fetch(gradeUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            if (!response.ok && state.quizAssignmentId && state.quizChapterId
+                    && (response.status === 401 || response.status === 404)) {
+                gradeUrl = `/api/quizzes/chapter/${state.quizChapterId}/grade`;
+                response = await fetch(gradeUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
                     let message = response.status === 409
