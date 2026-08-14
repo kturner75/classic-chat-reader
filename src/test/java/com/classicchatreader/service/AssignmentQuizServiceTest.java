@@ -26,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -85,6 +86,7 @@ class AssignmentQuizServiceTest {
                 objectMapper,
                 passthroughTransactionManager()
         );
+        ReflectionTestUtils.setField(service, "maxContextChars", 7000);
     }
 
     private static PlatformTransactionManager passthroughTransactionManager() {
