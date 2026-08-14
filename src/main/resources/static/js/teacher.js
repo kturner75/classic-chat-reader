@@ -604,7 +604,7 @@
         if (chapters.length === 0 && !assignment.chapterId) {
             return book.title;
         }
-        if (chapters.length === 1 || assignment.chapterId) {
+        if (chapters.length === 1 || (chapters.length === 0 && assignment.chapterId)) {
             const chapter = book.chapters?.find(item => item.id === (chapters[0]?.chapterId || assignment.chapterId))
                 || (Number.isInteger(assignment.chapterIndex) ? book.chapters?.[assignment.chapterIndex] : null);
             return chapter ? `${book.title} · ${chapter.title}` : book.title;

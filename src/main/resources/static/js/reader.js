@@ -7519,6 +7519,7 @@
     async function ttsAnalyzeBook() {
         if (!state.currentBook || !state.ttsAvailable) return;
 
+        let leftoverVoice = null;
         try {
             // First check if settings are already saved for the current TTS provider
             const savedResponse = await fetch(`/api/tts/settings/${state.currentBook.id}`);
@@ -7529,6 +7530,7 @@
                     console.log('Loaded saved voice settings:', state.ttsVoiceSettings);
                     return;
                 }
+                leftoverVoice = typeof saved?.voice === 'string' && saved.voice.trim() ? saved.voice.trim() : null;
                 console.log('Saved voice settings are not served by the current TTS provider; re-analyzing', saved);
             }
             const analyzeResponse = await fetch(`/api/tts/analyze/${state.currentBook.id}`, { method: 'POST' });
@@ -7538,14 +7540,21 @@
                 showVoiceRecommendation();
                 return;
             }
+            state.ttsVoiceSettings = {
+                voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
+                speed: 1.0,
+                instructions: null,
+                provider: leftoverVoice ? null : (state.ttsProvider || null)
+            };
+            return;
         } catch (error) {
             console.warn('Voice analysis failed:', error);
         }
         state.ttsVoiceSettings = {
-            voice: state.ttsDefaultVoice || 'orion',
+            voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
             speed: 1.0,
             instructions: null,
-            provider: state.ttsProvider || null
+            provider: leftoverVoice ? null : (state.ttsProvider || null)
         };
     }
 
