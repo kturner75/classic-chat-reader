@@ -389,19 +389,21 @@ Append-only education-record-adjacent telemetry.
 | `event_type` | VARCHAR(64) NOT NULL | See enum below |
 | `book_id` / `chapter_id` / `paragraph_index` | optional | |
 | `assignment_id` | VARCHAR(255) NULL | |
-| `duration_ms` | BIGINT NULL | Server may clamp; client-reported for heartbeats |
+| `duration_ms` | BIGINT NULL | Server may clamp; client-reported for heartbeats. **BL-042.5 voice:** Call Character / realtime duration (not minutes). |
 | `progress_percent` | INT NULL | 0–100 |
 | `session_id` | VARCHAR(255) NULL | Client reading session |
 | `idempotency_key` | VARCHAR(120) NULL | Optional client key; UNIQUE when not null for dedupe |
-| `feature` | VARCHAR(64) NULL | `CHAT`, `QUIZ_GEN`, `RECAP`, `TTS`, `ILLUSTRATION`, `READING_BUDDY`, … |
-| `provider` / `model_name` | optional | Token events |
-| `input_tokens` / `output_tokens` | INT NULL | BL-042 |
-| `estimated_cost_micros` | BIGINT NULL | Optional |
-| `metadata_json` | TEXT NULL | **Non-PII only**; size-capped (e.g. 2 KiB) |
+| `feature` | VARCHAR(64) NULL | `CHAT`, `VOICE`, `QUIZ_GEN`, `RECAP`, `TTS`, `ILLUSTRATION`, `READING_BUDDY`, … (`VOICE` = Call Character / realtime; not book `TTS`. No Java enum — VARCHAR.) |
+| `provider` / `model_name` | optional | Token events. **BL-042.5:** `model_name`. |
+| `input_tokens` / `output_tokens` | INT NULL | BL-042. **BL-042.5 chat:** persist here; cached tokens in `metadata_json` (no dedicated column). |
+| `estimated_cost_micros` | BIGINT NULL | Optional. **BL-042.5:** current xAI list rates as micros (not a USD column). |
+| `metadata_json` | TEXT NULL | **Non-PII only**; size-capped (e.g. 2 KiB). **BL-042.5:** `billed_via` (`oauth` \| `api_key`) and cached tokens. Never prompt/completion text. |
 | `occurred_at` / `created_at` | TIMESTAMP | |
 | `deleted_at` | TIMESTAMP NULL | Soft purge |
 
 **Event types (v1):** `READING_HEARTBEAT`, `CHAPTER_OPEN`, `CHAPTER_COMPLETE`, `BOOK_PROGRESS`, `QUIZ_ATTEMPT`, `ASSIGNMENT_VIEW`, `AI_TOKEN_USAGE`.
+
+**BL-042.5 this-term cut** (reuse this table; no second ledger, no new column names): `event_type` = `AI_TOKEN_USAGE`; `feature` = `CHAT` (character chat) or `VOICE` (Call Character / realtime). Cost on `estimated_cost_micros`; voice duration on `duration_ms`; `billed_via` + cached tokens in `metadata_json`. Full acceptance in `docs/product/backlog.md` → `BL-042.5`.
 
 **Write path (PR-10 acceptance):**
 
@@ -971,3 +973,4 @@ PR-1 ─┼─► PR-2 ─► PR-5 ─► PR-6 ─► PR-7
 | 2026-07-10 | **Implementation slice 1 (API/schema):** V14 migration, JPA entities/repos, `ClassroomAuthorizationService`, `InviteLinkService`, `ClassroomAdminService`, context dual-read + `classroom.mode`, feature/assignment/roster APIs. No FE. Pickup checklist: see `docs/product/backlog.md` → Implementation handoff (classroom). |
 | 2026-07-14 | **Teacher capability slice:** V15 `account_capabilities`, durable `CREATE_CLASSROOM` grants, capability API, backend creation enforcement, role-aware Library/Teaching UI, direct-access denial for students, and operator grant/revoke/status tooling by account email. |
 | 2026-08-11 | FERPA / student-PII privacy review: companion checklist expanded with runtime gaps vs schema hooks; triage ownership points to `BL-043` work tracker in `docs/product/backlog.md` (docs only). |
+| 2026-08-14 | **BL-042.5** maps this-term chat/voice cost onto existing `classroom_usage_events` columns (`AI_TOKEN_USAGE`, `CHAT`/`VOICE`, `model_name`, `duration_ms`, `estimated_cost_micros`, `metadata_json`). Named `VOICE` for Call Character (not previously listed). Docs only. |
