@@ -223,8 +223,7 @@ public class AssignmentQuizService {
                     prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
             return parseSuggestedQuestions(raw, count, optionCount);
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions.", e);
         }
     }
 
@@ -261,8 +260,7 @@ public class AssignmentQuizService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
             return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest distractors: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest distractors.", e);
         }
     }
 
@@ -591,8 +589,10 @@ public class AssignmentQuizService {
                 chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
             } else {
                 chapters = proposedChapterIds.stream()
-                        .map(id -> chapterRepository.findById(id).orElse(null))
+                        .filter(id -> id != null && !id.isBlank())
+                        .map(id -> chapterRepository.findByIdWithBook(id.trim()).orElse(null))
                         .filter(Objects::nonNull)
+                        .filter(chapter -> belongsToBook(chapter, bookId))
                         .toList();
             }
         } else if (assignment.isWholeBook()) {
@@ -631,6 +631,13 @@ public class AssignmentQuizService {
             }
         }
         return sb.toString();
+    }
+
+    private static boolean belongsToBook(ChapterEntity chapter, String bookId) {
+        return chapter != null
+                && bookId != null
+                && chapter.getBook() != null
+                && bookId.equals(chapter.getBook().getId());
     }
 
     private static String describeProposedScope(AssignmentEntity assignment, List<String> proposedChapterIds) {

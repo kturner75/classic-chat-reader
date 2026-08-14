@@ -4,6 +4,9 @@ import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentQuizEntity;
+import com.classicchatreader.entity.BookEntity;
+import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.entity.UserReaderStateEntity;
 import com.classicchatreader.model.ChapterQuizGradeResponse;
 import com.classicchatreader.model.ChapterQuizPayload;
@@ -307,6 +310,72 @@ class AssignmentQuizServiceTest {
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(reasoningProvider).generate(prompt.capture(), any());
         assertTrue(prompt.getValue().contains("Do not reuse these existing choices: London"));
+    }
+
+    @Test
+    void suggestQuestions_filtersProposedChaptersToRequestedBook() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        BookEntity assignedBook = new BookEntity("Assigned", "Author", "manual");
+        assignedBook.setId("book-1");
+        ChapterEntity inBook = new ChapterEntity(0, "In-book chapter");
+        inBook.setId("ch-in-book");
+        inBook.setBook(assignedBook);
+        BookEntity otherBook = new BookEntity("Other", "Author", "manual");
+        otherBook.setId("book-2");
+        ChapterEntity other = new ChapterEntity(0, "Other-book chapter");
+        other.setId("ch-other-book");
+        other.setBook(otherBook);
+
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(assignedBook));
+        when(chapterRepository.findByIdWithBook("ch-in-book")).thenReturn(Optional.of(inBook));
+        when(chapterRepository.findByIdWithBook("ch-other-book")).thenReturn(Optional.of(other));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("ch-in-book"))
+                .thenReturn(List.of(new ParagraphEntity(0, "Assigned-book secret text.")));
+        when(reasoningProvider.isAvailable()).thenReturn(true);
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                {"questions":[{"id":"q1","question":"Who?","options":["A","B","C","D"],"correctOptionIndex":0}]}
+                """);
+
+        service.suggestQuestions(
+                "teacher-1",
+                "asg-1",
+                new TeacherQuizAuthoringService.SuggestQuestionsRequest(
+                        1, 4, "book-1", List.of("ch-in-book", "ch-other-book")));
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(reasoningProvider).generate(prompt.capture(), any());
+        assertTrue(prompt.getValue().contains("Assigned-book secret text."));
+        assertFalse(prompt.getValue().contains("Other-book chapter"));
+        verify(paragraphRepository, org.mockito.Mockito.never())
+                .findByChapterIdOrderByParagraphIndex("ch-other-book");
+    }
+
+    @Test
+    void suggestQuestions_omitsExceptionTextFromBadGateway() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        BookEntity book = new BookEntity("Assigned", "Author", "manual");
+        book.setId("book-1");
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of());
+        when(reasoningProvider.isAvailable()).thenReturn(true);
+        when(reasoningProvider.generate(any(), any()))
+                .thenThrow(new RuntimeException("upstream leaked api key sk-secret"));
+
+        ResponseStatusException ex = assertThrows(
+                ResponseStatusException.class,
+                () -> service.suggestQuestions(
+                        "teacher-1",
+                        "asg-1",
+                        new TeacherQuizAuthoringService.SuggestQuestionsRequest(1, 4)));
+
+        assertEquals(502, ex.getStatusCode().value());
+        assertEquals("Failed to suggest quiz questions.", ex.getReason());
+        assertFalse(ex.getReason().contains("sk-secret"));
+        assertFalse(ex.getReason().contains("upstream leaked"));
     }
 
     private static AssignmentEntity publishedAssignment(String quizSource) {

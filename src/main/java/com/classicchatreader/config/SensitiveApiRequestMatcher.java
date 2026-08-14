@@ -41,6 +41,10 @@ public final class SensitiveApiRequestMatcher {
             Pattern.compile("^/api/reading-buddy/history$");
 
     private static final Pattern QUIZ_GENERATE_PATH = Pattern.compile("^/api/quizzes/chapter/[^/]+/generate$");
+    private static final Pattern ASSIGNMENT_SUGGEST_PATH =
+            Pattern.compile("^/api/classroom/assignments/[^/]+/suggest-(questions|distractors)$");
+    private static final Pattern CHAPTER_SUGGEST_PATH =
+            Pattern.compile("^/api/classroom/terms/[^/]+/chapters/[^/]+/suggest-[^/]+$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
     private static final Pattern LIBRARY_COVER_REQUEST_PATH = Pattern.compile("^/api/library/[^/]+/cover/request$");
     private static final Pattern LIBRARY_COVER_RETRY_PATH = Pattern.compile("^/api/library/[^/]+/cover/retry$");
@@ -82,6 +86,8 @@ public final class SensitiveApiRequestMatcher {
                     || RECAP_GENERATE_PATH.matcher(path).matches()
                     || RECAP_REQUEUE_PATH.matcher(path).matches()
                     || QUIZ_GENERATE_PATH.matcher(path).matches()
+                    || ASSIGNMENT_SUGGEST_PATH.matcher(path).matches()
+                    || CHAPTER_SUGGEST_PATH.matcher(path).matches()
                     || LIBRARY_COVER_REQUEST_PATH.matcher(path).matches()
                     || LIBRARY_COVER_RETRY_PATH.matcher(path).matches()) {
                 return EndpointType.GENERATION;

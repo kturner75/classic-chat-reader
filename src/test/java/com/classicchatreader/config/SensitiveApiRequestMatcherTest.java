@@ -22,6 +22,14 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/illustrations/chapter/ch-1/request"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/quizzes/chapter/ch-1/generate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/library/book-1/cover/retry"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/suggest-distractors"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-questions"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
     }
 
     @Test
@@ -57,6 +65,10 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(null, "/api/pregen/book/book-1"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/history"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/chat"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/effective-quiz"));
     }
 
     @Test

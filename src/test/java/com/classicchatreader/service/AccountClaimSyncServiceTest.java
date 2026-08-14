@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -715,5 +716,78 @@ class AccountClaimSyncServiceTest {
         // Anon memory was newer; last_message_id remapped A → U (not left dangling as A).
         assertEquals("user-msg-U", captor.getValue().getLastMessageId());
         assertEquals("summary pointing at deleted anon message", captor.getValue().getSummaryText());
+    }
+
+    @Test
+    void claimAndSync_capsCompletedChapterIndexesSizeAndRange() {
+        String userId = "user-1";
+        String readerId = "reader-cookie-1";
+
+        when(userReaderClaimRepository.existsByUserIdAndReaderId(userId, readerId)).thenReturn(true);
+        when(userReaderStateRepository.findById(userId)).thenReturn(Optional.empty());
+        when(userReaderStateRepository.save(any(UserReaderStateEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<Integer> oversized = new java.util.ArrayList<>();
+        oversized.add(-1);
+        oversized.add(AccountClaimSyncService.MAX_CHAPTER_INDEX + 1);
+        oversized.add(10_000);
+        for (int i = 0; i < AccountClaimSyncService.MAX_COMPLETED_CHAPTER_INDEXES + 25; i++) {
+            oversized.add(i);
+        }
+
+        AccountStateSnapshot incoming = new AccountStateSnapshot(
+                List.of(),
+                Map.of("book-1", new AccountStateSnapshot.BookActivity(
+                        2000, 0, 0, 10, 0.1, 0.1, false, 1, null, null, null, oversized)),
+                null,
+                Map.of()
+        );
+
+        AccountClaimSyncService.ClaimSyncResult result =
+                accountClaimSyncService.claimAndSync(userId, readerId, incoming);
+
+        List<Integer> completed = result.state().bookActivity().get("book-1").completedChapterIndexes();
+        assertEquals(AccountClaimSyncService.MAX_COMPLETED_CHAPTER_INDEXES, completed.size());
+        assertEquals(0, completed.get(0));
+        assertEquals(AccountClaimSyncService.MAX_COMPLETED_CHAPTER_INDEXES - 1, completed.get(completed.size() - 1));
+        assertFalse(completed.contains(-1));
+        assertFalse(completed.contains(AccountClaimSyncService.MAX_CHAPTER_INDEX + 1));
+        assertFalse(completed.contains(AccountClaimSyncService.MAX_COMPLETED_CHAPTER_INDEXES));
+    }
+
+    @Test
+    void claimAndSync_unionsCompletedChaptersThenAppliesCaps() {
+        String userId = "user-1";
+        String readerId = "reader-cookie-1";
+
+        UserReaderStateEntity existing = new UserReaderStateEntity();
+        existing.setUserId(userId);
+        existing.setStateJson("{"
+                + "\"favoriteBookIds\":[],"
+                + "\"bookActivity\":{\"book-1\":{\"chapterCount\":8,\"completedChapterIndexes\":[0,1,5000]}},"
+                + "\"readerPreferences\":null,"
+                + "\"recapOptOut\":{}"
+                + "}");
+
+        when(userReaderClaimRepository.existsByUserIdAndReaderId(userId, readerId)).thenReturn(true);
+        when(userReaderStateRepository.findById(userId)).thenReturn(Optional.of(existing));
+        when(userReaderStateRepository.save(any(UserReaderStateEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AccountStateSnapshot incoming = new AccountStateSnapshot(
+                List.of(),
+                Map.of("book-1", new AccountStateSnapshot.BookActivity(
+                        8, 2, 0, 10, 0.2, 0.2, false, 1, null, null, null, List.of(2, -3, 9999))),
+                null,
+                Map.of()
+        );
+
+        AccountClaimSyncService.ClaimSyncResult result =
+                accountClaimSyncService.claimAndSync(userId, readerId, incoming);
+
+        assertEquals(
+                List.of(0, 1, 2),
+                result.state().bookActivity().get("book-1").completedChapterIndexes());
     }
 }

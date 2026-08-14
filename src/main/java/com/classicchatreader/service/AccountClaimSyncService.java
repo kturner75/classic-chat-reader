@@ -38,6 +38,9 @@ import java.util.Set;
 @Service
 public class AccountClaimSyncService {
 
+    static final int MAX_COMPLETED_CHAPTER_INDEXES = 500;
+    static final int MAX_CHAPTER_INDEX = 999;
+
     private final ParagraphAnnotationRepository paragraphAnnotationRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final QuizTrophyRepository quizTrophyRepository;
@@ -505,7 +508,7 @@ public class AccountClaimSyncService {
                 trimToNull(activity.lastOpenedAt()),
                 trimToNull(activity.lastReadAt()),
                 trimToNull(activity.completedAt()),
-                activity.completedChapterIndexes()
+                sanitizeCompletedChapterIndexes(activity.completedChapterIndexes(), activity.chapterCount())
         );
     }
 
@@ -608,7 +611,9 @@ public class AccountClaimSyncService {
                 latestTimestamp(existing.lastOpenedAt(), incoming.lastOpenedAt()),
                 latestTimestamp(existing.lastReadAt(), incoming.lastReadAt()),
                 latestTimestamp(existing.completedAt(), incoming.completedAt()),
-                unionCompletedChapters(existing.completedChapterIndexes(), incoming.completedChapterIndexes())
+                sanitizeCompletedChapterIndexes(
+                        unionCompletedChapters(existing.completedChapterIndexes(), incoming.completedChapterIndexes()),
+                        firstNonNullPositive(primary.chapterCount(), existing.chapterCount(), incoming.chapterCount()))
         );
     }
 
@@ -752,15 +757,36 @@ public class AccountClaimSyncService {
     }
 
     private List<Integer> unionCompletedChapters(List<Integer> left, List<Integer> right) {
-        java.util.TreeSet<Integer> merged = new java.util.TreeSet<>();
+        List<Integer> combined = new ArrayList<>();
         if (left != null) {
-            merged.addAll(left);
+            combined.addAll(left);
         }
         if (right != null) {
-            merged.addAll(right);
+            combined.addAll(right);
         }
-        merged.removeIf(index -> index == null || index < 0);
-        return List.copyOf(merged);
+        return sanitizeCompletedChapterIndexes(combined, null);
+    }
+
+    private List<Integer> sanitizeCompletedChapterIndexes(List<Integer> indexes, Integer chapterCount) {
+        if (indexes == null || indexes.isEmpty()) {
+            return List.of();
+        }
+        int maxIndex = MAX_CHAPTER_INDEX;
+        Integer normalizedCount = positiveOrNull(chapterCount);
+        if (normalizedCount != null) {
+            maxIndex = Math.min(MAX_CHAPTER_INDEX, normalizedCount - 1);
+        }
+        java.util.TreeSet<Integer> unique = new java.util.TreeSet<>();
+        for (Integer index : indexes) {
+            if (index == null || index < 0 || index > maxIndex) {
+                continue;
+            }
+            unique.add(index);
+        }
+        if (unique.size() <= MAX_COMPLETED_CHAPTER_INDEXES) {
+            return List.copyOf(unique);
+        }
+        return unique.stream().limit(MAX_COMPLETED_CHAPTER_INDEXES).toList();
     }
 
     private String latestTimestamp(String a, String b) {
