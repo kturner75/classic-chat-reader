@@ -7,6 +7,8 @@ import com.classicchatreader.model.ChapterQuizGradeResponse;
 import com.classicchatreader.model.ChapterQuizResponse;
 import com.classicchatreader.model.ChapterQuizStatusResponse;
 import com.classicchatreader.model.QuizTrophy;
+import com.classicchatreader.service.AssignmentQuizService;
+import com.classicchatreader.service.AssignmentQuizService.AssignmentQuizViewResponse;
 import com.classicchatreader.service.ChapterQuizService;
 import com.classicchatreader.service.ClassroomEffectiveQuizService;
 import com.classicchatreader.service.ClassroomQuizPolicyService;
@@ -54,6 +56,7 @@ public class ChapterQuizController {
     private int difficultyRampMaxLevel;
 
     private final ChapterQuizService chapterQuizService;
+    private final AssignmentQuizService assignmentQuizService;
     private final QuizProgressService quizProgressService;
     private final QuizMetricsService quizMetricsService;
     private final ReaderIdentityService readerIdentityService;
@@ -62,12 +65,14 @@ public class ChapterQuizController {
 
     public ChapterQuizController(
             ChapterQuizService chapterQuizService,
+            AssignmentQuizService assignmentQuizService,
             QuizProgressService quizProgressService,
             QuizMetricsService quizMetricsService,
             ReaderIdentityService readerIdentityService,
             ClassroomQuizPolicyService classroomQuizPolicyService,
             ClassroomEffectiveQuizService classroomEffectiveQuizService) {
         this.chapterQuizService = chapterQuizService;
+        this.assignmentQuizService = assignmentQuizService;
         this.quizProgressService = quizProgressService;
         this.quizMetricsService = quizMetricsService;
         this.readerIdentityService = readerIdentityService;
@@ -263,6 +268,57 @@ public class ChapterQuizController {
                             readerId,
                             identity.userId()
                     )
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).build();
+        }
+    }
+
+    @GetMapping("/assignment/{assignmentId}")
+    public ResponseEntity<AssignmentQuizViewResponse> getAssignmentQuiz(
+            @PathVariable String assignmentId,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
+        if (!quizEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(httpRequest, httpResponse);
+        if (identity.userId() == null || identity.userId().isBlank()) {
+            return ResponseEntity.status(401).build();
+        }
+        return assignmentQuizService.getStudentQuiz(identity.userId(), assignmentId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/assignment/{assignmentId}/grade")
+    public ResponseEntity<ChapterQuizGradeResponse> gradeAssignmentQuiz(
+            @PathVariable String assignmentId,
+            @RequestBody QuizSubmissionRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
+        if (!quizEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        if (request == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(httpRequest, httpResponse);
+        if (identity.userId() == null || identity.userId().isBlank()) {
+            return ResponseEntity.status(401).build();
+        }
+        String readerId = identity.accountAuthenticated() ? null : identity.readerKey();
+        try {
+            return assignmentQuizService.gradeStudentQuiz(
+                            identity.userId(),
+                            assignmentId,
+                            request.selectedOptionIndexes(),
+                            request.questionIds(),
+                            request.contentVersion(),
+                            readerId)
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (ResponseStatusException e) {

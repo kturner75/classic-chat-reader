@@ -380,7 +380,7 @@ public class AccountChatHistoryService {
         if (session == null) return null;
         CharacterEntity character = characterRepository.findByIdWithBookAndChapter(session.getCharacterId()).orElse(null);
         if (character == null) return null;
-        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId), true).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
         return appendVoiceCallTurns(session, ownerUserId, turns, null, null);
@@ -412,7 +412,7 @@ public class AccountChatHistoryService {
                     .orElse(null);
             if (session == null) return null;
         }
-        if (!resume(session, character, classroomContextService.getContext(ownerUserId)).available()) {
+        if (!resume(session, character, classroomContextService.getContext(ownerUserId), true).available()) {
             throw new ChatHistoryValidationException("CHAT_UNAVAILABLE", "This conversation cannot be continued.");
         }
         VoiceCallTranscriptResponse response = appendVoiceCallTurns(
@@ -802,11 +802,20 @@ public class AccountChatHistoryService {
             CharacterChatConversationEntity session,
             CharacterEntity character,
             ClassroomContextResponse classroom) {
+        return resume(session, character, classroom, false);
+    }
+
+    private Resume resume(
+            CharacterChatConversationEntity session,
+            CharacterEntity character,
+            ClassroomContextResponse classroom,
+            boolean requirePrimary) {
         String reason = null;
         if (!chatEnabled) reason = "CHAT_DISABLED";
         else if (!characterEnabled || !Boolean.TRUE.equals(character.getBook().getCharacterEnabled())) reason = "BOOK_DISABLED";
         else if (character.getStatus() != CharacterStatus.COMPLETED
-                || character.getCharacterType() != CharacterType.PRIMARY) {
+                || !isChatEligibleCharacter(character)
+                || (requirePrimary && character.getCharacterType() != CharacterType.PRIMARY)) {
             reason = "CHARACTER_UNAVAILABLE";
         }
         else if (classroom != null && classroom.enrolled()
@@ -814,6 +823,21 @@ public class AccountChatHistoryService {
             reason = "CLASSROOM_POLICY";
         }
         return new Resume(reason == null, "/my-chats?session=" + session.getId(), reason);
+    }
+
+    /**
+     * Matches {@link CharacterService#isChatEligible}: PRIMARY always, SECONDARY when the
+     * book has no PRIMARY characters (typical for short stories).
+     */
+    private boolean isChatEligibleCharacter(CharacterEntity character) {
+        if (character.getCharacterType() == CharacterType.PRIMARY) {
+            return true;
+        }
+        if (character.getBook() == null || character.getBook().getId() == null) {
+            return false;
+        }
+        return characterRepository.countByBookIdAndCharacterType(
+                character.getBook().getId(), CharacterType.PRIMARY) == 0;
     }
 
     private String preview(String content) {

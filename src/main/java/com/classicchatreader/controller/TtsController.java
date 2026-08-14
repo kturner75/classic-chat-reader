@@ -71,17 +71,22 @@ public class TtsController {
     Map<String, Object> status = new HashMap<>();
     boolean cacheOnly = ttsService.isCacheOnly();
     boolean cachedAvailable = cacheOnly && cdnAssetService.isEnabled();
-    status.put("openaiConfigured", ttsService.isConfigured());
+    boolean configured = ttsService.isConfigured();
+    status.put("configured", configured);
+    status.put("provider", ttsService.currentProvider());
+    // Alias kept so existing readers that check openaiConfigured still enable server TTS.
+    status.put("openaiConfigured", configured);
     status.put("cachedAvailable", cachedAvailable);
     status.put("ollamaAvailable", voiceAnalysisService.isOllamaAvailable());
-    status.put("voices", TtsService.AVAILABLE_VOICES);
+    status.put("voices", ttsService.listVoices());
+    status.put("defaultVoice", ttsService.defaultVoice());
     status.put("cacheOnly", cacheOnly);
     return status;
   }
 
   @GetMapping("/voices")
   public List<Map<String, String>> getVoices() {
-    return TtsService.AVAILABLE_VOICES;
+    return ttsService.listVoices();
   }
 
   @GetMapping("/settings/{bookId}")
@@ -96,15 +101,9 @@ public class TtsController {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
-    // Return saved settings if they exist
-    if (book.getTtsVoice() != null) {
-      VoiceSettings settings = new VoiceSettings(
-          book.getTtsVoice(),
-          book.getTtsSpeed() != null ? book.getTtsSpeed() : 1.0,
-          book.getTtsInstructions(),
-          book.getTtsReasoning()
-      );
-      return ResponseEntity.ok(settings);
+    // Return saved settings only when they were chosen for the current TTS provider.
+    if (hasCurrentProviderVoiceSettings(book)) {
+      return ResponseEntity.ok(savedVoiceSettings(book));
     }
 
     return ResponseEntity.noContent().build();
@@ -127,15 +126,10 @@ public class TtsController {
       return ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
 
-    // Return existing settings if already analyzed (unless force=true)
-    if (!force && book.getTtsVoice() != null) {
-      VoiceSettings settings = new VoiceSettings(
-          book.getTtsVoice(),
-          book.getTtsSpeed() != null ? book.getTtsSpeed() : 1.0,
-          book.getTtsInstructions(),
-          book.getTtsReasoning()
-      );
-      return ResponseEntity.ok(settings);
+    // Re-analyze when the saved pick is from a provider that is no longer
+    // serving TTS, or the current provider no longer offers that voice.
+    if (!force && hasCurrentProviderVoiceSettings(book)) {
+      return ResponseEntity.ok(savedVoiceSettings(book));
     }
 
     // Get opening text from first chapter
@@ -156,6 +150,7 @@ public class TtsController {
 
     // Save settings to database
     book.setTtsVoice(settings.voice());
+    book.setTtsVoiceProvider(ttsService.currentProvider());
     book.setTtsSpeed(settings.speed());
     book.setTtsInstructions(settings.instructions());
     book.setTtsReasoning(settings.reasoning());
@@ -171,7 +166,7 @@ public class TtsController {
   public ResponseEntity<byte[]> speak(@RequestBody SpeakRequest request) {
     if (!ttsService.isConfigured()) {
       return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-          .body("OpenAI API key not configured".getBytes());
+          .body("TTS is not configured".getBytes());
     }
 
     String text = extractPlainText(request.text());
@@ -180,10 +175,11 @@ public class TtsController {
     }
 
     VoiceSettings settings = new VoiceSettings(
-        request.voice(),
+        ttsService.resolvePlaybackVoice(request.voice()),
         request.speed() > 0 ? request.speed() : 1.0,
         request.instructions(),
-        null
+        null,
+        ttsService.currentProvider()
     );
 
     byte[] audio = ttsService.generateSpeech(text, settings);
@@ -239,7 +235,20 @@ public class TtsController {
           .body(new byte[0]);
     }
 
-    String resolvedVoice = ttsService.resolveVoice(voice);
+    String resolvedVoice = ttsService.resolvePlaybackVoice(
+        voice, bookOpt.get().getTtsVoice(), bookOpt.get().getTtsVoiceProvider());
+
+    // Prefer any already-cached paragraph audio, including files from a previous
+    // TTS provider, so a provider switch does not spend tokens re-synthesizing.
+    byte[] cachedAudio = ttsService.getCachedSpeechForParagraph(
+        bookKey, chapter.getChapterIndex(), paragraphIndex, voice);
+    if (cachedAudio != null && cachedAudio.length > 0) {
+      return ResponseEntity.ok()
+          .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
+          .header(HttpHeaders.CACHE_CONTROL, "max-age=604800")
+          .body(cachedAudio);
+    }
+
     boolean cacheOnly = ttsService.isCacheOnly();
     if (cacheOnly && cdnAssetService.isEnabled()) {
       String audioKey = assetKeyService.buildAudioKey(bookOpt.get(), resolvedVoice,
@@ -251,15 +260,6 @@ public class TtsController {
           .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    byte[] cachedAudio = ttsService.getCachedSpeechForParagraph(
-        bookKey, chapter.getChapterIndex(), paragraphIndex, resolvedVoice);
-    if (cachedAudio != null && cachedAudio.length > 0) {
-      return ResponseEntity.ok()
-          .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
-          .header(HttpHeaders.CACHE_CONTROL, "max-age=604800")
-          .body(cachedAudio);
-    }
-
     if (isPublicMode() && !isSensitiveTtsAuthorized(request, providedApiKey)) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
           .body("Authentication required for uncached TTS generation".getBytes(StandardCharsets.UTF_8));
@@ -267,10 +267,11 @@ public class TtsController {
 
     if (!ttsService.isConfigured()) {
       return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-          .body("OpenAI API key not configured".getBytes());
+          .body("TTS is not configured".getBytes());
     }
 
-    VoiceSettings settings = new VoiceSettings(resolvedVoice, speed, instructions, null);
+    VoiceSettings settings = new VoiceSettings(
+        resolvedVoice, speed, instructions, null, ttsService.currentProvider());
     byte[] audio = ttsService.generateSpeechForParagraph(
         bookKey, chapter.getChapterIndex(), paragraphIndex, text, settings);
     if (audio == null) {
@@ -317,6 +318,24 @@ public class TtsController {
         "totalParagraphs", totalParagraphs,
         "estimatedCostCents", costCents,
         "estimatedCostDisplay", String.format("$%.2f", costCents / 100.0)
+    );
+  }
+
+  private boolean hasCurrentProviderVoiceSettings(BookEntity book) {
+    return ttsService.isCompatibleWithCurrentProvider(book.getTtsVoice(), book.getTtsVoiceProvider());
+  }
+
+  private VoiceSettings savedVoiceSettings(BookEntity book) {
+    String provider = book.getTtsVoiceProvider();
+    if (provider == null || provider.isBlank()) {
+      provider = ttsService.currentProvider();
+    }
+    return new VoiceSettings(
+        ttsService.resolveVoice(book.getTtsVoice()),
+        ttsService.clampSpeed(book.getTtsSpeed() != null ? book.getTtsSpeed() : 1.0),
+        book.getTtsInstructions(),
+        book.getTtsReasoning(),
+        provider
     );
   }
 

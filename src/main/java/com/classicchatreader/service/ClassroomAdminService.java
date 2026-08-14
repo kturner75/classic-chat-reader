@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.entity.ClassRoleMembershipEntity;
@@ -7,6 +8,7 @@ import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.repository.AssignmentQuizRepository;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
@@ -24,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +42,7 @@ public class ClassroomAdminService {
     private final ClassRoleMembershipRepository classRoleMembershipRepository;
     private final ClassFeatureSettingsRepository classFeatureSettingsRepository;
     private final AssignmentRepository assignmentRepository;
+    private final AssignmentQuizRepository assignmentQuizRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final InviteLinkService inviteLinkService;
     private final ClassroomAuthorizationService authorizationService;
@@ -56,6 +61,7 @@ public class ClassroomAdminService {
             ClassRoleMembershipRepository classRoleMembershipRepository,
             ClassFeatureSettingsRepository classFeatureSettingsRepository,
             AssignmentRepository assignmentRepository,
+            AssignmentQuizRepository assignmentQuizRepository,
             EnrollmentRepository enrollmentRepository,
             InviteLinkService inviteLinkService,
             ClassroomAuthorizationService authorizationService,
@@ -72,6 +78,7 @@ public class ClassroomAdminService {
         this.classRoleMembershipRepository = classRoleMembershipRepository;
         this.classFeatureSettingsRepository = classFeatureSettingsRepository;
         this.assignmentRepository = assignmentRepository;
+        this.assignmentQuizRepository = assignmentQuizRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.inviteLinkService = inviteLinkService;
         this.authorizationService = authorizationService;
@@ -288,7 +295,9 @@ public class ClassroomAdminService {
         if (isBlank(assignment.getStatus())) {
             assignment.setStatus("DRAFT");
         }
-        return assignmentRepository.save(assignment);
+        AssignmentEntity saved = assignmentRepository.save(assignment);
+        validatePublishedQuizRequirement(saved);
+        return saved;
     }
 
     @Transactional
@@ -305,16 +314,16 @@ public class ClassroomAdminService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
         }
-        // Lock quiz content before mutation when pass rules may be validated against chapter quiz size,
+        // Lock quiz content before mutation when pass rules may be validated against quiz size,
         // then refresh so a concurrent publication cannot leave a stale activation timestamp.
-        String previousChapterId = assignment.getChapterId();
-        String lockChapterId = resolveChapterIdForPassRuleLock(assignment, request);
         java.util.TreeSet<String> lockOrder = new java.util.TreeSet<>();
-        if (previousChapterId != null && !previousChapterId.isBlank()) {
-            lockOrder.add(previousChapterId);
+        for (AssignmentChapterEntity chapter : assignment.getChapters()) {
+            if (chapter.getChapterId() != null && !chapter.getChapterId().isBlank()) {
+                lockOrder.add(chapter.getChapterId());
+            }
         }
-        if (lockChapterId != null && !lockChapterId.isBlank()) {
-            lockOrder.add(lockChapterId);
+        for (String chapterId : resolveRequestedChapterIds(request, assignment)) {
+            lockOrder.add(chapterId);
         }
         for (String chapterToLock : lockOrder) {
             chapterQuizService.lockQuizContent(chapterToLock);
@@ -327,30 +336,27 @@ public class ClassroomAdminService {
         validateCharacterChatRequirement(assignment.getTermId(), effectiveCharacterChatRequired);
         validateQuizPassRulesForUpdate(request, assignment);
         applyAssignmentUpdate(assignment, userId, request);
-        return assignmentRepository.save(assignment);
+        AssignmentEntity saved = assignmentRepository.save(assignment);
+        validatePublishedQuizRequirement(saved);
+        return saved;
     }
 
-    private String resolveChapterIdForPassRuleLock(AssignmentEntity existing, AssignmentWriteRequest request) {
-        boolean quizRequired = request.quizRequired() != null
-                ? request.quizRequired()
-                : existing.isQuizRequired();
-        if (!quizRequired || Boolean.TRUE.equals(request.clearQuizPassRules())) {
-            return null;
+    @Transactional
+    public void deleteDraftAssignment(String userId, String assignmentId) {
+        if (userId == null || userId.isBlank() || !userRepository.existsById(userId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account sign-in required.");
         }
-        Integer min = request.quizPassMinCorrect() != null
-                ? request.quizPassMinCorrect()
-                : existing.getQuizPassMinCorrect();
-        if (min == null) {
-            return null;
+        AssignmentEntity assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found."));
+        if (!authorizationService.canManageTerm(userId, assignment.getTermId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found.");
         }
-        String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
-        String chapterId = request.chapterId() != null
-                ? trimToNull(request.chapterId())
-                : existing.getChapterId();
-        Integer chapterIndex = request.chapterIndex() != null
-                ? request.chapterIndex()
-                : existing.getChapterIndex();
-        return resolveChapterId(bookId, chapterId, chapterIndex);
+        if (!"DRAFT".equalsIgnoreCase(assignment.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Only draft assignments can be deleted.");
+        }
+        assignment.setDeletedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
+        assignmentRepository.save(assignment);
     }
 
     @Transactional(readOnly = true)
@@ -408,20 +414,12 @@ public class ClassroomAdminService {
         assignment.setTermId(termId);
         assignment.setTitle(request.title().trim());
         assignment.setBookId(request.bookId().trim());
-        String chapterId = resolveChapterId(
-                request.bookId().trim(), trimToNull(request.chapterId()), request.chapterIndex());
-        assignment.setChapterId(chapterId);
-        if (request.chapterIndex() != null) {
-            assignment.setChapterIndex(request.chapterIndex());
-        } else if (chapterId != null) {
-            chapterRepository.findById(chapterId).ifPresent(ch -> assignment.setChapterIndex(ch.getChapterIndex()));
-        } else {
-            assignment.setChapterIndex(null);
-        }
+        replaceAssignmentChapters(assignment, request.bookId().trim(), resolveRequestedChapterIds(request, null));
         assignment.setDueDate(request.dueDate());
         assignment.setAvailableFromDate(request.availableFromDate());
         assignment.setQuizRequired(Boolean.TRUE.equals(request.quizRequired()));
         assignment.setCharacterChatRequired(Boolean.TRUE.equals(request.characterChatRequired()));
+        assignment.setQuizSource(resolveQuizSource(assignment, request, true));
         applyQuizPassRulesOnCreate(assignment, request);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
@@ -434,7 +432,9 @@ public class ClassroomAdminService {
 
     /** Partial update: only non-null / non-blank request fields change existing row. */
     private void applyAssignmentUpdate(AssignmentEntity assignment, String userId, AssignmentWriteRequest request) {
-        String previousChapterId = assignment.getChapterId();
+        List<String> previousChapterIds = assignment.getChapters().stream()
+                .map(AssignmentChapterEntity::getChapterId)
+                .toList();
         LocalDate previousAvailableFrom = assignment.getAvailableFromDate();
         if (!isBlank(request.title())) {
             assignment.setTitle(request.title().trim());
@@ -442,32 +442,9 @@ public class ClassroomAdminService {
         if (!isBlank(request.bookId())) {
             assignment.setBookId(request.bookId().trim());
         }
-        if (request.chapterId() != null || request.chapterIndex() != null || !isBlank(request.bookId())) {
+        if (requestTouchesChapters(request) || !isBlank(request.bookId())) {
             String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : assignment.getBookId();
-            String requestedChapterId = request.chapterId() != null
-                    ? trimToNull(request.chapterId())
-                    : assignment.getChapterId();
-            Integer requestedIndex = request.chapterIndex() != null
-                    ? request.chapterIndex()
-                    : assignment.getChapterIndex();
-            // Explicit empty chapterId clears chapter targeting.
-            if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
-                assignment.setChapterId(null);
-                assignment.setChapterIndex(null);
-                // Whole-book assignments cannot carry chapter pass rules.
-                assignment.setQuizPassMinCorrect(null);
-                assignment.setQuizMaxRetries(null);
-                assignment.setQuizRulesActivatedAt(null);
-            } else {
-                String resolved = resolveChapterId(bookId, requestedChapterId, requestedIndex);
-                assignment.setChapterId(resolved);
-                if (request.chapterIndex() != null) {
-                    assignment.setChapterIndex(request.chapterIndex());
-                } else if (resolved != null && assignment.getChapterIndex() == null) {
-                    chapterRepository.findById(resolved)
-                            .ifPresent(ch -> assignment.setChapterIndex(ch.getChapterIndex()));
-                }
-            }
+            replaceAssignmentChapters(assignment, bookId, resolveRequestedChapterIds(request, assignment));
         }
         if (Boolean.TRUE.equals(request.clearDueDate())) {
             assignment.setDueDate(null);
@@ -485,7 +462,10 @@ public class ClassroomAdminService {
         if (request.characterChatRequired() != null) {
             assignment.setCharacterChatRequired(request.characterChatRequired());
         }
-        applyQuizPassRulesOnUpdate(assignment, request, previousChapterId, previousAvailableFrom);
+        if (request.quizSource() != null || request.quizRequired() != null || requestTouchesChapters(request)) {
+            assignment.setQuizSource(resolveQuizSource(assignment, request, false));
+        }
+        applyQuizPassRulesOnUpdate(assignment, request, previousChapterIds, previousAvailableFrom);
         if (request.sortOrder() != null) {
             assignment.setSortOrder(request.sortOrder());
         }
@@ -518,7 +498,7 @@ public class ClassroomAdminService {
     private void applyQuizPassRulesOnUpdate(
             AssignmentEntity assignment,
             AssignmentWriteRequest request,
-            String previousChapterId,
+            List<String> previousChapterIds,
             LocalDate previousAvailableFrom) {
         boolean quizRequired = request.quizRequired() != null
                 ? request.quizRequired()
@@ -543,7 +523,10 @@ public class ClassroomAdminService {
         boolean hasRules = assignment.getQuizPassMinCorrect() != null && assignment.getQuizMaxRetries() != null;
         boolean rulesChanged = !Objects.equals(previousMin, assignment.getQuizPassMinCorrect())
                 || !Objects.equals(previousRetries, assignment.getQuizMaxRetries());
-        boolean chapterChanged = !Objects.equals(previousChapterId, assignment.getChapterId());
+        List<String> nextChapterIds = assignment.getChapters().stream()
+                .map(AssignmentChapterEntity::getChapterId)
+                .toList();
+        boolean chapterChanged = !previousChapterIds.equals(nextChapterIds);
         boolean publishedNow = "PUBLISHED".equalsIgnoreCase(nextStatus)
                 && !"PUBLISHED".equalsIgnoreCase(assignment.getStatus());
         LocalDate nextAvailableFrom = assignment.getAvailableFromDate();
@@ -565,13 +548,11 @@ public class ClassroomAdminService {
                 request.quizMaxRetries(),
                 false);
         if (quizRequired) {
-            String chapterId = resolveChapterId(
-                    request.bookId() == null ? null : request.bookId().trim(),
-                    trimToNull(request.chapterId()),
-                    request.chapterIndex());
             validatePassMinAgainstEffectiveQuiz(
                     termId,
-                    chapterId,
+                    resolveRequestedChapterIds(request, null),
+                    request.quizSource(),
+                    null,
                     request.quizPassMinCorrect());
         }
     }
@@ -589,7 +570,6 @@ public class ClassroomAdminService {
         Integer retries = request.quizMaxRetries() != null
                 ? request.quizMaxRetries()
                 : existing.getQuizMaxRetries();
-        // Only validate when teacher is touching pass-rule fields or enabling quiz.
         boolean touching = request.quizPassMinCorrect() != null
                 || request.quizMaxRetries() != null
                 || Boolean.TRUE.equals(request.quizRequired());
@@ -597,25 +577,11 @@ public class ClassroomAdminService {
             return;
         }
         validateQuizPassRulePair(quizRequired, min, retries, true);
-        String bookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
-        boolean clearingChapter = request.chapterId() != null && trimToNull(request.chapterId()) == null;
-        if (clearingChapter) {
-            if (min != null || retries != null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Clear quiz pass rules when converting an assignment to whole-book "
-                                + "(or set clearQuizPassRules=true).");
-            }
-            return;
-        }
-        String requestedChapterId = request.chapterId() != null
-                ? trimToNull(request.chapterId())
-                : existing.getChapterId();
-        Integer requestedIndex = request.chapterIndex() != null
-                ? request.chapterIndex()
-                : existing.getChapterIndex();
-        String chapterId = resolveChapterId(bookId, requestedChapterId, requestedIndex);
-        validatePassMinAgainstEffectiveQuiz(existing.getTermId(), chapterId, min);
+        List<String> chapterIds = resolveRequestedChapterIds(request, existing);
+        String quizSource = !isBlank(request.quizSource())
+                ? request.quizSource().trim().toUpperCase()
+                : existing.getQuizSource();
+        validatePassMinAgainstEffectiveQuiz(existing.getTermId(), chapterIds, quizSource, existing.getId(), min);
     }
 
     private void validateQuizPassRulePair(
@@ -632,9 +598,6 @@ public class ClassroomAdminService {
             return;
         }
         if (minCorrect == null && maxRetries == null) {
-            if (allowBothNull) {
-                return;
-            }
             return;
         }
         if (minCorrect == null) {
@@ -661,23 +624,18 @@ public class ClassroomAdminService {
         }
     }
 
-    private void validatePassMinAgainstEffectiveQuiz(String termId, String chapterId, Integer minCorrect) {
+    private void validatePassMinAgainstEffectiveQuiz(
+            String termId,
+            List<String> chapterIds,
+            String quizSource,
+            String assignmentId,
+            Integer minCorrect) {
         if (minCorrect == null) {
             return;
         }
-        if (chapterId == null || chapterId.isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "quizPassMinCorrect requires a chapter-targeted assignment (not whole-book).");
-        }
-        // Hold the same content lock as quiz publication through assignment save.
-        chapterQuizService.lockQuizContent(chapterId);
-        Optional<Integer> known = classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId);
+        Optional<Integer> known = resolveEffectiveQuizQuestionCount(termId, chapterIds, quizSource, assignmentId);
         if (known.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Publish a class quiz for this chapter before setting quizPassMinCorrect, "
-                            + "so the pass threshold can be checked against the real question count.");
+            return;
         }
         if (minCorrect > known.get()) {
             throw new ResponseStatusException(
@@ -687,62 +645,189 @@ public class ClassroomAdminService {
         }
     }
 
+    Optional<Integer> resolveEffectiveQuizQuestionCount(
+            String termId,
+            List<String> chapterIds,
+            String quizSource,
+            String assignmentId) {
+        if (AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(quizSource) && assignmentId != null) {
+            return assignmentQuizRepository.findByAssignmentId(assignmentId)
+                    .map(row -> classroomEffectiveQuizService.countQuestions(row.getPayloadJson()))
+                    .filter(count -> count > 0);
+        }
+        if (chapterIds != null && chapterIds.size() == 1) {
+            String chapterId = chapterIds.get(0);
+            chapterQuizService.lockQuizContent(chapterId);
+            return classroomEffectiveQuizService.resolveEffectiveQuestionCount(termId, chapterId);
+        }
+        return Optional.empty();
+    }
+
+    private void validatePublishedQuizRequirement(AssignmentEntity assignment) {
+        if (!assignment.isQuizRequired() || !"PUBLISHED".equalsIgnoreCase(assignment.getStatus())) {
+            return;
+        }
+        String source = assignment.getQuizSource();
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(source)) {
+            String chapterId = assignment.singleChapterId();
+            if (chapterId == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "quizSource=CHAPTER requires a single-chapter assignment.");
+            }
+            Optional<Integer> count = classroomEffectiveQuizService.resolveEffectiveQuestionCount(
+                    assignment.getTermId(), chapterId);
+            if (count.isEmpty() || count.get() < 1) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "No default chapter quiz is available. Define an assignment quiz before publishing.");
+            }
+            return;
+        }
+        if (AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(source)) {
+            if (!assignmentQuizRepository.existsByAssignmentId(assignment.getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Define an assignment quiz before publishing a quiz-required assignment.");
+            }
+            return;
+        }
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Quiz-required published assignments must use quizSource CHAPTER or CUSTOM.");
+    }
+
     private void validateAssignmentForCreate(AssignmentWriteRequest request) {
         if (request == null || isBlank(request.title()) || isBlank(request.bookId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Title and bookId are required.");
         }
-        validateBookAndChapter(
-                request.bookId().trim(),
-                trimToNull(request.chapterId()),
-                request.chapterIndex());
+        validateBookAndChapters(request.bookId().trim(), resolveRequestedChapterIds(request, null));
         validateAssignmentStatus(request.status());
+        validateQuizSourceValue(request.quizSource());
     }
 
     private void validateAssignmentForUpdate(AssignmentWriteRequest request, AssignmentEntity existing) {
         String effectiveBookId = !isBlank(request.bookId()) ? request.bookId().trim() : existing.getBookId();
-        String effectiveChapterId = request.chapterId() != null
-                ? trimToNull(request.chapterId())
-                : existing.getChapterId();
-        Integer effectiveChapterIndex;
-        if (request.chapterIndex() != null) {
-            effectiveChapterIndex = request.chapterIndex();
-        } else if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
-            // Explicit empty chapterId means whole-book; do not validate the previous index.
-            effectiveChapterIndex = null;
-        } else {
-            effectiveChapterIndex = existing.getChapterIndex();
-        }
-        boolean chapterTargetChanged = request.chapterId() != null
-                || request.chapterIndex() != null
-                || !isBlank(request.bookId());
         if (!isBlank(request.bookId()) && !bookRepository.existsById(effectiveBookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
         }
-        if (chapterTargetChanged) {
-            validateBookAndChapter(effectiveBookId, effectiveChapterId, effectiveChapterIndex);
+        if (requestTouchesChapters(request) || !isBlank(request.bookId())) {
+            validateBookAndChapters(effectiveBookId, resolveRequestedChapterIds(request, existing));
         }
         validateAssignmentStatus(request.status());
+        validateQuizSourceValue(request.quizSource());
     }
 
-    private void validateBookAndChapter(String bookId, String chapterId, Integer chapterIndex) {
+    private void validateBookAndChapters(String bookId, List<String> chapterIds) {
         if (!bookRepository.existsById(bookId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId.");
         }
-        if (chapterId != null) {
+        if (chapterIds == null || chapterIds.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>(chapterIds);
+        for (String chapterId : unique) {
             Optional<ChapterEntity> chapter = chapterRepository.findByIdWithBook(chapterId);
             if (chapter.isEmpty() || chapter.get().getBook() == null
                     || !Objects.equals(bookId, chapter.get().getBook().getId())) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "chapterId must belong to the given bookId.");
             }
+        }
+    }
+
+    private void replaceAssignmentChapters(AssignmentEntity assignment, String bookId, List<String> chapterIds) {
+        if (chapterIds == null || chapterIds.isEmpty()) {
+            assignment.replaceChapters(List.of());
             return;
         }
-        if (chapterIndex != null) {
-            int index = Math.max(0, chapterIndex);
-            if (chapterRepository.findByBookIdAndChapterIndex(bookId, index).isEmpty()) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "chapterIndex does not exist for the given bookId.");
+        LinkedHashSet<String> unique = new LinkedHashSet<>(chapterIds);
+        Map<String, AssignmentChapterEntity> existingByChapterId = assignment.getChapters().stream()
+                .filter(row -> row.getChapterId() != null && !row.getChapterId().isBlank())
+                .collect(Collectors.toMap(
+                        AssignmentChapterEntity::getChapterId,
+                        row -> row,
+                        (first, ignored) -> first));
+        List<ChapterEntity> ordered = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
+        List<AssignmentChapterEntity> next = new ArrayList<>();
+        int sort = 0;
+        for (ChapterEntity chapter : ordered) {
+            if (!unique.contains(chapter.getId())) {
+                continue;
             }
+            AssignmentChapterEntity row = existingByChapterId.get(chapter.getId());
+            if (row == null) {
+                row = new AssignmentChapterEntity();
+                row.setChapterId(chapter.getId());
+            }
+            row.setChapterIndex(chapter.getChapterIndex());
+            row.setSortOrder(sort++);
+            next.add(row);
+        }
+        if (next.size() != unique.size()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "chapterId must belong to the given bookId.");
+        }
+        assignment.replaceChapters(next);
+    }
+
+    private List<String> resolveRequestedChapterIds(AssignmentWriteRequest request, AssignmentEntity existing) {
+        if (request.chapterIds() != null) {
+            return request.chapterIds().stream()
+                    .map(ClassroomAdminService::trimToNull)
+                    .filter(Objects::nonNull)
+                    .toList();
+        }
+        if (request.chapterId() != null || request.chapterIndex() != null) {
+            if (request.chapterId() != null && trimToNull(request.chapterId()) == null) {
+                return List.of();
+            }
+            String bookId = existing != null && isBlank(request.bookId())
+                    ? existing.getBookId()
+                    : (request.bookId() == null ? null : request.bookId().trim());
+            String resolved = resolveChapterId(bookId, trimToNull(request.chapterId()), request.chapterIndex());
+            return resolved == null ? List.of() : List.of(resolved);
+        }
+        if (existing != null) {
+            return existing.getChapters().stream()
+                    .map(AssignmentChapterEntity::getChapterId)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private boolean requestTouchesChapters(AssignmentWriteRequest request) {
+        return request.chapterIds() != null || request.chapterId() != null || request.chapterIndex() != null;
+    }
+
+    private String resolveQuizSource(
+            AssignmentEntity assignment, AssignmentWriteRequest request, boolean creating) {
+        if (!assignment.isQuizRequired()) {
+            return null;
+        }
+        if (!isBlank(request.quizSource())) {
+            return request.quizSource().trim().toUpperCase();
+        }
+        if (!creating && assignment.getQuizSource() != null) {
+            if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equals(assignment.getQuizSource())
+                    && assignment.singleChapterId() == null) {
+                return AssignmentEntity.QUIZ_SOURCE_CUSTOM;
+            }
+            return assignment.getQuizSource();
+        }
+        return assignment.singleChapterId() != null
+                ? AssignmentEntity.QUIZ_SOURCE_CHAPTER
+                : AssignmentEntity.QUIZ_SOURCE_CUSTOM;
+    }
+
+    private void validateQuizSourceValue(String quizSource) {
+        if (isBlank(quizSource)) {
+            return;
+        }
+        String normalized = quizSource.trim().toUpperCase();
+        if (!AssignmentEntity.QUIZ_SOURCE_CHAPTER.equals(normalized)
+                && !AssignmentEntity.QUIZ_SOURCE_CUSTOM.equals(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid quizSource.");
         }
     }
 
@@ -883,6 +968,7 @@ public class ClassroomAdminService {
     public record AssignmentWriteRequest(
             String title,
             String bookId,
+            List<String> chapterIds,
             String chapterId,
             Integer chapterIndex,
             LocalDate dueDate,
@@ -897,7 +983,8 @@ public class ClassroomAdminService {
             Boolean clearAvailableFromDate,
             Integer quizPassMinCorrect,
             Integer quizMaxRetries,
-            Boolean clearQuizPassRules
+            Boolean clearQuizPassRules,
+            String quizSource
     ) {
         public AssignmentWriteRequest(
                 String title,
@@ -909,8 +996,8 @@ public class ClassroomAdminService {
                 Boolean quizRequired,
                 Integer sortOrder,
                 String status) {
-            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, null, sortOrder, status, null, null, null, null, null);
+            this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, null, sortOrder, status, null, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -924,8 +1011,8 @@ public class ClassroomAdminService {
                 Boolean characterChatRequired,
                 Integer sortOrder,
                 String status) {
-            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, characterChatRequired, sortOrder, status, null, null, null, null, null);
+            this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, characterChatRequired, sortOrder, status, null, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -941,9 +1028,30 @@ public class ClassroomAdminService {
                 String status,
                 Boolean clearDueDate,
                 Boolean clearAvailableFromDate) {
-            this(title, bookId, chapterId, chapterIndex, dueDate, availableFromDate,
+            this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
                     quizRequired, characterChatRequired, sortOrder, status,
-                    clearDueDate, clearAvailableFromDate, null, null, null);
+                    clearDueDate, clearAvailableFromDate, null, null, null, null);
+        }
+
+        public AssignmentWriteRequest(
+                String title,
+                String bookId,
+                String chapterId,
+                Integer chapterIndex,
+                LocalDate dueDate,
+                LocalDate availableFromDate,
+                Boolean quizRequired,
+                Boolean characterChatRequired,
+                Integer sortOrder,
+                String status,
+                Boolean clearDueDate,
+                Boolean clearAvailableFromDate,
+                Integer quizPassMinCorrect,
+                Integer quizMaxRetries,
+                Boolean clearQuizPassRules) {
+            this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, characterChatRequired, sortOrder, status,
+                    clearDueDate, clearAvailableFromDate, quizPassMinCorrect, quizMaxRetries, clearQuizPassRules, null);
         }
     }
 

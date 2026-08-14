@@ -1,5 +1,6 @@
 package com.classicchatreader.controller;
 
+import com.classicchatreader.service.AssignmentQuizService;
 import com.classicchatreader.service.ChapterQuizService;
 import com.classicchatreader.service.ClassroomEffectiveQuizService;
 import com.classicchatreader.service.ClassroomQuizPolicyService;
@@ -49,6 +50,9 @@ class ChapterQuizControllerCacheOnlyTest {
 
     @MockitoBean
     private ClassroomEffectiveQuizService classroomEffectiveQuizService;
+
+    @MockitoBean
+    private AssignmentQuizService assignmentQuizService;
 
     @Test
     void getStatus_cacheOnlyMode_marksQuizUnavailable() throws Exception {

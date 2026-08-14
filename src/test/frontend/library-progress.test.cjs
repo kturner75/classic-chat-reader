@@ -3,7 +3,15 @@ const assert = require('node:assert/strict');
 
 const {
     buildBookProgressSnapshot,
-    buildAssignmentProgressSnapshot
+    buildAssignmentProgressSnapshot,
+    isReadingCompleteForAssignment,
+    canTakeAssignmentQuiz,
+    assignmentQuizActionLabel,
+    assignmentChapterLabel,
+    isWholeBookAssignment,
+    canChatForAssignment,
+    assignmentChatActionLabel,
+    isAssignmentFullyComplete
 } = require('../../main/resources/static/js/library-progress.js');
 
 test('returns not-started snapshot at 0% progress', () => {
@@ -248,4 +256,109 @@ test('assignment reading stays complete after student resumes an earlier chapter
     });
     assert.equal(snapshot.readingComplete, true);
     assert.equal(snapshot.statusClass, 'completed');
+});
+
+test('multi-chapter assignment completes when furthest chapter covers the set', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' },
+            { chapterId: 'ch-3', chapterIndex: 2, chapterTitle: 'Three' }
+        ],
+        quizRequired: false,
+        quizStatus: 'NOT_REQUIRED'
+    };
+    const incomplete = isReadingCompleteForAssignment(assignment, {
+        lastChapterIndex: 1,
+        maxProgressRatio: 0.2,
+        lastReadAt: '2026-08-12T12:00:00.000Z',
+        chapterCount: 10
+    });
+    assert.equal(incomplete, false);
+
+    const complete = isReadingCompleteForAssignment(assignment, {
+        lastChapterIndex: 2,
+        maxProgressRatio: 0.35,
+        lastReadAt: '2026-08-12T12:00:00.000Z',
+        chapterCount: 10
+    });
+    assert.equal(complete, true);
+    assert.equal(assignmentChapterLabel(assignment), 'One, Three');
+});
+
+test('Take Quiz is hidden until reading is complete and shown as Retry after a failed attempt', () => {
+    const assignment = {
+        assignmentId: 'asg-1',
+        chapters: [{ chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' }],
+        quizRequired: true,
+        quizStatus: 'PENDING',
+        quizAttemptsUsed: 0,
+        quizAttemptsAllowed: 2
+    };
+    const unread = { maxProgressRatio: 0, lastChapterIndex: 0 };
+    assert.equal(canTakeAssignmentQuiz(assignment, unread), false);
+
+    const read = {
+        lastChapterIndex: 0,
+        maxProgressRatio: 0.05,
+        lastReadAt: '2026-08-12T12:00:00.000Z'
+    };
+    assert.equal(canTakeAssignmentQuiz(assignment, read), true);
+    assert.equal(assignmentQuizActionLabel(assignment), 'Take Quiz');
+
+    const retry = { ...assignment, quizAttemptsUsed: 1 };
+    assert.equal(canTakeAssignmentQuiz(retry, read), true);
+    assert.equal(assignmentQuizActionLabel(retry), 'Retry Quiz');
+
+    const exhausted = { ...assignment, quizAttemptsUsed: 2 };
+    assert.equal(canTakeAssignmentQuiz(exhausted, read), false);
+
+    const perfect = { ...assignment, quizStatus: 'COMPLETE', quizBestScorePercent: 100 };
+    assert.equal(canTakeAssignmentQuiz(perfect, read), false);
+
+    const passedWithRetries = {
+        ...assignment,
+        quizStatus: 'COMPLETE',
+        quizAttemptsUsed: 1,
+        quizBestScorePercent: 80
+    };
+    assert.equal(canTakeAssignmentQuiz(passedWithRetries, read), true);
+    assert.equal(assignmentQuizActionLabel(passedWithRetries), 'Retry Quiz');
+});
+
+test('Chat with Character is available whenever the assignment requires it', () => {
+    const required = { characterChatRequired: true };
+    const optional = { characterChatRequired: false };
+    assert.equal(canChatForAssignment(required), true);
+    assert.equal(canChatForAssignment(optional), false);
+    assert.equal(assignmentChatActionLabel(false), 'Chat with Character');
+    assert.equal(assignmentChatActionLabel(true), 'Continue Chat');
+});
+
+test('whole-book assignments are detected from an empty chapter set', () => {
+    assert.equal(isWholeBookAssignment({}), true);
+    assert.equal(isWholeBookAssignment({ chapters: [] }), true);
+    assert.equal(isWholeBookAssignment({
+        chapters: [{ chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' }]
+    }), false);
+});
+
+test('assignment is fully complete only when reading, quiz, and required chat are done', () => {
+    const assignment = {
+        chapters: [{ chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' }],
+        quizRequired: true,
+        quizStatus: 'PENDING',
+        characterChatRequired: true
+    };
+    const read = {
+        lastChapterIndex: 0,
+        maxProgressRatio: 0.2,
+        lastReadAt: '2026-08-12T12:00:00.000Z',
+        chapterCount: 5
+    };
+    assert.equal(isAssignmentFullyComplete(assignment, read, false), false);
+    assert.equal(isAssignmentFullyComplete(assignment, read, true), false);
+    assert.equal(isAssignmentFullyComplete({
+        ...assignment,
+        quizStatus: 'COMPLETE'
+    }, read, true), true);
 });

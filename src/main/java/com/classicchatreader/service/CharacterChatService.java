@@ -66,22 +66,20 @@ public class CharacterChatService {
         String conversationContext = personaPromptBuilder.buildConversationContext(
                 conversationHistory, maxContextMessages);
 
-        String fullPrompt = String.format("""
-            %s
-
-            %s
-
-            User: %s
-
-            %s:""",
-                systemPrompt,
-                conversationContext,
-                userMessage,
-                character.getName());
+        String fullPrompt = systemPrompt
+                + "\n\n"
+                + conversationContext
+                + "\n\nUser: "
+                + userMessage
+                + "\n\n"
+                + character.getName()
+                + ":";
 
         try {
-            String generatedText = chatProvider.generate(fullPrompt, LlmOptions.withTemperatureAndTopP(0.8, 0.9)).trim();
-
+            String generatedText = chatProvider.generate(fullPrompt, LlmOptions.withTemperatureAndTopP(0.8, 0.9));
+            if (generatedText == null || generatedText.isBlank()) {
+                throw new IllegalStateException("Empty completion from chat provider");
+            }
             generatedText = cleanResponse(generatedText, character.getName());
 
             log.debug("Generated chat response for '{}': {}", character.getName(),
@@ -91,7 +89,7 @@ public class CharacterChatService {
 
         } catch (Exception e) {
             log.error("Failed to generate chat response for character '{}'", character.getName(), e);
-            return "I... I'm not sure how to answer that. Perhaps we could discuss something else?";
+            return "I seem to have lost my train of thought. Would you try that again?";
         }
     }
 

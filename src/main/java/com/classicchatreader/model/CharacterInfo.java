@@ -10,9 +10,12 @@ public record CharacterInfo(
     int firstParagraphIndex,
     String status,
     boolean portraitReady,
-    String characterType
+    String characterType,
+    boolean chatEligible
 ) {
     public static CharacterInfo from(com.classicchatreader.entity.CharacterEntity entity) {
+        boolean primary = entity.getCharacterType()
+                == com.classicchatreader.entity.CharacterType.PRIMARY;
         return new CharacterInfo(
             entity.getId(),
             entity.getName(),
@@ -23,7 +26,24 @@ public record CharacterInfo(
             entity.getFirstParagraphIndex(),
             entity.getStatus().name(),
             entity.getStatus() == com.classicchatreader.entity.CharacterStatus.COMPLETED,
-            entity.getCharacterType().name()
+            entity.getCharacterType().name(),
+            primary
+        );
+    }
+
+    public CharacterInfo withChatEligible(boolean chatEligible) {
+        return new CharacterInfo(
+                id,
+                name,
+                description,
+                firstChapterId,
+                firstChapterTitle,
+                firstChapterIndex,
+                firstParagraphIndex,
+                status,
+                portraitReady,
+                characterType,
+                chatEligible
         );
     }
 }

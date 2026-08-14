@@ -12,8 +12,23 @@
         features: null,
         readingBuddyStatus: null,
         editingAssignmentId: null,
+        assignmentScreen: 'assign1',
+        quizChoice: '',
+        quizHost: 'standalone',
+        quizMode: 'default',
+        quizAuthorIndex: 0,
+        quizHasGenerated: false,
+        quizOverrideConfirmed: false,
+        quizSimIndex: 0,
+        quizSimAnswers: [],
+        quizSimAttempt: 1,
+        quizSimPhase: 'taking',
+        quizSimScore: 0,
+        quizSimSeed: 11,
+        quizSuggestBusy: null,
         featureSaveTimer: null,
         activeBookOption: -1,
+        selectedChapterIds: [],
         quizWizardStep: 1,
         quizDraftQuestions: [],
         quizGeneratedBase: [],
@@ -246,24 +261,16 @@
         return Boolean(node && !node.classList.contains('hidden'));
     }
 
-    function getStudentOverviewFocusables() {
-        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
-        if (!card) return [];
-        return Array.from(card.querySelectorAll(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )).filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true');
-    }
-
     function focusStudentOverviewClose() {
         const closeButton = el['student-overview-close']
-            || el['student-overview-modal']?.querySelector('[data-close-student-overview].close-button');
+            || el['student-overview-modal']?.querySelector('[data-close-student-overview]');
         if (closeButton && typeof closeButton.focus === 'function') {
             closeButton.focus();
             return;
         }
-        const card = el['student-overview-modal']?.querySelector('.student-overview-card');
-        if (card && typeof card.focus === 'function') {
-            card.focus();
+        const page = el['student-overview-modal']?.querySelector('.student-overview-page');
+        if (page && typeof page.focus === 'function') {
+            page.focus();
         }
     }
 
@@ -300,6 +307,70 @@
         return 'not-started';
     }
 
+    const OVERVIEW_COLLAPSE_STORAGE_KEY = 'teacher_overviewCollapsedSections';
+
+    function readOverviewCollapsedSections() {
+        try {
+            const raw = localStorage.getItem(OVERVIEW_COLLAPSE_STORAGE_KEY);
+            const parsed = raw ? JSON.parse(raw) : {};
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    function isOverviewSectionCollapsed(sectionId) {
+        return readOverviewCollapsedSections()[sectionId] === true;
+    }
+
+    function persistOverviewSectionCollapsed(sectionId, collapsed) {
+        if (!sectionId) return;
+        try {
+            const current = readOverviewCollapsedSections();
+            if (collapsed) {
+                current[sectionId] = true;
+            } else {
+                delete current[sectionId];
+            }
+            localStorage.setItem(OVERVIEW_COLLAPSE_STORAGE_KEY, JSON.stringify(current));
+        } catch (_error) {
+            // Private mode or quota — keep the in-page toggle working.
+        }
+    }
+
+    function applyOverviewSectionCollapsed(section, collapsed) {
+        if (!section) return;
+        const toggle = section.querySelector('[data-overview-collapse]');
+        const panel = section.querySelector('.overview-section-panel');
+        section.classList.toggle('is-collapsed', collapsed);
+        if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if (panel) panel.classList.toggle('hidden', collapsed);
+    }
+
+    function renderCollapsibleOverviewSection(sectionId, title, count, bodyHtml) {
+        const collapsed = isOverviewSectionCollapsed(sectionId);
+        const panelId = `overview-section-${sectionId}`;
+        return `<section class="overview-section${collapsed ? ' is-collapsed' : ''}" data-overview-section="${escapeHtml(sectionId)}">
+            <h3>
+                <button type="button" class="overview-collapse-toggle" data-overview-collapse="${escapeHtml(sectionId)}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="${escapeHtml(panelId)}">
+                    <span class="overview-collapse-label">${escapeHtml(title)}</span>
+                    <span class="overview-collapse-count">${escapeHtml(String(count))}</span>
+                    <span class="overview-collapse-icon" aria-hidden="true"></span>
+                </button>
+            </h3>
+            <div id="${escapeHtml(panelId)}" class="overview-section-panel${collapsed ? ' hidden' : ''}">
+                ${bodyHtml}
+            </div>
+        </section>`;
+    }
+
+    function renderOverviewMetric(value, label) {
+        return `<div class="overview-metric">
+            <span class="overview-metric-value">${escapeHtml(value)}</span>
+            ${label ? `<span class="overview-metric-label">${escapeHtml(label)}</span>` : ''}
+        </div>`;
+    }
+
     function renderAssignmentOverviewList(items) {
         if (!Array.isArray(items) || items.length === 0) {
             return '<p class="overview-empty">None</p>';
@@ -319,7 +390,7 @@
                 <strong>${escapeHtml(item.title || 'Assignment')}</strong>
                 <div class="meta">
                     <span>${escapeHtml(item.bookTitle || 'Book')}</span>
-                    ${item.chapterTitle ? `<span>${escapeHtml(item.chapterTitle)}</span>` : ''}
+                    <span>${escapeHtml(overviewChapterLabel(item))}</span>
                     ${item.dueDate ? `<span>Due ${escapeHtml(formatDate(item.dueDate))}</span>` : ''}
                     <span class="status-pill ${statusPillClass(item.statusLabel)}">${escapeHtml(item.statusLabel || '—')}</span>
                     <span class="status-pill ${openClass}">${openLabel}${item.firstOpenedAt ? ` · ${escapeHtml(formatDateTime(item.firstOpenedAt))}` : ''}</span>
@@ -342,46 +413,59 @@
         const progress = Array.isArray(overview.progressByBook) ? overview.progressByBook : [];
         const quizzes = Array.isArray(overview.quizzesForBook) ? overview.quizzesForBook : [];
 
+        const completedAssignments = Array.isArray(overview.completedAssignments) ? overview.completedAssignments : [];
+
         el['student-overview-body'].innerHTML = `
             <section class="overview-section">
                 <h3>Current assignments</h3>
                 ${renderAssignmentOverviewList(overview.currentAssignments)}
             </section>
-            <section class="overview-section">
-                <h3>Completed assignments</h3>
-                ${renderAssignmentOverviewList(overview.completedAssignments)}
-            </section>
+            ${renderCollapsibleOverviewSection(
+                'completed-assignments',
+                'Completed assignments',
+                completedAssignments.length,
+                renderAssignmentOverviewList(completedAssignments)
+            )}
             <section class="overview-section">
                 <h3>Progress by book</h3>
                 ${progress.length === 0 ? '<p class="overview-empty">No assigned books yet.</p>' : `<ul class="overview-list">${progress.map(row => `
-                    <li class="overview-item">
-                        <strong>${escapeHtml(row.bookTitle || 'Book')}</strong>
-                        <div class="meta">
-                            <span>Chapter ${escapeHtml(row.chapterLabel || '—')}</span>
-                            <span>${escapeHtml(String(row.percentComplete ?? 0))}% complete</span>
-                            ${row.lastReadAt ? `<span>Last read ${escapeHtml(formatDateTime(row.lastReadAt))}</span>` : ''}
+                    <li class="overview-item overview-item-metric">
+                        <div class="overview-item-copy">
+                            <strong>${escapeHtml(row.bookTitle || 'Book')}</strong>
+                            <div class="meta">
+                                <span>Chapter ${escapeHtml(row.chapterLabel || '—')}</span>
+                                ${row.lastReadAt ? `<span>Last read ${escapeHtml(formatDateTime(row.lastReadAt))}</span>` : ''}
+                            </div>
                         </div>
+                        ${renderOverviewMetric(`${row.percentComplete ?? 0}%`, 'complete')}
                     </li>`).join('')}</ul>`}
             </section>
             <section class="overview-section">
-                <h3>Quizzes for the book</h3>
+                <h3>Quizzes</h3>
                 ${quizzes.length === 0 ? '<p class="overview-empty">No quiz-required assignments.</p>' : `<ul class="overview-list">${quizzes.map(quiz => {
-                    const score = quiz.totalQuestions != null
-                        ? `${quiz.bestCorrectAnswers}/${quiz.totalQuestions} (${quiz.bestScorePercent}%)`
-                        : `${quiz.bestScorePercent}%`;
                     const retries = quiz.retryAttemptsUsed != null ? quiz.retryAttemptsUsed : Math.max(0, (quiz.attemptsUsed || 0) - 1);
                     const allowed = quiz.attemptsAllowed != null ? ` of ${quiz.attemptsAllowed}` : '';
-                    return `<li class="overview-item">
-                        <strong>${escapeHtml(quiz.assignmentTitle || quiz.chapterTitle || 'Quiz')}</strong>
-                        <div class="meta">
-                            <span>${escapeHtml(quiz.bookTitle || 'Book')}</span>
-                            ${quiz.chapterTitle ? `<span>${escapeHtml(quiz.chapterTitle)}</span>` : ''}
-                            <span class="status-pill ${quiz.complete ? 'completed' : 'in-progress'}">${quiz.complete ? 'Complete' : 'Incomplete'}</span>
-                            <span>Best score ${escapeHtml(score)}</span>
-                            <span>Attempts ${escapeHtml(String(quiz.attemptsUsed || 0))}${escapeHtml(allowed)}</span>
-                            <span>Retries used ${escapeHtml(String(retries))}</span>
-                            ${quiz.latestAttemptAt ? `<span>Latest ${escapeHtml(formatDateTime(quiz.latestAttemptAt))}</span>` : ''}
+                    const hasAttempt = (quiz.attemptsUsed || 0) > 0 || Boolean(quiz.latestAttemptAt);
+                    const fraction = quiz.totalQuestions != null
+                        ? `${quiz.bestCorrectAnswers}/${quiz.totalQuestions}`
+                        : '';
+                    const metricValue = hasAttempt ? `${quiz.bestScorePercent ?? 0}%` : '—';
+                    const metricLabel = hasAttempt
+                        ? (fraction ? `${fraction} best` : 'best score')
+                        : 'no attempts';
+                    return `<li class="overview-item overview-item-metric">
+                        <div class="overview-item-copy">
+                            <strong>${escapeHtml(quiz.assignmentTitle || quiz.chapterTitle || 'Quiz')}</strong>
+                            <div class="meta">
+                                <span>${escapeHtml(quiz.bookTitle || 'Book')}</span>
+                                ${quiz.chapterTitle ? `<span>${escapeHtml(quiz.chapterTitle)}</span>` : ''}
+                                <span class="status-pill ${quiz.complete ? 'completed' : 'in-progress'}">${quiz.complete ? 'Complete' : 'Incomplete'}</span>
+                                <span>Attempts ${escapeHtml(String(quiz.attemptsUsed || 0))}${escapeHtml(allowed)}</span>
+                                <span>Retries used ${escapeHtml(String(retries))}</span>
+                                ${quiz.latestAttemptAt ? `<span>Latest ${escapeHtml(formatDateTime(quiz.latestAttemptAt))}</span>` : ''}
+                            </div>
                         </div>
+                        ${renderOverviewMetric(metricValue, metricLabel)}
                     </li>`;
                 }).join('')}</ul>`}
             </section>
@@ -419,6 +503,8 @@
         el['student-overview-title'].textContent = preferred;
         el['student-overview-subtitle'].textContent = 'Loading…';
         show(el['student-overview-modal'], true);
+        el['student-overview-modal'].scrollTop = 0;
+        setPageWizardOpen();
         setStudentOverviewBusy(true);
         show(el['student-overview-loading'], true);
         show(el['student-overview-error'], false);
@@ -451,6 +537,7 @@
         state.studentOverviewUserId = null;
         setStudentOverviewBusy(false);
         show(el['student-overview-modal'], false);
+        setPageWizardOpen();
         // Prefer the stored activator; fall back to that student's Overview button.
         const stored = state.studentOverviewReturnFocus;
         if (stored && typeof stored.focus === 'function' && document.contains(stored)) {
@@ -467,37 +554,9 @@
         }
     }
 
-    function trapStudentOverviewFocus(event) {
-        if (event.key !== 'Tab' || !isModalOpen(el['student-overview-modal'])) {
-            return;
-        }
-        const card = el['student-overview-modal'].querySelector('.student-overview-card');
-        const focusables = getStudentOverviewFocusables();
-        if (focusables.length === 0) {
-            event.preventDefault();
-            focusStudentOverviewClose();
-            return;
-        }
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement;
-        const outsideCard = !card || !card.contains(active);
-        if (event.shiftKey) {
-            if (active === first || outsideCard) {
-                event.preventDefault();
-                last.focus();
-            }
-            return;
-        }
-        if (active === last || outsideCard) {
-            event.preventDefault();
-            first.focus();
-        }
-    }
-
     function closeTopmostModalOnEscape(event) {
         if (event.key !== 'Escape') return;
-        // Close only the topmost open modal (student overview stacks above the others for this surface).
+        // Close only the topmost open surface (student overview stacks above the wizards).
         if (isModalOpen(el['student-overview-modal'])) {
             event.preventDefault();
             closeStudentOverview();
@@ -519,12 +578,41 @@
         }
     }
 
+    function overviewChapterLabel(item) {
+        const chapters = Array.isArray(item?.chapters) ? item.chapters : [];
+        if (chapters.length === 0 && !item?.chapterTitle && !Number.isInteger(item?.chapterIndex)) {
+            return 'Whole book';
+        }
+        if (chapters.length === 1) {
+            return chapters[0].chapterTitle
+                || (Number.isInteger(chapters[0].chapterIndex) ? `Chapter ${chapters[0].chapterIndex + 1}` : '1 chapter');
+        }
+        if (chapters.length > 1) {
+            if (chapters.length <= 3 && chapters.every(chapter => chapter.chapterTitle)) {
+                return chapters.map(chapter => chapter.chapterTitle).join(', ');
+            }
+            return `${chapters.length} chapters`;
+        }
+        return item?.chapterTitle || (Number.isInteger(item?.chapterIndex) ? `Chapter ${item.chapterIndex + 1}` : 'Whole book');
+    }
+
     function assignmentTarget(assignment) {
         const book = bookById(assignment.bookId);
-        const chapter = book?.chapters?.find(item => item.id === assignment.chapterId)
-            || (Number.isInteger(assignment.chapterIndex) ? book?.chapters?.[assignment.chapterIndex] : null);
         if (!book) return 'Book unavailable';
-        return chapter ? `${book.title} · ${chapter.title}` : book.title;
+        const chapters = Array.isArray(assignment.chapters) ? assignment.chapters : [];
+        if (chapters.length === 0 && !assignment.chapterId) {
+            return book.title;
+        }
+        if (chapters.length === 1 || assignment.chapterId) {
+            const chapter = book.chapters?.find(item => item.id === (chapters[0]?.chapterId || assignment.chapterId))
+                || (Number.isInteger(assignment.chapterIndex) ? book.chapters?.[assignment.chapterIndex] : null);
+            return chapter ? `${book.title} · ${chapter.title}` : book.title;
+        }
+        if (chapters.length <= 3) {
+            const titles = chapters.map(item => item.chapterTitle || item.chapterId).filter(Boolean);
+            return `${book.title} · ${titles.join(', ')}`;
+        }
+        return `${book.title} · ${chapters.length} chapters`;
     }
 
     function renderAssignments() {
@@ -543,6 +631,7 @@
                 }
             }
             if (item.characterChatRequired) details.push('Character chat required');
+            const draft = String(item.status || '').toUpperCase() === 'DRAFT';
             return `<article class="assignment-card">
                 <div>
                     <h3>${escapeHtml(item.title)}</h3>
@@ -551,7 +640,10 @@
                         ${details.map(detail => `<span>${escapeHtml(detail)}</span>`).join('')}
                     </div>
                 </div>
-                <button class="secondary-button" type="button" data-edit-assignment="${escapeHtml(item.assignmentId)}">Edit</button>
+                <div class="assignment-card-actions">
+                    <button class="secondary-button" type="button" data-edit-assignment="${escapeHtml(item.assignmentId)}">Edit</button>
+                    ${draft ? `<button class="text-button" type="button" data-delete-assignment="${escapeHtml(item.assignmentId)}">Delete draft</button>` : ''}
+                </div>
             </article>`;
         }).join('');
     }
@@ -578,8 +670,17 @@
     }
 
     function syncAssignmentPassRuleVisibility() {
-        const required = el['assignment-quiz-required']?.checked === true;
+        const required = state.quizChoice === 'require';
         show(el['assignment-quiz-pass-rules'], required);
+        if (el['assignment-quiz-required']) {
+            el['assignment-quiz-required'].value = required ? 'on' : '';
+        }
+        document.querySelectorAll('[data-quiz-choice]').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.dataset.quizChoice === state.quizChoice));
+        });
+        if (el['assignment-next-2']) {
+            el['assignment-next-2'].textContent = required ? 'Define quiz' : 'Next';
+        }
     }
 
     function resetInvite() {
@@ -684,13 +785,47 @@
         }
     }
 
+    function positionAnchoredList(list, anchor) {
+        if (!list || !anchor || list.classList.contains('hidden')) return;
+        const rect = anchor.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom - 12;
+        const spaceAbove = rect.top - 80;
+        const maxHeight = Math.max(140, Math.min(320, spaceBelow >= 160 ? spaceBelow : spaceAbove));
+        const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+        list.style.position = 'fixed';
+        list.style.left = `${Math.round(rect.left)}px`;
+        list.style.width = `${Math.round(rect.width)}px`;
+        list.style.right = 'auto';
+        list.style.maxHeight = `${Math.round(maxHeight)}px`;
+        if (openUp) {
+            list.style.top = 'auto';
+            list.style.bottom = `${Math.round(window.innerHeight - rect.top + 4)}px`;
+        } else {
+            list.style.bottom = 'auto';
+            list.style.top = `${Math.round(rect.bottom + 4)}px`;
+        }
+    }
+
+    function syncOpenBookLists() {
+        positionAnchoredList(el['assignment-book-options'], el['assignment-book-search']);
+        positionAnchoredList(el['quiz-book-options'], el['quiz-book-search']);
+        positionAnchoredList(el['quiz-chapter-options'], el['quiz-chapter-search']);
+    }
+
+    function setPageWizardOpen() {
+        const open = isModalOpen(el['assignment-modal'])
+            || isModalOpen(el['quiz-wizard-modal'])
+            || isModalOpen(el['student-overview-modal']);
+        document.body.classList.toggle('page-wizard-open', open);
+    }
+
     function populateBookOptions(selectedId = '') {
         const selectedBook = bookById(selectedId);
         el['assignment-book'].value = selectedId;
         el['assignment-book-search'].value = selectedBook ? bookDisplayName(selectedBook) : '';
         el['assignment-book-search'].setCustomValidity('');
         closeBookOptions();
-        populateChapterOptions('', selectedId);
+        populateChapterOptions([], selectedId);
     }
 
     function matchingBooks(query) {
@@ -711,6 +846,7 @@
         show(el['assignment-book-options'], true);
         el['assignment-book-search'].setAttribute('aria-expanded', 'true');
         el['assignment-book-search'].removeAttribute('aria-activedescendant');
+        positionAnchoredList(el['assignment-book-options'], el['assignment-book-search']);
     }
 
     function closeBookOptions() {
@@ -727,7 +863,7 @@
         el['assignment-book-search'].value = bookDisplayName(book);
         el['assignment-book-search'].setCustomValidity('');
         closeBookOptions();
-        populateChapterOptions('', book.id);
+        populateChapterOptions([], book.id);
     }
 
     function moveActiveBookOption(direction) {
@@ -746,50 +882,165 @@
         });
     }
 
-    function populateChapterOptions(
-        selectedChapterId = '',
-        bookId = el['assignment-book'].value,
-        selectedChapterIndex = null
-    ) {
-        const book = bookById(bookId);
-        el['assignment-chapter'].innerHTML = '<option value="">Whole book</option>' + (book?.chapters || []).map((chapter, index) => (
-            `<option value="${escapeHtml(chapter.id)}" data-index="${index}">${escapeHtml(chapter.title)}</option>`
-        )).join('');
+    function selectedChapterIds() {
+        return Array.isArray(state.selectedChapterIds) ? state.selectedChapterIds : [];
+    }
 
-        if (selectedChapterId) {
-            el['assignment-chapter'].value = selectedChapterId;
+    function isWholeBookSelection() {
+        return selectedChapterIds().length === 0;
+    }
+
+    function populateChapterOptions(selectedIds = [], bookId = el['assignment-book'].value) {
+        const book = bookById(bookId);
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        const requested = Array.isArray(selectedIds) ? selectedIds.filter(Boolean) : [];
+        state.selectedChapterIds = requested.filter(id => chapters.some(chapter => chapter.id === id));
+        if (el['assignment-whole-book']) {
+            el['assignment-whole-book'].checked = state.selectedChapterIds.length === 0;
+        }
+        if (el['assignment-chapter-search']) {
+            el['assignment-chapter-search'].value = '';
+        }
+        renderChapterOptions();
+    }
+
+    function matchingAssignmentChapters(query) {
+        const book = bookById(el['assignment-book'].value);
+        const chapters = Array.isArray(book?.chapters) ? book.chapters : [];
+        const normalized = String(query || '').trim().toLocaleLowerCase();
+        if (!normalized) return chapters;
+        return chapters.filter(chapter => String(chapter.title || '').toLocaleLowerCase().includes(normalized));
+    }
+
+    function renderChapterOptions() {
+        if (!el['assignment-chapter-options']) return;
+        const wholeBook = Boolean(el['assignment-whole-book']?.checked);
+        const matches = matchingAssignmentChapters(el['assignment-chapter-search']?.value);
+        const selected = new Set(selectedChapterIds());
+        el['assignment-chapter-options'].setAttribute('aria-disabled', wholeBook ? 'true' : 'false');
+        el['assignment-chapter-options'].innerHTML = matches.map(chapter => {
+            const checked = selected.has(chapter.id) ? ' checked' : '';
+            const disabled = wholeBook ? ' disabled' : '';
+            return `<label class="chapter-option" role="option" aria-selected="${selected.has(chapter.id)}">
+                <input type="checkbox" data-chapter-id="${escapeHtml(chapter.id)}"${checked}${disabled}>
+                <span>${escapeHtml(chapter.title || 'Untitled chapter')}</span>
+            </label>`;
+        }).join('');
+        show(el['assignment-chapter-empty'], matches.length === 0);
+        el['assignment-chapter-options'].querySelectorAll('input[data-chapter-id]').forEach(input => {
+            input.addEventListener('change', () => {
+                const id = input.dataset.chapterId;
+                const next = new Set(selectedChapterIds());
+                if (input.checked) next.add(id);
+                else next.delete(id);
+                const book = bookById(el['assignment-book'].value);
+                state.selectedChapterIds = (book?.chapters || [])
+                    .map(chapter => chapter.id)
+                    .filter(chapterId => next.has(chapterId));
+                if (el['assignment-whole-book']) {
+                    el['assignment-whole-book'].checked = state.selectedChapterIds.length === 0;
+                }
+                renderChapterOptions();
+            });
+        });
+    }
+
+    function resetQuizSession() {
+        state.quizDraftQuestions = [];
+        state.quizGeneratedBase = [];
+        state.quizContentVersion = null;
+        state.quizMode = 'default';
+        state.quizAuthorIndex = 0;
+        state.quizHasGenerated = false;
+        state.quizOverrideConfirmed = false;
+        state.quizSimIndex = 0;
+        state.quizSimAnswers = [];
+        state.quizSimAttempt = 1;
+        state.quizSimPhase = 'taking';
+        state.quizSimScore = 0;
+        state.quizSimSeed = 11;
+        state.quizSuggestBusy = null;
+    }
+
+    function setAssignmentScreen(screen) {
+        state.assignmentScreen = screen;
+        const assignScreens = ['assign1', 'assign2', 'assign3'];
+        const quizScreens = ['quizAuthor', 'quizSim', 'quizSummary'];
+        show(el['assignment-step-rail'], assignScreens.includes(screen));
+        show(el['assignment-quiz-rail'], quizScreens.includes(screen));
+        show(el['assignment-pane-1'], screen === 'assign1');
+        show(el['assignment-pane-2'], screen === 'assign2');
+        show(el['assignment-quiz-author'], screen === 'quizAuthor');
+        show(el['assignment-quiz-sim'], screen === 'quizSim');
+        show(el['assignment-quiz-summary'], screen === 'quizSummary');
+        show(el['assignment-pane-3'], screen === 'assign3');
+        const assignIndex = screen === 'assign1' ? 1 : screen === 'assign2' ? 2 : 3;
+        [1, 2, 3].forEach(index => {
+            el[`assignment-step-indicator-${index}`]?.classList.toggle('active', index === assignIndex);
+        });
+        const quizIndex = screen === 'quizAuthor' ? 1 : screen === 'quizSim' ? 2 : 3;
+        [1, 2, 3].forEach(index => {
+            el[`assignment-quiz-indicator-${index}`]?.classList.toggle('active', quizScreens.includes(screen) && index === quizIndex);
+        });
+        if (quizScreens.includes(screen)) {
+            const book = bookById(el['assignment-book'].value);
+            const ids = selectedChapterIds();
+            let scope = 'Whole book';
+            if (ids.length === 1) {
+                const chapter = book?.chapters?.find(item => item.id === ids[0]);
+                scope = chapter?.title || '1 chapter';
+            } else if (ids.length > 1) {
+                scope = `${ids.length} chapters`;
+            }
+            el['assignment-quiz-context'].textContent = `Define quiz · ${book?.title || 'Book'} · ${scope}`;
+        }
+        if (screen === 'assign3') updateAssignmentQuizAttached();
+        syncAssignmentDeleteVisibility();
+    }
+
+    function syncAssignmentDeleteVisibility() {
+        const editing = state.assignments.find(item => item.assignmentId === state.editingAssignmentId);
+        const draft = Boolean(editing && String(editing.status || '').toUpperCase() === 'DRAFT');
+        show(el['assignment-delete-draft'], draft);
+    }
+
+    function updateAssignmentQuizAttached() {
+        if (!el['assignment-quiz-attached']) return;
+        if (state.quizChoice !== 'require') {
+            el['assignment-quiz-attached'].textContent = 'No quiz. Students only need the reading.';
             return;
         }
-        if (Number.isInteger(selectedChapterIndex)) {
-            const match = Array.from(el['assignment-chapter'].options).find(
-                option => option.dataset.index === String(selectedChapterIndex)
-            );
-            if (match) {
-                el['assignment-chapter'].value = match.value;
-                return;
-            }
-        }
-        el['assignment-chapter'].value = '';
+        const questions = activeQuizQuestions();
+        const passMin = currentPassMin();
+        const retries = currentMaxRetries();
+        const source = usingDefaultQuiz() ? 'Default quiz' : 'Override quiz';
+        el['assignment-quiz-attached'].textContent =
+            `${source} · ${questions.length} questions · pass ${passMin} · ${retries} retr${retries === 1 ? 'y' : 'ies'}.`;
     }
 
     function openAssignmentModal(assignment = null) {
         state.editingAssignmentId = assignment?.assignmentId || null;
+        state.quizHost = 'assignment';
+        state.quizChoice = assignment?.quizRequired === true ? 'require' : '';
+        resetQuizSession();
         el['assignment-form'].reset();
         el['assignment-modal-title'].textContent = assignment ? 'Edit assignment' : 'New assignment';
         populateBookOptions(assignment?.bookId || '');
         if (assignment) {
             el['assignment-title'].value = assignment.title || '';
-            const chapterIndex = Number.isInteger(assignment.chapterIndex) ? assignment.chapterIndex : null;
-            populateChapterOptions(assignment.chapterId || '', assignment.bookId, chapterIndex);
+            const selectedIds = Array.isArray(assignment.chapters) && assignment.chapters.length > 0
+                ? assignment.chapters.map(item => item.chapterId).filter(Boolean)
+                : (assignment.chapterId ? [assignment.chapterId] : []);
+            populateChapterOptions(selectedIds, assignment.bookId);
             el['assignment-form'].elements.dueDate.value = assignment.dueDate || '';
             el['assignment-form'].elements.availableFromDate.value = assignment.availableFromDate || '';
             el['assignment-form'].elements.status.value = assignment.status || 'DRAFT';
-            el['assignment-form'].elements.quizRequired.checked = assignment.quizRequired === true;
             el['assignment-form'].elements.characterChatRequired.checked = assignment.characterChatRequired === true;
             el['assignment-form'].elements.quizPassMinCorrect.value =
                 assignment.quizPassMinCorrect != null ? String(assignment.quizPassMinCorrect) : '';
             el['assignment-form'].elements.quizMaxRetries.value =
                 assignment.quizMaxRetries != null ? String(assignment.quizMaxRetries) : '';
+            state.quizChoice = assignment.quizRequired === true ? 'require' : 'none';
         } else {
             const defaults = state.features || {};
             el['assignment-form'].elements.quizPassMinCorrect.value =
@@ -797,43 +1048,107 @@
             el['assignment-form'].elements.quizMaxRetries.value =
                 defaults.defaultQuizMaxRetries != null ? String(defaults.defaultQuizMaxRetries) : '';
         }
+        const defaults = state.features || {};
+        if (el['assignment-quiz-question-count']) {
+            el['assignment-quiz-question-count'].value = String(defaults.defaultQuizQuestionCount || 10);
+        }
+        if (el['assignment-quiz-option-count']) {
+            el['assignment-quiz-option-count'].value = String(defaults.defaultQuizOptionCount || 4);
+        }
         syncAssignmentPassRuleVisibility();
         show(el['assignment-form-error'], false);
+        setAssignmentScreen('assign1');
         show(el['assignment-modal'], true);
+        setPageWizardOpen();
         window.setTimeout(() => el['assignment-title'].focus(), 0);
+    }
+
+    async function deleteDraftAssignment(assignmentId) {
+        const assignment = state.assignments.find(item => item.assignmentId === assignmentId);
+        if (!assignment || String(assignment.status || '').toUpperCase() !== 'DRAFT') {
+            toast('Only draft assignments can be deleted.');
+            return;
+        }
+        const confirmed = window.confirm(`Delete draft “${assignment.title || 'assignment'}”? Students have not seen it.`);
+        if (!confirmed) return;
+        try {
+            await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
+            state.assignments = state.assignments.filter(item => item.assignmentId !== assignmentId);
+            renderAssignments();
+            if (state.editingAssignmentId === assignmentId) closeAssignmentModal();
+            toast('Draft assignment deleted.');
+        } catch (error) {
+            toast(error.message);
+        }
     }
 
     function closeAssignmentModal() {
         show(el['assignment-modal'], false);
+        setPageWizardOpen();
         state.editingAssignmentId = null;
+        state.assignmentScreen = 'assign1';
+        state.quizChoice = '';
+        resetQuizSession();
+    }
+
+    function goAssignmentNextFrom1() {
+        const title = String(el['assignment-title'].value || '').trim();
+        const bookId = el['assignment-book'].value;
+        if (!title || !bookId) {
+            toast('Enter an assignment name and choose a book.');
+            return;
+        }
+        setAssignmentScreen('assign2');
+    }
+
+    async function goAssignmentNextFrom2() {
+        if (!state.quizChoice) {
+            toast('Choose whether this assignment requires a quiz.');
+            return;
+        }
+        if (state.quizChoice === 'none') {
+            setAssignmentScreen('assign3');
+            return;
+        }
+        if (!validateAssignmentQuizRules()) return;
+        await enterDefineQuizFromAssignment();
     }
 
     async function saveAssignment(event) {
         event.preventDefault();
+        if (state.assignmentScreen !== 'assign3') {
+            if (state.assignmentScreen === 'assign1') goAssignmentNextFrom1();
+            else if (state.assignmentScreen === 'assign2') goAssignmentNextFrom2();
+            return;
+        }
         const form = new FormData(el['assignment-form']);
-        const chapterOption = el['assignment-chapter'].selectedOptions[0];
-        const chapterId = String(form.get('chapterId') || '');
+        const chapterIds = selectedChapterIds();
         const dueDateRaw = String(form.get('dueDate') || '').trim();
         const availableFromRaw = String(form.get('availableFromDate') || '').trim();
-        const chapterIndex = chapterId
-            ? Number(chapterOption?.dataset.index)
-            : (chapterOption?.dataset.index != null && chapterOption.value
-                ? Number(chapterOption.dataset.index)
-                : null);
+        const quizRequired = state.quizChoice === 'require';
+        const requestedStatus = String(form.get('status') || 'DRAFT');
+        const quizSource = quizRequired
+            ? (usingDefaultQuiz() ? 'CHAPTER' : 'CUSTOM')
+            : null;
+        if (quizRequired && quizSource === 'CHAPTER' && chapterIds.length !== 1) {
+            toast('The default chapter quiz is only available for a single-chapter assignment.');
+            return;
+        }
         const body = {
             title: String(form.get('title') || '').trim(),
             bookId: String(form.get('bookId') || ''),
-            chapterId,
-            chapterIndex: Number.isInteger(chapterIndex) ? chapterIndex : null,
+            chapterIds,
             dueDate: dueDateRaw || null,
             availableFromDate: availableFromRaw || null,
-            quizRequired: form.get('quizRequired') === 'on',
+            quizRequired,
+            quizSource,
             characterChatRequired: form.get('characterChatRequired') === 'on',
-            status: String(form.get('status') || 'DRAFT')
+            status: requestedStatus
         };
         const minCorrectRaw = String(form.get('quizPassMinCorrect') || '').trim();
         const maxRetriesRaw = String(form.get('quizMaxRetries') || '').trim();
-        if (body.quizRequired) {
+        if (quizRequired) {
+            if (!validateAssignmentQuizRules()) return;
             const minEmpty = !minCorrectRaw;
             const retriesEmpty = !maxRetriesRaw;
             if (minEmpty !== retriesEmpty) {
@@ -851,9 +1166,12 @@
             body.quizMaxRetries = null;
         }
         if (state.editingAssignmentId) {
-            // Null date fields mean "leave unchanged" on the API; explicit clear flags allow removal.
             body.clearDueDate = !dueDateRaw;
             body.clearAvailableFromDate = !availableFromRaw;
+        }
+        const needsCustomQuiz = quizRequired && quizSource === 'CUSTOM';
+        if (needsCustomQuiz && requestedStatus === 'PUBLISHED') {
+            body.status = 'DRAFT';
         }
         const path = state.editingAssignmentId
             ? `/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}`
@@ -861,7 +1179,17 @@
         el['assignment-submit'].disabled = true;
         show(el['assignment-form-error'], false);
         try {
-            const saved = await api(path, { method: state.editingAssignmentId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            let saved = await api(path, { method: state.editingAssignmentId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            state.editingAssignmentId = saved.assignmentId;
+            if (needsCustomQuiz) {
+                await publishAssignmentQuiz(saved.assignmentId);
+            }
+            if (needsCustomQuiz && requestedStatus === 'PUBLISHED') {
+                saved = await api(`/api/classroom/assignments/${encodeURIComponent(saved.assignmentId)}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ status: 'PUBLISHED' })
+                });
+            }
             const existingIndex = state.assignments.findIndex(item => item.assignmentId === saved.assignmentId);
             if (existingIndex >= 0) state.assignments.splice(existingIndex, 1, saved);
             else state.assignments.push(saved);
@@ -908,6 +1236,14 @@
             toast('Set both pass defaults, or clear both fields.');
             return;
         }
+        const featureQuestionCount = Number(el['features-form'].elements.defaultQuizQuestionCount?.value);
+        const featureMinCorrect = Number(el['features-form'].elements.defaultQuizPassMinCorrect?.value);
+        if (!minEmpty && Number.isFinite(featureQuestionCount) && Number.isFinite(featureMinCorrect)
+                && featureMinCorrect > featureQuestionCount) {
+            el['feature-save-status'].textContent = 'Could not save';
+            toast('Min correct to pass cannot be greater than the number of questions.');
+            return;
+        }
         try {
             state.features = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/features`, {
                 method: 'PUT', body: JSON.stringify(body)
@@ -920,16 +1256,229 @@
         }
     }
 
+    function newId() {
+        return crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}-${Math.random()}`;
+    }
+
+    function defaultSlotCount() {
+        const assignmentSlots = Number(el['assignment-quiz-question-count']?.value);
+        if (state.quizHost === 'assignment' && Number.isFinite(assignmentSlots) && assignmentSlots >= 1) {
+            return Math.min(20, Math.max(1, assignmentSlots));
+        }
+        return Math.min(20, Math.max(1, Number(el['quiz-slot-count']?.value) || Number(state.features?.defaultQuizQuestionCount) || 10));
+    }
+
+    function defaultOptionCount() {
+        const assignmentOptions = Number(el['assignment-quiz-option-count']?.value);
+        if (state.quizHost === 'assignment' && Number.isFinite(assignmentOptions) && assignmentOptions >= 2) {
+            return Math.min(6, Math.max(2, assignmentOptions));
+        }
+        return Math.min(6, Math.max(2, Number(el['quiz-option-count']?.value) || Number(state.features?.defaultQuizOptionCount) || 4));
+    }
+
+    function validateAssignmentQuizRules() {
+        const questionCount = Number(el['assignment-quiz-question-count']?.value);
+        if (!Number.isInteger(questionCount) || questionCount < 1 || questionCount > 20) {
+            toast('Enter the number of questions (1–20).');
+            el['assignment-quiz-question-count']?.focus();
+            return false;
+        }
+        const minCorrectRaw = String(el['assignment-form']?.elements?.quizPassMinCorrect?.value || '').trim();
+        if (minCorrectRaw) {
+            const minCorrect = Number(minCorrectRaw);
+            if (!Number.isInteger(minCorrect) || minCorrect < 1) {
+                toast('Min correct to pass must be at least 1.');
+                el['assignment-form']?.elements?.quizPassMinCorrect?.focus();
+                return false;
+            }
+            if (minCorrect > questionCount) {
+                toast('Min correct to pass cannot be greater than the number of questions.');
+                el['assignment-form']?.elements?.quizPassMinCorrect?.focus();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function isTrueFalseQuestion(item) {
+        if (!item) return false;
+        if (item.kind === 'truefalse') return true;
+        const options = Array.isArray(item.options) ? item.options : null;
+        if (!options || options.length !== 2) return false;
+        const labels = options.map(option => String(option || '').trim().toLowerCase());
+        return labels.includes('true') && labels.includes('false');
+    }
+
+    function applyTrueFalseShape(item, correctValue) {
+        const correct = correctValue === 'False' ? 'False' : 'True';
+        item.kind = 'truefalse';
+        item.correct = correct;
+        item.distractors = [correct === 'True' ? 'False' : 'True'];
+        item.locked = [true];
+        return item;
+    }
+
+    function applyMultipleChoiceShape(item) {
+        const optionCount = defaultOptionCount();
+        const keepCorrect = item.correct === 'True' || item.correct === 'False' ? '' : String(item.correct || '');
+        item.kind = 'choice';
+        item.correct = keepCorrect;
+        item.distractors = Array.from({ length: Math.max(1, optionCount - 1) }, () => '');
+        item.locked = item.distractors.map(() => false);
+        return item;
+    }
+
     function blankQuestion(optionCount) {
-        const options = Array.from({ length: Math.max(2, optionCount || 4) }, () => '');
+        const distractorCount = Math.max(1, (optionCount || defaultOptionCount()) - 1);
         return {
-            id: crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}-${Math.random()}`,
+            id: newId(),
+            kind: 'choice',
             question: '',
-            options,
-            correctOptionIndex: 0,
+            correct: '',
+            distractors: Array.from({ length: distractorCount }, () => ''),
+            locked: Array.from({ length: distractorCount }, () => false),
             sourceQuestionId: null,
-            mode: 'add'
+            mode: 'add',
+            citationParagraphIndex: null,
+            citationSnippet: ''
         };
+    }
+
+    function questionFromApi(question, optionCount, generatedIds) {
+        const options = normalizeQuestionOptions(question, optionCount);
+        const correctIndex = Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0;
+        const sourceId = question.id && generatedIds?.has(question.id) ? question.id : null;
+        if (isTrueFalseQuestion({ ...question, options })) {
+            const correctLabel = /^true$/i.test(String(options[correctIndex] || '')) ? 'True' : 'False';
+            return applyTrueFalseShape({
+                id: question.id || newId(),
+                question: question.question || '',
+                sourceQuestionId: sourceId,
+                mode: sourceId ? 'override' : 'add',
+                citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
+                    ? question.citationParagraphIndex
+                    : null,
+                citationSnippet: question.citationSnippet || ''
+            }, correctLabel);
+        }
+        const correct = String(options[correctIndex] || '');
+        const distractors = options.filter((_, index) => index !== correctIndex);
+        const needed = Math.max(1, (optionCount || defaultOptionCount()) - 1);
+        while (distractors.length < needed) distractors.push('');
+        return {
+            id: question.id || newId(),
+            kind: 'choice',
+            question: question.question || '',
+            correct,
+            distractors,
+            locked: distractors.map(value => Boolean(String(value || '').trim())),
+            sourceQuestionId: sourceId,
+            mode: sourceId ? 'override' : 'add',
+            citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
+                ? question.citationParagraphIndex
+                : null,
+            citationSnippet: question.citationSnippet || ''
+        };
+    }
+
+    function flattenQuestion(item) {
+        if (isTrueFalseQuestion(item)) {
+            const correctIsTrue = item.correct !== 'False';
+            return {
+                id: item.id,
+                question: item.question,
+                options: ['True', 'False'],
+                correctOptionIndex: correctIsTrue ? 0 : 1,
+                citationParagraphIndex: Number.isInteger(item.citationParagraphIndex) ? item.citationParagraphIndex : null,
+                citationSnippet: item.citationSnippet || ''
+            };
+        }
+        return {
+            id: item.id,
+            question: item.question,
+            options: [item.correct, ...(item.distractors || [])],
+            correctOptionIndex: 0,
+            citationParagraphIndex: Number.isInteger(item.citationParagraphIndex) ? item.citationParagraphIndex : null,
+            citationSnippet: item.citationSnippet || ''
+        };
+    }
+
+    function questionComplete(item) {
+        if (isTrueFalseQuestion(item)) {
+            return Boolean(String(item?.question || '').trim() && (item.correct === 'True' || item.correct === 'False'));
+        }
+        return Boolean(
+            String(item?.question || '').trim()
+            && String(item?.correct || '').trim()
+            && Array.isArray(item?.distractors)
+            && item.distractors.every(choice => String(choice || '').trim())
+        );
+    }
+
+    function incompleteQuestionMessage() {
+        return 'Every question needs a stem and a complete answer set. Multiple choice needs all wrong answers; True/False needs True or False selected.';
+    }
+
+    function usingDefaultQuiz() {
+        return state.quizMode === 'default' && state.quizHasGenerated;
+    }
+
+    function activeQuizQuestions() {
+        return usingDefaultQuiz()
+            ? state.quizGeneratedBase
+            : state.quizDraftQuestions;
+    }
+
+    function questionsReady() {
+        if (usingDefaultQuiz()) return activeQuizQuestions().length > 0;
+        return state.quizDraftQuestions.length > 0 && state.quizDraftQuestions.every(questionComplete);
+    }
+
+    function currentPassMin() {
+        if (state.quizHost === 'assignment') {
+            const raw = Number(el['assignment-form']?.elements?.quizPassMinCorrect?.value);
+            if (Number.isFinite(raw) && raw >= 1) return raw;
+        } else if (state.features?.defaultQuizPassMinCorrect != null) {
+            return Number(state.features.defaultQuizPassMinCorrect);
+        }
+        return Math.max(1, Math.ceil(activeQuizQuestions().length * 0.7));
+    }
+
+    function currentMaxRetries() {
+        if (state.quizHost === 'assignment') {
+            const raw = Number(el['assignment-form']?.elements?.quizMaxRetries?.value);
+            if (Number.isFinite(raw) && raw >= 0) return raw;
+        } else if (state.features?.defaultQuizMaxRetries != null) {
+            return Number(state.features.defaultQuizMaxRetries);
+        }
+        return 1;
+    }
+
+    function currentQuizChapterId() {
+        if (state.quizHost === 'assignment') {
+            const ids = selectedChapterIds();
+            return ids.length === 1 ? ids[0] : '';
+        }
+        return el['quiz-chapter'].value;
+    }
+
+    function assignmentQuizSuggestPath(suffix) {
+        if (state.quizHost === 'assignment' && state.editingAssignmentId) {
+            return `/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}/${suffix}`;
+        }
+        const chapterId = currentQuizChapterId();
+        return `/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/${suffix}`;
+    }
+
+    function shuffle(items, seed) {
+        const next = [...items];
+        let value = seed || 1;
+        for (let i = next.length - 1; i > 0; i--) {
+            value = (value * 16807) % 2147483647;
+            const j = value % (i + 1);
+            [next[i], next[j]] = [next[j], next[i]];
+        }
+        return next;
     }
 
     function setQuizWizardStep(step) {
@@ -937,7 +1486,8 @@
         show(el['quiz-wizard-step-1'], step === 1);
         show(el['quiz-wizard-step-2'], step === 2);
         show(el['quiz-wizard-step-3'], step === 3);
-        [1, 2, 3].forEach(index => {
+        show(el['quiz-wizard-step-4'], step === 4);
+        [1, 2, 3, 4].forEach(index => {
             el[`quiz-step-indicator-${index}`]?.classList.toggle('active', index === step);
         });
     }
@@ -986,6 +1536,7 @@
         show(el['quiz-chapter-options'], true);
         el['quiz-chapter-search'].setAttribute('aria-expanded', 'true');
         el['quiz-chapter-search'].removeAttribute('aria-activedescendant');
+        positionAnchoredList(el['quiz-chapter-options'], el['quiz-chapter-search']);
     }
 
     function closeQuizChapterOptions() {
@@ -1037,6 +1588,7 @@
         show(el['quiz-book-options'], true);
         el['quiz-book-search'].setAttribute('aria-expanded', 'true');
         el['quiz-book-search'].removeAttribute('aria-activedescendant');
+        positionAnchoredList(el['quiz-book-options'], el['quiz-book-search']);
     }
 
     function closeQuizBookOptions() {
@@ -1074,28 +1626,670 @@
 
     function openQuizWizard() {
         if (!state.selectedClass) return;
+        state.quizHost = 'standalone';
+        resetQuizSession();
         const defaults = state.features || {};
-        el['quiz-slot-count'].value = String(defaults.defaultQuizQuestionCount || 5);
+        el['quiz-slot-count'].value = String(defaults.defaultQuizQuestionCount || 10);
         el['quiz-option-count'].value = String(defaults.defaultQuizOptionCount || 4);
         el['quiz-book'].value = '';
         el['quiz-book-search'].value = '';
         el['quiz-chapter'].value = '';
         if (el['quiz-chapter-search']) el['quiz-chapter-search'].value = '';
         populateQuizChapterOptions();
-        state.quizDraftQuestions = [];
-        state.quizGeneratedBase = [];
-        state.quizContentVersion = null;
         setQuizWizardStep(1);
         show(el['quiz-wizard-modal'], true);
+        setPageWizardOpen();
         window.setTimeout(() => el['quiz-book-search'].focus(), 0);
     }
 
     function closeQuizWizard() {
         show(el['quiz-wizard-modal'], false);
+        setPageWizardOpen();
         state.quizWizardStep = 1;
-        state.quizDraftQuestions = [];
-        state.quizGeneratedBase = [];
-        state.quizContentVersion = null;
+        state.quizHost = 'standalone';
+        resetQuizSession();
+    }
+
+    function authorHost() {
+        return state.quizHost === 'assignment'
+            ? {
+                mode: el['assignment-quiz-mode'],
+                noDefault: el['assignment-quiz-no-default'],
+                progress: el['assignment-quiz-author-progress'],
+                body: el['assignment-quiz-author-body'],
+                error: el['assignment-quiz-author-error'],
+                prev: el['assignment-quiz-author-prev'],
+                next: el['assignment-quiz-author-next'],
+                add: el['assignment-quiz-author-add']
+            }
+            : {
+                mode: el['quiz-wizard-mode'],
+                noDefault: el['quiz-wizard-no-default'],
+                progress: el['quiz-author-progress'],
+                body: el['quiz-question-editor'],
+                error: el['quiz-wizard-step2-error'],
+                prev: el['quiz-author-prev'],
+                next: el['quiz-wizard-next-2'],
+                add: el['quiz-add-question']
+            };
+    }
+
+    function simHost() {
+        return state.quizHost === 'assignment'
+            ? {
+                body: el['assignment-quiz-sim-body'],
+                prev: el['assignment-quiz-sim-prev'],
+                next: el['assignment-quiz-sim-next']
+            }
+            : {
+                body: el['quiz-sim-body'],
+                prev: el['quiz-sim-prev'],
+                next: el['quiz-sim-next']
+            };
+    }
+
+    async function loadEffectiveQuizForChapter(chapterId) {
+        const optionCount = defaultOptionCount();
+        const slotCount = defaultSlotCount();
+        const effective = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/effective-quiz`);
+        const rawGenerated = Array.isArray(effective.generatedQuestions) ? effective.generatedQuestions : [];
+        const generatedIds = new Set(rawGenerated.map(item => item.id).filter(Boolean));
+        state.quizGeneratedBase = rawGenerated.map(question => questionFromApi(question, optionCount, generatedIds));
+        state.quizContentVersion = effective.contentVersion || null;
+        state.quizHasGenerated = state.quizGeneratedBase.length > 0;
+        const overrides = Array.isArray(effective.overrides) ? effective.overrides : [];
+        if (overrides.length > 0 && Array.isArray(effective.effectiveQuestions) && effective.effectiveQuestions.length > 0) {
+            state.quizMode = 'override';
+            state.quizDraftQuestions = effective.effectiveQuestions.map(question => questionFromApi(question, optionCount, generatedIds));
+        } else if (state.quizHasGenerated) {
+            state.quizMode = 'default';
+            state.quizDraftQuestions = [];
+        } else {
+            state.quizMode = 'override';
+            state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
+        }
+        state.quizAuthorIndex = 0;
+    }
+
+    function applyQuizMode(mode) {
+        state.quizMode = mode;
+        state.quizAuthorIndex = 0;
+        state.quizOverrideConfirmed = false;
+        if (mode === 'override') {
+            state.quizDraftQuestions = Array.from({ length: defaultSlotCount() }, () => blankQuestion(defaultOptionCount()));
+        } else {
+            state.quizDraftQuestions = [];
+        }
+        renderPagedQuizAuthor();
+    }
+
+    async function enterDefineQuizFromAssignment() {
+        state.quizHost = 'assignment';
+        try {
+            await ensureDraftAssignment();
+            await loadEffectiveQuizForAssignment(state.editingAssignmentId);
+            setAssignmentScreen('quizAuthor');
+            renderPagedQuizAuthor();
+        } catch (error) {
+            toast(error.message);
+        }
+    }
+
+    async function ensureDraftAssignment() {
+        if (state.editingAssignmentId) return state.editingAssignmentId;
+        const title = String(el['assignment-title'].value || '').trim();
+        const bookId = el['assignment-book'].value;
+        const saved = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/assignments`, {
+            method: 'POST',
+            body: JSON.stringify({
+                title,
+                bookId,
+                chapterIds: selectedChapterIds(),
+                quizRequired: true,
+                status: 'DRAFT'
+            })
+        });
+        state.editingAssignmentId = saved.assignmentId;
+        const existingIndex = state.assignments.findIndex(item => item.assignmentId === saved.assignmentId);
+        if (existingIndex >= 0) state.assignments.splice(existingIndex, 1, saved);
+        else state.assignments.push(saved);
+        return saved.assignmentId;
+    }
+
+    async function loadEffectiveQuizForAssignment(assignmentId) {
+        const optionCount = defaultOptionCount();
+        const slotCount = defaultSlotCount();
+        const effective = await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/effective-quiz`);
+        const questions = Array.isArray(effective.questions) ? effective.questions : [];
+        state.quizContentVersion = effective.contentVersion || null;
+        state.quizHasGenerated = Boolean(effective.chapterDefaultAvailable) && questions.length > 0;
+        state.quizGeneratedBase = state.quizHasGenerated
+            ? questions.map(question => questionFromApi(question, optionCount, new Set(questions.map(item => item.id).filter(Boolean))))
+            : [];
+        if (effective.quizSource === 'CUSTOM' && questions.length > 0) {
+            state.quizMode = 'override';
+            state.quizDraftQuestions = questions.map(question => questionFromApi(question, optionCount, new Set()));
+        } else if (state.quizHasGenerated) {
+            state.quizMode = 'default';
+            state.quizDraftQuestions = [];
+        } else {
+            state.quizMode = 'override';
+            state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
+        }
+        state.quizAuthorIndex = 0;
+    }
+
+    function renderQuizModeChoices() {
+        const host = authorHost();
+        if (!host.mode) return;
+        show(host.mode, state.quizHasGenerated);
+        show(host.noDefault, !state.quizHasGenerated);
+        if (!state.quizHasGenerated) {
+            host.mode.innerHTML = '';
+            return;
+        }
+        host.mode.innerHTML = `
+            <button type="button" class="choice-card" data-quiz-mode="default" aria-pressed="${state.quizMode === 'default'}">
+                <strong>Use default chapter quiz</strong>
+                <span>Use the existing quiz for this chapter. Students get these questions unless you define an assignment quiz.</span>
+            </button>
+            <button type="button" class="choice-card" data-quiz-mode="override" aria-pressed="${state.quizMode === 'override'}">
+                <strong>Define assignment quiz</strong>
+                <span>Author questions for this assignment. Type each stem and correct answer; generate distractors per question.</span>
+            </button>
+        `;
+        host.mode.querySelectorAll('[data-quiz-mode]').forEach(button => {
+            button.addEventListener('click', () => applyQuizMode(button.dataset.quizMode));
+        });
+    }
+
+    function currentAuthorQuestion() {
+        const questions = activeQuizQuestions();
+        if (questions.length === 0) return null;
+        const index = Math.min(Math.max(0, state.quizAuthorIndex), questions.length - 1);
+        state.quizAuthorIndex = index;
+        return questions[index];
+    }
+
+    function renderPagedQuizAuthor() {
+        const host = authorHost();
+        if (!host.body) return;
+        renderQuizModeChoices();
+        const questions = activeQuizQuestions();
+        const question = currentAuthorQuestion();
+        const index = state.quizAuthorIndex;
+        const readOnly = usingDefaultQuiz();
+        const completed = readOnly
+            ? questions.length
+            : state.quizDraftQuestions.filter(questionComplete).length;
+        if (host.progress) {
+            host.progress.textContent = questions.length
+                ? `Question ${index + 1} of ${questions.length}${readOnly ? '' : ` · ${completed} complete`}`
+                : '';
+        }
+        const suggestBusy = state.quizSuggestBusy;
+        const questionBusy = suggestBusy && suggestBusy.questionIndex === index;
+        const generatingAll = questionBusy && suggestBusy.kind === 'all';
+        const regeneratingIndex = questionBusy && suggestBusy.kind === 'one' ? suggestBusy.distractorIndex : -1;
+        show(host.add, !readOnly);
+        if (host.add) host.add.disabled = Boolean(suggestBusy);
+        if (host.prev) host.prev.disabled = index === 0 || Boolean(suggestBusy);
+        if (host.next) {
+            host.next.disabled = Boolean(suggestBusy);
+            host.next.textContent = index < questions.length - 1 ? 'Next question' : 'Next · simulate quiz';
+        }
+        show(host.error, false);
+        if (!question) {
+            host.body.innerHTML = '<p class="form-help">No questions yet.</p>';
+            return;
+        }
+        if (readOnly) {
+            const options = isTrueFalseQuestion(question)
+                ? ['True', 'False']
+                : [question.correct, ...(question.distractors || [])];
+            host.body.innerHTML = `<article class="quiz-question-card">
+                <header><strong>Question ${index + 1}${isTrueFalseQuestion(question) ? ' · True/False' : ''}</strong></header>
+                <p>${escapeHtml(question.question)}</p>
+                <ol>${options.map(choice => `<li${choice === question.correct ? ' style="color: var(--success); font-weight: 600;"' : ''}>${choice === question.correct ? 'Correct · ' : ''}${escapeHtml(choice)}</li>`).join('')}</ol>
+            </article>`;
+            return;
+        }
+        const trueFalse = isTrueFalseQuestion(question);
+        const canGenerate = !trueFalse && Boolean(String(question.question || '').trim() && String(question.correct || '').trim());
+        const statusText = generatingAll
+            ? 'Writing wrong answers… this can take a few seconds.'
+            : regeneratingIndex >= 0
+                ? `Regenerating wrong answer ${regeneratingIndex + 1}…`
+                : 'Keep, regenerate, or type over each distractor.';
+        const kindRadios = `<div class="quiz-kind-row" role="radiogroup" aria-label="Question type">
+                <label class="quiz-kind-option"><input type="radio" name="quiz-kind-${index}" value="choice" data-question-kind="choice" ${trueFalse ? '' : 'checked'}> Multiple choice</label>
+                <label class="quiz-kind-option"><input type="radio" name="quiz-kind-${index}" value="truefalse" data-question-kind="truefalse" ${trueFalse ? 'checked' : ''}> True/False</label>
+            </div>`;
+        const trueFalseBody = `<fieldset class="quiz-true-false">
+                <legend>Correct answer</legend>
+                <label class="quiz-kind-option"><input type="radio" name="quiz-tf-${index}" value="True" data-true-false="True" ${question.correct === 'False' ? '' : 'checked'}> True</label>
+                <label class="quiz-kind-option"><input type="radio" name="quiz-tf-${index}" value="False" data-true-false="False" ${question.correct === 'False' ? 'checked' : ''}> False</label>
+            </fieldset>
+            <p class="form-help">Students will choose True or False. Wrong-answer generation is not used.</p>`;
+        const choiceBody = `<label>Correct answer<input type="text" data-field="correct" value="${escapeHtml(question.correct || '')}" placeholder="The right option"></label>
+            <div class="wizard-toolbar">
+                <button type="button" class="secondary-button" data-generate-distractors aria-busy="${generatingAll ? 'true' : 'false'}" ${!canGenerate || suggestBusy ? 'disabled' : ''}>
+                    ${generatingAll ? '<span class="button-spinner" aria-hidden="true"></span> Generating wrong answers…' : 'Generate wrong answers'}
+                </button>
+                <span class="form-help quiz-suggest-status" role="status" aria-live="polite">${escapeHtml(statusText)}</span>
+            </div>
+            ${(question.distractors || []).map((choice, dIndex) => {
+                const rowBusy = generatingAll || regeneratingIndex === dIndex;
+                return `
+                <div class="quiz-distractor-row${rowBusy ? ' is-generating' : ''}">
+                    <input type="text" data-field="distractor" data-distractor-index="${dIndex}" value="${escapeHtml(choice || '')}" placeholder="${rowBusy ? 'Generating…' : `Wrong answer ${dIndex + 1}`}" ${rowBusy ? 'aria-busy="true"' : ''}>
+                    <button type="button" class="text-button" data-keep-distractor="${dIndex}" ${suggestBusy ? 'disabled' : ''}>${question.locked?.[dIndex] ? 'Kept' : 'Keep'}</button>
+                    <button type="button" class="text-button" data-regen-distractor="${dIndex}" ${suggestBusy ? 'disabled' : ''}>${regeneratingIndex === dIndex ? 'Regenerating…' : 'Regen'}</button>
+                </div>`;
+            }).join('')}`;
+        host.body.innerHTML = `<article class="quiz-question-card" data-author-index="${index}" aria-busy="${questionBusy ? 'true' : 'false'}">
+            <header>
+                <strong>Question ${index + 1}</strong>
+                <button type="button" class="text-button" data-remove-current ${questions.length <= 1 || suggestBusy ? 'disabled' : ''}>Delete</button>
+            </header>
+            ${kindRadios}
+            <label>Question stem<textarea data-field="stem" rows="2" placeholder="${trueFalse ? 'A statement that is true or false' : 'Question stem'}">${escapeHtml(question.question || '')}</textarea></label>
+            ${trueFalse ? trueFalseBody : choiceBody}
+        </article>`;
+        const stem = host.body.querySelector('[data-field="stem"]');
+        const correct = host.body.querySelector('[data-field="correct"]');
+        stem?.addEventListener('input', () => {
+            question.question = stem.value;
+            const generate = host.body.querySelector('[data-generate-distractors]');
+            if (generate) generate.disabled = !stem.value.trim() || !correct?.value.trim();
+        });
+        correct?.addEventListener('input', () => {
+            question.correct = correct.value;
+            const generate = host.body.querySelector('[data-generate-distractors]');
+            if (generate) generate.disabled = !stem.value.trim() || !correct.value.trim();
+        });
+        host.body.querySelectorAll('[data-question-kind]').forEach(input => {
+            input.addEventListener('change', () => {
+                if (input.value === 'truefalse') applyTrueFalseShape(question, question.correct);
+                else applyMultipleChoiceShape(question);
+                renderPagedQuizAuthor();
+            });
+        });
+        host.body.querySelectorAll('[data-true-false]').forEach(input => {
+            input.addEventListener('change', () => applyTrueFalseShape(question, input.value));
+        });
+        host.body.querySelectorAll('[data-field="distractor"]').forEach(input => {
+            input.addEventListener('input', () => {
+                const dIndex = Number(input.dataset.distractorIndex);
+                question.distractors[dIndex] = input.value;
+            });
+        });
+        host.body.querySelector('[data-remove-current]')?.addEventListener('click', () => {
+            if (state.quizDraftQuestions.length <= 1) return;
+            state.quizDraftQuestions.splice(index, 1);
+            state.quizAuthorIndex = Math.min(index, state.quizDraftQuestions.length - 1);
+            renderPagedQuizAuthor();
+        });
+        host.body.querySelector('[data-generate-distractors]')?.addEventListener('click', () => generateDistractors(index));
+        host.body.querySelectorAll('[data-keep-distractor]').forEach(button => {
+            button.addEventListener('click', () => {
+                const dIndex = Number(button.dataset.keepDistractor);
+                question.locked = question.locked || [];
+                question.locked[dIndex] = !question.locked[dIndex];
+                renderPagedQuizAuthor();
+            });
+        });
+        host.body.querySelectorAll('[data-regen-distractor]').forEach(button => {
+            button.addEventListener('click', () => regenerateDistractor(index, Number(button.dataset.regenDistractor)));
+        });
+    }
+
+    function goAuthorQuestion(delta) {
+        const questions = activeQuizQuestions();
+        if (delta > 0 && state.quizAuthorIndex >= questions.length - 1) {
+            if (!questionsReady()) {
+                toast('Finish every question before simulating.');
+                const host = authorHost();
+                if (host.error) {
+                    host.error.textContent = incompleteQuestionMessage();
+                    show(host.error, true);
+                }
+                return;
+            }
+            startQuizSimulation();
+            return;
+        }
+        const next = state.quizAuthorIndex + delta;
+        if (next < 0 || next >= questions.length) return;
+        state.quizAuthorIndex = next;
+        renderPagedQuizAuthor();
+    }
+
+    function addAuthorQuestion() {
+        if (usingDefaultQuiz()) return;
+        if (state.quizDraftQuestions.length >= 20) {
+            toast('Maximum 20 questions.');
+            return;
+        }
+        state.quizDraftQuestions.push(blankQuestion(defaultOptionCount()));
+        state.quizAuthorIndex = state.quizDraftQuestions.length - 1;
+        renderPagedQuizAuthor();
+    }
+
+    async function generateDistractors(index) {
+        const item = state.quizDraftQuestions[index];
+        if (isTrueFalseQuestion(item)) {
+            toast('True/False questions do not use generated wrong answers.');
+            return;
+        }
+        if (!item?.question?.trim() || !item?.correct?.trim()) {
+            toast('Enter a stem and correct answer first.');
+            return;
+        }
+        if (state.quizSuggestBusy) return;
+        const needed = Math.max(1, (item.distractors || []).length);
+        state.quizSuggestBusy = { kind: 'all', questionIndex: index };
+        renderPagedQuizAuthor();
+        try {
+            const result = await api(assignmentQuizSuggestPath('suggest-distractors'), {
+                method: 'POST',
+                body: JSON.stringify({
+                    question: item.question,
+                    correctAnswer: item.correct,
+                    count: needed
+                })
+            });
+            const distractors = Array.isArray(result.distractors) ? result.distractors : [];
+            item.distractors = (item.distractors || []).map((value, dIndex) => {
+                if (item.locked?.[dIndex] && String(value || '').trim()) return value;
+                return distractors[dIndex] || value;
+            });
+            toast('Wrong answers filled. Adjust as needed.');
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            state.quizSuggestBusy = null;
+            renderPagedQuizAuthor();
+        }
+    }
+
+    async function regenerateDistractor(index, dIndex) {
+        const item = state.quizDraftQuestions[index];
+        if (isTrueFalseQuestion(item)) {
+            toast('True/False questions do not use generated wrong answers.');
+            return;
+        }
+        if (!item?.question?.trim() || !item?.correct?.trim()) {
+            toast('Enter a stem and correct answer first.');
+            return;
+        }
+        if (state.quizSuggestBusy) return;
+        state.quizSuggestBusy = { kind: 'one', questionIndex: index, distractorIndex: dIndex };
+        renderPagedQuizAuthor();
+        try {
+            const result = await api(assignmentQuizSuggestPath('suggest-distractors'), {
+                method: 'POST',
+                body: JSON.stringify({
+                    question: item.question,
+                    correctAnswer: item.correct,
+                    count: 1
+                })
+            });
+            const next = Array.isArray(result.distractors) ? result.distractors[0] : '';
+            if (!next) {
+                toast('Could not regenerate that answer.');
+                return;
+            }
+            item.distractors[dIndex] = next;
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            state.quizSuggestBusy = null;
+            renderPagedQuizAuthor();
+        }
+    }
+
+    function simOptions(question, qIndex) {
+        if (isTrueFalseQuestion(question)) return ['True', 'False'];
+        return shuffle([question.correct, ...(question.distractors || [])], state.quizSimSeed + qIndex * 17);
+    }
+
+    function startQuizSimulation() {
+        const questions = activeQuizQuestions();
+        state.quizSimIndex = 0;
+        state.quizSimAnswers = Array.from({ length: questions.length }, () => -1);
+        state.quizSimAttempt = 1;
+        state.quizSimPhase = 'taking';
+        state.quizSimScore = 0;
+        state.quizSimSeed = Date.now() % 10000;
+        if (state.quizHost === 'assignment') {
+            setAssignmentScreen('quizSim');
+        } else {
+            setQuizWizardStep(3);
+        }
+        renderQuizSimulation();
+    }
+
+    function renderQuizSimulation() {
+        const host = simHost();
+        if (!host.body) return;
+        const questions = activeQuizQuestions();
+        const passMin = currentPassMin();
+        const retries = currentMaxRetries();
+        const totalAttempts = 1 + retries;
+        if (state.quizSimPhase === 'result') {
+            const passed = state.quizSimScore >= passMin;
+            host.body.innerHTML = `<div class="quiz-callout ${passed ? 'success' : 'warning'}">
+                <strong>${passed ? 'Passed' : 'Not yet'} · ${state.quizSimScore}/${questions.length}</strong>
+                <p class="form-help">${passed
+                    ? 'This is the student pass experience.'
+                    : state.quizSimAttempt < totalAttempts
+                        ? `${totalAttempts - state.quizSimAttempt} retr${totalAttempts - state.quizSimAttempt === 1 ? 'y' : 'ies'} remaining.`
+                        : 'Retries exhausted. The assignment quiz requirement would stay unmet.'}</p>
+            </div>`;
+            show(host.prev, false);
+            if (host.next) {
+                host.next.textContent = !passed && state.quizSimAttempt < totalAttempts ? 'Retry' : 'Next · summary';
+                host.next.disabled = false;
+            }
+            return;
+        }
+        const question = questions[state.quizSimIndex];
+        if (!question) return;
+        const choices = simOptions(question, state.quizSimIndex);
+        host.body.innerHTML = `
+            <p class="wizard-progress">Question ${state.quizSimIndex + 1} of ${questions.length} · Attempt ${state.quizSimAttempt} of ${totalAttempts} · pass ${passMin}/${questions.length}</p>
+            <p><strong>${escapeHtml(question.question)}</strong></p>
+            <div class="choice-stack">
+                ${choices.map((choice, optionIndex) => `
+                    <button type="button" class="choice-card" data-sim-choice="${optionIndex}" aria-pressed="${state.quizSimAnswers[state.quizSimIndex] === optionIndex}">
+                        <strong>${escapeHtml(choice)}</strong>
+                    </button>
+                `).join('')}
+            </div>
+        `;
+        host.body.querySelectorAll('[data-sim-choice]').forEach(button => {
+            button.addEventListener('click', () => {
+                state.quizSimAnswers[state.quizSimIndex] = Number(button.dataset.simChoice);
+                renderQuizSimulation();
+            });
+        });
+        show(host.prev, true);
+        if (host.prev) host.prev.disabled = state.quizSimIndex === 0;
+        if (host.next) {
+            const isLast = state.quizSimIndex === questions.length - 1;
+            host.next.textContent = isLast ? 'Submit attempt' : 'Next question';
+            host.next.disabled = isLast
+                ? state.quizSimAnswers.some(value => value < 0)
+                : state.quizSimAnswers[state.quizSimIndex] < 0;
+        }
+    }
+
+    function goSimQuestion(delta) {
+        const questions = activeQuizQuestions();
+        if (state.quizSimPhase === 'result') {
+            const passMin = currentPassMin();
+            const retries = currentMaxRetries();
+            if (state.quizSimScore < passMin && state.quizSimAttempt < 1 + retries) {
+                state.quizSimAttempt += 1;
+                state.quizSimIndex = 0;
+                state.quizSimAnswers = Array.from({ length: questions.length }, () => -1);
+                state.quizSimPhase = 'taking';
+                state.quizSimSeed += 9;
+                renderQuizSimulation();
+                return;
+            }
+            openQuizSummary();
+            return;
+        }
+        if (delta > 0 && state.quizSimIndex >= questions.length - 1) {
+            const score = questions.reduce((sum, question, index) => {
+                const choices = simOptions(question, index);
+                return sum + (choices[state.quizSimAnswers[index]] === question.correct ? 1 : 0);
+            }, 0);
+            state.quizSimScore = score;
+            state.quizSimPhase = 'result';
+            renderQuizSimulation();
+            return;
+        }
+        const next = state.quizSimIndex + delta;
+        if (next < 0 || next >= questions.length) return;
+        state.quizSimIndex = next;
+        renderQuizSimulation();
+    }
+
+    function openQuizSummary() {
+        const questions = activeQuizQuestions();
+        const html = `<p>${usingDefaultQuiz() ? 'Using the default chapter quiz.' : 'Assignment quiz ready to publish.'} ${questions.length} questions · pass ${currentPassMin()} · ${currentMaxRetries()} retr${currentMaxRetries() === 1 ? 'y' : 'ies'}.</p>`
+            + questions.map((question, index) => `
+                <article class="quiz-review-item">
+                    <strong>${index + 1}. ${escapeHtml(question.question || '(empty)')}</strong>
+                    <p class="form-help">Correct: ${escapeHtml(question.correct || '')}</p>
+                </article>
+            `).join('');
+        if (state.quizHost === 'assignment') {
+            el['assignment-quiz-summary-body'].innerHTML = html;
+            setAssignmentScreen('quizSummary');
+        } else {
+            el['quiz-review-list'].innerHTML = html;
+            setQuizWizardStep(4);
+        }
+    }
+
+    function confirmAssignmentQuiz() {
+        state.quizOverrideConfirmed = !usingDefaultQuiz();
+        setAssignmentScreen('assign3');
+    }
+
+    async function continueQuizWizardFromStep1() {
+        const bookId = el['quiz-book'].value;
+        const chapterId = el['quiz-chapter'].value;
+        if (!bookId || !chapterId) {
+            toast('Choose a book and chapter first.');
+            return;
+        }
+        const slotCount = Math.min(20, Math.max(1, Number(el['quiz-slot-count'].value) || 10));
+        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
+        el['quiz-slot-count'].value = String(slotCount);
+        el['quiz-option-count'].value = String(optionCount);
+        state.quizHost = 'standalone';
+        try {
+            await loadEffectiveQuizForChapter(chapterId);
+            if (!state.quizHasGenerated) {
+                state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
+            }
+            setQuizWizardStep(2);
+            renderPagedQuizAuthor();
+        } catch (error) {
+            toast(error.message);
+        }
+    }
+
+    async function publishAssignmentQuiz(assignmentId) {
+        const questions = usingDefaultQuiz() ? [] : state.quizDraftQuestions;
+        if (!questions.length) {
+            throw new Error('Define at least one quiz question.');
+        }
+        const incomplete = questions.some(item => !questionComplete(item));
+        if (incomplete) {
+            throw new Error(incompleteQuestionMessage());
+        }
+        await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/quiz`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                questions: questions.map(item => flattenQuestion(item))
+            })
+        });
+    }
+
+    async function publishQuizOverrides(chapterId) {
+        const questions = usingDefaultQuiz() ? [] : state.quizDraftQuestions;
+        if (!questions.length) return;
+        const incomplete = questions.some(item => !questionComplete(item));
+        if (incomplete) {
+            throw new Error(incompleteQuestionMessage());
+        }
+        const generatedIds = new Set(state.quizGeneratedBase.map(item => item.id).filter(Boolean));
+        const operations = [];
+        const keptSourceIds = new Set(
+            questions
+                .filter(item => item.sourceQuestionId && generatedIds.has(item.sourceQuestionId))
+                .map(item => item.sourceQuestionId)
+        );
+        generatedIds.forEach(sourceId => {
+            if (!keptSourceIds.has(sourceId)) {
+                operations.push({ operation: 'DISABLE', sourceQuestionId: sourceId, sortOrder: 0 });
+            }
+        });
+        questions.forEach((item, index) => {
+            const question = flattenQuestion(item);
+            if (item.sourceQuestionId && generatedIds.has(item.sourceQuestionId)) {
+                operations.push({
+                    operation: 'OVERRIDE',
+                    sourceQuestionId: item.sourceQuestionId,
+                    sortOrder: index,
+                    question: { ...question, id: item.sourceQuestionId }
+                });
+            } else {
+                operations.push({
+                    operation: 'ADD',
+                    sortOrder: index,
+                    question
+                });
+            }
+        });
+        await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/quiz-overrides`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                expectedContentVersion: state.quizContentVersion,
+                operations
+            })
+        });
+    }
+
+    async function publishQuizWizard() {
+        const chapterId = el['quiz-chapter'].value;
+        if (usingDefaultQuiz()) {
+            closeQuizWizard();
+            toast('Using the default generated quiz. No class override published.');
+            return;
+        }
+        el['quiz-wizard-publish'].disabled = true;
+        show(el['quiz-wizard-step3-error'], false);
+        try {
+            await publishQuizOverrides(chapterId);
+            closeQuizWizard();
+            toast('Class quiz published for this chapter.');
+        } catch (error) {
+            if (el['quiz-wizard-step3-error']) {
+                el['quiz-wizard-step3-error'].textContent = error.message;
+                show(el['quiz-wizard-step3-error'], true);
+            } else {
+                toast(error.message);
+            }
+        } finally {
+            el['quiz-wizard-publish'].disabled = false;
+        }
     }
 
     function questionOptionCount(item, defaultOptionCount) {
@@ -1115,283 +2309,6 @@
         return Array.from({ length: count }, (_, i) => existing[i] || '');
     }
 
-    function renderQuizQuestionEditor() {
-        const defaultOptionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
-        el['quiz-question-editor'].innerHTML = state.quizDraftQuestions.map((item, index) => {
-            const options = normalizeQuestionOptions(item, defaultOptionCount);
-            return `<article class="quiz-question-card" data-question-index="${index}">
-                <header>
-                    <strong>Question ${index + 1}</strong>
-                    <span class="quiz-question-actions">
-                        <button type="button" class="text-button" data-ai-distractors="${index}">AI distractors</button>
-                        <button type="button" class="text-button" data-remove-question="${index}" ${state.quizDraftQuestions.length <= 1 ? 'disabled' : ''}>Remove</button>
-                    </span>
-                </header>
-                <label>Stem<textarea data-field="question">${escapeHtml(item.question || '')}</textarea></label>
-                ${options.map((option, optionIndex) => `
-                    <div class="quiz-option-row">
-                        <input type="radio" name="correct-${index}" value="${optionIndex}" ${Number(item.correctOptionIndex) === optionIndex ? 'checked' : ''} aria-label="Mark option ${optionIndex + 1} correct">
-                        <input type="text" data-field="option" data-option-index="${optionIndex}" value="${escapeHtml(option)}" placeholder="Option ${optionIndex + 1}">
-                    </div>
-                `).join('')}
-            </article>`;
-        }).join('') + `<div class="wizard-toolbar"><button type="button" class="secondary-button" id="quiz-add-question">Add question</button></div>`;
-        el['quiz-add-question']?.addEventListener('click', () => {
-            collectQuizDraftFromEditor();
-            if (state.quizDraftQuestions.length >= 20) {
-                toast('Maximum 20 questions.');
-                return;
-            }
-            state.quizDraftQuestions.push(blankQuestion(defaultOptionCount));
-            renderQuizQuestionEditor();
-        });
-    }
-
-    function collectQuizDraftFromEditor() {
-        const defaultOptionCount = Math.max(2, Number(el['quiz-option-count'].value) || 4);
-        const cards = Array.from(el['quiz-question-editor'].querySelectorAll('.quiz-question-card'));
-        state.quizDraftQuestions = cards.map((card, index) => {
-            const existing = state.quizDraftQuestions[index] || blankQuestion(defaultOptionCount);
-            const question = card.querySelector('[data-field="question"]')?.value?.trim() || '';
-            const options = Array.from(card.querySelectorAll('[data-field="option"]'))
-                .map(input => String(input.value || '').trim());
-            const checked = card.querySelector(`input[name="correct-${index}"]:checked`);
-            let correct = checked != null ? Number(checked.value) : existing.correctOptionIndex;
-            if (!Number.isInteger(correct) || correct < 0 || correct >= options.length) {
-                correct = 0;
-            }
-            return {
-                ...existing,
-                question,
-                options,
-                correctOptionIndex: correct
-            };
-        });
-    }
-
-    function renderQuizReview() {
-        el['quiz-review-list'].innerHTML = state.quizDraftQuestions.map((item, index) => `
-            <article class="quiz-review-item">
-                <strong>${index + 1}. ${escapeHtml(item.question || '(empty)')}</strong>
-                <ol>${(item.options || []).map((option, optionIndex) =>
-                    `<li${optionIndex === item.correctOptionIndex ? ' style="color: var(--success); font-weight: 600;"' : ''}>${escapeHtml(option || '(blank)')}</li>`
-                ).join('')}</ol>
-            </article>
-        `).join('');
-    }
-
-    async function continueQuizWizardFromStep1() {
-        const bookId = el['quiz-book'].value;
-        const chapterId = el['quiz-chapter'].value;
-        if (!bookId || !chapterId) {
-            toast('Choose a book and chapter first.');
-            return;
-        }
-        const slotCount = Math.min(20, Math.max(1, Number(el['quiz-slot-count'].value) || 5));
-        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
-        el['quiz-slot-count'].value = String(slotCount);
-        el['quiz-option-count'].value = String(optionCount);
-        try {
-            const effective = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/effective-quiz`);
-            state.quizGeneratedBase = Array.isArray(effective.generatedQuestions) ? effective.generatedQuestions : [];
-            state.quizContentVersion = effective.contentVersion || null;
-            if (Array.isArray(effective.effectiveQuestions) && effective.effectiveQuestions.length > 0) {
-                state.quizDraftQuestions = effective.effectiveQuestions.map(question => ({
-                    id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
-                    question: question.question || '',
-                    options: normalizeQuestionOptions(question, optionCount),
-                    correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
-                    citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
-                        ? question.citationParagraphIndex
-                        : null,
-                    citationSnippet: question.citationSnippet || '',
-                    sourceQuestionId: state.quizGeneratedBase.some(base => base.id === question.id) ? question.id : null,
-                    mode: state.quizGeneratedBase.some(base => base.id === question.id) ? 'override' : 'add'
-                }));
-                // Always keep published size when loading an existing quiz; teachers can add/remove later.
-                el['quiz-slot-count'].value = String(Math.min(20, Math.max(1, state.quizDraftQuestions.length)));
-            } else {
-                state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
-            }
-            renderQuizQuestionEditor();
-            setQuizWizardStep(2);
-        } catch (error) {
-            toast(error.message);
-        }
-    }
-
-    function loadGeneratedIntoWizard() {
-        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
-        if (!state.quizGeneratedBase.length) {
-            toast('No generated quiz is cached for this chapter yet.');
-            return;
-        }
-        state.quizDraftQuestions = state.quizGeneratedBase.map(question => ({
-            id: question.id,
-            question: question.question || '',
-            options: normalizeQuestionOptions(question, optionCount),
-            correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
-            citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
-                ? question.citationParagraphIndex
-                : null,
-            citationSnippet: question.citationSnippet || '',
-            sourceQuestionId: question.id,
-            mode: 'override'
-        }));
-        renderQuizQuestionEditor();
-        toast('Loaded generated questions. Edit freely before publishing.');
-    }
-
-    async function aiSuggestQuestions() {
-        const chapterId = el['quiz-chapter'].value;
-        const count = Math.min(20, Math.max(1, Number(el['quiz-slot-count'].value) || 5));
-        const optionCount = Math.min(6, Math.max(2, Number(el['quiz-option-count'].value) || 4));
-        el['quiz-slot-count'].value = String(count);
-        el['quiz-option-count'].value = String(optionCount);
-        el['quiz-ai-suggest'].disabled = true;
-        try {
-            const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/suggest-questions`, {
-                method: 'POST',
-                body: JSON.stringify({ count, optionCount })
-            });
-            const questions = Array.isArray(result.questions) ? result.questions : [];
-            if (!questions.length) {
-                toast('AI returned no questions.');
-                return;
-            }
-            state.quizDraftQuestions = questions.map(question => ({
-                id: question.id || (crypto.randomUUID ? crypto.randomUUID() : `q-${Date.now()}`),
-                question: question.question || '',
-                options: Array.from({ length: optionCount }, (_, i) => question.options?.[i] || ''),
-                correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
-                citationParagraphIndex: Number.isInteger(question.citationParagraphIndex)
-                    ? question.citationParagraphIndex
-                    : null,
-                citationSnippet: question.citationSnippet || '',
-                sourceQuestionId: null,
-                mode: 'add'
-            }));
-            renderQuizQuestionEditor();
-            toast('AI suggestions loaded. Review and edit before publishing.');
-        } catch (error) {
-            toast(error.message);
-        } finally {
-            el['quiz-ai-suggest'].disabled = false;
-        }
-    }
-
-    async function aiSuggestDistractors(index) {
-        collectQuizDraftFromEditor();
-        const item = state.quizDraftQuestions[index];
-        if (!item?.question) {
-            toast('Enter a question stem first.');
-            return;
-        }
-        const correct = item.options?.[item.correctOptionIndex] || '';
-        if (!correct) {
-            toast('Mark and fill the correct answer first.');
-            return;
-        }
-        const chapterId = el['quiz-chapter'].value;
-        const needed = Math.max(1, (item.options?.length || 4) - 1);
-        try {
-            const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/suggest-distractors`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    question: item.question,
-                    correctAnswer: correct,
-                    count: needed
-                })
-            });
-            const distractors = Array.isArray(result.distractors) ? result.distractors : [];
-            const nextOptions = [...(item.options || [])];
-            let distractorIndex = 0;
-            for (let i = 0; i < nextOptions.length; i++) {
-                if (i === item.correctOptionIndex) continue;
-                if (distractorIndex < distractors.length) {
-                    nextOptions[i] = distractors[distractorIndex++];
-                }
-            }
-            state.quizDraftQuestions[index] = { ...item, options: nextOptions };
-            renderQuizQuestionEditor();
-            toast('Distractors filled. Adjust as needed.');
-        } catch (error) {
-            toast(error.message);
-        }
-    }
-
-    async function publishQuizWizard() {
-        collectQuizDraftFromEditor();
-        const chapterId = el['quiz-chapter'].value;
-        const incomplete = state.quizDraftQuestions.some(item =>
-            !item.question
-            || !Array.isArray(item.options)
-            || item.options.some(option => !option)
-            || !Number.isInteger(item.correctOptionIndex)
-        );
-        if (incomplete) {
-            el['quiz-wizard-step3-error'].textContent = 'Every question needs a stem, all options filled, and a correct answer.';
-            show(el['quiz-wizard-step3-error'], true);
-            return;
-        }
-        const generatedIds = new Set(state.quizGeneratedBase.map(item => item.id).filter(Boolean));
-        const operations = [];
-        // Disable generated questions that are no longer represented as overrides.
-        const keptSourceIds = new Set(
-            state.quizDraftQuestions
-                .filter(item => item.sourceQuestionId && generatedIds.has(item.sourceQuestionId))
-                .map(item => item.sourceQuestionId)
-        );
-        generatedIds.forEach(sourceId => {
-            if (!keptSourceIds.has(sourceId)) {
-                operations.push({ operation: 'DISABLE', sourceQuestionId: sourceId, sortOrder: 0 });
-            }
-        });
-        state.quizDraftQuestions.forEach((item, index) => {
-            const question = {
-                id: item.id,
-                question: item.question,
-                options: item.options,
-                correctOptionIndex: item.correctOptionIndex,
-                citationParagraphIndex: Number.isInteger(item.citationParagraphIndex)
-                    ? item.citationParagraphIndex
-                    : null,
-                citationSnippet: item.citationSnippet || ''
-            };
-            if (item.sourceQuestionId && generatedIds.has(item.sourceQuestionId)) {
-                operations.push({
-                    operation: 'OVERRIDE',
-                    sourceQuestionId: item.sourceQuestionId,
-                    sortOrder: index,
-                    question: { ...question, id: item.sourceQuestionId }
-                });
-            } else {
-                operations.push({
-                    operation: 'ADD',
-                    sortOrder: index,
-                    question
-                });
-            }
-        });
-        el['quiz-wizard-publish'].disabled = true;
-        show(el['quiz-wizard-step3-error'], false);
-        try {
-            await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/quiz-overrides`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    expectedContentVersion: state.quizContentVersion,
-                    operations
-                })
-            });
-            closeQuizWizard();
-            toast('Class quiz published for this chapter.');
-        } catch (error) {
-            el['quiz-wizard-step3-error'].textContent = error.message;
-            show(el['quiz-wizard-step3-error'], true);
-        } finally {
-            el['quiz-wizard-publish'].disabled = false;
-        }
-    }
 
     async function signOut() {
         try {
@@ -1433,10 +2350,23 @@
         document.querySelectorAll('[data-close-student-overview]').forEach(node => {
             node.addEventListener('click', closeStudentOverview);
         });
-        el['student-overview-modal']?.addEventListener('keydown', trapStudentOverviewFocus);
+        el['student-overview-body']?.addEventListener('click', event => {
+            const toggle = event.target.closest('[data-overview-collapse]');
+            if (!toggle) return;
+            const section = toggle.closest('[data-overview-section]');
+            if (!section) return;
+            const nextCollapsed = toggle.getAttribute('aria-expanded') === 'true';
+            applyOverviewSectionCollapsed(section, nextCollapsed);
+            persistOverviewSectionCollapsed(toggle.dataset.overviewCollapse, nextCollapsed);
+        });
         el['copy-invite'].addEventListener('click', copyInvite);
         el['new-assignment-button'].addEventListener('click', () => openAssignmentModal());
         el['assignment-list'].addEventListener('click', event => {
+            const deleteButton = event.target.closest('[data-delete-assignment]');
+            if (deleteButton) {
+                deleteDraftAssignment(deleteButton.dataset.deleteAssignment);
+                return;
+            }
             const button = event.target.closest('[data-edit-assignment]');
             if (!button) return;
             const assignment = state.assignments.find(item => item.assignmentId === button.dataset.editAssignment);
@@ -1468,6 +2398,13 @@
             }
         });
         el['assignment-book-search'].addEventListener('blur', () => window.setTimeout(closeBookOptions, 100));
+        el['assignment-chapter-search']?.addEventListener('input', renderChapterOptions);
+        el['assignment-whole-book']?.addEventListener('change', () => {
+            if (el['assignment-whole-book'].checked) {
+                state.selectedChapterIds = [];
+            }
+            renderChapterOptions();
+        });
         el['assignment-book-options'].addEventListener('mousedown', event => {
             const option = event.target.closest('[data-book-id]');
             if (!option) return;
@@ -1476,39 +2413,55 @@
         });
         el['assignment-form'].addEventListener('submit', saveAssignment);
         document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignmentModal));
-        el['assignment-quiz-required']?.addEventListener('change', syncAssignmentPassRuleVisibility);
+        el['assignment-next-1']?.addEventListener('click', goAssignmentNextFrom1);
+        el['assignment-back-2']?.addEventListener('click', () => setAssignmentScreen('assign1'));
+        el['assignment-next-2']?.addEventListener('click', goAssignmentNextFrom2);
+        el['assignment-back-3']?.addEventListener('click', () => {
+            setAssignmentScreen(state.quizChoice === 'require' ? 'quizSummary' : 'assign2');
+        });
+        el['assignment-delete-draft']?.addEventListener('click', () => {
+            if (state.editingAssignmentId) deleteDraftAssignment(state.editingAssignmentId);
+        });
+        document.querySelectorAll('[data-quiz-choice]').forEach(button => {
+            button.addEventListener('click', () => {
+                state.quizChoice = button.dataset.quizChoice;
+                syncAssignmentPassRuleVisibility();
+            });
+        });
+        el['assignment-quiz-author-back']?.addEventListener('click', () => setAssignmentScreen('assign2'));
+        el['assignment-quiz-author-prev']?.addEventListener('click', () => goAuthorQuestion(-1));
+        el['assignment-quiz-author-next']?.addEventListener('click', () => goAuthorQuestion(1));
+        el['assignment-quiz-author-add']?.addEventListener('click', addAuthorQuestion);
+        el['assignment-quiz-sim-back']?.addEventListener('click', () => {
+            setAssignmentScreen('quizAuthor');
+            renderPagedQuizAuthor();
+        });
+        el['assignment-quiz-sim-prev']?.addEventListener('click', () => goSimQuestion(-1));
+        el['assignment-quiz-sim-next']?.addEventListener('click', () => goSimQuestion(1));
+        el['assignment-quiz-summary-back']?.addEventListener('click', () => {
+            setAssignmentScreen('quizSim');
+            renderQuizSimulation();
+        });
+        el['assignment-quiz-summary-confirm']?.addEventListener('click', confirmAssignmentQuiz);
         el['features-form'].addEventListener('change', saveFeatures);
         el['open-quiz-wizard']?.addEventListener('click', openQuizWizard);
         document.querySelectorAll('[data-close-quiz-wizard]').forEach(node => node.addEventListener('click', closeQuizWizard));
         el['quiz-wizard-next-1']?.addEventListener('click', continueQuizWizardFromStep1);
         el['quiz-wizard-back-2']?.addEventListener('click', () => setQuizWizardStep(1));
-        el['quiz-wizard-next-2']?.addEventListener('click', () => {
-            collectQuizDraftFromEditor();
-            renderQuizReview();
-            show(el['quiz-wizard-step2-error'], false);
-            setQuizWizardStep(3);
-        });
+        el['quiz-wizard-next-2']?.addEventListener('click', () => goAuthorQuestion(1));
+        el['quiz-author-prev']?.addEventListener('click', () => goAuthorQuestion(-1));
+        el['quiz-add-question']?.addEventListener('click', addAuthorQuestion);
         el['quiz-wizard-back-3']?.addEventListener('click', () => {
-            renderQuizQuestionEditor();
             setQuizWizardStep(2);
+            renderPagedQuizAuthor();
+        });
+        el['quiz-sim-prev']?.addEventListener('click', () => goSimQuestion(-1));
+        el['quiz-sim-next']?.addEventListener('click', () => goSimQuestion(1));
+        el['quiz-wizard-back-4']?.addEventListener('click', () => {
+            setQuizWizardStep(3);
+            renderQuizSimulation();
         });
         el['quiz-wizard-publish']?.addEventListener('click', publishQuizWizard);
-        el['quiz-load-generated']?.addEventListener('click', loadGeneratedIntoWizard);
-        el['quiz-ai-suggest']?.addEventListener('click', aiSuggestQuestions);
-        el['quiz-question-editor']?.addEventListener('click', event => {
-            const removeButton = event.target.closest('[data-remove-question]');
-            if (removeButton) {
-                collectQuizDraftFromEditor();
-                const index = Number(removeButton.dataset.removeQuestion);
-                if (!Number.isInteger(index) || state.quizDraftQuestions.length <= 1) return;
-                state.quizDraftQuestions.splice(index, 1);
-                renderQuizQuestionEditor();
-                return;
-            }
-            const button = event.target.closest('[data-ai-distractors]');
-            if (!button) return;
-            aiSuggestDistractors(Number(button.dataset.aiDistractors));
-        });
         el['quiz-book-search']?.addEventListener('focus', renderQuizBookOptions);
         el['quiz-book-search']?.addEventListener('input', () => {
             el['quiz-book'].value = '';
@@ -1572,6 +2525,9 @@
             selectQuizChapter(option.dataset.chapterId);
         });
         document.addEventListener('keydown', closeTopmostModalOnEscape);
+        window.addEventListener('resize', syncOpenBookLists);
+        el['assignment-modal']?.addEventListener('scroll', syncOpenBookLists);
+        el['quiz-wizard-modal']?.addEventListener('scroll', syncOpenBookLists);
     }
 
     bindEvents();

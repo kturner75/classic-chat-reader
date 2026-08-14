@@ -1,6 +1,7 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.config.ClassroomProperties;
+import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentProgressEntity;
 import com.classicchatreader.entity.BookEntity;
@@ -10,6 +11,7 @@ import com.classicchatreader.entity.QuizAttemptEntity;
 import com.classicchatreader.entity.UserEntity;
 import com.classicchatreader.entity.UserReaderStateEntity;
 import com.classicchatreader.model.AccountStateSnapshot;
+import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.model.ClassroomContextResponse.QuizRequirementStatus;
 import com.classicchatreader.repository.AssignmentProgressRepository;
 import com.classicchatreader.repository.AssignmentRepository;
@@ -129,16 +131,20 @@ public class TeacherStudentOverviewService {
 
         for (AssignmentEntity assignment : published) {
             BookEntity book = booksById.get(assignment.getBookId());
-            Optional<ChapterEntity> chapterOpt = resolveChapter(
-                    assignment.getChapterId(), assignment.getChapterIndex(), assignment.getBookId());
-            String chapterId = chapterOpt.map(ChapterEntity::getId).orElse(assignment.getChapterId());
-            Integer chapterIndex = chapterOpt.map(ChapterEntity::getChapterIndex).orElse(assignment.getChapterIndex());
-            String chapterTitle = chapterOpt.map(ChapterEntity::getTitle).orElseGet(() -> {
-                if (chapterIndex == null) {
-                    return null;
-                }
-                return "Chapter " + Math.max(1, chapterIndex + 1);
-            });
+            AssignmentChapterEntity first = assignment.firstChapter();
+            String chapterId = first == null ? null : first.getChapterId();
+            Integer chapterIndex = first == null ? null : first.getChapterIndex();
+            String chapterTitle = first == null ? null : chapterRepository.findById(first.getChapterId())
+                    .map(ChapterEntity::getTitle)
+                    .orElse("Chapter " + Math.max(1, first.getChapterIndex() + 1));
+            List<ClassroomContextResponse.AssignmentChapterRef> chapterRefs = assignment.getChapters().stream()
+                    .map(row -> new ClassroomContextResponse.AssignmentChapterRef(
+                            row.getChapterId(),
+                            row.getChapterIndex(),
+                            chapterRepository.findById(row.getChapterId())
+                                    .map(ChapterEntity::getTitle)
+                                    .orElse("Chapter " + Math.max(1, row.getChapterIndex() + 1))))
+                    .toList();
 
             AccountStateSnapshot.BookActivity activity = bookActivity.get(assignment.getBookId());
             boolean characterChatStarted = false;
@@ -149,8 +155,8 @@ public class TeacherStudentOverviewService {
                                 studentUserId, bookId) > 0);
             }
 
-            QuizAttemptSummary quizSummary = resolveQuizAttemptSummary(assignment, chapterId, studentUserId);
-            QuizRequirementStatus quizStatus = resolveQuizStatus(assignment, chapterId, studentUserId, quizSummary);
+            QuizAttemptSummary quizSummary = resolveQuizAttemptSummary(assignment, studentUserId);
+            QuizRequirementStatus quizStatus = resolveQuizStatus(assignment, studentUserId, quizSummary);
             boolean readingComplete = isReadingComplete(assignment, activity, quizStatus);
             boolean quizSatisfied = isQuizSatisfied(assignment, quizStatus);
             boolean characterSatisfied = !assignment.isCharacterChatRequired() || characterChatStarted;
@@ -169,6 +175,7 @@ public class TeacherStudentOverviewService {
                     assignment.getTitle(),
                     assignment.getBookId(),
                     book != null ? book.getTitle() : "Book unavailable",
+                    chapterRefs,
                     chapterId,
                     chapterIndex,
                     chapterTitle,
@@ -192,7 +199,7 @@ public class TeacherStudentOverviewService {
                 current.add(overview);
             }
 
-            if (assignment.isQuizRequired() && chapterId != null && !chapterId.isBlank()) {
+            if (assignment.isQuizRequired()) {
                 quizzes.add(buildQuizOverview(
                         assignment, book, chapterId, chapterTitle, quizSummary, quizStatus, studentUserId));
             }
@@ -251,11 +258,13 @@ public class TeacherStudentOverviewService {
             String studentUserId) {
         LocalDateTime since = attemptWindowStart(assignment);
         int bestScore = quizAttemptRepository
-                .findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(chapterId, studentUserId, since);
+                .findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                        assignment.getId(), studentUserId, since);
         int bestCorrect = quizAttemptRepository
-                .findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(chapterId, studentUserId, since);
+                .findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                        assignment.getId(), studentUserId, since);
         List<QuizAttemptEntity> attempts = quizAttemptRepository
-                .findByChapterIdAndUserIdOrderByCreatedAtDesc(chapterId, studentUserId);
+                .findByAssignmentIdAndUserIdOrderByCreatedAtDesc(assignment.getId(), studentUserId);
         QuizAttemptEntity latestInWindow = attempts.stream()
                 .filter(a -> a.getCreatedAt() != null && !a.getCreatedAt().isBefore(since))
                 .findFirst()
@@ -356,18 +365,14 @@ public class TeacherStudentOverviewService {
 
     private QuizRequirementStatus resolveQuizStatus(
             AssignmentEntity row,
-            String chapterId,
             String userId,
             QuizAttemptSummary attemptSummary) {
         if (!row.isQuizRequired()) {
             return QuizRequirementStatus.NOT_REQUIRED;
         }
-        if (chapterId == null || chapterId.isBlank()) {
-            return QuizRequirementStatus.UNKNOWN;
-        }
         if (row.getQuizPassMinCorrect() == null) {
             if (userId != null && !userId.isBlank()) {
-                return quizAttemptRepository.existsByChapterIdAndUserId(chapterId, userId)
+                return quizAttemptRepository.existsByAssignmentIdAndUserId(row.getId(), userId)
                         ? QuizRequirementStatus.COMPLETE
                         : QuizRequirementStatus.PENDING;
             }
@@ -379,25 +384,20 @@ public class TeacherStudentOverviewService {
         return QuizRequirementStatus.PENDING;
     }
 
-    private QuizAttemptSummary resolveQuizAttemptSummary(
-            AssignmentEntity row, String chapterId, String userId) {
-        if (!row.isQuizRequired()
-                || chapterId == null
-                || chapterId.isBlank()
-                || userId == null
-                || userId.isBlank()) {
+    private QuizAttemptSummary resolveQuizAttemptSummary(AssignmentEntity row, String userId) {
+        if (!row.isQuizRequired() || userId == null || userId.isBlank()) {
             return QuizAttemptSummary.empty();
         }
         Integer minCorrect = row.getQuizPassMinCorrect();
         Integer maxRetries = row.getQuizMaxRetries();
         LocalDateTime since = attemptWindowStart(row);
-        long used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                chapterId, userId, since);
+        long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
         if (minCorrect != null) {
-            int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                    chapterId, userId, since);
+            int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                    row.getId(), userId, since);
             passed = best >= minCorrect;
         } else if (used > 0) {
             passed = true;
@@ -447,8 +447,14 @@ public class TeacherStudentOverviewService {
         if (!hasBookActivity(activity)) {
             return quizStatus == QuizRequirementStatus.COMPLETE;
         }
-        Integer targetIndex = assignment.getChapterIndex();
-        if (targetIndex == null) {
+        if (assignment.isWholeBook()) {
+            return quizStatus == QuizRequirementStatus.COMPLETE;
+        }
+        int targetIndex = assignment.getChapters().stream()
+                .mapToInt(AssignmentChapterEntity::getChapterIndex)
+                .max()
+                .orElse(-1);
+        if (targetIndex < 0) {
             return quizStatus == QuizRequirementStatus.COMPLETE;
         }
         Integer chapterCount = activity.chapterCount() != null && activity.chapterCount() > 0
@@ -543,6 +549,7 @@ public class TeacherStudentOverviewService {
             String title,
             String bookId,
             String bookTitle,
+            List<ClassroomContextResponse.AssignmentChapterRef> chapters,
             String chapterId,
             Integer chapterIndex,
             String chapterTitle,

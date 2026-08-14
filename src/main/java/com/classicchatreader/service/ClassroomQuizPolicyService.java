@@ -52,30 +52,54 @@ public class ClassroomQuizPolicyService {
             int attemptsUsed,
             int attemptsAllowed,
             int attemptsRemaining,
-            int passMinCorrect
+            int passMinCorrect,
+            int bestScorePercent
     ) {
     }
 
     /**
-     * When the user has a published quiz-required assignment with pass rules for this chapter,
-     * reject grading if the attempt budget is exhausted.
+     * Recap / free-reading chapter quizzes do not consume assignment attempt budgets.
      */
     public void assertCanAttempt(String chapterId, String userId) {
-        if (userId == null || userId.isBlank() || chapterId == null || chapterId.isBlank()) {
+        // Intentionally empty: chapter recap attempts are independent of assignment quizzes.
+    }
+
+    public void assertCanAttemptAssignment(String assignmentId, String userId) {
+        if (userId == null || userId.isBlank() || assignmentId == null || assignmentId.isBlank()) {
             return;
         }
-        Optional<AttemptBudget> budget = resolveStrictestBudget(chapterId, userId);
+        Optional<AttemptBudget> budget = resolveAssignmentBudget(assignmentId, userId);
         if (budget.isEmpty()) {
             return;
         }
-        if (budget.get().attemptsRemaining() <= 0) {
+        AttemptBudget resolved = budget.get();
+        if (resolved.bestScorePercent() >= 100) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This assignment quiz already has a perfect score.");
+        }
+        if (resolved.attemptsRemaining() <= 0) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "No quiz attempts remaining for this assignment. "
-                            + "Required score: " + budget.get().passMinCorrect()
-                            + " correct; attempts used: " + budget.get().attemptsUsed()
-                            + "/" + budget.get().attemptsAllowed() + ".");
+                            + "Required score: " + resolved.passMinCorrect()
+                            + " correct; attempts used: " + resolved.attemptsUsed()
+                            + "/" + resolved.attemptsAllowed() + ".");
         }
+    }
+
+    public Optional<AttemptBudget> resolveAssignmentBudget(String assignmentId, String userId) {
+        AssignmentEntity assignment = assignmentRepository.findByIdAndDeletedAtIsNull(assignmentId).orElse(null);
+        if (assignment == null || !assignment.isQuizRequired()) {
+            return Optional.empty();
+        }
+        if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
+            return Optional.empty();
+        }
+        if (userId != null && !userId.isBlank()) {
+            userRepository.findByIdForUpdate(userId);
+        }
+        return Optional.ofNullable(toAssignmentBudget(assignment, userId));
     }
 
     public Optional<AttemptBudget> resolveStrictestBudget(String chapterId, String userId) {
@@ -83,18 +107,16 @@ public class ClassroomQuizPolicyService {
         if (activeTermId == null) {
             return Optional.empty();
         }
-        // Serialize one student's concurrent grade submissions without locking shared
-        // assignment configuration rows (which would serialize the whole class/chapter).
         if (userId != null && !userId.isBlank()) {
             userRepository.findByIdForUpdate(userId);
         }
         LocalDate today = classroomProperties.today();
         List<AssignmentEntity> matching = assignmentRepository
-                .findByTermIdAndChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
+                .findByTermIdAndContainedChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(
                         activeTermId, chapterId, "PUBLISHED")
                 .stream()
+                .filter(a -> AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(a.getQuizSource()))
                 .filter(a -> a.getQuizPassMinCorrect() != null && a.getQuizMaxRetries() != null)
-                // Match student classroom context: ignore not-yet-available assignments.
                 .filter(a -> a.getAvailableFromDate() == null || !a.getAvailableFromDate().isAfter(today))
                 .toList();
         if (matching.isEmpty()) {
@@ -102,27 +124,24 @@ public class ClassroomQuizPolicyService {
         }
 
         return matching.stream()
-                .map(a -> toBudget(a, chapterId, userId))
-                // Already-passed assignments should not block retries for other open ones.
+                .map(a -> toAssignmentBudget(a, userId))
                 .filter(b -> b != null)
                 .min(Comparator.comparingInt(AttemptBudget::attemptsRemaining)
                         .thenComparingInt(AttemptBudget::passMinCorrect));
     }
 
-    private AttemptBudget toBudget(AssignmentEntity assignment, String chapterId, String userId) {
+    private AttemptBudget toAssignmentBudget(AssignmentEntity assignment, String userId) {
         LocalDateTime since = attemptWindowStart(assignment);
-        long usedLong = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                chapterId, userId, since);
+        long usedLong = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                assignment.getId(), userId, since);
         int used = usedLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) usedLong;
-        int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                chapterId, userId, since);
+        int bestScorePercent = quizAttemptRepository
+                .findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                        assignment.getId(), userId, since);
         int minCorrect = assignment.getQuizPassMinCorrect();
-        if (best >= minCorrect) {
-            return null;
-        }
         int allowed = 1 + assignment.getQuizMaxRetries();
-        int remaining = Math.max(0, allowed - used);
-        return new AttemptBudget(assignment, used, allowed, remaining, minCorrect);
+        int remaining = bestScorePercent >= 100 ? 0 : Math.max(0, allowed - used);
+        return new AttemptBudget(assignment, used, allowed, remaining, minCorrect, bestScorePercent);
     }
 
     private LocalDateTime attemptWindowStart(AssignmentEntity assignment) {

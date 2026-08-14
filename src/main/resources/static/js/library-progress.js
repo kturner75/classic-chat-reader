@@ -72,6 +72,43 @@
         return false;
     }
 
+    function assignmentChapterIndexes(assignment) {
+        if (Array.isArray(assignment?.chapters) && assignment.chapters.length > 0) {
+            return [...new Set(assignment.chapters
+                .map((chapter) => Number.isInteger(chapter?.chapterIndex) ? chapter.chapterIndex : null)
+                .filter((index) => index != null))]
+                .sort((left, right) => left - right);
+        }
+        if (Number.isInteger(assignment?.chapterIndex)) {
+            return [assignment.chapterIndex];
+        }
+        return [];
+    }
+
+    function assignmentChapterLabel(assignment) {
+        const chapters = Array.isArray(assignment?.chapters) ? assignment.chapters : [];
+        if (chapters.length === 0 && !Number.isInteger(assignment?.chapterIndex) && !assignment?.chapterTitle) {
+            return 'Whole book';
+        }
+        if (chapters.length === 1) {
+            return chapters[0].chapterTitle
+                || (Number.isInteger(chapters[0].chapterIndex) ? `Chapter ${chapters[0].chapterIndex + 1}` : '1 chapter');
+        }
+        if (chapters.length > 1) {
+            if (chapters.length <= 3 && chapters.every((item) => item.chapterTitle)) {
+                return chapters.map((item) => item.chapterTitle).join(', ');
+            }
+            return `${chapters.length} chapters`;
+        }
+        if (typeof assignment?.chapterTitle === 'string' && assignment.chapterTitle.trim()) {
+            return assignment.chapterTitle.trim();
+        }
+        if (Number.isInteger(assignment?.chapterIndex)) {
+            return `Chapter ${assignment.chapterIndex + 1}`;
+        }
+        return 'Whole book';
+    }
+
     function isReadingCompleteForAssignment(assignment, activity) {
         if (!activity) {
             return false;
@@ -80,16 +117,12 @@
             return true;
         }
 
-        // Unread / never-opened books must not count as having reached chapter 0.
         if (!hasBookActivity(activity)) {
             return false;
         }
 
-        const targetIndex = Number.isInteger(assignment?.chapterIndex)
-            ? assignment.chapterIndex
-            : null;
-        // Whole-book assignment: only full-book completion counts.
-        if (targetIndex == null) {
+        const indexes = assignmentChapterIndexes(assignment);
+        if (indexes.length === 0) {
             return false;
         }
 
@@ -97,9 +130,75 @@
         if (reachedChapterIndex == null) {
             return false;
         }
-        // Reaching or passing the assigned chapter counts as reading complete for chapter work.
-        // Quiz COMPLETE is a strong secondary signal handled by the caller for overall status.
+        const targetIndex = Math.max(...indexes);
         return reachedChapterIndex >= targetIndex;
+    }
+
+    function isAssignmentQuizPerfect(assignment, result) {
+        const resultScore = Number.isFinite(result?.scorePercent) ? result.scorePercent : null;
+        if (resultScore != null) {
+            return resultScore >= 100;
+        }
+        if (Number.isFinite(result?.correctAnswers) && Number.isFinite(result?.totalQuestions)
+                && result.totalQuestions > 0) {
+            return result.correctAnswers >= result.totalQuestions;
+        }
+        return Number.isInteger(assignment?.quizBestScorePercent) && assignment.quizBestScorePercent >= 100;
+    }
+
+    function hasAssignmentQuizAttemptsRemaining(assignment) {
+        if (!Number.isInteger(assignment?.quizAttemptsAllowed) || !Number.isInteger(assignment?.quizAttemptsUsed)) {
+            return true;
+        }
+        return assignment.quizAttemptsUsed < assignment.quizAttemptsAllowed;
+    }
+
+    function canTakeAssignmentQuiz(assignment, activity) {
+        if (!isQuizRequired(assignment)) {
+            return false;
+        }
+        const status = typeof assignment?.quizStatus === 'string'
+            ? assignment.quizStatus.toUpperCase()
+            : '';
+        if (status === 'NOT_REQUIRED') {
+            return false;
+        }
+        if (isAssignmentQuizPerfect(assignment)) {
+            return false;
+        }
+        if (!isReadingCompleteForAssignment(assignment, activity)) {
+            return false;
+        }
+        if (!hasAssignmentQuizAttemptsRemaining(assignment)) {
+            return false;
+        }
+        return true;
+    }
+
+    function assignmentQuizActionLabel(assignment) {
+        const used = Number.isInteger(assignment?.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
+        return used > 0 ? 'Retry Quiz' : 'Take Quiz';
+    }
+
+    function isWholeBookAssignment(assignment) {
+        return assignmentChapterIndexes(assignment).length === 0;
+    }
+
+    function canChatForAssignment(assignment) {
+        return assignment?.characterChatRequired === true;
+    }
+
+    function assignmentChatActionLabel(characterChatStarted) {
+        return characterChatStarted ? 'Continue Chat' : 'Chat with Character';
+    }
+
+    function isAssignmentFullyComplete(assignment, activity, characterChatStarted) {
+        const snapshot = buildAssignmentProgressSnapshot({
+            assignment,
+            activity,
+            characterChatStarted
+        });
+        return snapshot.statusClass === 'completed';
     }
 
     /**
@@ -237,11 +336,7 @@
             ? `${doneCount}/${totalCount} complete`
             : statusLabel;
 
-        const targetLabel = typeof assignment.chapterTitle === 'string' && assignment.chapterTitle.trim()
-            ? assignment.chapterTitle.trim()
-            : (Number.isInteger(assignment.chapterIndex)
-                ? `Chapter ${assignment.chapterIndex + 1}`
-                : 'Whole book');
+        const targetLabel = assignmentChapterLabel(assignment);
 
         return {
             statusLabel,
@@ -263,6 +358,17 @@
 
     return {
         buildBookProgressSnapshot,
-        buildAssignmentProgressSnapshot
+        buildAssignmentProgressSnapshot,
+        isReadingCompleteForAssignment,
+        canTakeAssignmentQuiz,
+        assignmentQuizActionLabel,
+        assignmentChapterLabel,
+        assignmentChapterIndexes,
+        isWholeBookAssignment,
+        canChatForAssignment,
+        assignmentChatActionLabel,
+        isAssignmentFullyComplete,
+        isAssignmentQuizPerfect,
+        hasAssignmentQuizAttemptsRemaining
     };
 });

@@ -186,7 +186,7 @@ public class ClassroomUsageService {
         event.setEventType(ClassroomUsageEventEntity.TYPE_ASSIGNMENT_VIEW);
         event.setAssignmentId(assignment.getId());
         event.setBookId(assignment.getBookId());
-        event.setChapterId(assignment.getChapterId());
+        event.setChapterId(assignment.firstChapter() != null ? assignment.firstChapter().getChapterId() : null);
         event.setDurationMs(0L);
         event.setFeature("assignment");
         event.setOccurredAt(occurredAt);

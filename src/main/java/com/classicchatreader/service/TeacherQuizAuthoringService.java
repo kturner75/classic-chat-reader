@@ -221,8 +221,11 @@ public class TeacherQuizAuthoringService {
         if (!Objects.equals(previousContentVersion, nextContentVersion)) {
             LocalDateTime activated = LocalDateTime.now(ZoneOffset.UTC);
             for (AssignmentEntity assignment : assignmentRepository
-                    .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")) {
+                    .findByContainedChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")) {
                 if (!termId.equals(assignment.getTermId())) {
+                    continue;
+                }
+                if (!AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())) {
                     continue;
                 }
                 if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
@@ -241,9 +244,10 @@ public class TeacherQuizAuthoringService {
                 ? 0
                 : effective.effectiveQuestions().size();
         List<AssignmentEntity> conflicting = assignmentRepository
-                .findByChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
+                .findByContainedChapterIdAndQuizRequiredTrueAndStatusAndDeletedAtIsNull(chapterId, "PUBLISHED")
                 .stream()
                 .filter(a -> termId.equals(a.getTermId()))
+                .filter(a -> AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(a.getQuizSource()))
                 .filter(a -> a.getQuizPassMinCorrect() != null)
                 .filter(a -> a.getQuizPassMinCorrect() > questionCount)
                 .toList();

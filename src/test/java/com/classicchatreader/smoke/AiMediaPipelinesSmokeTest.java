@@ -85,7 +85,7 @@ class AiMediaPipelinesSmokeTest {
             if (prompt.contains("text-to-speech voice")) {
                 return """
                         {
-                          "voice": "fable",
+                          "voice": "eve",
                           "speed": 0.95,
                           "instructions": "Warm and clear",
                           "reasoning": "Fits the narrative tone"
@@ -128,7 +128,7 @@ class AiMediaPipelinesSmokeTest {
     void smokeProfile_happyPath_endToEndWithMockedProviders() throws Exception {
         mockMvc.perform(post("/api/tts/analyze/{bookId}", bookId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.voice", is("fable")))
+                .andExpect(jsonPath("$.voice", is("eve")))
                 .andExpect(jsonPath("$.speed", is(0.95)));
 
         mockMvc.perform(post("/api/illustrations/analyze/{bookId}", bookId))
@@ -147,7 +147,7 @@ class AiMediaPipelinesSmokeTest {
                 .andExpect(jsonPath("$.bookId", is(bookId)));
 
         BookEntity updated = bookRepository.findById(bookId).orElseThrow();
-        assertEquals("fable", updated.getTtsVoice());
+        assertEquals("eve", updated.getTtsVoice());
         assertEquals("pen-and-ink", updated.getIllustrationStyle());
         assertTrue(updated.getTtsSpeed() > 0.0);
 

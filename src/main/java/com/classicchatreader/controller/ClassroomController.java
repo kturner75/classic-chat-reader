@@ -1,9 +1,14 @@
 package com.classicchatreader.controller;
 
+import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.model.ClassroomContextResponse;
+import com.classicchatreader.model.ClassroomContextResponse.AssignmentChapterRef;
 import com.classicchatreader.service.AccountAuthService;
+import com.classicchatreader.service.AssignmentQuizService;
+import com.classicchatreader.service.AssignmentQuizService.AssignmentEffectiveQuizResponse;
+import com.classicchatreader.service.AssignmentQuizService.SaveAssignmentQuizRequest;
 import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomAdminService.AssignmentWriteRequest;
 import com.classicchatreader.service.ClassroomAdminService.ClassSummary;
@@ -32,6 +37,7 @@ import com.classicchatreader.model.ChapterQuizPayload;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,6 +45,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -55,6 +62,7 @@ public class ClassroomController {
     private final AccountAuthService accountAuthService;
     private final ClassroomTeacherCapabilityService teacherCapabilityService;
     private final TeacherQuizAuthoringService teacherQuizAuthoringService;
+    private final AssignmentQuizService assignmentQuizService;
     private final TeacherStudentOverviewService teacherStudentOverviewService;
     private final ClassroomUsageService classroomUsageService;
 
@@ -65,6 +73,7 @@ public class ClassroomController {
             AccountAuthService accountAuthService,
             ClassroomTeacherCapabilityService teacherCapabilityService,
             TeacherQuizAuthoringService teacherQuizAuthoringService,
+            AssignmentQuizService assignmentQuizService,
             TeacherStudentOverviewService teacherStudentOverviewService,
             ClassroomUsageService classroomUsageService) {
         this.classroomContextService = classroomContextService;
@@ -73,6 +82,7 @@ public class ClassroomController {
         this.accountAuthService = accountAuthService;
         this.teacherCapabilityService = teacherCapabilityService;
         this.teacherQuizAuthoringService = teacherQuizAuthoringService;
+        this.assignmentQuizService = assignmentQuizService;
         this.teacherStudentOverviewService = teacherStudentOverviewService;
         this.classroomUsageService = classroomUsageService;
     }
@@ -173,6 +183,12 @@ public class ClassroomController {
                 classroomAdminService.updateAssignment(requireUserId(request), assignmentId, body));
     }
 
+    @DeleteMapping("/assignments/{assignmentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteDraftAssignment(@PathVariable String assignmentId, HttpServletRequest request) {
+        classroomAdminService.deleteDraftAssignment(requireUserId(request), assignmentId);
+    }
+
     @GetMapping("/terms/{termId}/roster")
     public List<EnrollmentRow> roster(@PathVariable String termId, HttpServletRequest request) {
         return classroomAdminService.listRoster(requireUserId(request), termId);
@@ -242,6 +258,41 @@ public class ClassroomController {
         return Map.of("distractors", distractors);
     }
 
+    @GetMapping("/assignments/{assignmentId}/effective-quiz")
+    public AssignmentEffectiveQuizResponse getAssignmentEffectiveQuiz(
+            @PathVariable String assignmentId,
+            HttpServletRequest request) {
+        return assignmentQuizService.getEffectiveQuiz(requireUserId(request), assignmentId);
+    }
+
+    @PutMapping("/assignments/{assignmentId}/quiz")
+    public AssignmentEffectiveQuizResponse saveAssignmentQuiz(
+            @PathVariable String assignmentId,
+            @RequestBody SaveAssignmentQuizRequest body,
+            HttpServletRequest request) {
+        return assignmentQuizService.saveCustomQuiz(requireUserId(request), assignmentId, body);
+    }
+
+    @PostMapping("/assignments/{assignmentId}/suggest-questions")
+    public Map<String, Object> suggestAssignmentQuestions(
+            @PathVariable String assignmentId,
+            @RequestBody(required = false) SuggestQuestionsRequest body,
+            HttpServletRequest request) {
+        List<ChapterQuizPayload.Question> questions =
+                assignmentQuizService.suggestQuestions(requireUserId(request), assignmentId, body);
+        return Map.of("questions", questions);
+    }
+
+    @PostMapping("/assignments/{assignmentId}/suggest-distractors")
+    public Map<String, Object> suggestAssignmentDistractors(
+            @PathVariable String assignmentId,
+            @RequestBody SuggestDistractorsRequest body,
+            HttpServletRequest request) {
+        List<String> distractors =
+                assignmentQuizService.suggestDistractors(requireUserId(request), assignmentId, body);
+        return Map.of("distractors", distractors);
+    }
+
     private ResponseEntity<Map<String, Object>> mapRedeem(RedeemResult result) {
         return switch (result.status()) {
             case SUCCESS, IDEMPOTENT -> ResponseEntity.ok(Map.of(
@@ -287,16 +338,22 @@ public class ClassroomController {
     }
 
     private AssignmentResponse toAssignmentResponse(AssignmentEntity a) {
+        List<AssignmentChapterRef> chapters = a.getChapters() == null ? List.of() : a.getChapters().stream()
+                .map(ch -> new AssignmentChapterRef(ch.getChapterId(), ch.getChapterIndex(), null))
+                .toList();
+        AssignmentChapterEntity first = a.firstChapter();
         return new AssignmentResponse(
                 a.getId(),
                 a.getTermId(),
                 a.getTitle(),
                 a.getBookId(),
-                a.getChapterId(),
-                a.getChapterIndex(),
+                chapters,
+                first == null ? null : first.getChapterId(),
+                first == null ? null : first.getChapterIndex(),
                 a.getDueDate() != null ? a.getDueDate().toString() : null,
                 a.getAvailableFromDate() != null ? a.getAvailableFromDate().toString() : null,
                 a.isQuizRequired(),
+                a.getQuizSource(),
                 a.isCharacterChatRequired(),
                 a.getSortOrder(),
                 a.getStatus(),
@@ -347,11 +404,13 @@ public class ClassroomController {
             String termId,
             String title,
             String bookId,
+            List<AssignmentChapterRef> chapters,
             String chapterId,
             Integer chapterIndex,
             String dueDate,
             String availableFromDate,
             boolean quizRequired,
+            String quizSource,
             boolean characterChatRequired,
             int sortOrder,
             String status,

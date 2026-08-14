@@ -1,10 +1,13 @@
 package com.classicchatreader.entity;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -12,10 +15,19 @@ import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "assignments")
 public class AssignmentEntity {
+
+    public static final String QUIZ_SOURCE_CHAPTER = "CHAPTER";
+    public static final String QUIZ_SOURCE_CUSTOM = "CUSTOM";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,12 +42,6 @@ public class AssignmentEntity {
     @Column(name = "book_id", nullable = false)
     private String bookId;
 
-    @Column(name = "chapter_id")
-    private String chapterId;
-
-    @Column(name = "chapter_index")
-    private Integer chapterIndex;
-
     /** Calendar day only (SQL DATE); not an instant. */
     @Column(name = "due_date", columnDefinition = "DATE")
     private LocalDate dueDate;
@@ -49,6 +55,10 @@ public class AssignmentEntity {
 
     @Column(name = "character_chat_required", nullable = false)
     private boolean characterChatRequired = false;
+
+    /** CHAPTER = live-link the single-chapter default quiz; CUSTOM = assignment-owned payload. */
+    @Column(name = "quiz_source", length = 16)
+    private String quizSource;
 
     /** Minimum correct answers required to pass when quiz is required; null = any attempt completes. */
     @Column(name = "quiz_pass_min_correct")
@@ -80,6 +90,10 @@ public class AssignmentEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC, chapterIndex ASC")
+    private List<AssignmentChapterEntity> chapters = new ArrayList<>();
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
@@ -92,6 +106,46 @@ public class AssignmentEntity {
         updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
+    public boolean isWholeBook() {
+        return chapters == null || chapters.isEmpty();
+    }
+
+    public AssignmentChapterEntity firstChapter() {
+        if (chapters == null || chapters.isEmpty()) {
+            return null;
+        }
+        return chapters.stream()
+                .min(Comparator
+                        .comparingInt(AssignmentChapterEntity::getSortOrder)
+                        .thenComparingInt(AssignmentChapterEntity::getChapterIndex))
+                .orElse(chapters.get(0));
+    }
+
+    public String singleChapterId() {
+        if (chapters == null || chapters.size() != 1) {
+            return null;
+        }
+        return chapters.get(0).getChapterId();
+    }
+
+    public void replaceChapters(List<AssignmentChapterEntity> next) {
+        if (chapters == null) {
+            chapters = new ArrayList<>();
+        }
+        List<AssignmentChapterEntity> incoming = next == null ? List.of() : next;
+        // Keep existing instances in the collection so orphanRemoval does not delete
+        // a row that is about to be re-inserted under the same unique chapter key.
+        Set<AssignmentChapterEntity> keep = Collections.newSetFromMap(new IdentityHashMap<>());
+        keep.addAll(incoming);
+        chapters.removeIf(existing -> !keep.contains(existing));
+        for (AssignmentChapterEntity chapter : incoming) {
+            chapter.setAssignment(this);
+            if (!chapters.contains(chapter)) {
+                chapters.add(chapter);
+            }
+        }
+    }
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getTermId() { return termId; }
@@ -100,10 +154,6 @@ public class AssignmentEntity {
     public void setTitle(String title) { this.title = title; }
     public String getBookId() { return bookId; }
     public void setBookId(String bookId) { this.bookId = bookId; }
-    public String getChapterId() { return chapterId; }
-    public void setChapterId(String chapterId) { this.chapterId = chapterId; }
-    public Integer getChapterIndex() { return chapterIndex; }
-    public void setChapterIndex(Integer chapterIndex) { this.chapterIndex = chapterIndex; }
     public LocalDate getDueDate() { return dueDate; }
     public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
     public LocalDate getAvailableFromDate() { return availableFromDate; }
@@ -114,6 +164,8 @@ public class AssignmentEntity {
     public void setCharacterChatRequired(boolean characterChatRequired) {
         this.characterChatRequired = characterChatRequired;
     }
+    public String getQuizSource() { return quizSource; }
+    public void setQuizSource(String quizSource) { this.quizSource = quizSource; }
     public Integer getQuizPassMinCorrect() { return quizPassMinCorrect; }
     public void setQuizPassMinCorrect(Integer quizPassMinCorrect) { this.quizPassMinCorrect = quizPassMinCorrect; }
     public Integer getQuizMaxRetries() { return quizMaxRetries; }
@@ -134,4 +186,6 @@ public class AssignmentEntity {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public List<AssignmentChapterEntity> getChapters() { return chapters; }
+    public void setChapters(List<AssignmentChapterEntity> chapters) { this.chapters = chapters; }
 }

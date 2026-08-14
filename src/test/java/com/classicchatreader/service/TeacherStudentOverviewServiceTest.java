@@ -1,6 +1,7 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.config.ClassroomProperties;
+import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentProgressEntity;
 import com.classicchatreader.entity.BookEntity;
@@ -155,9 +156,9 @@ class TeacherStudentOverviewServiceTest {
         ChapterEntity ch1 = chapter("ch-1", book, 0, "Chapter I");
         ChapterEntity ch2 = chapter("ch-2", book, 1, "Chapter II");
         ChapterEntity ch9 = chapter("ch-9", book2, 0, "Chapter I");
-        when(chapterRepository.findByIdWithBook("ch-1")).thenReturn(Optional.of(ch1));
-        when(chapterRepository.findByIdWithBook("ch-2")).thenReturn(Optional.of(ch2));
-        when(chapterRepository.findByIdWithBook("ch-9")).thenReturn(Optional.of(ch9));
+        when(chapterRepository.findById("ch-1")).thenReturn(Optional.of(ch1));
+        when(chapterRepository.findById("ch-2")).thenReturn(Optional.of(ch2));
+        when(chapterRepository.findById("ch-9")).thenReturn(Optional.of(ch9));
         when(chapterRepository.findByBookIdOrderByChapterIndex("book-2")).thenReturn(List.of(ch9));
 
         UserReaderStateEntity readerState = new UserReaderStateEntity();
@@ -179,21 +180,21 @@ class TeacherStudentOverviewServiceTest {
                 """);
         when(userReaderStateRepository.findById("student-1")).thenReturn(Optional.of(readerState));
 
-        when(quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(eq("ch-1"), eq("student-1"), any()))
+        when(quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(eq("a-done"), eq("student-1"), any()))
                 .thenReturn(2L);
-        when(quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(eq("ch-2"), eq("student-1"), any()))
+        when(quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(eq("a-progress"), eq("student-1"), any()))
                 .thenReturn(1L);
-        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                eq("ch-1"), eq("student-1"), any())).thenReturn(8);
-        when(quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                eq("ch-2"), eq("student-1"), any())).thenReturn(4);
-        when(quizAttemptRepository.findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                eq("ch-1"), eq("student-1"), any())).thenReturn(80);
-        when(quizAttemptRepository.findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                eq("ch-2"), eq("student-1"), any())).thenReturn(40);
-        when(quizAttemptRepository.findByChapterIdAndUserIdOrderByCreatedAtDesc("ch-1", "student-1"))
+        when(quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                eq("a-done"), eq("student-1"), any())).thenReturn(8);
+        when(quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                eq("a-progress"), eq("student-1"), any())).thenReturn(4);
+        when(quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                eq("a-done"), eq("student-1"), any())).thenReturn(80);
+        when(quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                eq("a-progress"), eq("student-1"), any())).thenReturn(40);
+        when(quizAttemptRepository.findByAssignmentIdAndUserIdOrderByCreatedAtDesc("a-done", "student-1"))
                 .thenReturn(List.of(attempt(8, 10, 80)));
-        when(quizAttemptRepository.findByChapterIdAndUserIdOrderByCreatedAtDesc("ch-2", "student-1"))
+        when(quizAttemptRepository.findByAssignmentIdAndUserIdOrderByCreatedAtDesc("a-progress", "student-1"))
                 .thenReturn(List.of(attempt(4, 10, 40)));
 
         when(classroomUsageService.sumApproximateReaderMsByBook("term-1", "student-1"))
@@ -252,8 +253,11 @@ class TeacherStudentOverviewServiceTest {
         assignment.setTermId("term-1");
         assignment.setTitle(title);
         assignment.setBookId(bookId);
-        assignment.setChapterId(chapterId);
-        assignment.setChapterIndex(chapterIndex);
+        AssignmentChapterEntity row = new AssignmentChapterEntity();
+        row.setChapterId(chapterId);
+        row.setChapterIndex(chapterIndex);
+        row.setSortOrder(chapterIndex);
+        assignment.replaceChapters(List.of(row));
         assignment.setQuizRequired(quizRequired);
         if (quizRequired) {
             assignment.setQuizPassMinCorrect(7);
