@@ -1406,13 +1406,28 @@
                 citationSnippet: item.citationSnippet || ''
             };
         }
+        const shuffled = shuffleChoices(item.correct, item.distractors);
         return {
             id: item.id,
             question: item.question,
-            options: [item.correct, ...(item.distractors || [])],
-            correctOptionIndex: 0,
+            options: shuffled.options,
+            correctOptionIndex: shuffled.correctOptionIndex,
             citationParagraphIndex: Number.isInteger(item.citationParagraphIndex) ? item.citationParagraphIndex : null,
             citationSnippet: item.citationSnippet || ''
+        };
+    }
+
+    function shuffleChoices(correct, distractors) {
+        const options = [String(correct || ''), ...(distractors || []).map(value => String(value || ''))];
+        for (let index = options.length - 1; index > 0; index -= 1) {
+            const swap = Math.floor(Math.random() * (index + 1));
+            const current = options[index];
+            options[index] = options[swap];
+            options[swap] = current;
+        }
+        return {
+            options,
+            correctOptionIndex: Math.max(0, options.indexOf(String(correct || '')))
         };
     }
 

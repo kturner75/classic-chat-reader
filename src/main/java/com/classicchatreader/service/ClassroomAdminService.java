@@ -672,7 +672,20 @@ public class ClassroomAdminService {
         if (request == null || request.customQuizQuestions() == null || request.customQuizQuestions().isEmpty()) {
             return;
         }
-        ChapterQuizPayload payload = new ChapterQuizPayload(request.customQuizQuestions());
+        if (request.customQuizQuestions().size() > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignment quiz cannot exceed 20 questions.");
+        }
+        List<ChapterQuizPayload.Question> normalized = new ArrayList<>();
+        for (ChapterQuizPayload.Question question : request.customQuizQuestions()) {
+            ChapterQuizPayload.Question next = normalizeCustomQuizQuestion(question);
+            if (next != null) {
+                normalized.add(next);
+            }
+        }
+        if (normalized.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one question is required.");
+        }
+        ChapterQuizPayload payload = new ChapterQuizPayload(normalized);
         String nextVersion = chapterQuizService.contentVersion(payload);
         String previousVersion = assignmentQuizRepository.findByAssignmentId(assignment.getId())
                 .map(AssignmentQuizEntity::getPayloadJson)
@@ -691,6 +704,35 @@ public class ClassroomAdminService {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
             assignmentRepository.save(assignment);
         }
+    }
+
+    private ChapterQuizPayload.Question normalizeCustomQuizQuestion(ChapterQuizPayload.Question question) {
+        if (question == null || question.question() == null || question.question().isBlank()) {
+            return null;
+        }
+        List<String> options = question.options() == null ? List.of() : question.options().stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+        if (options.size() < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least two options.");
+        }
+        int correct = question.correctOptionIndex() == null ? 0 : question.correctOptionIndex();
+        if (correct < 0 || correct >= options.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "correctOptionIndex is out of range.");
+        }
+        String id = question.id() == null || question.id().isBlank()
+                ? java.util.UUID.randomUUID().toString()
+                : question.id();
+        return new ChapterQuizPayload.Question(
+                id,
+                question.question().trim(),
+                options,
+                correct,
+                question.citationParagraphIndex(),
+                question.citationSnippet()
+        );
     }
 
     Optional<Integer> resolveEffectiveQuizQuestionCount(

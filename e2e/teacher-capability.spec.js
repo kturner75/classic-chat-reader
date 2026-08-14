@@ -122,6 +122,9 @@ async function installAssignmentMocks(page, options = {}) {
       const body = request.postDataJSON();
       lastAssignmentBody = body;
       if (typeof options.onCreateAssignment === 'function') options.onCreateAssignment(body);
+      if (typeof options.onAssignmentQuiz === 'function' && Array.isArray(body.customQuizQuestions)) {
+        options.onAssignmentQuiz({ questions: body.customQuizQuestions });
+      }
       return json(route, {
         assignmentId: 'asg-1',
         termId: 'term-1',
@@ -143,6 +146,9 @@ async function installAssignmentMocks(page, options = {}) {
       lastAssignmentBody = { ...lastAssignmentBody, ...body };
       if (typeof options.onUpdateAssignment === 'function') options.onUpdateAssignment(body);
       if (typeof options.onCreateAssignment === 'function') options.onCreateAssignment(body);
+      if (typeof options.onAssignmentQuiz === 'function' && Array.isArray(body.customQuizQuestions)) {
+        options.onAssignmentQuiz({ questions: body.customQuizQuestions });
+      }
       return json(route, {
         assignmentId: 'asg-1',
         termId: 'term-1',
@@ -683,5 +689,6 @@ test('multi-chapter custom quiz publishes on the assignment quiz endpoint', asyn
   expect(saved.quizRequired).toBe(true);
   expect(saved.chapterIds).toEqual(['pride-1', 'pride-2']);
   expect(published.questions[0].question).toBe('Who is the heroine?');
-  expect(published.questions[0].options[0]).toBe('Elizabeth Bennet');
+  expect(published.questions[0].options).toContain('Elizabeth Bennet');
+  expect(published.questions[0].options[published.questions[0].correctOptionIndex]).toBe('Elizabeth Bennet');
 });
