@@ -286,29 +286,22 @@ public class ClassroomContextService {
     private ClassAssignment resolveDbAssignment(AssignmentEntity row, String userId, boolean studentView) {
         String bookId = row.getBookId();
         Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
-        Optional<ChapterEntity> chapterOpt = resolveChapter(row.getChapterId(), row.getChapterIndex(), bookId);
-
-        String chapterId = chapterOpt.map(ChapterEntity::getId).orElse(row.getChapterId());
-        Integer chapterIndex = chapterOpt.map(ChapterEntity::getChapterIndex).orElse(row.getChapterIndex());
-        String chapterTitle = chapterOpt.map(ChapterEntity::getTitle).orElseGet(() -> {
-            if (chapterIndex == null) {
-                return null;
-            }
-            return "Chapter " + Math.max(1, chapterIndex + 1);
-        });
+        List<ClassroomContextResponse.AssignmentChapterRef> chapters = toChapterRefs(row);
+        ClassroomContextResponse.AssignmentChapterRef first = chapters.isEmpty() ? null : chapters.get(0);
+        String chapterId = first == null ? null : first.chapterId();
+        Integer chapterIndex = first == null ? null : first.chapterIndex();
+        String chapterTitle = first == null ? null : first.chapterTitle();
 
         QuizAttemptSummary attemptSummary = studentView
-                ? resolveQuizAttemptSummary(row, chapterId, userId)
+                ? resolveQuizAttemptSummary(row, userId)
                 : QuizAttemptSummary.empty();
         QuizRequirementStatus quizStatus;
         if (!studentView) {
-            // Teachers see requirement presence without personal completion chips
             quizStatus = row.isQuizRequired() ? QuizRequirementStatus.UNKNOWN : QuizRequirementStatus.NOT_REQUIRED;
         } else {
-            quizStatus = resolveQuizStatus(row, chapterId, userId, attemptSummary);
+            quizStatus = resolveQuizStatus(row, userId, attemptSummary);
         }
 
-        // Calendar DATE only (assignments.due_date is SQL DATE / LocalDate). FE treats date-only as inclusive local due day.
         String dueAt = formatDueDate(row.getDueDate());
 
         return new ClassAssignment(
@@ -317,11 +310,13 @@ public class ClassroomContextService {
                 bookId,
                 bookOpt.map(BookEntity::getTitle).orElse("Book unavailable"),
                 bookOpt.map(BookEntity::getAuthor).orElse(""),
+                chapters,
                 chapterId,
                 chapterIndex,
                 chapterTitle,
                 dueAt,
                 row.isQuizRequired(),
+                row.getQuizSource(),
                 quizStatus,
                 row.isCharacterChatRequired(),
                 bookOpt.isPresent(),
@@ -329,8 +324,26 @@ public class ClassroomContextService {
                 row.getQuizMaxRetries(),
                 attemptSummary.attemptsUsed(),
                 attemptSummary.attemptsAllowed(),
-                attemptSummary.passed()
+                attemptSummary.passed(),
+                attemptSummary.bestScorePercent()
         );
+    }
+
+    private List<ClassroomContextResponse.AssignmentChapterRef> toChapterRefs(AssignmentEntity row) {
+        if (row.getChapters() == null || row.getChapters().isEmpty()) {
+            return List.of();
+        }
+        List<ClassroomContextResponse.AssignmentChapterRef> refs = new ArrayList<>();
+        for (var chapterRow : row.getChapters()) {
+            Optional<ChapterEntity> chapterOpt = chapterRepository.findById(chapterRow.getChapterId());
+            String title = chapterOpt.map(ChapterEntity::getTitle).orElseGet(() ->
+                    "Chapter " + Math.max(1, chapterRow.getChapterIndex() + 1));
+            refs.add(new ClassroomContextResponse.AssignmentChapterRef(
+                    chapterRow.getChapterId(),
+                    chapterRow.getChapterIndex(),
+                    title));
+        }
+        return refs;
     }
 
     /** SQL DATE / LocalDate → ISO calendar day {@code YYYY-MM-DD} (not a timestamp). */
@@ -382,8 +395,8 @@ public class ClassroomContextService {
         }
 
         Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
-        Optional<ChapterEntity> chapterOpt = resolveChapter(
-                configured.getChapterId(), configured.getChapterIndex(), bookId);
+        List<ClassroomContextResponse.AssignmentChapterRef> chapters = resolveDemoChapters(configured, bookId);
+        ClassroomContextResponse.AssignmentChapterRef first = chapters.isEmpty() ? null : chapters.get(0);
 
         String assignmentId = normalizeOrDefault(
                 configured.getAssignmentId(),
@@ -392,17 +405,12 @@ public class ClassroomContextService {
         String title = normalizeOrDefault(configured.getTitle(), "Assigned Reading");
         String bookTitle = bookOpt.map(BookEntity::getTitle).orElse("Book unavailable");
         String bookAuthor = bookOpt.map(BookEntity::getAuthor).orElse("");
-        String chapterId = chapterOpt.map(ChapterEntity::getId).orElse(null);
-        Integer chapterIndex = chapterOpt.map(ChapterEntity::getChapterIndex).orElse(configured.getChapterIndex());
-        String chapterTitle = chapterOpt.map(ChapterEntity::getTitle).orElseGet(() -> {
-            Integer configuredIndex = configured.getChapterIndex();
-            if (configuredIndex == null) {
-                return null;
-            }
-            return "Chapter " + Math.max(1, configuredIndex + 1);
-        });
+        String chapterId = first == null ? null : first.chapterId();
+        Integer chapterIndex = first == null ? null : first.chapterIndex();
+        String chapterTitle = first == null ? null : first.chapterTitle();
         String dueAt = normalizeOrNull(configured.getDueAt());
-        boolean quizRequired = configured.isQuizRequired();
+        // Demo quizzes only work for a single resolved chapter (chapter endpoint).
+        boolean quizRequired = configured.isQuizRequired() && chapters.size() == 1;
         QuizRequirementStatus quizStatus = resolveQuizStatus(quizRequired, chapterId, userId);
 
         return new ClassAssignment(
@@ -411,11 +419,13 @@ public class ClassroomContextService {
                 bookId,
                 bookTitle,
                 bookAuthor,
+                chapters,
                 chapterId,
                 chapterIndex,
                 chapterTitle,
                 dueAt,
                 quizRequired,
+                quizRequired ? AssignmentEntity.QUIZ_SOURCE_CHAPTER : null,
                 quizStatus,
                 false,
                 bookOpt.isPresent(),
@@ -423,8 +433,42 @@ public class ClassroomContextService {
                 null,
                 null,
                 null,
+                null,
                 null
         );
+    }
+
+    private List<ClassroomContextResponse.AssignmentChapterRef> resolveDemoChapters(
+            ClassroomDemoProperties.Assignment configured, String bookId) {
+        List<String> configuredIds = configured.getChapterIds() == null
+                ? List.of()
+                : configured.getChapterIds().stream()
+                        .filter(id -> id != null && !id.isBlank())
+                        .map(String::trim)
+                        .toList();
+        List<ClassroomContextResponse.AssignmentChapterRef> refs = new ArrayList<>();
+        if (!configuredIds.isEmpty()) {
+            for (String id : configuredIds) {
+                resolveChapter(id, null, bookId).ifPresent(chapter -> refs.add(
+                        new ClassroomContextResponse.AssignmentChapterRef(
+                                chapter.getId(),
+                                chapter.getChapterIndex(),
+                                chapter.getTitle())));
+            }
+            refs.sort(Comparator.comparingInt(ref -> ref.chapterIndex() == null ? 0 : ref.chapterIndex()));
+            return refs;
+        }
+        Optional<ChapterEntity> chapterOpt = resolveChapter(
+                configured.getChapterId(), configured.getChapterIndex(), bookId);
+        if (chapterOpt.isEmpty()) {
+            return List.of();
+        }
+        ChapterEntity chapter = chapterOpt.get();
+        String title = chapter.getTitle() != null
+                ? chapter.getTitle()
+                : "Chapter " + Math.max(1, chapter.getChapterIndex() + 1);
+        return List.of(new ClassroomContextResponse.AssignmentChapterRef(
+                chapter.getId(), chapter.getChapterIndex(), title));
     }
 
     private Optional<ChapterEntity> resolveChapter(String chapterIdRaw, Integer chapterIndex, String bookId) {
@@ -461,17 +505,20 @@ public class ClassroomContextService {
 
     private QuizRequirementStatus resolveQuizStatus(
             AssignmentEntity row,
-            String chapterId,
             String userId,
             QuizAttemptSummary attemptSummary) {
         if (!row.isQuizRequired()) {
             return QuizRequirementStatus.NOT_REQUIRED;
         }
-        if (chapterId == null || chapterId.isBlank()) {
-            return QuizRequirementStatus.UNKNOWN;
-        }
+        java.time.LocalDateTime since = attemptWindowStart(row);
+        long used = countAssignmentAttempts(row, userId, since);
         if (row.getQuizPassMinCorrect() == null) {
-            return resolveQuizStatus(true, chapterId, userId);
+            if (userId != null && !userId.isBlank()) {
+                return used > 0
+                        ? QuizRequirementStatus.COMPLETE
+                        : QuizRequirementStatus.PENDING;
+            }
+            return QuizRequirementStatus.PENDING;
         }
         if (Boolean.TRUE.equals(attemptSummary.passed())) {
             return QuizRequirementStatus.COMPLETE;
@@ -479,25 +526,23 @@ public class ClassroomContextService {
         return QuizRequirementStatus.PENDING;
     }
 
-    private QuizAttemptSummary resolveQuizAttemptSummary(
-            AssignmentEntity row, String chapterId, String userId) {
-        if (!row.isQuizRequired()
-                || chapterId == null
-                || chapterId.isBlank()
-                || userId == null
-                || userId.isBlank()) {
+    private QuizAttemptSummary resolveQuizAttemptSummary(AssignmentEntity row, String userId) {
+        if (!row.isQuizRequired() || userId == null || userId.isBlank()) {
             return QuizAttemptSummary.empty();
         }
         Integer minCorrect = row.getQuizPassMinCorrect();
         Integer maxRetries = row.getQuizMaxRetries();
         java.time.LocalDateTime since = attemptWindowStart(row);
-        long used = quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                chapterId, userId, since);
+        long used = countAssignmentAttempts(row, userId, since);
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
+        Integer bestScorePercent = null;
+        if (used > 0) {
+            int bestScore = maxAssignmentScorePercent(row, userId, since);
+            bestScorePercent = bestScore;
+        }
         if (minCorrect != null) {
-            int best = quizAttemptRepository.findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
-                    chapterId, userId, since);
+            int best = maxAssignmentCorrectAnswers(row, userId, since);
             passed = best >= minCorrect;
         } else if (used > 0) {
             passed = true;
@@ -505,7 +550,52 @@ public class ClassroomContextService {
         return new QuizAttemptSummary(
                 used > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) used,
                 allowed,
-                passed);
+                passed,
+                bestScorePercent);
+    }
+
+    private long countAssignmentAttempts(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        if (userId == null || userId.isBlank()) {
+            return 0;
+        }
+        long used = quizAttemptRepository.countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                used += quizAttemptRepository.countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        chapterId, userId, since);
+            }
+        }
+        return used;
+    }
+
+    private int maxAssignmentScorePercent(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        int best = quizAttemptRepository.findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                best = Math.max(best, quizAttemptRepository
+                        .findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                                chapterId, userId, since));
+            }
+        }
+        return best;
+    }
+
+    private int maxAssignmentCorrectAnswers(AssignmentEntity row, String userId, java.time.LocalDateTime since) {
+        int best = quizAttemptRepository.findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+                row.getId(), userId, since);
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
+            String chapterId = row.singleChapterId();
+            if (chapterId != null) {
+                best = Math.max(best, quizAttemptRepository
+                        .findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                                chapterId, userId, since));
+            }
+        }
+        return best;
     }
 
     private java.time.LocalDateTime attemptWindowStart(AssignmentEntity assignment) {
@@ -525,9 +615,13 @@ public class ClassroomContextService {
         return since != null ? since : java.time.LocalDateTime.of(1970, 1, 1, 0, 0);
     }
 
-    private record QuizAttemptSummary(Integer attemptsUsed, Integer attemptsAllowed, Boolean passed) {
+    private record QuizAttemptSummary(
+            Integer attemptsUsed,
+            Integer attemptsAllowed,
+            Boolean passed,
+            Integer bestScorePercent) {
         static QuizAttemptSummary empty() {
-            return new QuizAttemptSummary(null, null, null);
+            return new QuizAttemptSummary(null, null, null, null);
         }
     }
 

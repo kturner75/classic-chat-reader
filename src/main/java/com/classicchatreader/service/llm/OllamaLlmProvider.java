@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -53,14 +52,11 @@ public class OllamaLlmProvider implements LlmProvider {
         );
 
         try {
-            String response = webClient.post()
-                    .uri("/api/generate")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(timeoutSeconds))
-                    .block();
+            String response = LlmWebClientSupport.postJson(
+                    webClient.post().uri("/api/generate"),
+                    requestBody,
+                    Duration.ofSeconds(timeoutSeconds),
+                    "ollama");
 
             JsonNode responseNode = objectMapper.readTree(response);
             return responseNode.get("response").asText();

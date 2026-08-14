@@ -216,12 +216,26 @@
         </form>
     </div>
 
-    <div id="assignment-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
-        <button class="modal-backdrop" type="button" data-close-assignment aria-label="Close"></button>
-        <form id="assignment-form" class="modal-card wide">
+    <div id="assignment-modal" class="page-wizard hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
+        <form id="assignment-form" class="page-wizard-form">
             <div class="modal-heading"><div><p class="eyebrow">Reading work</p><h2 id="assignment-modal-title">New assignment</h2></div><button class="close-button" type="button" data-close-assignment>&times;</button></div>
-            <label>Assignment title<input id="assignment-title" name="title" required placeholder="Read Chapter 1"></label>
-            <div class="form-grid">
+            <ol id="assignment-step-rail" class="wizard-steps" aria-label="Assignment steps">
+                <li id="assignment-step-indicator-1" class="active">1. Name &amp; reading</li>
+                <li id="assignment-step-indicator-2">2. Quiz decision</li>
+                <li id="assignment-step-indicator-3">3. Options</li>
+            </ol>
+            <div id="assignment-quiz-rail" class="hidden">
+                <p id="assignment-quiz-context" class="wizard-context"></p>
+                <ol class="wizard-steps" aria-label="Define quiz steps">
+                    <li id="assignment-quiz-indicator-1">1. Define quiz</li>
+                    <li id="assignment-quiz-indicator-2">2. Simulate</li>
+                    <li id="assignment-quiz-indicator-3">3. Confirm</li>
+                </ol>
+            </div>
+            <input type="hidden" name="quizRequired" id="assignment-quiz-required" value="">
+
+            <div id="assignment-pane-1" class="wizard-pane">
+                <label>Assignment title<input id="assignment-title" name="title" required placeholder="Read Chapter 1"></label>
                 <div class="book-field">
                     <label for="assignment-book-search">Book</label>
                     <span class="book-combobox">
@@ -230,26 +244,105 @@
                         <span id="assignment-book-options" class="book-options hidden" role="listbox"></span>
                     </span>
                 </div>
-                <label>Chapter<select id="assignment-chapter" name="chapterId"><option value="">Whole book</option></select></label>
-                <label>Available from <span>(optional)</span><input name="availableFromDate" type="date"></label>
-                <label>Due date <span>(optional)</span><input name="dueDate" type="date"></label>
-                <label>Status<select name="status"><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="ARCHIVED">Archived</option></select></label>
-                <label class="check-label"><input name="quizRequired" type="checkbox" id="assignment-quiz-required"> Require chapter quiz</label>
+                <div class="chapter-field">
+                    <span class="label-text">Chapters</span>
+                    <p class="form-help">Leave Whole book checked, or pick any chapters — including non-contiguous ones.</p>
+                    <label class="chapter-whole-row"><input type="checkbox" id="assignment-whole-book" checked> Whole book</label>
+                    <input id="assignment-chapter-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="assignment-chapter-options" aria-expanded="false" aria-haspopup="listbox" autocomplete="off" placeholder="Filter chapters" aria-label="Filter chapters">
+                    <div id="assignment-chapter-options" class="chapter-options" role="listbox" aria-multiselectable="true" aria-label="Chapters"></div>
+                    <p id="assignment-chapter-empty" class="book-options-empty hidden">No chapters match.</p>
+                </div>
+                <div class="modal-actions">
+                    <button class="text-button" type="button" data-close-assignment>Cancel</button>
+                    <button id="assignment-next-1" class="primary-button" type="button">Next</button>
+                </div>
+            </div>
+
+            <div id="assignment-pane-2" class="wizard-pane hidden">
+                <p class="form-help">This is the branch, not the authoring. Require quiz opens Define Quiz with this book and chapter already set.</p>
+                <div class="choice-stack" role="radiogroup" aria-label="Assignment quiz">
+                    <button type="button" class="choice-card" id="assignment-quiz-choice-require" data-quiz-choice="require" aria-pressed="false">
+                        <strong>Require quiz</strong>
+                        <span>Students must complete the assignment quiz. You will use the chapter default when available, or define a quiz next, then simulate it — including a failing score and retries.</span>
+                    </button>
+                    <button type="button" class="choice-card" id="assignment-quiz-choice-none" data-quiz-choice="none" aria-pressed="false">
+                        <strong>No quiz</strong>
+                        <span>Reading only. Skip quiz authoring and continue to schedule, status, and character chat.</span>
+                    </button>
+                </div>
+                <div id="assignment-quiz-pass-rules" class="quiz-pass-rules hidden">
+                    <p class="form-help">Set how many questions to author, then the pass rules. Min correct cannot exceed the question count.</p>
+                    <div class="form-grid">
+                        <label>Number of questions<input id="assignment-quiz-question-count" name="quizQuestionCount" type="number" min="1" max="20" step="1" required></label>
+                        <label>Answer choices<input id="assignment-quiz-option-count" name="quizOptionCount" type="number" min="2" max="6" step="1"></label>
+                        <label>Min correct to pass <span>(optional)</span><input name="quizPassMinCorrect" type="number" min="1" max="20" step="1" placeholder="e.g. 7"></label>
+                        <label>Max retries <span>(0 = first attempt only)</span><input name="quizMaxRetries" type="number" min="0" max="20" step="1" placeholder="e.g. 1"></label>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="assignment-back-2" class="text-button" type="button">Back</button>
+                    <button id="assignment-next-2" class="primary-button" type="button">Next</button>
+                </div>
+            </div>
+
+            <div id="assignment-quiz-author" class="wizard-pane hidden">
+                <div id="assignment-quiz-mode" class="choice-stack hidden" role="radiogroup" aria-label="Default or override"></div>
+                <p id="assignment-quiz-no-default" class="form-help hidden">No default quiz for this chapter. Choose Multiple choice or True/False. Multiple choice questions need a stem, a correct answer, and generated or typed wrong answers.</p>
+                <p id="assignment-quiz-author-progress" class="wizard-progress"></p>
+                <div id="assignment-quiz-author-body" class="quiz-author-body"></div>
+                <p id="assignment-quiz-author-error" class="form-error hidden" role="alert"></p>
+                <div class="modal-actions wizard-nav-actions">
+                    <button id="assignment-quiz-author-back" class="text-button" type="button">Back to assignment</button>
+                    <div class="wizard-nav-end">
+                        <button id="assignment-quiz-author-prev" class="text-button" type="button">Previous</button>
+                        <button id="assignment-quiz-author-add" class="secondary-button hidden" type="button">Add question</button>
+                        <button id="assignment-quiz-author-next" class="primary-button" type="button">Next question</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="assignment-quiz-sim" class="wizard-pane hidden">
+                <div id="assignment-quiz-sim-body" class="quiz-sim-body"></div>
+                <div class="modal-actions wizard-nav-actions">
+                    <button id="assignment-quiz-sim-back" class="text-button" type="button">Back to questions</button>
+                    <div class="wizard-nav-end">
+                        <button id="assignment-quiz-sim-prev" class="text-button" type="button">Previous</button>
+                        <button id="assignment-quiz-sim-next" class="primary-button" type="button">Next question</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="assignment-quiz-summary" class="wizard-pane hidden">
+                <div id="assignment-quiz-summary-body" class="quiz-review-list"></div>
+                <div class="modal-actions">
+                    <button id="assignment-quiz-summary-back" class="text-button" type="button">Back</button>
+                    <button id="assignment-quiz-summary-confirm" class="primary-button" type="button">Confirm and return to assignment</button>
+                </div>
+            </div>
+
+            <div id="assignment-pane-3" class="wizard-pane hidden">
+                <p id="assignment-quiz-attached" class="form-help"></p>
+                <div class="form-grid">
+                    <label>Available from <span>(optional)</span><input name="availableFromDate" type="date"></label>
+                    <label>Due date <span>(optional)</span><input name="dueDate" type="date"></label>
+                    <label>Status<select name="status"><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="ARCHIVED">Archived</option></select></label>
+                </div>
                 <label class="check-label"><input name="characterChatRequired" type="checkbox"> Require character chat (show-and-tell)</label>
+                <p class="form-help muted">Character chat requirement is soft in this pilot; character and chat class features must be on.</p>
+                <p id="assignment-form-error" class="form-error hidden" role="alert"></p>
+                <div class="modal-actions wizard-nav-actions">
+                    <button id="assignment-delete-draft" class="text-button hidden" type="button">Delete draft</button>
+                    <div class="wizard-nav-end">
+                        <button id="assignment-back-3" class="text-button" type="button">Back</button>
+                        <button id="assignment-submit" class="primary-button" type="submit">Save assignment</button>
+                    </div>
+                </div>
             </div>
-            <div id="assignment-quiz-pass-rules" class="form-grid quiz-pass-rules hidden">
-                <label>Min correct to pass <span>(optional)</span><input name="quizPassMinCorrect" type="number" min="1" max="20" step="1" placeholder="e.g. 7"></label>
-                <label>Max retries <span>(0 = first attempt only)</span><input name="quizMaxRetries" type="number" min="0" max="20" step="1" placeholder="e.g. 1"></label>
-            </div>
-            <p class="form-help muted">When a minimum score is set, max retries is required (0 means no retries after the first attempt). Character chat requirement is soft in this pilot; character and chat class features must be on.</p>
-            <p id="assignment-form-error" class="form-error hidden" role="alert"></p>
-            <div class="modal-actions"><button class="text-button" type="button" data-close-assignment>Cancel</button><button id="assignment-submit" class="primary-button" type="submit">Save assignment</button></div>
         </form>
     </div>
 
-    <div id="quiz-wizard-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="quiz-wizard-title">
-        <button class="modal-backdrop" type="button" data-close-quiz-wizard aria-label="Close"></button>
-        <div class="modal-card wide quiz-wizard-card">
+    <div id="quiz-wizard-modal" class="page-wizard hidden" role="dialog" aria-modal="true" aria-labelledby="quiz-wizard-title">
+        <div class="page-wizard-form">
             <div class="modal-heading">
                 <div>
                     <p class="eyebrow">Quiz authoring</p>
@@ -259,26 +352,29 @@
             </div>
             <ol class="wizard-steps" aria-label="Wizard steps">
                 <li id="quiz-step-indicator-1" class="active">1. Chapter</li>
-                <li id="quiz-step-indicator-2">2. Questions</li>
-                <li id="quiz-step-indicator-3">3. Review</li>
+                <li id="quiz-step-indicator-2">2. Define quiz</li>
+                <li id="quiz-step-indicator-3">3. Simulate</li>
+                <li id="quiz-step-indicator-4">4. Confirm</li>
             </ol>
             <div id="quiz-wizard-step-1" class="wizard-pane">
-                <div class="form-grid">
-                    <div class="book-field">
-                        <label for="quiz-book-search">Book</label>
-                        <span class="book-combobox">
-                            <input id="quiz-book-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="quiz-book-options" aria-expanded="false" autocomplete="off" placeholder="Search by title or author">
-                            <input id="quiz-book" type="hidden">
-                            <span id="quiz-book-options" class="book-options hidden" role="listbox"></span>
-                        </span>
-                    </div>
+                <div class="book-field">
+                    <label for="quiz-book-search">Book</label>
+                    <span class="book-combobox">
+                        <input id="quiz-book-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="quiz-book-options" aria-expanded="false" autocomplete="off" placeholder="Search by title or author">
+                        <input id="quiz-book" type="hidden">
+                        <span id="quiz-book-options" class="book-options hidden" role="listbox"></span>
+                    </span>
+                </div>
+                <div class="book-field">
                     <label for="quiz-chapter-search">Chapter</label>
                     <span class="book-combobox">
                         <input id="quiz-chapter-search" type="text" role="combobox" aria-autocomplete="list" aria-controls="quiz-chapter-options" aria-expanded="false" autocomplete="off" placeholder="Search chapters">
                         <input id="quiz-chapter" type="hidden">
                         <span id="quiz-chapter-options" class="book-options hidden" role="listbox"></span>
                     </span>
-                    <label>Question slots<input id="quiz-slot-count" type="number" min="1" max="20" step="1" value="5"></label>
+                </div>
+                <div class="form-grid">
+                    <label>Question slots<input id="quiz-slot-count" type="number" min="1" max="20" step="1" value="10"></label>
                     <label>Answer choices<input id="quiz-option-count" type="number" min="2" max="6" step="1" value="4"></label>
                 </div>
                 <div class="modal-actions">
@@ -287,38 +383,50 @@
                 </div>
             </div>
             <div id="quiz-wizard-step-2" class="wizard-pane hidden">
-                <div class="wizard-toolbar">
-                    <button id="quiz-load-generated" class="secondary-button" type="button">Load generated quiz</button>
-                    <button id="quiz-ai-suggest" class="secondary-button" type="button">AI suggest questions</button>
-                </div>
-                <div id="quiz-question-editor" class="quiz-question-editor"></div>
+                <div id="quiz-wizard-mode" class="choice-stack hidden" role="radiogroup" aria-label="Default or override"></div>
+                <p id="quiz-wizard-no-default" class="form-help hidden">No default quiz for this chapter. Choose Multiple choice or True/False. Multiple choice questions need a stem, a correct answer, and generated or typed wrong answers.</p>
+                <p id="quiz-author-progress" class="wizard-progress"></p>
+                <div id="quiz-question-editor" class="quiz-author-body"></div>
                 <p id="quiz-wizard-step2-error" class="form-error hidden" role="alert"></p>
-                <div class="modal-actions">
+                <div class="modal-actions wizard-nav-actions">
                     <button id="quiz-wizard-back-2" class="text-button" type="button">Back</button>
-                    <button id="quiz-wizard-next-2" class="primary-button" type="button">Review</button>
+                    <div class="wizard-nav-end">
+                        <button id="quiz-author-prev" class="text-button" type="button">Previous</button>
+                        <button id="quiz-add-question" class="secondary-button" type="button">Add question</button>
+                        <button id="quiz-wizard-next-2" class="primary-button" type="button">Next question</button>
+                    </div>
                 </div>
             </div>
             <div id="quiz-wizard-step-3" class="wizard-pane hidden">
+                <div id="quiz-sim-body" class="quiz-sim-body"></div>
+                <div class="modal-actions wizard-nav-actions">
+                    <button id="quiz-wizard-back-3" class="text-button" type="button">Back to questions</button>
+                    <div class="wizard-nav-end">
+                        <button id="quiz-sim-prev" class="text-button" type="button">Previous</button>
+                        <button id="quiz-sim-next" class="primary-button" type="button">Next question</button>
+                    </div>
+                </div>
+            </div>
+            <div id="quiz-wizard-step-4" class="wizard-pane hidden">
                 <div id="quiz-review-list" class="quiz-review-list"></div>
                 <p id="quiz-wizard-step3-error" class="form-error hidden" role="alert"></p>
                 <div class="modal-actions">
-                    <button id="quiz-wizard-back-3" class="text-button" type="button">Back</button>
+                    <button id="quiz-wizard-back-4" class="text-button" type="button">Back</button>
                     <button id="quiz-wizard-publish" class="primary-button" type="button">Publish for class</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="student-overview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="student-overview-title" aria-busy="false">
-        <button class="modal-backdrop" type="button" tabindex="-1" data-close-student-overview aria-label="Close student overview"></button>
-        <div class="modal-card student-overview-card" tabindex="-1">
+    <div id="student-overview-modal" class="page-wizard hidden" role="dialog" aria-modal="true" aria-labelledby="student-overview-title" aria-busy="false">
+        <div class="page-wizard-form student-overview-page" tabindex="-1">
             <div class="modal-heading">
                 <div>
                     <p class="eyebrow">Student overview</p>
                     <h2 id="student-overview-title">Student</h2>
                     <p id="student-overview-subtitle" class="section-description">Class-scoped pilot drill-down</p>
                 </div>
-                <button id="student-overview-close" class="close-button" type="button" data-close-student-overview aria-label="Close">×</button>
+                <button id="student-overview-close" class="secondary-button" type="button" data-close-student-overview>Back to roster</button>
             </div>
             <div id="student-overview-loading" class="overview-loading hidden" role="status" aria-live="polite">Loading student overview…</div>
             <div id="student-overview-error" class="form-error hidden" role="alert"></div>

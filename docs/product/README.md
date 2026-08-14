@@ -5,7 +5,7 @@ This folder is the source of truth for product scope and planning.
 ## Files
 
 - `current-features.md`: implemented capabilities verified against code.
-- `backlog.md`: prioritized work queue (features, improvements, tech debt). Includes **`BL-043`** FERPA / student-PII work tracker (2026-08-11 privacy review).
+- `backlog.md`: prioritized work queue (features, improvements, tech debt). Includes **`BL-043`** FERPA / student-PII work tracker (2026-08-11 privacy review) and **`BL-054`** college-appropriate character-chat conduct.
 - `bl-023-qa-checklist.md`: mobile QA + desktop regression checklist for adaptive reader behavior.
 - `bl-021-auth-architecture-adr.md`: auth and security decision record for user registration/account rollout.
 - `bl-025-classroom-data-model.md`: classroom domain model + FERPA schema hooks / companion checklist (runtime policy owned by `BL-043`).

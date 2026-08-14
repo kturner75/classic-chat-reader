@@ -50,6 +50,46 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
             @Param("userId") String userId);
 
     @Query("""
+            SELECT COUNT(qa)
+            FROM QuizAttemptEntity qa
+            WHERE qa.assignmentId = :assignmentId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+            """)
+    long countByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("assignmentId") String assignmentId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.correctAnswers), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.assignmentId = :assignmentId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+            """)
+    int findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("assignmentId") String assignmentId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.scorePercent), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.assignmentId = :assignmentId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+            """)
+    int findMaxScorePercentByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("assignmentId") String assignmentId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    boolean existsByAssignmentIdAndUserId(String assignmentId, String userId);
+
+    List<QuizAttemptEntity> findByAssignmentIdAndUserIdOrderByCreatedAtDesc(String assignmentId, String userId);
+
+    @Query("""
             SELECT COALESCE(MAX(qa.scorePercent), 0)
             FROM QuizAttemptEntity qa
             WHERE qa.chapter.id = :chapterId
@@ -81,6 +121,48 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
               AND qa.createdAt >= :since
             """)
     int findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT COUNT(qa)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
+            """)
+    long countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.scorePercent), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
+            """)
+    int findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+            @Param("chapterId") String chapterId,
+            @Param("userId") String userId,
+            @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT COALESCE(MAX(qa.correctAnswers), 0)
+            FROM QuizAttemptEntity qa
+            WHERE qa.chapter.id = :chapterId
+              AND qa.userId = :userId
+              AND qa.createdAt >= :since
+              AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
+            """)
+    int findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
             @Param("userId") String userId,
             @Param("since") java.time.LocalDateTime since);

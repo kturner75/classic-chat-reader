@@ -25,8 +25,42 @@ public record AccountStateSnapshot(
             Integer openCount,
             String lastOpenedAt,
             String lastReadAt,
-            String completedAt
+            String completedAt,
+            List<Integer> completedChapterIndexes
     ) {
+        public BookActivity {
+            completedChapterIndexes = completedChapterIndexes == null
+                    ? List.of()
+                    : List.copyOf(completedChapterIndexes);
+        }
+
+        public BookActivity(
+                Integer chapterCount,
+                Integer lastChapterIndex,
+                Integer lastPage,
+                Integer totalPages,
+                Double progressRatio,
+                Double maxProgressRatio,
+                Boolean completed,
+                Integer openCount,
+                String lastOpenedAt,
+                String lastReadAt,
+                String completedAt
+        ) {
+            this(
+                    chapterCount,
+                    lastChapterIndex,
+                    lastPage,
+                    totalPages,
+                    progressRatio,
+                    maxProgressRatio,
+                    completed,
+                    openCount,
+                    lastOpenedAt,
+                    lastReadAt,
+                    completedAt,
+                    List.of());
+        }
     }
 
     public record ReaderPreferences(

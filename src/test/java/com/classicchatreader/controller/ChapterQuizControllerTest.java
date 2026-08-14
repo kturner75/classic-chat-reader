@@ -7,6 +7,7 @@ import com.classicchatreader.model.ChapterQuizViewPayload;
 import com.classicchatreader.model.QuizProgress;
 import com.classicchatreader.model.QuizTrophy;
 import com.classicchatreader.service.QuizProgressService;
+import com.classicchatreader.service.AssignmentQuizService;
 import com.classicchatreader.service.ChapterQuizService;
 import com.classicchatreader.service.ClassroomEffectiveQuizService;
 import com.classicchatreader.service.ClassroomQuizPolicyService;
@@ -58,6 +59,9 @@ class ChapterQuizControllerTest {
 
     @MockitoBean
     private ClassroomEffectiveQuizService classroomEffectiveQuizService;
+
+    @MockitoBean
+    private AssignmentQuizService assignmentQuizService;
 
     @Test
     void getStatus_returnsFeatureState() throws Exception {
@@ -261,5 +265,36 @@ class ChapterQuizControllerTest {
         mockMvc.perform(get("/api/quizzes/book/book-1/trophies"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].code", is("quiz_first_attempt")));
+    }
+
+    @Test
+    void getAssignmentQuiz_requiresAuthenticatedAccount() throws Exception {
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("reader-1", false, null));
+
+        mockMvc.perform(get("/api/quizzes/assignment/asg-1"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getAssignmentQuiz_returnsPayloadForStudent() throws Exception {
+        when(readerIdentityService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ReaderIdentityService.ReaderIdentity("user:user-1", true, "user-1"));
+        when(assignmentQuizService.getStudentQuiz("user-1", "asg-1")).thenReturn(Optional.of(
+                new com.classicchatreader.service.AssignmentQuizService.AssignmentQuizViewResponse(
+                        "asg-1",
+                        "book-1",
+                        "CUSTOM",
+                        true,
+                        new ChapterQuizViewPayload(List.of(
+                                new ChapterQuizViewPayload.Question("q1", "Who?", List.of("A", "B"))
+                        ))
+                )));
+
+        mockMvc.perform(get("/api/quizzes/assignment/asg-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignmentId", is("asg-1")))
+                .andExpect(jsonPath("$.quizSource", is("CUSTOM")))
+                .andExpect(jsonPath("$.payload.questions[0].id", is("q1")));
     }
 }

@@ -21,7 +21,10 @@ public final class AccountChatModels {
     ) {
     }
 
-    public record Resume(boolean available, String url, String unavailableReason) {
+    public record Resume(boolean available, String url, String unavailableReason, boolean voiceCallAvailable) {
+        public Resume(boolean available, String url, String unavailableReason) {
+            this(available, url, unavailableReason, false);
+        }
     }
 
     public record SessionSummary(

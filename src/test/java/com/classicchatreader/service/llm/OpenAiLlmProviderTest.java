@@ -6,9 +6,19 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -163,6 +173,52 @@ class OpenAiLlmProviderTest {
         assertThrows(LlmProviderException.class,
                 () -> provider.generate("Help me read this chapter.", LlmOptions.withTemperatureAndTopP(0.8, 0.9)));
         assertEquals(2, callCount.get(), "should retry exactly once, not loop");
+    }
+
+    @Test
+    void retriesOnceOnConnectionResetThenSucceeds() {
+        AtomicInteger calls = new AtomicInteger();
+        WebClient webClient = WebClient.builder()
+                .exchangeFunction(request -> {
+                    if (calls.getAndIncrement() == 0) {
+                        return Mono.error(new WebClientRequestException(
+                                new SocketException("Connection reset"),
+                                HttpMethod.POST,
+                                URI.create("https://api.openai.com/v1/chat/completions"),
+                                HttpHeaders.EMPTY));
+                    }
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                            .body("{\"choices\":[{\"message\":{\"content\":\"Hello, my friend.\"}}]}")
+                            .build());
+                })
+                .build();
+
+        OpenAiLlmProvider provider = new OpenAiLlmProvider("test-key", "gpt-5.5", 5, webClient);
+
+        assertEquals("Hello, my friend.", provider.generate("Hello Fortunato!", LlmOptions.withTemperatureAndTopP(0.8, 0.9)));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    void doesNotRetryConnectionResetForever() {
+        AtomicInteger calls = new AtomicInteger();
+        WebClient webClient = WebClient.builder()
+                .exchangeFunction(request -> {
+                    calls.incrementAndGet();
+                    return Mono.error(new WebClientRequestException(
+                            new SocketException("Connection reset"),
+                            HttpMethod.POST,
+                            URI.create("https://api.openai.com/v1/chat/completions"),
+                            HttpHeaders.EMPTY));
+                })
+                .build();
+
+        OpenAiLlmProvider provider = new OpenAiLlmProvider("test-key", "gpt-5.5", 5, webClient);
+
+        assertThrows(LlmProviderException.class,
+                () -> provider.generate("Hello Fortunato!", LlmOptions.withTemperatureAndTopP(0.8, 0.9)));
+        assertEquals(2, calls.get(), "should retry connection reset exactly once");
     }
 
     private void startServer(ExchangeHandler handler) throws IOException {

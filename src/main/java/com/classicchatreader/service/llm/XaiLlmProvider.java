@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -116,15 +115,11 @@ public class XaiLlmProvider implements LlmProvider {
     }
 
     private String callChatCompletions(Map<String, Object> requestBody, String bearerToken) {
-        String response = webClient.post()
-                .uri("/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .header("Authorization", "Bearer " + bearerToken)
-                .bodyValue(requestBody)
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
-                .block();
+        String response = LlmWebClientSupport.postJson(
+                webClient.post().uri("/chat/completions").header("Authorization", "Bearer " + bearerToken),
+                requestBody,
+                Duration.ofSeconds(timeoutSeconds),
+                "xai");
 
         try {
             JsonNode responseNode = objectMapper.readTree(response);

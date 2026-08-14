@@ -216,6 +216,7 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **Evidence:** Request body supplies `conversationHistory`, `readerChapterIndex`, `readerParagraphIndex` into persona prompts. Reading Buddy intentionally ignores client history; character chat does not.
 - **Impact:** Spoiler bypass, persona jailbreaks, poisoned history influencing model output / cost.
 - **Remediation:** Prefer server-side history (as Reading Buddy); clamp position to known progress; harden system prompt; ensure chat routes stay rate-limited after C-01 fix.
+- **Related product work:** College-appropriate *content* conduct (NSFW / in-character refusal, not spoiler injection) is `BL-054` in `docs/product/backlog.md`. Jailbreak attempts overlap both items.
 - **Backlog priority:** P1
 
 ---

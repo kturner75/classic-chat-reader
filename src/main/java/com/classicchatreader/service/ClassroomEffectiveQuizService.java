@@ -247,6 +247,38 @@ public class ClassroomEffectiveQuizService {
         return Optional.of(merged.effective().questions().size());
     }
 
+    @Transactional
+    public Optional<ChapterQuizPayload> loadEffectivePayloadForTerm(String termId, String chapterId) {
+        if (termId == null || termId.isBlank() || chapterId == null || chapterId.isBlank()) {
+            return Optional.empty();
+        }
+        ChapterQuizPayload generated = chapterQuizService.loadCompletedPayloadWithIdBackfill(chapterId);
+        List<QuizQuestionOverrideEntity> active = overrideRepository
+                .findByTermIdAndChapterIdAndStatusAndDeletedAtIsNullOrderBySortOrderAsc(
+                        termId, chapterId, QuizQuestionOverrideEntity.STATUS_ACTIVE);
+        if ((generated.questions() == null || generated.questions().isEmpty()) && active.isEmpty()) {
+            return Optional.empty();
+        }
+        EffectiveQuizAssembler.MergeResult merged =
+                EffectiveQuizAssembler.merge(generated, active, objectMapper);
+        if (merged.effective().questions() == null || merged.effective().questions().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(merged.effective());
+    }
+
+    public int countQuestions(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return 0;
+        }
+        try {
+            ChapterQuizPayload payload = objectMapper.readValue(payloadJson, ChapterQuizPayload.class);
+            return payload.questions() == null ? 0 : payload.questions().size();
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
     private Optional<ChapterQuizPayload> resolveEffectivePayload(String chapterId, String userId) {
         if (userId == null || userId.isBlank() || chapterId == null || chapterId.isBlank()) {
             return Optional.empty();

@@ -226,6 +226,7 @@
             <div class="book-meta">
                 <h1 id="book-title" class="book-title"></h1>
                 <p id="book-author" class="book-author hidden"></p>
+                <p id="assignment-mode-banner" class="assignment-mode-banner hidden"></p>
             </div>
             <button id="favorite-toggle" class="header-btn favorite-toggle header-mobile-action" title="Add to My List">
                 Add to My List
@@ -419,7 +420,7 @@
             <div id="chapter-recap-backdrop" class="chapter-recap-backdrop"></div>
             <div class="chapter-recap-card">
                 <div class="chapter-recap-header">
-                    <h3>Chapter Recap</h3>
+                    <h3 id="chapter-recap-title">Chapter Recap</h3>
                     <button id="chapter-recap-close" class="chapter-recap-close" title="Close (Esc)">&times;</button>
                 </div>
                 <p id="chapter-recap-chapter-title" class="chapter-recap-chapter-title"></p>
@@ -469,10 +470,15 @@
                     </div>
 
                     <div id="chapter-recap-panel-quiz" class="chapter-recap-panel hidden chapter-recap-quiz" role="tabpanel">
-                        <h4>Pop Quiz</h4>
+                        <h4 id="chapter-quiz-heading">Pop Quiz</h4>
                         <p id="chapter-quiz-status" class="chapter-quiz-status"></p>
+                        <p id="chapter-quiz-progress" class="chapter-quiz-progress hidden" aria-live="polite"></p>
                         <div id="chapter-quiz-questions" class="chapter-quiz-questions"></div>
-                        <button id="chapter-quiz-submit" class="chapter-recap-btn chapter-recap-btn-primary chapter-quiz-submit">Check Answers</button>
+                        <div class="chapter-quiz-nav">
+                            <button type="button" id="chapter-quiz-prev" class="chapter-recap-btn chapter-recap-btn-secondary hidden">Previous</button>
+                            <button type="button" id="chapter-quiz-next" class="chapter-recap-btn chapter-recap-btn-primary chapter-quiz-next hidden">Next</button>
+                            <button id="chapter-quiz-submit" class="chapter-recap-btn chapter-recap-btn-primary chapter-quiz-submit hidden">Check Answers</button>
+                        </div>
                         <div id="chapter-quiz-feedback" class="chapter-quiz-feedback hidden"></div>
                     </div>
 
@@ -486,6 +492,22 @@
                     <button id="chapter-recap-skip" class="chapter-recap-btn chapter-recap-btn-secondary">Skip Recap</button>
                     <button id="chapter-recap-continue" class="chapter-recap-btn chapter-recap-btn-primary">Continue</button>
                 </div>
+                <div id="assignment-quiz-actions" class="chapter-recap-actions assignment-quiz-actions hidden">
+                    <button type="button" id="assignment-quiz-retry" class="chapter-recap-btn chapter-recap-btn-primary hidden">Retry Quiz</button>
+                    <button type="button" id="assignment-quiz-done" class="chapter-recap-btn chapter-recap-btn-secondary">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="assignment-wrapup-overlay" class="chapter-recap-overlay assignment-wrapup-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-wrapup-title">
+            <div id="assignment-wrapup-backdrop" class="chapter-recap-backdrop"></div>
+            <div class="chapter-recap-card assignment-wrapup-card">
+                <div class="chapter-recap-header">
+                    <h3 id="assignment-wrapup-title">Reading done</h3>
+                    <button id="assignment-wrapup-close" class="chapter-recap-close" type="button" title="Close (Esc)">&times;</button>
+                </div>
+                <p id="assignment-wrapup-status" class="assignment-wrapup-status"></p>
+                <div id="assignment-wrapup-actions" class="assignment-wrapup-actions"></div>
             </div>
         </div>
 

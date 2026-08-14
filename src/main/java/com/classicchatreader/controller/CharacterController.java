@@ -189,7 +189,7 @@ public class CharacterController {
             return ResponseEntity.status(403).build();
         }
         return characterOpt
-                .map(c -> ResponseEntity.ok(CharacterInfo.from(c)))
+                .map(c -> ResponseEntity.ok(characterService.toChatAwareInfo(c)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -302,7 +302,7 @@ public class CharacterController {
             ));
         }
 
-        // Check character type - only PRIMARY characters can chat
+        // PRIMARY characters can always chat; SECONDARY only when the book has no PRIMARY.
         Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
         if (characterOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -312,7 +312,7 @@ public class CharacterController {
         if (!isCharacterEnabled(character.getBook())) {
             return ResponseEntity.status(403).build();
         }
-        if (character.getCharacterType() != CharacterType.PRIMARY) {
+        if (!characterService.isChatEligible(character)) {
             return ResponseEntity.ok(new ChatResponse(
                     "Chat is only available for main characters.",
                     characterId,

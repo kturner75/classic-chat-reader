@@ -83,9 +83,25 @@ public class QuizProgressService {
             int correctAnswers,
             int totalQuestions,
             int difficultyLevel) {
+        return recordAttemptAndEvaluate(
+                chapter, null, null, readerId, userId, scorePercent, correctAnswers, totalQuestions, difficultyLevel);
+    }
+
+    @Transactional
+    public ProgressUpdate recordAttemptAndEvaluate(
+            ChapterEntity chapter,
+            String bookId,
+            String assignmentId,
+            String readerId,
+            String userId,
+            int scorePercent,
+            int correctAnswers,
+            int totalQuestions,
+            int difficultyLevel) {
         String scopedReaderId = normalizeReaderId(readerId, userId);
         QuizAttemptEntity attempt = new QuizAttemptEntity();
         attempt.setChapter(chapter);
+        attempt.setAssignmentId(assignmentId);
         attempt.setReaderId(scopedReaderId);
         attempt.setUserId(userId);
         attempt.setScorePercent(scorePercent);
@@ -95,10 +111,14 @@ public class QuizProgressService {
         attempt.setDifficultyLevel(difficultyLevel);
         quizAttemptRepository.save(attempt);
 
-        String bookId = chapter.getBook().getId();
-        long totalAttempts = resolveTotalAttempts(bookId, scopedReaderId, userId);
-        long perfectAttempts = resolvePerfectAttempts(bookId, scopedReaderId, userId);
-        int currentPerfectStreak = calculateCurrentPerfectStreak(bookId, scopedReaderId, userId);
+        if (chapter == null || chapter.getBook() == null) {
+            return new ProgressUpdate(List.of(), new QuizProgress(0, 0, 0));
+        }
+
+        String resolvedBookId = bookId != null ? bookId : chapter.getBook().getId();
+        long totalAttempts = resolveTotalAttempts(resolvedBookId, scopedReaderId, userId);
+        long perfectAttempts = resolvePerfectAttempts(resolvedBookId, scopedReaderId, userId);
+        int currentPerfectStreak = calculateCurrentPerfectStreak(resolvedBookId, scopedReaderId, userId);
 
         List<QuizTrophy> unlocked = new ArrayList<>();
         unlockIfEligible(chapter.getBook(), scopedReaderId, userId, FIRST_ATTEMPT, totalAttempts >= 1, unlocked);
