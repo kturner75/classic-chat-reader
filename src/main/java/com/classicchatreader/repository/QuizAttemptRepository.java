@@ -132,6 +132,7 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
               AND qa.userId = :userId
               AND qa.createdAt >= :since
               AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
             """)
     long countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
@@ -145,6 +146,7 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
               AND qa.userId = :userId
               AND qa.createdAt >= :since
               AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
             """)
     int findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
@@ -158,6 +160,7 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
               AND qa.userId = :userId
               AND qa.createdAt >= :since
               AND qa.assignmentId IS NULL
+              AND qa.legacyUnassigned = true
             """)
     int findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,

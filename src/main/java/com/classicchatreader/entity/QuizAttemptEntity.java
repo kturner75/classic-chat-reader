@@ -29,6 +29,9 @@ public class QuizAttemptEntity {
     @Column(name = "assignment_id")
     private String assignmentId;
 
+    @Column(name = "legacy_unassigned", nullable = false)
+    private boolean legacyUnassigned;
+
     @Column(name = "reader_id", length = 120)
     private String readerId;
 
@@ -78,6 +81,14 @@ public class QuizAttemptEntity {
 
     public void setAssignmentId(String assignmentId) {
         this.assignmentId = assignmentId;
+    }
+
+    public boolean isLegacyUnassigned() {
+        return legacyUnassigned;
+    }
+
+    public void setLegacyUnassigned(boolean legacyUnassigned) {
+        this.legacyUnassigned = legacyUnassigned;
     }
 
     public String getUserId() {

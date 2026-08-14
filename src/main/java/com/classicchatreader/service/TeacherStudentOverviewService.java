@@ -278,7 +278,7 @@ public class TeacherStudentOverviewService {
                 && assignment.singleChapterId() != null) {
             for (QuizAttemptEntity chapterAttempt : quizAttemptRepository
                     .findByChapterIdAndUserIdOrderByCreatedAtDesc(assignment.singleChapterId(), studentUserId)) {
-                if (chapterAttempt.getAssignmentId() == null) {
+                if (chapterAttempt.getAssignmentId() == null && chapterAttempt.isLegacyUnassigned()) {
                     attempts.add(chapterAttempt);
                 }
             }
