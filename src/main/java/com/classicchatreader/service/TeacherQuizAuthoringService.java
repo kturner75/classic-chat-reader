@@ -228,9 +228,6 @@ public class TeacherQuizAuthoringService {
                 if (!AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())) {
                     continue;
                 }
-                if (assignment.getQuizPassMinCorrect() == null || assignment.getQuizMaxRetries() == null) {
-                    continue;
-                }
                 assignment.setQuizRulesActivatedAt(activated);
                 assignmentRepository.save(assignment);
             }

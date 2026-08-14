@@ -599,6 +599,10 @@ public class AssignmentQuizService {
         if (options.size() < 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs at least two options.");
         }
+        long unique = options.stream().map(value -> value.toLowerCase(java.util.Locale.ROOT)).distinct().count();
+        if (unique != options.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each question needs unique option labels.");
+        }
         int correct = correctAnswer == null || correctAnswer.isBlank()
                 ? -1
                 : options.indexOf(correctAnswer.trim());
