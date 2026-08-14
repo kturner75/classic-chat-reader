@@ -32,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -56,6 +59,9 @@ public class AssignmentQuizService {
     private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Value("${quiz.generation.max-context-chars:7000}")
     private int maxContextChars;
@@ -309,6 +315,16 @@ public class AssignmentQuizService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This assignment does not require a quiz.");
         }
         lockAssignmentQuizShared(assignment);
+        if (entityManager != null && entityManager.contains(assignment)) {
+            entityManager.refresh(assignment);
+        }
+        assignment = requireStudentAssignment(userId, assignmentId);
+        if (!authorizationService.canManageTerm(userId, assignment.getTermId())) {
+            assertReadingComplete(userId, assignment);
+        }
+        if (!assignment.isQuizRequired()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This assignment does not require a quiz.");
+        }
         classroomQuizPolicyService.assertCanAttemptAssignment(assignmentId, userId);
         ChapterQuizPayload payload = resolvePayload(assignment).orElse(null);
         if (payload == null || payload.questions() == null || payload.questions().isEmpty()) {

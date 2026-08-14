@@ -272,8 +272,22 @@ public class TeacherStudentOverviewService {
                     .findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
                             assignment.singleChapterId(), studentUserId, since));
         }
-        List<QuizAttemptEntity> attempts = quizAttemptRepository
-                .findByAssignmentIdAndUserIdOrderByCreatedAtDesc(assignment.getId(), studentUserId);
+        List<QuizAttemptEntity> attempts = new java.util.ArrayList<>(quizAttemptRepository
+                .findByAssignmentIdAndUserIdOrderByCreatedAtDesc(assignment.getId(), studentUserId));
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
+                && assignment.singleChapterId() != null) {
+            for (QuizAttemptEntity chapterAttempt : quizAttemptRepository
+                    .findByChapterIdAndUserIdOrderByCreatedAtDesc(assignment.singleChapterId(), studentUserId)) {
+                if (chapterAttempt.getAssignmentId() == null) {
+                    attempts.add(chapterAttempt);
+                }
+            }
+            attempts.sort((left, right) -> {
+                if (left.getCreatedAt() == null) return 1;
+                if (right.getCreatedAt() == null) return -1;
+                return right.getCreatedAt().compareTo(left.getCreatedAt());
+            });
+        }
         QuizAttemptEntity latestInWindow = attempts.stream()
                 .filter(a -> a.getCreatedAt() != null && !a.getCreatedAt().isBefore(since))
                 .findFirst()

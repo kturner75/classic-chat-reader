@@ -651,7 +651,8 @@ public class ClassroomAdminService {
         if (minCorrect == null) {
             return;
         }
-        if (request != null && request.customQuizQuestions() != null && !request.customQuizQuestions().isEmpty()) {
+        if (request != null && request.customQuizQuestions() != null && !request.customQuizQuestions().isEmpty()
+                && AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(quizSource)) {
             int proposedSize = normalizeCustomQuizQuestions(request.customQuizQuestions()).size();
             if (minCorrect > proposedSize) {
                 throw new ResponseStatusException(
