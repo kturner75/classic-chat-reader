@@ -339,6 +339,30 @@ test('multi-chapter assignment requires every selected chapter when completion i
     }), true);
 });
 
+test('split last paragraph first fragment does not unlock the quiz until the chapter is marked complete', () => {
+    const assignment = {
+        chapters: [{ chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' }],
+        quizRequired: true,
+        quizStatus: 'PENDING',
+        quizAttemptsUsed: 0,
+        quizAttemptsAllowed: 2
+    };
+    const firstFragment = {
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 2,
+        chapterCount: 1,
+        lastReadAt: '2026-08-14T12:00:00.000Z',
+        completedChapterIndexes: []
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, firstFragment), false);
+    assert.equal(canTakeAssignmentQuiz(assignment, firstFragment), false);
+    assert.equal(isReadingCompleteForAssignment(assignment, {
+        ...firstFragment,
+        completedChapterIndexes: [0]
+    }), true);
+});
+
 test('Take Quiz is hidden until reading is complete and shown as Retry after a failed attempt', () => {
     const assignment = {
         assignmentId: 'asg-1',

@@ -596,6 +596,33 @@ test('generate wrong answers shows a working state until results arrive', async 
   await expect(page.locator('[data-generate-distractors]')).toHaveText('Generate wrong answers');
 });
 
+test('regenerating a wrong answer excludes kept and correct choices', async ({ page }) => {
+  let suggestBody = null;
+  await installAssignmentMocks(page, {
+    onSuggestDistractors: async (body) => { suggestBody = body; }
+  });
+  await page.goto('/teacher.html');
+  await page.locator('#new-assignment-button').click();
+  await fillAssignmentIdentity(page, {
+    title: 'Chapters 1 and 2',
+    bookId: 'pride',
+    chapterLabels: ['Chapter 1', 'Chapter 2']
+  });
+  await page.locator('#assignment-next-1').click();
+  await page.locator('#assignment-quiz-choice-require').click();
+  await page.locator('#assignment-quiz-question-count').fill('1');
+  await page.locator('#assignment-next-2').click();
+  await page.locator('#assignment-quiz-author-body [data-field="stem"]').fill('Who is the heroine?');
+  await page.locator('#assignment-quiz-author-body [data-field="correct"]').fill('Elizabeth Bennet');
+  await page.locator('[data-field="distractor"]').nth(0).fill('Jane Bennet');
+  await page.locator('[data-keep-distractor="0"]').click();
+  await page.locator('[data-regen-distractor="1"]').click();
+  await expect.poll(() => suggestBody).not.toBeNull();
+  expect(suggestBody.count).toBe(1);
+  expect(suggestBody.exclude).toEqual(expect.arrayContaining(['Elizabeth Bennet', 'Jane Bennet']));
+  expect(suggestBody.exclude).not.toEqual(expect.arrayContaining(['Wrong choice 2']));
+});
+
 test('true/false questions skip wrong-answer generation and simulate True or False', async ({ page }) => {
   let published = null;
   await installAssignmentMocks(page, {

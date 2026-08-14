@@ -246,19 +246,20 @@ public class AssignmentQuizService {
                 assignment,
                 request != null ? request.bookId() : null,
                 request != null ? request.chapterIds() : null);
+        String excludeText = TeacherQuizAuthoringService.formatExcludedChoices(request.exclude());
         String prompt = """
                 Generate exactly %d plausible wrong multiple-choice answers (distractors) for this quiz question.
-                Do not repeat the correct answer. Return JSON only: {"distractors":["..."]}
+                Do not repeat the correct answer.%s Return JSON only: {"distractors":["..."]}
 
                 Question: %s
                 Correct answer: %s
 
                 Assigned text:
                 %s
-                """.formatted(count, request.question().trim(), request.correctAnswer().trim(), context);
+                """.formatted(count, excludeText, request.question().trim(), request.correctAnswer().trim(), context);
         try {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
-            return parseDistractors(raw, request.correctAnswer().trim(), count);
+            return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "Failed to suggest distractors: " + e.getMessage());
@@ -738,7 +739,8 @@ public class AssignmentQuizService {
                 .toList();
     }
 
-    private List<String> parseDistractors(String raw, String correctAnswer, int count) throws JsonProcessingException {
+    private List<String> parseDistractors(String raw, String correctAnswer, int count, List<String> exclude)
+            throws JsonProcessingException {
         JsonNode root = objectMapper.readTree(extractJsonObject(raw));
         JsonNode node = root.get("distractors");
         if (node == null || !node.isArray()) {
@@ -747,6 +749,7 @@ public class AssignmentQuizService {
         List<String> result = new ArrayList<>();
         java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
         seen.add(correctAnswer.toLowerCase(java.util.Locale.ROOT));
+        TeacherQuizAuthoringService.addExcludedChoices(seen, exclude);
         for (JsonNode item : node) {
             if (item == null || !item.isTextual()) {
                 continue;

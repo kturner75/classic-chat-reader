@@ -3928,15 +3928,17 @@
         await openCharacterBrowser({ preferChat: true });
     }
 
-    function persistCurrentBookActivity() {
+    function persistCurrentBookActivity(options = {}) {
         if (!state.currentBook?.id || !Array.isArray(state.chapters) || state.chapters.length === 0) {
             return;
         }
         const chapterCount = Math.max(1, state.chapters.length);
         const totalPages = Math.max(1, state.totalPages || 1);
         const chapterIndex = clampInteger(state.currentChapterIndex, 0, chapterCount - 1);
-        const pageIndex = clampInteger(state.currentPage, 0, totalPages - 1);
-        const signature = `${state.currentBook.id}:${chapterIndex}:${pageIndex}:${totalPages}:${chapterCount}`;
+        const viewedPageIndex = clampInteger(state.currentPage, 0, totalPages - 1);
+        const markChapterComplete = options.markChapterComplete === true;
+        const pageIndex = markChapterComplete ? totalPages - 1 : viewedPageIndex;
+        const signature = `${state.currentBook.id}:${chapterIndex}:${pageIndex}:${totalPages}:${chapterCount}:${markChapterComplete ? 1 : 0}`;
         if (signature === state.lastBookActivitySignature) {
             return;
         }
@@ -3950,7 +3952,7 @@
             const normalized = normalizeBookActivity(state.currentBook, existing);
             const maxProgressRatio = Math.max(normalized.maxProgressRatio, progressRatio);
             const completed = normalized.completed || reachedEnd || maxProgressRatio >= 0.999;
-            const chapterComplete = pageIndex >= totalPages - 1;
+            const chapterComplete = markChapterComplete || pageIndex >= totalPages - 1;
             const completedChapterIndexes = uniqueCompletedChapterIndexes([
                 ...(normalized.completedChapterIndexes || []),
                 ...(chapterComplete ? [chapterIndex] : [])
@@ -7853,22 +7855,24 @@
         const wasLastParagraph = state.currentParagraphIndex >= state.paragraphs.length - 1;
         const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
 
-        if (wasLastParagraph && nextChapterIndex == null) {
-            ttsStop();
-            if (isAssignmentMode()) {
-                maybeShowAssignmentWrapup();
+        if (wasLastParagraph) {
+            // TTS reads the whole paragraph, including remaining split-page fragments.
+            persistCurrentBookActivity({ markChapterComplete: true });
+            if (nextChapterIndex == null) {
+                ttsStop();
+                if (isAssignmentMode()) {
+                    maybeShowAssignmentWrapup();
+                }
+                return;
             }
+            // Keep TTS chapter transitions uninterrupted by recap overlay.
+            goToNextChapter(false);
             return;
         }
 
-        if (wasLastParagraph) {
-            // Keep TTS chapter transitions uninterrupted by recap overlay.
-            goToNextChapter(false);
-        } else {
-            // TTS reads the full paragraph at once, so continuation pages must not replay it.
-            nextParagraph({ skipCurrentFragments: true });
-            ttsSpeakCurrent();
-        }
+        // TTS reads the full paragraph at once, so continuation pages must not replay it.
+        nextParagraph({ skipCurrentFragments: true });
+        ttsSpeakCurrent();
     }
 
     async function ttsPrefetchNext() {
@@ -8381,6 +8385,7 @@
 
     function showSpeedReadingChapterPause() {
         speedReadingPause();
+        persistCurrentBookActivity({ markChapterComplete: true });
 
         const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
         if (nextChapterIndex != null) {

@@ -320,19 +320,20 @@ public class TeacherQuizAuthoringService {
         }
         List<ParagraphEntity> paragraphs = paragraphRepository.findByChapterIdOrderByParagraphIndex(chapterId);
         String context = buildChapterContext(paragraphs);
+        String excludeText = formatExcludedChoices(request.exclude());
         String prompt = """
                 Generate exactly %d plausible wrong multiple-choice answers (distractors) for this quiz question.
-                Do not repeat the correct answer. Return JSON only: {"distractors":["..."]}
+                Do not repeat the correct answer.%s Return JSON only: {"distractors":["..."]}
                 
                 Question: %s
                 Correct answer: %s
                 
                 Chapter context:
                 %s
-                """.formatted(count, request.question().trim(), request.correctAnswer().trim(), context);
+                """.formatted(count, excludeText, request.question().trim(), request.correctAnswer().trim(), context);
         try {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
-            return parseDistractors(raw, request.correctAnswer().trim(), count);
+            return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "Failed to suggest distractors: " + e.getMessage());
@@ -404,7 +405,7 @@ public class TeacherQuizAuthoringService {
                 .toList();
     }
 
-    private List<String> parseDistractors(String raw, String correctAnswer, int count)
+    private List<String> parseDistractors(String raw, String correctAnswer, int count, List<String> exclude)
             throws JsonProcessingException {
         String json = extractJsonObject(raw);
         JsonNode root = objectMapper.readTree(json);
@@ -415,6 +416,7 @@ public class TeacherQuizAuthoringService {
         List<String> result = new ArrayList<>();
         java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
         seen.add(correctAnswer.toLowerCase(java.util.Locale.ROOT));
+        addExcludedChoices(seen, exclude);
         for (JsonNode node : distractors) {
             if (node == null || !node.isTextual()) {
                 continue;
@@ -619,6 +621,34 @@ public class TeacherQuizAuthoringService {
         throw new IllegalArgumentException("No JSON object found");
     }
 
+    static String formatExcludedChoices(List<String> exclude) {
+        if (exclude == null || exclude.isEmpty()) {
+            return "";
+        }
+        String joined = exclude.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .distinct()
+                .reduce((left, right) -> left + "; " + right)
+                .orElse("");
+        if (joined.isBlank()) {
+            return "";
+        }
+        return " Do not reuse these existing choices: " + joined + ".";
+    }
+
+    static void addExcludedChoices(java.util.Set<String> seen, List<String> exclude) {
+        if (seen == null || exclude == null) {
+            return;
+        }
+        for (String value : exclude) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            seen.add(value.trim().toLowerCase(Locale.ROOT));
+        }
+    }
+
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
@@ -705,9 +735,10 @@ public class TeacherQuizAuthoringService {
     }
 
     public record SuggestDistractorsRequest(
-            String question, String correctAnswer, Integer count, String bookId, List<String> chapterIds) {
+            String question, String correctAnswer, Integer count, String bookId, List<String> chapterIds,
+            List<String> exclude) {
         public SuggestDistractorsRequest(String question, String correctAnswer, Integer count) {
-            this(question, correctAnswer, count, null, null);
+            this(question, correctAnswer, count, null, null, null);
         }
     }
 }

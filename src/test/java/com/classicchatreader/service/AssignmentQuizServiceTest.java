@@ -287,6 +287,28 @@ class AssignmentQuizServiceTest {
         assertTrue(service.isChapterDefaultAvailable(single));
     }
 
+    @Test
+    void suggestDistractors_skipsExcludedAndCorrectChoices() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of());
+        when(reasoningProvider.isAvailable()).thenReturn(true);
+        when(reasoningProvider.generate(any(), any()))
+                .thenReturn("{\"distractors\":[\"Paris\",\"London\",\"Rome\",\"Madrid\"]}");
+
+        List<String> result = service.suggestDistractors(
+                "teacher-1",
+                "asg-1",
+                new TeacherQuizAuthoringService.SuggestDistractorsRequest(
+                        "Capital?", "Paris", 2, null, null, List.of("London")));
+
+        assertEquals(List.of("Rome", "Madrid"), result);
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(reasoningProvider).generate(prompt.capture(), any());
+        assertTrue(prompt.getValue().contains("Do not reuse these existing choices: London"));
+    }
+
     private static AssignmentEntity publishedAssignment(String quizSource) {
         AssignmentEntity assignment = new AssignmentEntity();
         assignment.setId("asg-1");

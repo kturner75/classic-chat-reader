@@ -1578,6 +1578,48 @@
         return `/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(chapterId)}/${suffix}`;
     }
 
+    function unlockedDistractorIndexes(item) {
+        return (item?.distractors || []).map((_, index) => index)
+            .filter((index) => !(item.locked?.[index] && String(item.distractors[index] || '').trim()));
+    }
+
+    function existingChoicesToExclude(item, replaceIndexes) {
+        const replace = new Set(replaceIndexes || []);
+        const choices = [];
+        const correct = String(item?.correct || '').trim();
+        if (correct) {
+            choices.push(correct);
+        }
+        (item?.distractors || []).forEach((value, index) => {
+            if (replace.has(index)) {
+                return;
+            }
+            const text = String(value || '').trim();
+            if (text) {
+                choices.push(text);
+            }
+        });
+        return choices;
+    }
+
+    function uniqueSuggestedDistractors(values, exclude) {
+        const seen = new Set((exclude || []).map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+        const result = [];
+        (values || []).forEach((value) => {
+            const text = String(value || '').trim();
+            if (!text) {
+                return;
+            }
+            const key = text.toLowerCase();
+            if (seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            result.push(text);
+        });
+        return result;
+    }
+
     function shuffle(items, seed) {
         const next = [...items];
         let value = seed || 1;
@@ -2135,7 +2177,9 @@
             return;
         }
         if (state.quizSuggestBusy) return;
-        const needed = Math.max(1, (item.distractors || []).length);
+        const replaceIndexes = unlockedDistractorIndexes(item);
+        const needed = Math.max(1, replaceIndexes.length);
+        const exclude = existingChoicesToExclude(item, replaceIndexes);
         state.quizSuggestBusy = { kind: 'all', questionIndex: index };
         renderPagedQuizAuthor();
         try {
@@ -2145,14 +2189,19 @@
                     question: item.question,
                     correctAnswer: item.correct,
                     count: needed,
+                    exclude,
                     bookId: el['assignment-book']?.value || null,
                     chapterIds: selectedChapterIds()
                 })
             });
-            const distractors = Array.isArray(result.distractors) ? result.distractors : [];
+            const distractors = uniqueSuggestedDistractors(
+                Array.isArray(result.distractors) ? result.distractors : [],
+                exclude
+            );
+            let nextIndex = 0;
             item.distractors = (item.distractors || []).map((value, dIndex) => {
-                if (item.locked?.[dIndex] && String(value || '').trim()) return value;
-                return distractors[dIndex] || value;
+                if (!replaceIndexes.includes(dIndex)) return value;
+                return distractors[nextIndex++] || value;
             });
             toast('Wrong answers filled. Adjust as needed.');
         } catch (error) {
@@ -2174,6 +2223,7 @@
             return;
         }
         if (state.quizSuggestBusy) return;
+        const exclude = existingChoicesToExclude(item, [dIndex]);
         state.quizSuggestBusy = { kind: 'one', questionIndex: index, distractorIndex: dIndex };
         renderPagedQuizAuthor();
         try {
@@ -2183,11 +2233,15 @@
                     question: item.question,
                     correctAnswer: item.correct,
                     count: 1,
+                    exclude,
                     bookId: el['assignment-book']?.value || null,
                     chapterIds: selectedChapterIds()
                 })
             });
-            const next = Array.isArray(result.distractors) ? result.distractors[0] : '';
+            const next = uniqueSuggestedDistractors(
+                Array.isArray(result.distractors) ? result.distractors : [],
+                exclude
+            )[0];
             if (!next) {
                 toast('Could not regenerate that answer.');
                 return;
