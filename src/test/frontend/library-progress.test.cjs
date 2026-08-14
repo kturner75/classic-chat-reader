@@ -115,7 +115,24 @@ test('default lastChapterIndex 0 without real activity is not reading-complete',
     assert.equal(snapshot.summaryLabel, '0/1 complete');
 });
 
-test('chapter 0 assignment becomes reading-complete only after real progress', () => {
+test('chapter 0 assignment becomes reading-complete only after finishing the chapter', () => {
+    const started = buildAssignmentProgressSnapshot({
+        assignment: {
+            chapterIndex: 0,
+            quizRequired: false,
+            quizStatus: 'NOT_REQUIRED'
+        },
+        activity: {
+            chapterCount: 59,
+            lastChapterIndex: 0,
+            lastPage: 0,
+            totalPages: 8,
+            maxProgressRatio: 0.01,
+            lastReadAt: '2026-07-18T12:00:00.000Z'
+        }
+    });
+    assert.equal(started.readingComplete, false);
+
     const snapshot = buildAssignmentProgressSnapshot({
         assignment: {
             chapterIndex: 0,
@@ -124,7 +141,10 @@ test('chapter 0 assignment becomes reading-complete only after real progress', (
         },
         activity: {
             lastChapterIndex: 0,
-            maxProgressRatio: 0.01,
+            lastPage: 7,
+            totalPages: 8,
+            chapterCount: 59,
+            maxProgressRatio: 1 / 59,
             lastReadAt: '2026-07-18T12:00:00.000Z'
         }
     });
@@ -165,7 +185,10 @@ test('assignment in progress when reading started but quiz pending', () => {
         },
         activity: {
             lastChapterIndex: 0,
-            maxProgressRatio: 0.02,
+            lastPage: 4,
+            totalPages: 5,
+            chapterCount: 59,
+            maxProgressRatio: 1 / 59,
             lastReadAt: '2026-07-17T12:00:00.000Z'
         }
     });
@@ -184,6 +207,9 @@ test('character chat requirement blocks complete until local chat started', () =
         },
         activity: {
             lastChapterIndex: 0,
+            lastPage: 4,
+            totalPages: 5,
+            chapterCount: 59,
             maxProgressRatio: 0.05
         },
         characterChatStarted: false
@@ -200,6 +226,9 @@ test('character chat requirement blocks complete until local chat started', () =
         },
         activity: {
             lastChapterIndex: 0,
+            lastPage: 4,
+            totalPages: 5,
+            chapterCount: 59,
             maxProgressRatio: 0.05
         },
         characterChatStarted: true
@@ -250,7 +279,7 @@ test('assignment reading stays complete after student resumes an earlier chapter
         activity: {
             chapterCount: 20,
             lastChapterIndex: 0,
-            maxProgressRatio: (5 + 0.5) / 20,
+            maxProgressRatio: 6 / 20,
             lastReadAt: '2026-07-18T15:00:00.000Z'
         }
     });
@@ -299,7 +328,9 @@ test('Take Quiz is hidden until reading is complete and shown as Retry after a f
 
     const read = {
         lastChapterIndex: 0,
-        maxProgressRatio: 0.05,
+        lastPage: 4,
+        totalPages: 5,
+        maxProgressRatio: 1,
         lastReadAt: '2026-08-12T12:00:00.000Z'
     };
     assert.equal(canTakeAssignmentQuiz(assignment, read), true);

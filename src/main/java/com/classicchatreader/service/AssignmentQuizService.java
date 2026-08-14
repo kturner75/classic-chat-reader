@@ -469,8 +469,32 @@ public class AssignmentQuizService {
                 .mapToInt(AssignmentChapterEntity::getChapterIndex)
                 .max()
                 .orElse(-1);
-        Integer reached = maxReachedChapterIndex(activity);
-        return reached != null && targetIndex >= 0 && reached >= targetIndex;
+        return targetIndex >= 0 && finishedLastAssignedChapter(activity, targetIndex);
+    }
+
+    private static boolean finishedLastAssignedChapter(
+            AccountStateSnapshot.BookActivity activity, int targetIndex) {
+        int chapterCount = activity.chapterCount() != null && activity.chapterCount() > 0
+                ? activity.chapterCount()
+                : 1;
+        double needed = (targetIndex + 1d) / chapterCount;
+        double maxProgress = Math.max(
+                activity.maxProgressRatio() == null ? 0d : activity.maxProgressRatio(),
+                activity.progressRatio() == null ? 0d : activity.progressRatio());
+        if (maxProgress + 1e-9 >= needed) {
+            return true;
+        }
+        int last = activity.lastChapterIndex() == null ? -1 : activity.lastChapterIndex();
+        if (last > targetIndex) {
+            return true;
+        }
+        Integer lastPage = activity.lastPage();
+        Integer totalPages = activity.totalPages();
+        return last == targetIndex
+                && lastPage != null
+                && totalPages != null
+                && totalPages > 0
+                && lastPage >= totalPages - 1;
     }
 
     private static Integer maxReachedChapterIndex(AccountStateSnapshot.BookActivity activity) {

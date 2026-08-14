@@ -131,7 +131,32 @@
             return false;
         }
         const targetIndex = Math.max(...indexes);
-        return reachedChapterIndex >= targetIndex;
+        return finishedLastAssignedChapter(activity, targetIndex);
+    }
+
+    function finishedLastAssignedChapter(activity, targetIndex) {
+        const chapterCount = Math.max(1, clampInteger(activity.chapterCount, 1, Number.MAX_SAFE_INTEGER));
+        const needed = (targetIndex + 1) / chapterCount;
+        const maxProgress = Math.max(
+            toFiniteNumber(activity.maxProgressRatio, 0),
+            toFiniteNumber(activity.progressRatio, 0)
+        );
+        if (maxProgress + 1e-9 >= needed) {
+            return true;
+        }
+        const last = Number.isFinite(Number(activity.lastChapterIndex))
+            ? Number(activity.lastChapterIndex)
+            : -1;
+        if (last > targetIndex) {
+            return true;
+        }
+        const lastPage = Number.isInteger(activity.lastPage) ? activity.lastPage : null;
+        const totalPages = Number.isInteger(activity.totalPages) ? activity.totalPages : null;
+        return last === targetIndex
+            && lastPage != null
+            && totalPages != null
+            && totalPages > 0
+            && lastPage >= totalPages - 1;
     }
 
     function isAssignmentQuizPerfect(assignment, result) {

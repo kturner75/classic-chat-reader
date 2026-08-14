@@ -503,10 +503,33 @@ public class TeacherStudentOverviewService {
                 ? activity.chapterCount()
                 : null;
         Integer reached = maxReachedChapterIndex(activity, chapterCount == null ? 1 : chapterCount);
-        if (reached != null && reached >= targetIndex) {
+        if (reached != null && finishedLastAssignedChapter(activity, targetIndex, chapterCount == null ? 1 : chapterCount)) {
             return true;
         }
         return quizStatus == QuizRequirementStatus.COMPLETE;
+    }
+
+    private static boolean finishedLastAssignedChapter(
+            AccountStateSnapshot.BookActivity activity, int targetIndex, int chapterCount) {
+        int n = Math.max(1, chapterCount);
+        double needed = (targetIndex + 1d) / n;
+        double maxProgress = Math.max(
+                activity.maxProgressRatio() == null ? 0d : activity.maxProgressRatio(),
+                activity.progressRatio() == null ? 0d : activity.progressRatio());
+        if (maxProgress + 1e-9 >= needed) {
+            return true;
+        }
+        int last = activity.lastChapterIndex() == null ? -1 : activity.lastChapterIndex();
+        if (last > targetIndex) {
+            return true;
+        }
+        Integer lastPage = activity.lastPage();
+        Integer totalPages = activity.totalPages();
+        return last == targetIndex
+                && lastPage != null
+                && totalPages != null
+                && totalPages > 0
+                && lastPage >= totalPages - 1;
     }
 
     private static boolean hasBookActivity(AccountStateSnapshot.BookActivity activity) {

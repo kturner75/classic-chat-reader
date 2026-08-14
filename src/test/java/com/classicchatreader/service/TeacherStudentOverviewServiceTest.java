@@ -170,6 +170,8 @@ class TeacherStudentOverviewServiceTest {
                     "book-1": {
                       "chapterCount": 2,
                       "lastChapterIndex": 1,
+                      "lastPage": 9,
+                      "totalPages": 10,
                       "maxProgressRatio": 0.75,
                       "progressRatio": 0.75,
                       "completed": false,
