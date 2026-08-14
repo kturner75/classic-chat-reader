@@ -409,7 +409,9 @@ public class ClassroomContextService {
         Integer chapterIndex = first == null ? null : first.chapterIndex();
         String chapterTitle = first == null ? null : first.chapterTitle();
         String dueAt = normalizeOrNull(configured.getDueAt());
-        boolean quizRequired = configured.isQuizRequired();
+        // Demo quizzes only work for a single chapter (chapter endpoint). Multi-chapter
+        // demo rows have no assignment-scoped payload, so do not advertise a quiz.
+        boolean quizRequired = configured.isQuizRequired() && chapters.size() <= 1;
         QuizRequirementStatus quizStatus = resolveQuizStatus(quizRequired, chapterId, userId);
 
         return new ClassAssignment(
@@ -424,7 +426,7 @@ public class ClassroomContextService {
                 chapterTitle,
                 dueAt,
                 quizRequired,
-                quizRequired && chapters.size() == 1 ? AssignmentEntity.QUIZ_SOURCE_CHAPTER : (quizRequired ? AssignmentEntity.QUIZ_SOURCE_CUSTOM : null),
+                quizRequired ? AssignmentEntity.QUIZ_SOURCE_CHAPTER : null,
                 quizStatus,
                 false,
                 bookOpt.isPresent(),
