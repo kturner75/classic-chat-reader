@@ -646,3 +646,42 @@ test('multi-chapter assignment hides the default quiz and requires a custom quiz
   await expect(page.locator('#assignment-quiz-author-body [data-field="stem"]')).toBeVisible();
   await expect(page.locator('#assignment-quiz-author-progress')).toContainText('Question 1 of 3');
 });
+
+test('multi-chapter custom quiz publishes on the assignment quiz endpoint', async ({ page }) => {
+  let saved = null;
+  let published = null;
+  await installAssignmentMocks(page, {
+    onCreateAssignment: (body) => { saved = body; },
+    onAssignmentQuiz: (body) => { published = body; }
+  });
+  await page.goto('/teacher.html');
+  await page.locator('#new-assignment-button').click();
+  await fillAssignmentIdentity(page, {
+    title: 'Chapters 1 and 2 quiz',
+    bookId: 'pride',
+    chapterLabels: ['Chapter 1', 'Chapter 2']
+  });
+  await page.locator('#assignment-next-1').click();
+  await page.locator('#assignment-quiz-choice-require').click();
+  await page.locator('#assignment-quiz-question-count').fill('1');
+  await page.locator('#assignment-next-2').click();
+  await expect(page.locator('#assignment-quiz-no-default')).toBeVisible();
+  await page.locator('#assignment-quiz-author-body [data-field="stem"]').fill('Who is the heroine?');
+  await page.locator('#assignment-quiz-author-body [data-field="correct"]').fill('Elizabeth Bennet');
+  await page.locator('[data-generate-distractors]').click();
+  await expect(page.locator('[data-field="distractor"]').first()).toHaveValue('Wrong choice 1');
+  await page.locator('#assignment-quiz-author-next').click();
+  await expect(page.locator('#assignment-quiz-sim')).toBeVisible();
+  await page.getByRole('button', { name: 'Elizabeth Bennet' }).click();
+  await page.locator('#assignment-quiz-sim-next').click();
+  await expect(page.locator('#assignment-quiz-sim-body')).toContainText('Passed');
+  await page.locator('#assignment-quiz-sim-next').click();
+  await page.locator('#assignment-quiz-summary-confirm').click();
+  await page.locator('#assignment-submit').click();
+  await expect.poll(() => saved).not.toBeNull();
+  await expect.poll(() => published).not.toBeNull();
+  expect(saved.quizRequired).toBe(true);
+  expect(saved.chapterIds).toEqual(['pride-1', 'pride-2']);
+  expect(published.questions[0].question).toBe('Who is the heroine?');
+  expect(published.questions[0].options[0]).toBe('Elizabeth Bennet');
+});

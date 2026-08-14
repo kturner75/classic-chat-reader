@@ -507,3 +507,28 @@ test('multi-chapter assignment wrap-up waits until the last assigned chapter', a
   await expect(wrapup).toBeVisible();
   await expect(wrapup).toContainText('You finished this assignment');
 });
+
+test('exhausted quiz attempts hide Take Quiz and Retry Quiz', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 1,
+        lastChapterIndex: 0,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 2,
+    quizAttemptsAllowed: 2,
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment).toBeVisible();
+  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
+});
