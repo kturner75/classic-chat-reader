@@ -168,6 +168,7 @@
         accountClaimSyncedFor: null,
         accountSyncInFlight: false,
         accountSyncPromise: null,
+        accountSyncGeneration: 0,
         accountStateRevision: 0,
         accountStateSyncedRevision: 0,
         lastBookActivitySignature: '',
@@ -2088,6 +2089,13 @@
         state.accountClaimSyncedFor = null;
         state.accountSyncPromise = null;
         state.accountSyncInFlight = false;
+        state.accountSyncGeneration += 1;
+    }
+
+    function isCurrentAccountSync(generation, syncKey) {
+        return state.accountSyncGeneration === generation
+            && state.accountAuthenticated
+            && (state.accountEmail || 'signed-in-account') === syncKey;
     }
 
     async function runAccountClaimSync(force = false) {
@@ -2117,8 +2125,9 @@
             }
 
             const startedRevision = state.accountStateRevision;
+            const generation = state.accountSyncGeneration;
             state.accountSyncInFlight = true;
-            const job = performAccountClaimSync(syncKey, startedRevision);
+            const job = performAccountClaimSync(syncKey, startedRevision, generation);
             state.accountSyncPromise = job;
             try {
                 await job;
@@ -2132,7 +2141,7 @@
         }
     }
 
-    async function performAccountClaimSync(syncKey, startedRevision) {
+    async function performAccountClaimSync(syncKey, startedRevision, generation) {
         if (isAccountModalVisible()) {
             setAccountStatusMessage('Syncing your reader data...');
         }
@@ -2144,6 +2153,9 @@
                 body: JSON.stringify({ state: collectLocalAccountStateSnapshot() })
             });
             const payload = await readErrorPayload(response);
+            if (!isCurrentAccountSync(generation, syncKey)) {
+                return;
+            }
             if (!response.ok) {
                 const message = firstMessageFromPayload(payload) || 'Unable to sync account data.';
                 if (isAccountModalVisible()) {
