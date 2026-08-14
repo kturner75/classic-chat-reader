@@ -101,9 +101,13 @@ public class TtsController {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
-    // Return saved settings only when they were chosen for the current TTS provider.
-    if (hasCurrentProviderVoiceSettings(book)) {
-      return ResponseEntity.ok(savedVoiceSettings(book));
+    // Return any stored voice so the reader can keep leftover cache ids
+    // after a provider switch. Compatible settings are still preferred.
+    if (book.getTtsVoice() != null && !book.getTtsVoice().isBlank()) {
+      if (hasCurrentProviderVoiceSettings(book)) {
+        return ResponseEntity.ok(savedVoiceSettings(book));
+      }
+      return ResponseEntity.ok(storedVoiceSettings(book));
     }
 
     return ResponseEntity.noContent().build();
@@ -337,6 +341,16 @@ public class TtsController {
         book.getTtsInstructions(),
         book.getTtsReasoning(),
         provider
+    );
+  }
+
+  private VoiceSettings storedVoiceSettings(BookEntity book) {
+    return new VoiceSettings(
+        book.getTtsVoice(),
+        ttsService.clampSpeed(book.getTtsSpeed() != null ? book.getTtsSpeed() : 1.0),
+        book.getTtsInstructions(),
+        book.getTtsReasoning(),
+        book.getTtsVoiceProvider()
     );
   }
 

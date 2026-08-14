@@ -1857,27 +1857,33 @@
         const assignmentEffective = assignmentId
             ? await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/effective-quiz`)
             : null;
-        const useCustom = assignmentEffective?.quizSource === 'CUSTOM'
+        const chapterEffective = previewChapterId
+            ? await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(previewChapterId)}/effective-quiz`)
+            : null;
+        const customQuestions = assignmentEffective?.quizSource === 'CUSTOM'
             && Array.isArray(assignmentEffective.questions)
-            && assignmentEffective.questions.length > 0;
-        const effective = useCustom
-            ? assignmentEffective
-            : (previewChapterId
-                ? await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(previewChapterId)}/effective-quiz`)
-                : assignmentEffective || {});
-        const questions = Array.isArray(effective.questions)
-            ? effective.questions
-            : (Array.isArray(effective.effectiveQuestions) ? effective.effectiveQuestions : []);
-        const chapterDefaultAvailable = effective.chapterDefaultAvailable
-            ?? (Array.isArray(effective.generatedQuestions) && effective.generatedQuestions.length > 0);
-        state.quizContentVersion = effective.contentVersion || null;
-        state.quizHasGenerated = Boolean(chapterDefaultAvailable) && questions.length > 0;
-        state.quizGeneratedBase = state.quizHasGenerated
-            ? questions.map(question => questionFromApi(question, optionCount, new Set(questions.map(item => item.id).filter(Boolean))))
+            && assignmentEffective.questions.length > 0
+            ? assignmentEffective.questions
             : [];
-        if (effective.quizSource === 'CUSTOM' && questions.length > 0) {
+        const defaultQuestions = chapterEffective
+            ? (Array.isArray(chapterEffective.generatedQuestions) && chapterEffective.generatedQuestions.length > 0
+                ? chapterEffective.generatedQuestions
+                : (Array.isArray(chapterEffective.effectiveQuestions) ? chapterEffective.effectiveQuestions : []))
+            : [];
+        const questions = customQuestions.length > 0 ? customQuestions : defaultQuestions;
+        const chapterDefaultAvailable = defaultQuestions.length > 0
+            || assignmentEffective?.chapterDefaultAvailable === true;
+        state.quizContentVersion = (customQuestions.length > 0 ? assignmentEffective?.contentVersion : null)
+            || chapterEffective?.contentVersion
+            || assignmentEffective?.contentVersion
+            || null;
+        state.quizHasGenerated = defaultQuestions.length > 0;
+        state.quizGeneratedBase = state.quizHasGenerated
+            ? defaultQuestions.map(question => questionFromApi(question, optionCount, new Set(defaultQuestions.map(item => item.id).filter(Boolean))))
+            : [];
+        if (customQuestions.length > 0) {
             state.quizMode = 'override';
-            state.quizDraftQuestions = questions.map(question => questionFromApi(question, optionCount, new Set()));
+            state.quizDraftQuestions = customQuestions.map(question => questionFromApi(question, optionCount, new Set()));
         } else if (state.quizHasGenerated) {
             state.quizMode = 'default';
             state.quizDraftQuestions = [];

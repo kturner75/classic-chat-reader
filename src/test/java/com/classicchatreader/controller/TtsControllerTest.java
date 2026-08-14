@@ -184,7 +184,7 @@ class TtsControllerTest {
     }
 
     @Test
-    void getVoiceSettings_openaiProvider_returnsNoContent() throws Exception {
+    void getVoiceSettings_openaiProvider_returnsStoredLegacyVoice() throws Exception {
         BookEntity book = new BookEntity("The Brothers Karamazov", "Fyodor Dostoevsky", "gutenberg");
         book.setId("book-1");
         book.setTtsEnabled(true);
@@ -193,9 +193,12 @@ class TtsControllerTest {
 
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
         when(ttsService.isCompatibleWithCurrentProvider("ballad", "openai")).thenReturn(false);
+        when(ttsService.clampSpeed(1.0)).thenReturn(1.0);
 
         mockMvc.perform(get("/api/tts/settings/book-1"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.voice", is("ballad")))
+                .andExpect(jsonPath("$.provider", is("openai")));
     }
 
     @Test
