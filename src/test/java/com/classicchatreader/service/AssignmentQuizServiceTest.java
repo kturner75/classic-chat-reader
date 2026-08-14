@@ -182,6 +182,62 @@ class AssignmentQuizServiceTest {
     }
 
     @Test
+    void saveCustomQuiz_doesNotResetAttemptWindowWhenContentUnchanged() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        assignment.setQuizPassMinCorrect(1);
+        assignment.setQuizMaxRetries(2);
+        AssignmentQuizEntity existing = new AssignmentQuizEntity();
+        existing.setAssignmentId("asg-1");
+        existing.setPayloadJson("{\"questions\":[{\"id\":\"q1\"}]}");
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(assignmentQuizRepository.findByAssignmentId("asg-1")).thenReturn(Optional.of(existing));
+        when(assignmentQuizRepository.save(any(AssignmentQuizEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(assignmentRepository.save(any(AssignmentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(chapterQuizService.serializePayload(any())).thenReturn("{\"questions\":[{\"id\":\"q1\"}]}");
+        when(chapterQuizService.contentVersion(any())).thenReturn("same-version");
+
+        service.saveCustomQuiz(
+                "teacher-1",
+                "asg-1",
+                new AssignmentQuizService.SaveAssignmentQuizRequest(List.of(
+                        new ChapterQuizPayload.Question("q1", "Who?", List.of("A", "B", "C", "D"), 0, null, null)
+                )));
+
+        ArgumentCaptor<AssignmentEntity> captor = ArgumentCaptor.forClass(AssignmentEntity.class);
+        verify(assignmentRepository).save(captor.capture());
+        assertEquals(null, captor.getValue().getQuizRulesActivatedAt());
+    }
+
+    @Test
+    void saveCustomQuiz_resetsAttemptWindowWhenContentChanges() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        assignment.setQuizPassMinCorrect(1);
+        assignment.setQuizMaxRetries(2);
+        AssignmentQuizEntity existing = new AssignmentQuizEntity();
+        existing.setAssignmentId("asg-1");
+        existing.setPayloadJson("{\"questions\":[{\"id\":\"q1\"}]}");
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(assignmentQuizRepository.findByAssignmentId("asg-1")).thenReturn(Optional.of(existing));
+        when(assignmentQuizRepository.save(any(AssignmentQuizEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(assignmentRepository.save(any(AssignmentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(chapterQuizService.serializePayload(any())).thenReturn("{\"questions\":[{\"id\":\"q2\"}]}");
+        when(chapterQuizService.contentVersion(any())).thenReturn("new-version", "old-version", "new-version");
+
+        service.saveCustomQuiz(
+                "teacher-1",
+                "asg-1",
+                new AssignmentQuizService.SaveAssignmentQuizRequest(List.of(
+                        new ChapterQuizPayload.Question("q2", "Where?", List.of("A", "B", "C", "D"), 1, null, null)
+                )));
+
+        ArgumentCaptor<AssignmentEntity> captor = ArgumentCaptor.forClass(AssignmentEntity.class);
+        verify(assignmentRepository).save(captor.capture());
+        assertTrue(captor.getValue().getQuizRulesActivatedAt() != null);
+    }
+
+    @Test
     void isChapterDefaultAvailable_requiresSingleChapterWithQuestions() {
         AssignmentEntity multi = publishedAssignment("CHAPTER");
         AssignmentChapterEntity first = chapterRow("ch-1", 0);

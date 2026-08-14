@@ -12,6 +12,7 @@
         features: null,
         readingBuddyStatus: null,
         editingAssignmentId: null,
+        provisionalAssignmentId: null,
         assignmentScreen: 'assign1',
         quizChoice: '',
         quizHost: 'standalone',
@@ -1082,10 +1083,19 @@
         }
     }
 
-    function closeAssignmentModal() {
+    async function closeAssignmentModal() {
+        const provisionalId = state.provisionalAssignmentId;
+        if (provisionalId && state.editingAssignmentId === provisionalId) {
+            try {
+                await api(`/api/classroom/assignments/${encodeURIComponent(provisionalId)}`, { method: 'DELETE' });
+            } catch (error) {
+                toast(error.message || 'Could not discard unfinished assignment.');
+            }
+        }
         show(el['assignment-modal'], false);
         setPageWizardOpen();
         state.editingAssignmentId = null;
+        state.provisionalAssignmentId = null;
         state.assignmentScreen = 'assign1';
         state.quizChoice = '';
         resetQuizSession();
@@ -1194,6 +1204,7 @@
             if (existingIndex >= 0) state.assignments.splice(existingIndex, 1, saved);
             else state.assignments.push(saved);
             renderAssignments();
+            state.provisionalAssignmentId = null;
             closeAssignmentModal();
             toast(saved.status === 'PUBLISHED' ? 'Assignment published.' : 'Assignment saved.');
         } catch (error) {
@@ -1750,9 +1761,7 @@
             })
         });
         state.editingAssignmentId = saved.assignmentId;
-        const existingIndex = state.assignments.findIndex(item => item.assignmentId === saved.assignmentId);
-        if (existingIndex >= 0) state.assignments.splice(existingIndex, 1, saved);
-        else state.assignments.push(saved);
+        state.provisionalAssignmentId = saved.assignmentId;
         return saved.assignmentId;
     }
 

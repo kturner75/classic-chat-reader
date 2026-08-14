@@ -6546,7 +6546,8 @@
         if (Number.isInteger(assignment?.quizPassMinCorrect)) {
             return correctAnswers >= assignment.quizPassMinCorrect;
         }
-        return totalQuestions > 0 && correctAnswers === totalQuestions;
+        // No pass threshold: any successfully graded attempt completes the requirement.
+        return totalQuestions > 0;
     }
 
     function canRetryAssignmentQuiz(assignment, result) {
@@ -6595,9 +6596,8 @@
         const correctAnswers = Number.isFinite(result.correctAnswers) ? result.correctAnswers : 0;
         const totalQuestions = Number.isFinite(result.totalQuestions) ? result.totalQuestions : 0;
         const passed = assignmentQuizPassed(result, assignment);
-        const passMin = Number.isInteger(assignment?.quizPassMinCorrect)
-            ? assignment.quizPassMinCorrect
-            : totalQuestions;
+        const hasPassMin = Number.isInteger(assignment?.quizPassMinCorrect);
+        const passMin = hasPassMin ? assignment.quizPassMinCorrect : totalQuestions;
         const used = Number.isInteger(assignment?.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
         const allowed = Number.isInteger(assignment?.quizAttemptsAllowed) ? assignment.quizAttemptsAllowed : null;
         const remaining = allowed != null ? Math.max(0, allowed - used) : null;
@@ -6612,9 +6612,14 @@
             return `<li><strong>Q${qNum}</strong> correct answer: ${correctAnswer}</li>`;
         }).join('');
 
-        let statusLine = passed
-            ? `You passed (${correctAnswers}/${totalQuestions}; need ${passMin}+).`
-            : `Not quite (${correctAnswers}/${totalQuestions}; need ${passMin}+).`;
+        let statusLine;
+        if (!hasPassMin) {
+            statusLine = `Quiz submitted (${correctAnswers}/${totalQuestions}).`;
+        } else if (passed) {
+            statusLine = `You passed (${correctAnswers}/${totalQuestions}; need ${passMin}+).`;
+        } else {
+            statusLine = `Not quite (${correctAnswers}/${totalQuestions}; need ${passMin}+).`;
+        }
         if (remaining != null) {
             if (passed && canRetry) {
                 statusLine += remaining > 0

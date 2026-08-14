@@ -132,6 +132,13 @@ public class AssignmentQuizService {
                             + ") cannot exceed the quiz size (" + normalized.size() + " questions).");
         }
         ChapterQuizPayload payload = new ChapterQuizPayload(normalized);
+        String nextVersion = chapterQuizService.contentVersion(payload);
+        String previousVersion = existingCustomContentVersion(assignmentId);
+        if (previousVersion == null && AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())) {
+            previousVersion = resolvePayload(assignment)
+                    .map(chapterQuizService::contentVersion)
+                    .orElse(null);
+        }
         AssignmentQuizEntity row = assignmentQuizRepository.findByAssignmentId(assignmentId)
                 .orElseGet(AssignmentQuizEntity::new);
         row.setAssignmentId(assignmentId);
@@ -141,11 +148,19 @@ public class AssignmentQuizService {
         assignment.setQuizRequired(true);
         assignment.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
         if (assignment.getQuizPassMinCorrect() != null && assignment.getQuizMaxRetries() != null
-                && "PUBLISHED".equalsIgnoreCase(assignment.getStatus())) {
+                && "PUBLISHED".equalsIgnoreCase(assignment.getStatus())
+                && !java.util.Objects.equals(previousVersion, nextVersion)) {
             assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
         assignmentRepository.save(assignment);
         return getEffectiveQuiz(userId, assignmentId);
+    }
+
+    private String existingCustomContentVersion(String assignmentId) {
+        return assignmentQuizRepository.findByAssignmentId(assignmentId)
+                .map(row -> parsePayload(row.getPayloadJson()))
+                .map(chapterQuizService::contentVersion)
+                .orElse(null);
     }
 
     public List<ChapterQuizPayload.Question> suggestQuestions(
