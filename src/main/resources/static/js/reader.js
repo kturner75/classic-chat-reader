@@ -9136,8 +9136,8 @@
 
     function applyRecapPreferenceGating() {
         state.recapAvailable = !!state.recapBackendAvailable && !!state.readerPreferences?.recapTabEnabled;
-        state.quizAvailable = !!state.quizBackendAvailable
-            && (!!state.quizAssignmentId || !!state.readerPreferences?.quizTabEnabled);
+        state.quizAvailable = !!state.quizAssignmentId
+            || (!!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled);
         state.recapChatAvailable = !!state.recapChatBackendAvailable && !!state.readerPreferences?.chatTabEnabled;
     }
 

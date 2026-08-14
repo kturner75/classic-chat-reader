@@ -694,10 +694,9 @@ public class ClassroomAdminService {
         row.setPayloadJson(chapterQuizService.serializePayload(payload));
         row.setCreatedByUserId(userId);
         assignmentQuizRepository.save(row);
-        boolean published = "PUBLISHED".equalsIgnoreCase(assignment.getStatus());
         boolean alreadyCustom = AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(assignment.getQuizSource());
-        if (published && alreadyCustom && !Objects.equals(previousVersion, nextVersion)) {
-            assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
+        if (alreadyCustom && !java.util.Objects.equals(previousVersion, nextVersion)) {
+            assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
             assignmentRepository.save(assignment);
         }
     }

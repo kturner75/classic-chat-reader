@@ -162,7 +162,7 @@ public class AssignmentQuizService {
         if (alreadyCustom || !published) {
             assignment.setQuizRequired(true);
             assignment.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
-            if (published && !java.util.Objects.equals(previousVersion, nextVersion)) {
+            if (!java.util.Objects.equals(previousVersion, nextVersion)) {
                 assignment.setQuizRulesActivatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
             }
             assignmentRepository.save(assignment);
