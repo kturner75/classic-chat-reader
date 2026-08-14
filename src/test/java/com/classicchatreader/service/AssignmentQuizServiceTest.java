@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentQuizEntity;
@@ -20,12 +21,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -46,6 +50,7 @@ class AssignmentQuizServiceTest {
     @Mock private ClassroomEffectiveQuizService classroomEffectiveQuizService;
     @Mock private ClassroomQuizPolicyService classroomQuizPolicyService;
     @Mock private QuizProgressService quizProgressService;
+    @Mock private ClassroomProperties classroomProperties;
     @Mock private LlmProvider reasoningProvider;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -64,6 +69,7 @@ class AssignmentQuizServiceTest {
                 classroomEffectiveQuizService,
                 classroomQuizPolicyService,
                 quizProgressService,
+                classroomProperties,
                 reasoningProvider,
                 objectMapper
         );
@@ -108,6 +114,20 @@ class AssignmentQuizServiceTest {
         assertTrue(view.isPresent());
         assertEquals("CHAPTER", view.get().quizSource());
         assertEquals("Chapter Q", view.get().payload().questions().get(0).question());
+    }
+
+    @Test
+    void getStudentQuiz_rejectsBeforeAvailableFromDate() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        assignment.setAvailableFromDate(LocalDate.of(2099, 1, 15));
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.isActiveStudentOnTerm("user-1", "term-1")).thenReturn(true);
+        when(classroomProperties.today()).thenReturn(LocalDate.of(2099, 1, 14));
+
+        ResponseStatusException ex = assertThrows(
+                ResponseStatusException.class,
+                () -> service.getStudentQuiz("user-1", "asg-1"));
+        assertEquals(404, ex.getStatusCode().value());
     }
 
     @Test

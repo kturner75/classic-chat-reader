@@ -33,6 +33,25 @@ WHERE quiz_required = TRUE
   AND chapter_id IS NOT NULL
   AND chapter_id <> '';
 
+-- Attach existing chapter attempts to the matching quiz assignment before the
+-- legacy assignments.chapter_id column is dropped. Runtime policy/overview
+-- queries by assignment_id only.
+ALTER TABLE quiz_attempts
+    ADD COLUMN assignment_id VARCHAR(255) NULL;
+
+UPDATE quiz_attempts
+SET assignment_id = (
+    SELECT a.id
+    FROM assignments a
+    WHERE a.chapter_id = quiz_attempts.chapter_id
+      AND a.quiz_required = TRUE
+      AND a.deleted_at IS NULL
+    ORDER BY CASE WHEN a.status = 'PUBLISHED' THEN 0 ELSE 1 END, a.created_at
+    LIMIT 1
+)
+WHERE assignment_id IS NULL
+  AND chapter_id IS NOT NULL;
+
 ALTER TABLE assignments DROP COLUMN chapter_id;
 ALTER TABLE assignments DROP COLUMN chapter_index;
 
@@ -48,11 +67,8 @@ CREATE TABLE assignment_quizzes (
     CONSTRAINT fk_aq_creator FOREIGN KEY (created_by_user_id) REFERENCES users (id)
 );
 
-ALTER TABLE quiz_attempts
-    ADD COLUMN assignment_id VARCHAR(255) NULL;
-
-ALTER TABLE quiz_attempts
-    ALTER COLUMN chapter_id DROP NOT NULL;
+-- chapter_id nullability is dialect-specific (PostgreSQL vs MariaDB) and is
+-- applied in V27__quiz_attempts_chapter_id_nullable.
 
 ALTER TABLE quiz_attempts
     ADD CONSTRAINT ck_qa_chapter_or_assignment

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -201,6 +202,15 @@ class TtsServiceTest {
 
         assertEquals("legacy-audio", new String(byLegacyName, StandardCharsets.UTF_8));
         assertEquals("legacy-audio", new String(byCurrentVoice, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void getCachedSpeechForParagraph_ignoresPathTraversalVoice() throws Exception {
+        TtsService service = service("api-key", null);
+        Path secret = cacheDir.resolve("secret.mp3");
+        java.nio.file.Files.writeString(secret, "secret-audio");
+
+        assertNull(service.getCachedSpeechForParagraph("book-one", 0, 1, "../secret"));
     }
 
     @Test

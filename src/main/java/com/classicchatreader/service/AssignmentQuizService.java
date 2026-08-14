@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.AssignmentQuizEntity;
@@ -45,6 +46,7 @@ public class AssignmentQuizService {
     private final ClassroomEffectiveQuizService classroomEffectiveQuizService;
     private final ClassroomQuizPolicyService classroomQuizPolicyService;
     private final QuizProgressService quizProgressService;
+    private final ClassroomProperties classroomProperties;
     private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper;
 
@@ -62,6 +64,7 @@ public class AssignmentQuizService {
             ClassroomEffectiveQuizService classroomEffectiveQuizService,
             ClassroomQuizPolicyService classroomQuizPolicyService,
             QuizProgressService quizProgressService,
+            ClassroomProperties classroomProperties,
             @Qualifier("quizReasoningLlmProvider") LlmProvider reasoningProvider,
             ObjectMapper objectMapper) {
         this.authorizationService = authorizationService;
@@ -74,6 +77,7 @@ public class AssignmentQuizService {
         this.classroomEffectiveQuizService = classroomEffectiveQuizService;
         this.classroomQuizPolicyService = classroomQuizPolicyService;
         this.quizProgressService = quizProgressService;
+        this.classroomProperties = classroomProperties;
         this.reasoningProvider = reasoningProvider;
         this.objectMapper = objectMapper;
     }
@@ -358,8 +362,13 @@ public class AssignmentQuizService {
         if (!"PUBLISHED".equals(assignment.getStatus())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found.");
         }
-        if (!authorizationService.isActiveStudentOnTerm(userId, assignment.getTermId())
-                && !authorizationService.canManageTerm(userId, assignment.getTermId())) {
+        boolean teacher = authorizationService.canManageTerm(userId, assignment.getTermId());
+        if (!teacher && !authorizationService.isActiveStudentOnTerm(userId, assignment.getTermId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found.");
+        }
+        if (!teacher
+                && assignment.getAvailableFromDate() != null
+                && assignment.getAvailableFromDate().isAfter(classroomProperties.today())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found.");
         }
         return assignment;

@@ -323,12 +323,14 @@ public class TtsService {
 
     private Set<String> preferredCacheVoices(String requestedVoice) {
         Set<String> preferred = new LinkedHashSet<>();
-        if (requestedVoice != null && !requestedVoice.isBlank()) {
-            String trimmed = requestedVoice.trim();
-            preferred.add(trimmed);
-            preferred.add(trimmed.toLowerCase(Locale.ROOT));
+        String safeVoice = sanitizeCacheVoice(requestedVoice);
+        if (safeVoice != null) {
+            preferred.add(safeVoice);
+            preferred.add(safeVoice.toLowerCase(Locale.ROOT));
         }
-        preferred.add(defaultVoice);
+        if (defaultVoice != null && !defaultVoice.isBlank()) {
+            preferred.add(defaultVoice);
+        }
         return preferred;
     }
 
@@ -422,11 +424,32 @@ public class TtsService {
     }
 
     private Path resolveParagraphCacheFile(String bookKey, int chapterIndex, int paragraphIndex, String voice) {
+        String safeVoice = sanitizeCacheVoice(voice);
+        if (safeVoice == null) {
+            safeVoice = defaultVoice;
+        }
         return cachePath.resolve(bookKey)
                 .resolve("audio")
-                .resolve(voice)
+                .resolve(safeVoice)
                 .resolve("chapters")
                 .resolve(String.valueOf(chapterIndex))
                 .resolve(paragraphIndex + ".mp3");
+    }
+
+    /**
+     * Voices become path segments. Reject anything that can escape the cache root.
+     */
+    private String sanitizeCacheVoice(String voice) {
+        if (voice == null || voice.isBlank()) {
+            return null;
+        }
+        String trimmed = voice.trim();
+        if (trimmed.contains("/") || trimmed.contains("\\") || trimmed.contains("..")) {
+            return null;
+        }
+        if (!trimmed.matches("[A-Za-z0-9_-]+")) {
+            return null;
+        }
+        return trimmed;
     }
 }

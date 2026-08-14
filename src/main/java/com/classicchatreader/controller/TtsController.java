@@ -241,7 +241,7 @@ public class TtsController {
     // Prefer any already-cached paragraph audio, including files from a previous
     // TTS provider, so a provider switch does not spend tokens re-synthesizing.
     byte[] cachedAudio = ttsService.getCachedSpeechForParagraph(
-        bookKey, chapter.getChapterIndex(), paragraphIndex, voice);
+        bookKey, chapter.getChapterIndex(), paragraphIndex, resolvedVoice);
     if (cachedAudio != null && cachedAudio.length > 0) {
       return ResponseEntity.ok()
           .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
