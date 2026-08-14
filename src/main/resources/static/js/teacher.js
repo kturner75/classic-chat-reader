@@ -30,6 +30,7 @@
         featureSaveTimer: null,
         activeBookOption: -1,
         selectedChapterIds: [],
+        activeAssignmentChapterOption: -1,
         quizWizardStep: 1,
         quizDraftQuestions: [],
         quizGeneratedBase: [],
@@ -919,15 +920,21 @@
         const matches = matchingAssignmentChapters(el['assignment-chapter-search']?.value);
         const selected = new Set(selectedChapterIds());
         el['assignment-chapter-options'].setAttribute('aria-disabled', wholeBook ? 'true' : 'false');
+        state.activeAssignmentChapterOption = -1;
         el['assignment-chapter-options'].innerHTML = matches.map(chapter => {
-            const checked = selected.has(chapter.id) ? ' checked' : '';
+            const checked = selected.has(chapter.id);
             const disabled = wholeBook ? ' disabled' : '';
-            return `<label class="chapter-option">
-                <input type="checkbox" data-chapter-id="${escapeHtml(chapter.id)}"${checked}${disabled}>
+            return `<label class="chapter-option" id="assignment-chapter-option-${escapeHtml(chapter.id)}" role="option" data-chapter-id="${escapeHtml(chapter.id)}" aria-selected="${checked}">
+                <input type="checkbox" tabindex="-1" data-chapter-id="${escapeHtml(chapter.id)}"${checked ? ' checked' : ''}${disabled}>
                 <span>${escapeHtml(chapter.title || 'Untitled chapter')}</span>
             </label>`;
         }).join('');
         show(el['assignment-chapter-empty'], matches.length === 0);
+        const search = el['assignment-chapter-search'];
+        if (search) {
+            search.setAttribute('aria-expanded', matches.length > 0 ? 'true' : 'false');
+            search.removeAttribute('aria-activedescendant');
+        }
         el['assignment-chapter-options'].querySelectorAll('input[data-chapter-id]').forEach(input => {
             input.addEventListener('change', () => {
                 const id = input.dataset.chapterId;
@@ -944,6 +951,29 @@
                 renderChapterOptions();
             });
         });
+    }
+
+    function moveActiveAssignmentChapterOption(direction) {
+        const options = Array.from(el['assignment-chapter-options']?.querySelectorAll('[role="option"]') || []);
+        if (options.length === 0 || el['assignment-whole-book']?.checked) return;
+        state.activeAssignmentChapterOption = (state.activeAssignmentChapterOption + direction + options.length) % options.length;
+        options.forEach((option, index) => {
+            const active = index === state.activeAssignmentChapterOption;
+            option.classList.toggle('active', active);
+            if (active) {
+                el['assignment-chapter-search']?.setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
+    }
+
+    function toggleActiveAssignmentChapterOption() {
+        const options = Array.from(el['assignment-chapter-options']?.querySelectorAll('[role="option"]') || []);
+        const option = options[state.activeAssignmentChapterOption];
+        const input = option?.querySelector('input[data-chapter-id]');
+        if (!input || input.disabled) return;
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function resetQuizSession() {
@@ -2529,6 +2559,25 @@
         });
         el['assignment-book-search'].addEventListener('blur', () => window.setTimeout(closeBookOptions, 100));
         el['assignment-chapter-search']?.addEventListener('input', renderChapterOptions);
+        el['assignment-chapter-search']?.addEventListener('focus', renderChapterOptions);
+        el['assignment-chapter-search']?.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveActiveAssignmentChapterOption(1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveAssignmentChapterOption(-1);
+            } else if ((event.key === 'Enter' || event.key === ' ') && state.activeAssignmentChapterOption >= 0) {
+                event.preventDefault();
+                toggleActiveAssignmentChapterOption();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                if (el['assignment-chapter-search']) {
+                    el['assignment-chapter-search'].value = '';
+                }
+                renderChapterOptions();
+            }
+        });
         el['assignment-whole-book']?.addEventListener('change', () => {
             if (el['assignment-whole-book'].checked) {
                 state.selectedChapterIds = [];
