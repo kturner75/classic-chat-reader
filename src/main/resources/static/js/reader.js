@@ -3349,6 +3349,13 @@
         localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(store));
     }
 
+    function uniqueCompletedChapterIndexes(values) {
+        return [...new Set((Array.isArray(values) ? values : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 0))]
+            .sort((left, right) => left - right);
+    }
+
     function computeProgressRatio(chapterIndex, pageIndex, totalPages, chapterCount) {
         const safeChapterCount = Math.max(1, Math.round(toFiniteNumber(chapterCount, 1)));
         const safeTotalPages = Math.max(1, Math.round(toFiniteNumber(totalPages, 1)));
@@ -3383,6 +3390,7 @@
             0,
             1
         );
+        const completedChapterIndexes = uniqueCompletedChapterIndexes(raw.completedChapterIndexes);
         const completed = Boolean(raw.completed) || maxProgressRatio >= 0.999;
         return {
             chapterCount,
@@ -3392,6 +3400,7 @@
             progressRatio,
             maxProgressRatio,
             completed,
+            completedChapterIndexes,
             openCount: Math.max(0, Math.round(toFiniteNumber(raw.openCount, 0))),
             lastOpenedAt: typeof raw.lastOpenedAt === 'string' ? raw.lastOpenedAt : null,
             lastReadAt: typeof raw.lastReadAt === 'string' ? raw.lastReadAt : null,
@@ -3941,6 +3950,11 @@
             const normalized = normalizeBookActivity(state.currentBook, existing);
             const maxProgressRatio = Math.max(normalized.maxProgressRatio, progressRatio);
             const completed = normalized.completed || reachedEnd || maxProgressRatio >= 0.999;
+            const chapterComplete = pageIndex >= totalPages - 1;
+            const completedChapterIndexes = uniqueCompletedChapterIndexes([
+                ...(normalized.completedChapterIndexes || []),
+                ...(chapterComplete ? [chapterIndex] : [])
+            ]);
             return {
                 ...normalized,
                 chapterCount,
@@ -3950,6 +3964,7 @@
                 progressRatio,
                 maxProgressRatio,
                 completed,
+                completedChapterIndexes,
                 completedAt: completed ? (normalized.completedAt || now) : null,
                 lastOpenedAt: normalized.lastOpenedAt || now,
                 lastReadAt: now,

@@ -47,7 +47,7 @@ public class VoiceAnalysisService {
   public VoiceSettings analyzeBookForVoice(String title, String author, String openingText) {
     if (cacheOnly) {
       log.info("Skipping voice analysis in cache-only mode for '{}'", title);
-      return VoiceSettings.defaults();
+      return fallbackVoiceSettings();
     }
     String voicesDescription = formatVoicesForAnalysis(ttsService.listVoices());
 
@@ -127,7 +127,7 @@ public class VoiceAnalysisService {
 
     } catch (Exception e) {
       log.error("Failed to analyze book for voice settings", e);
-      return VoiceSettings.defaults();
+      return fallbackVoiceSettings();
     }
   }
 
@@ -176,6 +176,14 @@ public class VoiceAnalysisService {
     if (text == null) return "";
     if (text.length() <= maxLength) return text;
     return text.substring(0, maxLength) + "...";
+  }
+
+  private VoiceSettings fallbackVoiceSettings() {
+    String voice = ttsService.defaultVoice();
+    if (voice == null || voice.isBlank()) {
+      voice = "orion";
+    }
+    return new VoiceSettings(voice, 1.0, null, "Default settings", ttsService.currentProvider());
   }
 
   private String extractJson(String text) {

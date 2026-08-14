@@ -503,10 +503,30 @@ public class TeacherStudentOverviewService {
                 ? activity.chapterCount()
                 : null;
         Integer reached = maxReachedChapterIndex(activity, chapterCount == null ? 1 : chapterCount);
-        if (reached != null && finishedLastAssignedChapter(activity, targetIndex, chapterCount == null ? 1 : chapterCount)) {
+        if (reached != null && finishedAssignedReading(activity, assignment, chapterCount == null ? 1 : chapterCount)) {
             return true;
         }
         return quizStatus == QuizRequirementStatus.COMPLETE;
+    }
+
+    private static boolean finishedAssignedReading(
+            AccountStateSnapshot.BookActivity activity, AssignmentEntity assignment, int chapterCount) {
+        List<Integer> assigned = assignment.getChapters().stream()
+                .map(AssignmentChapterEntity::getChapterIndex)
+                .filter(index -> index != null && index >= 0)
+                .distinct()
+                .toList();
+        if (assigned.isEmpty()) {
+            return false;
+        }
+        List<Integer> completed = activity.completedChapterIndexes() == null
+                ? List.of()
+                : activity.completedChapterIndexes();
+        if (!completed.isEmpty()) {
+            return assigned.stream().allMatch(completed::contains);
+        }
+        int targetIndex = assigned.stream().mapToInt(Integer::intValue).max().orElse(-1);
+        return targetIndex >= 0 && finishedLastAssignedChapter(activity, targetIndex, chapterCount);
     }
 
     private static boolean finishedLastAssignedChapter(

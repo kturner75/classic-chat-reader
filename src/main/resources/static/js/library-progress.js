@@ -131,7 +131,21 @@
             return false;
         }
         const targetIndex = Math.max(...indexes);
+        const completed = uniqueCompletedChapterIndexes(activity.completedChapterIndexes);
+        if (indexes.every((index) => completed.includes(index))) {
+            return true;
+        }
+        if (completed.length > 0) {
+            return false;
+        }
         return finishedLastAssignedChapter(activity, targetIndex);
+    }
+
+    function uniqueCompletedChapterIndexes(values) {
+        return [...new Set((Array.isArray(values) ? values : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 0))]
+            .sort((left, right) => left - right);
     }
 
     function finishedLastAssignedChapter(activity, targetIndex) {

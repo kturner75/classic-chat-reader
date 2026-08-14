@@ -314,6 +314,31 @@ test('multi-chapter assignment completes when furthest chapter covers the set', 
     assert.equal(assignmentChapterLabel(assignment), 'One, Three');
 });
 
+test('multi-chapter assignment requires every selected chapter when completion is tracked', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'One' },
+            { chapterId: 'ch-3', chapterIndex: 2, chapterTitle: 'Three' }
+        ],
+        quizRequired: false,
+        quizStatus: 'NOT_REQUIRED'
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, {
+        lastChapterIndex: 2,
+        lastPage: 4,
+        totalPages: 5,
+        completedChapterIndexes: [2],
+        lastReadAt: '2026-08-12T12:00:00.000Z',
+        chapterCount: 10
+    }), false);
+    assert.equal(isReadingCompleteForAssignment(assignment, {
+        lastChapterIndex: 2,
+        completedChapterIndexes: [0, 2],
+        lastReadAt: '2026-08-12T12:00:00.000Z',
+        chapterCount: 10
+    }), true);
+});
+
 test('Take Quiz is hidden until reading is complete and shown as Retry after a failed attempt', () => {
     const assignment = {
         assignmentId: 'asg-1',

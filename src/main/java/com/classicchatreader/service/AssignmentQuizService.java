@@ -206,9 +206,7 @@ public class AssignmentQuizService {
                 assignment,
                 request != null ? request.bookId() : null,
                 request != null ? request.chapterIds() : null);
-        String scope = assignment.isWholeBook()
-                ? "the whole book"
-                : assignment.getChapters().size() + " selected chapter(s)";
+        String scope = describeProposedScope(assignment, request != null ? request.chapterIds() : null);
         String prompt = """
                 You are helping a teacher author a multiple-choice assignment quiz.
                 Book: %s
@@ -469,6 +467,26 @@ public class AssignmentQuizService {
                 .mapToInt(AssignmentChapterEntity::getChapterIndex)
                 .max()
                 .orElse(-1);
+        return targetIndex >= 0 && finishedAssignedReading(activity, assignment);
+    }
+
+    private static boolean finishedAssignedReading(
+            AccountStateSnapshot.BookActivity activity, AssignmentEntity assignment) {
+        List<Integer> assigned = assignment.getChapters().stream()
+                .map(AssignmentChapterEntity::getChapterIndex)
+                .filter(index -> index != null && index >= 0)
+                .distinct()
+                .toList();
+        if (assigned.isEmpty()) {
+            return false;
+        }
+        List<Integer> completed = activity.completedChapterIndexes() == null
+                ? List.of()
+                : activity.completedChapterIndexes();
+        if (!completed.isEmpty()) {
+            return assigned.stream().allMatch(completed::contains);
+        }
+        int targetIndex = assigned.stream().mapToInt(Integer::intValue).max().orElse(-1);
         return targetIndex >= 0 && finishedLastAssignedChapter(activity, targetIndex);
     }
 
@@ -612,6 +630,17 @@ public class AssignmentQuizService {
             }
         }
         return sb.toString();
+    }
+
+    private static String describeProposedScope(AssignmentEntity assignment, List<String> proposedChapterIds) {
+        if (proposedChapterIds != null) {
+            return proposedChapterIds.isEmpty()
+                    ? "the whole book"
+                    : proposedChapterIds.size() + " selected chapter(s)";
+        }
+        return assignment.isWholeBook()
+                ? "the whole book"
+                : assignment.getChapters().size() + " selected chapter(s)";
     }
 
     private List<TeacherQuizAuthoringService.TeacherQuestionView> toTeacherQuestions(ChapterQuizPayload payload) {
