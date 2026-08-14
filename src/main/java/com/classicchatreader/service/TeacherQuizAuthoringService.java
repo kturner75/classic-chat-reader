@@ -695,9 +695,16 @@ public class TeacherQuizAuthoringService {
     ) {
     }
 
-    public record SuggestQuestionsRequest(Integer count, Integer optionCount) {
+    public record SuggestQuestionsRequest(Integer count, Integer optionCount, String bookId, List<String> chapterIds) {
+        public SuggestQuestionsRequest(Integer count, Integer optionCount) {
+            this(count, optionCount, null, null);
+        }
     }
 
-    public record SuggestDistractorsRequest(String question, String correctAnswer, Integer count) {
+    public record SuggestDistractorsRequest(
+            String question, String correctAnswer, Integer count, String bookId, List<String> chapterIds) {
+        public SuggestDistractorsRequest(String question, String correctAnswer, Integer count) {
+            this(question, correctAnswer, count, null, null);
+        }
     }
 }

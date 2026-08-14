@@ -187,9 +187,15 @@ public class AssignmentQuizService {
         if (!reasoningProvider.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Quiz AI provider is unavailable.");
         }
-        BookEntity book = bookRepository.findById(assignment.getBookId())
+        String bookId = request != null && request.bookId() != null && !request.bookId().isBlank()
+                ? request.bookId().trim()
+                : assignment.getBookId();
+        BookEntity book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId."));
-        String context = buildAssignmentContext(assignment);
+        String context = buildAssignmentContext(
+                assignment,
+                request != null ? request.bookId() : null,
+                request != null ? request.chapterIds() : null);
         String scope = assignment.isWholeBook()
                 ? "the whole book"
                 : assignment.getChapters().size() + " selected chapter(s)";
@@ -228,7 +234,10 @@ public class AssignmentQuizService {
         if (!reasoningProvider.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Quiz AI provider is unavailable.");
         }
-        String context = buildAssignmentContext(assignment);
+        String context = buildAssignmentContext(
+                assignment,
+                request != null ? request.bookId() : null,
+                request != null ? request.chapterIds() : null);
         String prompt = """
                 Generate exactly %d plausible wrong multiple-choice answers (distractors) for this quiz question.
                 Do not repeat the correct answer. Return JSON only: {"distractors":["..."]}
@@ -505,9 +514,26 @@ public class AssignmentQuizService {
     }
 
     private String buildAssignmentContext(AssignmentEntity assignment) {
+        return buildAssignmentContext(assignment, null, null);
+    }
+
+    private String buildAssignmentContext(
+            AssignmentEntity assignment, String proposedBookId, List<String> proposedChapterIds) {
+        String bookId = proposedBookId != null && !proposedBookId.isBlank()
+                ? proposedBookId.trim()
+                : assignment.getBookId();
         List<ChapterEntity> chapters;
-        if (assignment.isWholeBook()) {
-            chapters = chapterRepository.findByBookIdOrderByChapterIndex(assignment.getBookId());
+        if (proposedChapterIds != null) {
+            if (proposedChapterIds.isEmpty()) {
+                chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
+            } else {
+                chapters = proposedChapterIds.stream()
+                        .map(id -> chapterRepository.findById(id).orElse(null))
+                        .filter(Objects::nonNull)
+                        .toList();
+            }
+        } else if (assignment.isWholeBook()) {
+            chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
         } else {
             chapters = assignment.getChapters().stream()
                     .map(AssignmentChapterEntity::getChapterId)

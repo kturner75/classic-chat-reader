@@ -1053,7 +1053,11 @@
         }
         const defaults = state.features || {};
         if (el['assignment-quiz-question-count']) {
-            el['assignment-quiz-question-count'].value = String(defaults.defaultQuizQuestionCount || 10);
+            const defaultCount = Number(defaults.defaultQuizQuestionCount) || 10;
+            const existingMin = assignment && assignment.quizPassMinCorrect != null
+                ? Number(assignment.quizPassMinCorrect)
+                : 0;
+            el['assignment-quiz-question-count'].value = String(Math.max(defaultCount, existingMin || 0));
         }
         if (el['assignment-quiz-option-count']) {
             el['assignment-quiz-option-count'].value = String(defaults.defaultQuizOptionCount || 4);
@@ -1881,6 +1885,9 @@
             state.quizMode = 'override';
             state.quizDraftQuestions = Array.from({ length: slotCount }, () => blankQuestion(optionCount));
         }
+        if (el['assignment-quiz-question-count'] && questions.length > 0) {
+            el['assignment-quiz-question-count'].value = String(questions.length);
+        }
         state.quizAuthorIndex = 0;
     }
 
@@ -2101,7 +2108,9 @@
                 body: JSON.stringify({
                     question: item.question,
                     correctAnswer: item.correct,
-                    count: needed
+                    count: needed,
+                    bookId: el['assignment-book']?.value || null,
+                    chapterIds: selectedChapterIds()
                 })
             });
             const distractors = Array.isArray(result.distractors) ? result.distractors : [];
@@ -2137,7 +2146,9 @@
                 body: JSON.stringify({
                     question: item.question,
                     correctAnswer: item.correct,
-                    count: 1
+                    count: 1,
+                    bookId: el['assignment-book']?.value || null,
+                    chapterIds: selectedChapterIds()
                 })
             });
             const next = Array.isArray(result.distractors) ? result.distractors[0] : '';
