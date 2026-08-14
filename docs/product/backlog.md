@@ -834,14 +834,13 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Kevin is quoting a community-college pilot as a **fixed $750/section/semester** (~20 students, ~5 months). He wants **real per-student AI cost data this term** so the next quote is measured, not guessed.
 - **SuperGrok Heavy OAuth** will subsidize usage while it lasts; the **xAI API key** is the fallback (already in `XaiLlmProvider` / `XaiRealtimeSessionService`; OAuth 401/402/403 retries with the key).
 - Existing hook: `classroom_usage_events` + `ClassroomUsageService` today only persist **`READING_HEARTBEAT`** and **`ASSIGNMENT_VIEW`**. V14 already has `AI_TOKEN_USAGE` + token/cost column hooks (`feature`, `input_tokens` / `output_tokens`, `estimated_cost_micros`) — extend that store; do not invent a second ledger.
-- This-term cut is child **`BL-042.5`**. Parent slices `.1`–`.4` stay; `.5` is the acceptance-ready subset (chat + voice + `$500` envelope + API-key alert), not a duplicate epic.
+- This-term cut is child **`BL-042.5`**. Parent slices `.1`–`.4` stay; `.5` is the acceptance-ready subset, not a duplicate epic. Full cut under Acceptance (V14 `classroom_usage_events` field map).
 - Scope Buckets:
 - **User activity metrics (supporting):** sessions, assignment opens, reading progress events, quiz attempts — enough context to explain AI spikes (ties to `BL-025.6`; avoid duplicate event stores if possible).
-- **AI usage metering (primary):** durable records for provider calls with at least: timestamp, feature/surface (character chat, Call Character / realtime voice, quiz generation/suggest, recap, Reading Buddy, illustrations/portraits/TTS if billed, etc.), model id, input/output token counts (or provider billable units), estimated $ at recorded unit prices, optional `userId` / `termId` / `classId` when known, success/error. **This-term (`BL-042.5`):** character chat turns + character voice sessions only, plus `billed_via` (`oauth` | `api_key`).
-- **Operator reporting (v1):** internal/admin or SQL-friendly rollups — daily/weekly AI $ by feature; per-user and per-class totals; p50/p95 student AI cost; top consumers. Teacher-facing “% of allotment” can wait. **This-term (`BL-042.5`):** spend and minutes/tokens **by student and by week**, plus class totals vs the **$500 AI envelope**.
+- **AI usage metering (primary):** durable records for provider calls with at least: timestamp, feature/surface (character chat, Call Character / realtime voice, quiz generation/suggest, recap, Reading Buddy, illustrations/portraits/TTS if billed, etc.), model id, input/output token counts (or provider billable units), estimated $ at recorded unit prices, optional `userId` / `termId` / `classId` when known, success/error. **This-term (`BL-042.5`):** character chat + character voice only; columns under Acceptance.
+- **Operator reporting (v1):** internal/admin or SQL-friendly rollups — daily/weekly AI $ by feature; per-user and per-class totals; p50/p95 student AI cost; top consumers. Teacher-facing “% of allotment” can wait. **This-term rollup:** see `BL-042.5` Acceptance.
 - **Cost calculator / pricing support:** combine (a) fixed monthly infra floor (droplet + Spaces + DB + misc) amortized per class/term, (b) measured or scenario AI $/student at light/typical/heavy classroom patterns, (c) target margin → suggested **term price**, **seat cap N**, and **pooled token/rate limits**. Do **not** change the current **$750** quote on this card.
-- **Rate-limit / budget hooks (optional same epic or follow-on):** enforce or soft-warn against pooled class/term AI budget once metering exists (align with `BL-038` credit ideas; do not require full PAYG storefront for pilot pricing). **Out of scope for `BL-042.5`:** voice minute caps.
-- **API-key fallback alert (`BL-042.5`):** first request that actually bills the API key after OAuth 401/402/403 fallback must be noisy — that is when the **$500** hedge starts burning.
+- **Rate-limit / budget hooks (optional same epic or follow-on):** enforce or soft-warn against pooled class/term AI budget once metering exists (align with `BL-038` credit ideas; do not require full PAYG storefront for pilot pricing).
 - Work Tracker (suggested slices):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
@@ -849,15 +848,15 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 | BL-042.2 Operator rollups | Proposed | Daily/feature/user/class aggregates + simple export or admin query docs. This-term student/week + **$500** envelope view is **`BL-042.5`**. | Kevin can answer “$ AI last 7/30 days by feature” and “approx $/active student” from real data |
 | BL-042.3 Cost model + pricing sketch | Proposed | Spreadsheet or small doc: fixed DO costs + AI scenarios + recommended term/seat/pool limits for group demo. **Do not revise the $750 quote here** — measure first (`BL-042.5`). | One-pager pricing recommendation ready before multi-teacher meeting; assumptions and measurement gaps explicit |
 | BL-042.4 Classroom allotment UX (later) | Proposed | Teacher/school view of pool remaining; optional hard limits | Deferred unless pilot contract needs it; not required for first group demo |
-| BL-042.5 This-term chat/voice cost evidence | Proposed | **Child of this epic (not a new theme).** Per-student AI events for **character chat turns** and **character voice sessions** on existing `classroom_usage_events` (today only `READING_HEARTBEAT` + `ASSIGNMENT_VIEW`). Fields: `user_id`, `class_section_id`, `term_id`, `feature` (`chat` \| `voice`), `model`, input/output/cached tokens (chat) or duration minutes (voice), list-price USD at current xAI rates, `billed_via` (`oauth` \| `api_key`), `occurred_at`. **Do not persist prompt or completion text.** Teacher/ops-readable rollup: spend and minutes/tokens by student and by week, plus class totals vs the **$500 AI envelope**. Alert when any request actually bills the API key (OAuth 401/402/403 fallback); **first occurrence must be noisy**. SuperGrok Heavy OAuth subsidizes while it lasts; xAI API key is the fallback already in `XaiLlmProvider` / `XaiRealtimeSessionService`. | Kevin can defend the next section quote from measured per-student chat/voice $ this term; class totals are comparable to the $500 hedge; first API-key bill is noisy |
+| BL-042.5 This-term chat/voice cost evidence | Proposed | This-term cut of this epic (not a new theme): chat + voice `AI_TOKEN_USAGE` on V14 `classroom_usage_events`. Full cut under Acceptance. | Kevin can defend the next section quote from measured per-student chat/voice $ this term |
 - Discovery Questions:
 - Which activities need metered AI tracking first for the **Aug group demo** (character chat + voice call + quiz gen minimum?) vs later (illustrations, TTS, Reading Buddy)? **2026-08-14 lean:** this-term (`BL-042.5`) is **chat + voice only**.
 - Should token accounting live per-request (raw provider usage) or be normalized into an internal "credit" unit shared with `BL-038`?
-- What provider pricing sources should the calculator use, and how should it stay current as provider prices change? **This-term:** list-price USD at **current xAI rates**.
+- What provider pricing sources should the calculator use, and how should it stay current as provider prices change? **This-term:** `estimated_cost_micros` at **current xAI** list rates.
 - Should rate limits be enforced per-student, per-class, or **pooled at subscription/term** (lean: pooled)?
 - Is v1 calculator **operator-only** (yes for Aug) vs teacher-facing usage later? **This-term:** teacher/ops-readable rollup is in scope; polished allotment UX stays `.4`.
-- How to attribute **shared/cache hits** (e.g. pregenerated quiz/illustration) so classroom AI $ is not double-counted or under-counted? **This-term:** persist **cached tokens** on chat events; do not invent a second store.
-- Voice/realtime billing units may not be simple chat tokens — how do we normalize Call Character minutes/units into the same cost model? **This-term:** record **duration minutes** for voice; do not add voice minute caps on this card.
+- How to attribute **shared/cache hits** (e.g. pregenerated quiz/illustration) so classroom AI $ is not double-counted or under-counted? **This-term:** cached tokens in `metadata_json` (no dedicated column).
+- Voice/realtime billing units may not be simple chat tokens — how do we normalize Call Character minutes/units into the same cost model? **This-term:** `duration_ms` on the same `AI_TOKEN_USAGE` row.
 - Current Direction (2026-07-09):
 - Grew directly out of educator partner feedback: before committing to a classroom subscription price, need real cost-per-student modeling based on actual token usage, not guesswork.
 - Reuse `BL-038`'s credit ledger/ threading rather than building a second, separate accounting system if the data shapes are compatible.
@@ -868,11 +867,9 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Prefer append-only usage events from provider responses (actual tokens when APIs return them) over client-estimated tokens.
 - Group demo success metric for this epic: Kevin can defend a **term + seats + AI pool** number with “based on measured X, assumed Y” — not a full self-serve billing product.
 - Current Direction (2026-08-14):
-- **Refined in place** — `BL-042` already covered usage/cost; do **not** open a sibling epic. Child **`BL-042.5`** is the this-term acceptance cut.
+- **Refined in place** — `BL-042` already covered usage/cost; do **not** open a sibling epic. Child **`BL-042.5`** is the this-term cut; full acceptance (V14 field map) below.
 - Quote in market: **$750/section/semester** (~20 students, ~5 months). Next quote waits on measured per-student chat/voice $. **Do not change the $750 number on this card.**
-- Subsidy: SuperGrok Heavy OAuth while it lasts; xAI API key fallback already implemented. Persist `billed_via`; first API-key bill is the **$500** hedge ignition and must be noisy.
-- Reuse `classroom_usage_events` / `ClassroomUsageService`; never persist prompt or completion text.
-- **Out of scope for `BL-042.5`:** voice minute caps, SuperGrok ToS, changing the $750 quote, rkj.
+- Subsidy: SuperGrok Heavy OAuth while it lasts; xAI API key is the fallback already in `XaiLlmProvider` / `XaiRealtimeSessionService`.
 - Exit Criteria for Discovery:
 - Decision on tracked AI activity scope for v1 metering (feature list). **This-term signed:** character chat + character voice (`BL-042.5`); other surfaces remain `.1`.
 - Decision on internal accounting unit (raw tokens/units vs. normalized credits) and relationship to `BL-038`.
@@ -884,10 +881,13 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Cost model documents fixed monthly infra and combines it with AI scenarios to recommend a rate/limit shape for a target subscription price and margin.
 - Pricing sketch suitable for multi-teacher / AI council conversation exists and cites measurement sources + gaps.
 - **This-term (`BL-042.5`) — already covered by the parent theme; refined here, not duplicated:**
-- Character chat turns and character voice sessions write per-student usage events with `user_id`, `class_section_id`, `term_id`, `feature` (`chat` \| `voice`), `model`, input/output/cached tokens (chat) or duration minutes (voice), list-price USD at current xAI rates, `billed_via` (`oauth` \| `api_key`), `occurred_at`.
+- Reuse V14 `classroom_usage_events` (`docs/product/bl-025-classroom-data-model.md` §11). Do not invent a second ledger or new column names. `event_type` = `AI_TOKEN_USAGE`. Today `ClassroomUsageService` only writes `READING_HEARTBEAT` and `ASSIGNMENT_VIEW`.
+- Character chat turns and character voice sessions write per-student rows on existing columns: `user_id`, `class_section_id`, `term_id`, `feature` (V14 values: `CHAT` for character chat; Call Character / realtime uses that same vocabulary — not `chat|voice`), `model_name`, `input_tokens` / `output_tokens` (chat), `duration_ms` (voice; not minutes), `estimated_cost_micros` (current xAI list rates stored as micros — not a USD column), `occurred_at`.
+- Cached tokens and `billed_via` (`oauth` | `api_key`): `metadata_json` (no dedicated columns). SuperGrok Heavy OAuth subsidizes while it lasts; xAI API key is the fallback already in `XaiLlmProvider` / `XaiRealtimeSessionService`.
 - Prompt and completion text are **not** persisted on these events.
-- A teacher/ops-readable rollup shows spend and minutes/tokens **by student and by week**, plus class totals vs the **$500 AI envelope**.
+- A teacher/ops-readable rollup shows spend and minutes/tokens **by student and by week** (minutes derived from `duration_ms`), plus class totals vs the **$500 AI envelope**.
 - Any request that actually bills the API key (OAuth 401/402/403 fallback) alerts; the **first** occurrence is noisy.
+- **Out of scope:** voice minute caps, SuperGrok ToS, changing the $750 quote, rkj.
 - Dependency Notes:
 - Benefits from `BL-025.6` (student activity logging) for non-AI engagement context and class-scoped rollups; AI metering should still work if activity logging is partial (attribute what we can). **`BL-042.5` extends the same `classroom_usage_events` writer** (today heartbeat + assignment view only).
 - Shares accounting foundations with `BL-038` (Public Character Chat Access and Cost Controls); avoid building a duplicate ledger long-term.
@@ -895,7 +895,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-07-09: Epic created from educator partner pricing/cost concerns.
 - 2026-08-06: Expanded after Jessica call — multi-teacher + AI council demo target week of Aug 17–21; need cost-covering pricing; fixed DO costs known; prioritize real AI usage metrics for estimates; keep epic lower than classroom feature priority but time-bound for pricing prep.
-- 2026-08-14: Refined in place (parent already covered usage/cost). Added child **`BL-042.5`** for this-term per-student chat/voice events, rollup vs **$500** AI envelope, and noisy first API-key bill after SuperGrok OAuth fallback. Commercial driver: measure real $/student this term before re-quoting the **$750/section/semester** community-college pilot. Out of scope on `.5`: voice minute caps, SuperGrok ToS, changing the $750 quote, rkj. Docs only.
+- 2026-08-14: Refined in place (parent already covered usage/cost). Added child **`BL-042.5`** for this-term per-student chat/voice events, rollup vs **$500** AI envelope, and noisy first API-key bill after SuperGrok OAuth fallback. Commercial driver: measure real $/student this term before re-quoting the **$750/section/semester** community-college pilot. Docs only.
+- 2026-08-14: Review nits — mapped `.5` onto V14 `classroom_usage_events` (`estimated_cost_micros`, `duration_ms`, `feature`/`CHAT`, `model_name`, `AI_TOKEN_USAGE`, `metadata_json` for `billed_via` + cached tokens); slimmed the work-tracker cell to a pointer; full cut lives under Acceptance.
 
 ### BL-043 - FERPA Compliance for Classroom Data
 - Type: Tech Debt
