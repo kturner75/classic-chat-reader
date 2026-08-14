@@ -1182,14 +1182,17 @@
             body.clearAvailableFromDate = !availableFromRaw;
         }
         const needsCustomQuiz = quizRequired && quizSource === 'CUSTOM';
-        const existingAssignment = state.assignments.find(item => item.assignmentId === state.editingAssignmentId);
-        const currentlyPublished = String(existingAssignment?.status || '').toUpperCase() === 'PUBLISHED';
-        const alreadyHasCustomQuiz = String(existingAssignment?.quizSource || '').toUpperCase() === 'CUSTOM';
-        const stageQuizBeforePublish = needsCustomQuiz && currentlyPublished && !alreadyHasCustomQuiz;
-        const saveQuizFirst = needsCustomQuiz && state.editingAssignmentId
-                && (stageQuizBeforePublish || alreadyHasCustomQuiz);
-        if (needsCustomQuiz && requestedStatus === 'PUBLISHED' && !currentlyPublished) {
-            body.status = 'DRAFT';
+        if (needsCustomQuiz) {
+            const questions = usingDefaultQuiz() ? [] : state.quizDraftQuestions;
+            if (!questions.length) {
+                toast('Define at least one quiz question.');
+                return;
+            }
+            if (questions.some(item => !questionComplete(item))) {
+                toast(incompleteQuestionMessage());
+                return;
+            }
+            body.customQuizQuestions = questions.map(item => flattenQuestion(item));
         }
         const path = state.editingAssignmentId
             ? `/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}`
@@ -1197,20 +1200,8 @@
         el['assignment-submit'].disabled = true;
         show(el['assignment-form-error'], false);
         try {
-            if (saveQuizFirst) {
-                await publishAssignmentQuiz(state.editingAssignmentId);
-            }
             let saved = await api(path, { method: state.editingAssignmentId ? 'PUT' : 'POST', body: JSON.stringify(body) });
             state.editingAssignmentId = saved.assignmentId;
-            if (needsCustomQuiz && !saveQuizFirst) {
-                await publishAssignmentQuiz(saved.assignmentId);
-            }
-            if (needsCustomQuiz && requestedStatus === 'PUBLISHED' && !currentlyPublished) {
-                saved = await api(`/api/classroom/assignments/${encodeURIComponent(saved.assignmentId)}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ status: 'PUBLISHED' })
-                });
-            }
             const existingIndex = state.assignments.findIndex(item => item.assignmentId === saved.assignmentId);
             if (existingIndex >= 0) state.assignments.splice(existingIndex, 1, saved);
             else state.assignments.push(saved);

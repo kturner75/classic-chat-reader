@@ -564,8 +564,8 @@ public class ClassroomContextService {
         if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())) {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
-                used += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                        chapterId, userId, since, row.getId());
+                used += quizAttemptRepository.countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                        chapterId, userId, since);
             }
         }
         return used;
@@ -578,8 +578,8 @@ public class ClassroomContextService {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
                 best = Math.max(best, quizAttemptRepository
-                        .findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                                chapterId, userId, since, row.getId()));
+                        .findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                                chapterId, userId, since));
             }
         }
         return best;
@@ -592,8 +592,8 @@ public class ClassroomContextService {
             String chapterId = row.singleChapterId();
             if (chapterId != null) {
                 best = Math.max(best, quizAttemptRepository
-                        .findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                                chapterId, userId, since, row.getId()));
+                        .findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                                chapterId, userId, since));
             }
         }
         return best;

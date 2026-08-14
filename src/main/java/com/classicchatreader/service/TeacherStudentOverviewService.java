@@ -263,6 +263,15 @@ public class TeacherStudentOverviewService {
         int bestCorrect = quizAttemptRepository
                 .findMaxCorrectAnswersByAssignmentIdAndUserIdAndCreatedAtOnOrAfter(
                         assignment.getId(), studentUserId, since);
+        if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
+                && assignment.singleChapterId() != null) {
+            bestScore = Math.max(bestScore, quizAttemptRepository
+                    .findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                            assignment.singleChapterId(), studentUserId, since));
+            bestCorrect = Math.max(bestCorrect, quizAttemptRepository
+                    .findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                            assignment.singleChapterId(), studentUserId, since));
+        }
         List<QuizAttemptEntity> attempts = quizAttemptRepository
                 .findByAssignmentIdAndUserIdOrderByCreatedAtDesc(assignment.getId(), studentUserId);
         QuizAttemptEntity latestInWindow = attempts.stream()
@@ -377,8 +386,8 @@ public class TeacherStudentOverviewService {
                         row.getId(), userId, since);
                 if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
                         && row.singleChapterId() != null) {
-                    used += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                            row.singleChapterId(), userId, since, row.getId());
+                    used += quizAttemptRepository.countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                            row.singleChapterId(), userId, since);
                 }
                 return used > 0
                         ? QuizRequirementStatus.COMPLETE
@@ -403,8 +412,8 @@ public class TeacherStudentOverviewService {
                 row.getId(), userId, since);
         if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
                 && row.singleChapterId() != null) {
-            used += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                    row.singleChapterId(), userId, since, row.getId());
+            used += quizAttemptRepository.countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                    row.singleChapterId(), userId, since);
         }
         Integer allowed = minCorrect != null && maxRetries != null ? 1 + maxRetries : null;
         Boolean passed = null;
@@ -414,8 +423,8 @@ public class TeacherStudentOverviewService {
             if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(row.getQuizSource())
                     && row.singleChapterId() != null) {
                 best = Math.max(best, quizAttemptRepository
-                        .findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                                row.singleChapterId(), userId, since, row.getId()));
+                        .findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                                row.singleChapterId(), userId, since));
             }
             passed = best >= minCorrect;
         } else if (used > 0) {

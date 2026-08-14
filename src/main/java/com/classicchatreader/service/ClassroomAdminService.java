@@ -8,6 +8,8 @@ import com.classicchatreader.entity.ClassSectionEntity;
 import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.AssignmentQuizEntity;
+import com.classicchatreader.model.ChapterQuizPayload;
 import com.classicchatreader.repository.AssignmentQuizRepository;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
@@ -296,6 +298,7 @@ public class ClassroomAdminService {
             assignment.setStatus("DRAFT");
         }
         AssignmentEntity saved = assignmentRepository.save(assignment);
+        persistCustomQuizIfPresent(saved, request, userId);
         validatePublishedQuizRequirement(saved);
         return saved;
     }
@@ -337,6 +340,7 @@ public class ClassroomAdminService {
         validateQuizPassRulesForUpdate(request, assignment);
         applyAssignmentUpdate(assignment, userId, request);
         AssignmentEntity saved = assignmentRepository.save(assignment);
+        persistCustomQuizIfPresent(saved, request, userId);
         validatePublishedQuizRequirement(saved);
         return saved;
     }
@@ -559,7 +563,8 @@ public class ClassroomAdminService {
                     resolveRequestedChapterIds(request, null),
                     request.quizSource(),
                     null,
-                    request.quizPassMinCorrect());
+                    request.quizPassMinCorrect(),
+                    request);
         }
     }
 
@@ -587,7 +592,8 @@ public class ClassroomAdminService {
         String quizSource = !isBlank(request.quizSource())
                 ? request.quizSource().trim().toUpperCase()
                 : existing.getQuizSource();
-        validatePassMinAgainstEffectiveQuiz(existing.getTermId(), chapterIds, quizSource, existing.getId(), min);
+        validatePassMinAgainstEffectiveQuiz(
+                existing.getTermId(), chapterIds, quizSource, existing.getId(), min, request);
     }
 
     private void validateQuizPassRulePair(
@@ -635,8 +641,19 @@ public class ClassroomAdminService {
             List<String> chapterIds,
             String quizSource,
             String assignmentId,
-            Integer minCorrect) {
+            Integer minCorrect,
+            AssignmentWriteRequest request) {
         if (minCorrect == null) {
+            return;
+        }
+        if (request != null && request.customQuizQuestions() != null && !request.customQuizQuestions().isEmpty()) {
+            int proposedSize = request.customQuizQuestions().size();
+            if (minCorrect > proposedSize) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
+                                + proposedSize + " questions).");
+            }
             return;
         }
         Optional<Integer> known = resolveEffectiveQuizQuestionCount(termId, chapterIds, quizSource, assignmentId);
@@ -648,6 +665,31 @@ public class ClassroomAdminService {
                     HttpStatus.BAD_REQUEST,
                     "quizPassMinCorrect (" + minCorrect + ") cannot exceed the effective quiz size ("
                             + known.get() + " questions).");
+        }
+    }
+
+    private void persistCustomQuizIfPresent(AssignmentEntity assignment, AssignmentWriteRequest request, String userId) {
+        if (request == null || request.customQuizQuestions() == null || request.customQuizQuestions().isEmpty()) {
+            return;
+        }
+        ChapterQuizPayload payload = new ChapterQuizPayload(request.customQuizQuestions());
+        String nextVersion = chapterQuizService.contentVersion(payload);
+        String previousVersion = assignmentQuizRepository.findByAssignmentId(assignment.getId())
+                .map(AssignmentQuizEntity::getPayloadJson)
+                .map(chapterQuizService::parsePayloadJson)
+                .map(chapterQuizService::contentVersion)
+                .orElse(null);
+        AssignmentQuizEntity row = assignmentQuizRepository.findByAssignmentId(assignment.getId())
+                .orElseGet(AssignmentQuizEntity::new);
+        row.setAssignmentId(assignment.getId());
+        row.setPayloadJson(chapterQuizService.serializePayload(payload));
+        row.setCreatedByUserId(userId);
+        assignmentQuizRepository.save(row);
+        boolean published = "PUBLISHED".equalsIgnoreCase(assignment.getStatus());
+        boolean alreadyCustom = AssignmentEntity.QUIZ_SOURCE_CUSTOM.equalsIgnoreCase(assignment.getQuizSource());
+        if (published && alreadyCustom && !Objects.equals(previousVersion, nextVersion)) {
+            assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
+            assignmentRepository.save(assignment);
         }
     }
 
@@ -990,7 +1032,8 @@ public class ClassroomAdminService {
             Integer quizPassMinCorrect,
             Integer quizMaxRetries,
             Boolean clearQuizPassRules,
-            String quizSource
+            String quizSource,
+            List<ChapterQuizPayload.Question> customQuizQuestions
     ) {
         public AssignmentWriteRequest(
                 String title,
@@ -1003,7 +1046,7 @@ public class ClassroomAdminService {
                 Integer sortOrder,
                 String status) {
             this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, null, sortOrder, status, null, null, null, null, null, null);
+                    quizRequired, null, sortOrder, status, null, null, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -1018,7 +1061,7 @@ public class ClassroomAdminService {
                 Integer sortOrder,
                 String status) {
             this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
-                    quizRequired, characterChatRequired, sortOrder, status, null, null, null, null, null, null);
+                    quizRequired, characterChatRequired, sortOrder, status, null, null, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -1036,7 +1079,7 @@ public class ClassroomAdminService {
                 Boolean clearAvailableFromDate) {
             this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
                     quizRequired, characterChatRequired, sortOrder, status,
-                    clearDueDate, clearAvailableFromDate, null, null, null, null);
+                    clearDueDate, clearAvailableFromDate, null, null, null, null, null);
         }
 
         public AssignmentWriteRequest(
@@ -1057,7 +1100,31 @@ public class ClassroomAdminService {
                 Boolean clearQuizPassRules) {
             this(title, bookId, null, chapterId, chapterIndex, dueDate, availableFromDate,
                     quizRequired, characterChatRequired, sortOrder, status,
-                    clearDueDate, clearAvailableFromDate, quizPassMinCorrect, quizMaxRetries, clearQuizPassRules, null);
+                    clearDueDate, clearAvailableFromDate, quizPassMinCorrect, quizMaxRetries, clearQuizPassRules, null, null);
+        }
+
+        public AssignmentWriteRequest(
+                String title,
+                String bookId,
+                List<String> chapterIds,
+                String chapterId,
+                Integer chapterIndex,
+                LocalDate dueDate,
+                LocalDate availableFromDate,
+                Boolean quizRequired,
+                Boolean characterChatRequired,
+                Integer sortOrder,
+                String status,
+                Boolean clearDueDate,
+                Boolean clearAvailableFromDate,
+                Integer quizPassMinCorrect,
+                Integer quizMaxRetries,
+                Boolean clearQuizPassRules,
+                String quizSource) {
+            this(title, bookId, chapterIds, chapterId, chapterIndex, dueDate, availableFromDate,
+                    quizRequired, characterChatRequired, sortOrder, status,
+                    clearDueDate, clearAvailableFromDate, quizPassMinCorrect, quizMaxRetries, clearQuizPassRules,
+                    quizSource, null);
         }
     }
 

@@ -131,13 +131,12 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
             WHERE qa.chapter.id = :chapterId
               AND qa.userId = :userId
               AND qa.createdAt >= :since
-              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+              AND qa.assignmentId IS NULL
             """)
-    long countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+    long countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
             @Param("userId") String userId,
-            @Param("since") java.time.LocalDateTime since,
-            @Param("assignmentId") String assignmentId);
+            @Param("since") java.time.LocalDateTime since);
 
     @Query("""
             SELECT COALESCE(MAX(qa.scorePercent), 0)
@@ -145,13 +144,12 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
             WHERE qa.chapter.id = :chapterId
               AND qa.userId = :userId
               AND qa.createdAt >= :since
-              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+              AND qa.assignmentId IS NULL
             """)
-    int findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+    int findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
             @Param("userId") String userId,
-            @Param("since") java.time.LocalDateTime since,
-            @Param("assignmentId") String assignmentId);
+            @Param("since") java.time.LocalDateTime since);
 
     @Query("""
             SELECT COALESCE(MAX(qa.correctAnswers), 0)
@@ -159,13 +157,12 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttemptEntity, 
             WHERE qa.chapter.id = :chapterId
               AND qa.userId = :userId
               AND qa.createdAt >= :since
-              AND (qa.assignmentId IS NULL OR qa.assignmentId <> :assignmentId)
+              AND qa.assignmentId IS NULL
             """)
-    int findMaxCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
+    int findMaxUnassignedCorrectAnswersByChapterIdAndUserIdAndCreatedAtOnOrAfter(
             @Param("chapterId") String chapterId,
             @Param("userId") String userId,
-            @Param("since") java.time.LocalDateTime since,
-            @Param("assignmentId") String assignmentId);
+            @Param("since") java.time.LocalDateTime since);
 
     /** Classroom assignment COMPLETE: require a perfect (100%) attempt for the user. */
     boolean existsByChapterIdAndUserIdAndPerfectTrue(String chapterId, String userId);

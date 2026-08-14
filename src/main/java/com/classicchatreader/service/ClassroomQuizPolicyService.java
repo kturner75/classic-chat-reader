@@ -136,8 +136,8 @@ public class ClassroomQuizPolicyService {
                 assignment.getId(), userId, since);
         if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
                 && assignment.singleChapterId() != null) {
-            usedLong += quizAttemptRepository.countByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                    assignment.singleChapterId(), userId, since, assignment.getId());
+            usedLong += quizAttemptRepository.countUnassignedByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                    assignment.singleChapterId(), userId, since);
         }
         int used = usedLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) usedLong;
         int bestScorePercent = quizAttemptRepository
@@ -146,8 +146,8 @@ public class ClassroomQuizPolicyService {
         if (AssignmentEntity.QUIZ_SOURCE_CHAPTER.equalsIgnoreCase(assignment.getQuizSource())
                 && assignment.singleChapterId() != null) {
             bestScorePercent = Math.max(bestScorePercent, quizAttemptRepository
-                    .findMaxScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfterExcludingAssignment(
-                            assignment.singleChapterId(), userId, since, assignment.getId()));
+                    .findMaxUnassignedScorePercentByChapterIdAndUserIdAndCreatedAtOnOrAfter(
+                            assignment.singleChapterId(), userId, since));
         }
         int minCorrect = assignment.getQuizPassMinCorrect();
         int allowed = 1 + assignment.getQuizMaxRetries();

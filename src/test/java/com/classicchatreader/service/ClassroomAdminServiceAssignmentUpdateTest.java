@@ -3,6 +3,7 @@ package com.classicchatreader.service;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.AssignmentChapterEntity;
 import com.classicchatreader.entity.AssignmentEntity;
+import com.classicchatreader.entity.AssignmentQuizEntity;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ClassFeatureSettingsEntity;
@@ -793,5 +794,49 @@ class ClassroomAdminServiceAssignmentUpdateTest {
                 () -> service.updateAssignment("teacher-1", "assign-1", request)
         );
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+    }
+
+    @Test
+    void updateAssignment_acceptsSmallerCustomQuizWhenQuestionsTravelWithPassMin() {
+        AssignmentEntity existing = baseAssignment();
+        existing.setStatus("PUBLISHED");
+        existing.setQuizRequired(true);
+        existing.setQuizSource(AssignmentEntity.QUIZ_SOURCE_CUSTOM);
+        existing.setQuizPassMinCorrect(8);
+        existing.setQuizMaxRetries(1);
+        AssignmentQuizEntity currentQuiz = new AssignmentQuizEntity();
+        currentQuiz.setAssignmentId("assign-1");
+        currentQuiz.setPayloadJson("{\"questions\":[{},{},{},{},{},{},{},{},{},{}]}");
+
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("assign-1")).thenReturn(Optional.of(existing));
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(assignmentQuizRepository.findByAssignmentId("assign-1")).thenReturn(Optional.of(currentQuiz));
+        when(assignmentQuizRepository.save(any(AssignmentQuizEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(assignmentQuizRepository.existsByAssignmentId("assign-1")).thenReturn(true);
+        when(chapterQuizService.parsePayloadJson(any())).thenReturn(new com.classicchatreader.model.ChapterQuizPayload(List.of()));
+        when(chapterQuizService.contentVersion(any())).thenReturn("old-version", "new-version");
+        when(chapterQuizService.serializePayload(any())).thenReturn("{\"questions\":[{},{},{},{},{}]}");
+        when(assignmentRepository.save(any(AssignmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<com.classicchatreader.model.ChapterQuizPayload.Question> questions = List.of(
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q1", "One?", List.of("A", "B", "C", "D"), 0, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q2", "Two?", List.of("A", "B", "C", "D"), 1, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q3", "Three?", List.of("A", "B", "C", "D"), 2, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q4", "Four?", List.of("A", "B", "C", "D"), 3, null, null),
+                new com.classicchatreader.model.ChapterQuizPayload.Question("q5", "Five?", List.of("A", "B", "C", "D"), 0, null, null)
+        );
+        ClassroomAdminService.AssignmentWriteRequest request = new ClassroomAdminService.AssignmentWriteRequest(
+                null, null, null, null, null, null, null,
+                true, false, null, "PUBLISHED",
+                null, null, 4, 1, null,
+                AssignmentEntity.QUIZ_SOURCE_CUSTOM,
+                questions
+        );
+
+        AssignmentEntity updated = service.updateAssignment("teacher-1", "assign-1", request);
+        assertEquals(4, updated.getQuizPassMinCorrect());
+        assertEquals(AssignmentEntity.QUIZ_SOURCE_CUSTOM, updated.getQuizSource());
+        verify(assignmentQuizRepository).save(any(AssignmentQuizEntity.class));
     }
 }
