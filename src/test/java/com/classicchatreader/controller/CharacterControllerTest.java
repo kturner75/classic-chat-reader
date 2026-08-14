@@ -124,6 +124,7 @@ class CharacterControllerTest {
         character.setCharacterType(CharacterType.SECONDARY);
 
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.isChatEligible(character)).thenReturn(false);
 
         mockMvc.perform(post("/api/characters/character-1/chat")
                         .contentType("application/json")
@@ -148,6 +149,40 @@ class CharacterControllerTest {
     }
 
     @Test
+    void chat_secondaryCharacter_allowedWhenBookHasNoPrimary() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.SECONDARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.isChatEligible(character)).thenReturn(true);
+        when(chatService.chat(
+                org.mockito.ArgumentMatchers.eq("character-1"),
+                org.mockito.ArgumentMatchers.eq("Who are you?"),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(0),
+                org.mockito.ArgumentMatchers.eq(0)))
+                .thenReturn("I am Fortunato.");
+
+        mockMvc.perform(post("/api/characters/character-1/chat")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "message": "Who are you?",
+                                  "conversationHistory": [],
+                                  "readerChapterIndex": 0,
+                                  "readerParagraphIndex": 0
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response", is("I am Fortunato.")));
+    }
+
+    @Test
     void chat_authenticatedReaderPersistsExchangeAndReturnsSessionId() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setCharacterEnabled(true);
@@ -156,6 +191,7 @@ class CharacterControllerTest {
         character.setBook(book);
         character.setCharacterType(CharacterType.PRIMARY);
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.isChatEligible(character)).thenReturn(true);
         when(chatService.chat(
                 org.mockito.ArgumentMatchers.eq("character-1"),
                 org.mockito.ArgumentMatchers.eq("Who are you?"),

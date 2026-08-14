@@ -43,7 +43,7 @@ public class ClassFeatureSettingsEntity {
     private boolean readingBuddyEnabled = true;
 
     @Column(name = "default_quiz_question_count", nullable = false)
-    private int defaultQuizQuestionCount = 5;
+    private int defaultQuizQuestionCount = 10;
 
     @Column(name = "default_quiz_pass_min_correct")
     private Integer defaultQuizPassMinCorrect;

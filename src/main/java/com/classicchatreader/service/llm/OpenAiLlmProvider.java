@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -27,14 +26,18 @@ public class OpenAiLlmProvider implements LlmProvider {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OpenAiLlmProvider(String baseUrl, String apiKey, String model, int timeoutSeconds) {
+        this(apiKey, model, timeoutSeconds, WebClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader("Authorization", "Bearer " + apiKey)
+                .build());
+        log.info("OpenAI LLM provider initialized: baseUrl={}, model={}", baseUrl, model);
+    }
+
+    OpenAiLlmProvider(String apiKey, String model, int timeoutSeconds, WebClient webClient) {
         this.apiKey = apiKey;
         this.model = model;
         this.timeoutSeconds = timeoutSeconds;
-        this.webClient = WebClient.builder()
-                .baseUrl(baseUrl)
-                .defaultHeader("Authorization", "Bearer " + apiKey)
-                .build();
-        log.info("OpenAI LLM provider initialized: baseUrl={}, model={}", baseUrl, model);
+        this.webClient = webClient;
     }
 
     @Override
@@ -92,14 +95,11 @@ public class OpenAiLlmProvider implements LlmProvider {
     }
 
     private String callChatCompletions(Map<String, Object> requestBody) {
-        String response = webClient.post()
-                .uri("/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(requestBody)
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
-                .block();
+        String response = LlmWebClientSupport.postJson(
+                webClient.post().uri("/chat/completions"),
+                requestBody,
+                Duration.ofSeconds(timeoutSeconds),
+                "openai");
 
         JsonNode responseNode;
         try {

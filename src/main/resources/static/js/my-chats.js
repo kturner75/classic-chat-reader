@@ -40,7 +40,7 @@
 
     function canStartVoiceCall(detail, status, browser) {
         const session = detail?.session;
-        return session?.resume?.available === true
+        return session?.resume?.voiceCallAvailable === true
             && !!session?.character?.id
             && status?.enabled === true
             && status?.chatEnabled === true

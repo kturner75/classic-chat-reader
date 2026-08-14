@@ -30,6 +30,9 @@ public class BookEntity {
 
     // TTS Voice Settings (persisted after LLM analysis)
     private String ttsVoice;
+    /** Provider that chose {@link #ttsVoice} (e.g. "xai" or "openai"). */
+    @Column(length = 32)
+    private String ttsVoiceProvider;
     private Double ttsSpeed;
     @Column(length = 1000)
     private String ttsInstructions;
@@ -90,6 +93,9 @@ public class BookEntity {
 
     public String getTtsVoice() { return ttsVoice; }
     public void setTtsVoice(String ttsVoice) { this.ttsVoice = ttsVoice; }
+
+    public String getTtsVoiceProvider() { return ttsVoiceProvider; }
+    public void setTtsVoiceProvider(String ttsVoiceProvider) { this.ttsVoiceProvider = ttsVoiceProvider; }
 
     public Double getTtsSpeed() { return ttsSpeed; }
     public void setTtsSpeed(Double ttsSpeed) { this.ttsSpeed = ttsSpeed; }

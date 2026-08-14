@@ -93,6 +93,7 @@ class CharacterControllerCacheOnlyTest {
         character.setCharacterType(CharacterType.PRIMARY);
 
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.isChatEligible(character)).thenReturn(true);
         when(chatService.chat("character-1", "Hello there", java.util.List.of(), 0, 0))
                 .thenReturn("Hi there.");
 

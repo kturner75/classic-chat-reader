@@ -504,7 +504,8 @@ public class AccountClaimSyncService {
                 nonNegativeOrZero(activity.openCount()),
                 trimToNull(activity.lastOpenedAt()),
                 trimToNull(activity.lastReadAt()),
-                trimToNull(activity.completedAt())
+                trimToNull(activity.completedAt()),
+                activity.completedChapterIndexes()
         );
     }
 
@@ -606,7 +607,8 @@ public class AccountClaimSyncService {
                 Math.max(nonNegativeOrZero(existing.openCount()), nonNegativeOrZero(incoming.openCount())),
                 latestTimestamp(existing.lastOpenedAt(), incoming.lastOpenedAt()),
                 latestTimestamp(existing.lastReadAt(), incoming.lastReadAt()),
-                latestTimestamp(existing.completedAt(), incoming.completedAt())
+                latestTimestamp(existing.completedAt(), incoming.completedAt()),
+                unionCompletedChapters(existing.completedChapterIndexes(), incoming.completedChapterIndexes())
         );
     }
 
@@ -747,6 +749,18 @@ public class AccountClaimSyncService {
             return true;
         }
         return a.isBefore(b);
+    }
+
+    private List<Integer> unionCompletedChapters(List<Integer> left, List<Integer> right) {
+        java.util.TreeSet<Integer> merged = new java.util.TreeSet<>();
+        if (left != null) {
+            merged.addAll(left);
+        }
+        if (right != null) {
+            merged.addAll(right);
+        }
+        merged.removeIf(index -> index == null || index < 0);
+        return List.copyOf(merged);
     }
 
     private String latestTimestamp(String a, String b) {

@@ -83,7 +83,6 @@ class ClassroomUsageServiceTest {
         assignment.setId("a-1");
         assignment.setTermId("term-1");
         assignment.setBookId("book-1");
-        assignment.setChapterId("ch-1");
         assignment.setStatus("PUBLISHED");
         when(assignmentRepository.findByIdAndDeletedAtIsNull("a-1")).thenReturn(Optional.of(assignment));
         when(authorizationService.isActiveStudentOnTerm("student-1", "term-1")).thenReturn(true);

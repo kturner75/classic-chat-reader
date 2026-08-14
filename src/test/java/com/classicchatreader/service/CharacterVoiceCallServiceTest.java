@@ -96,6 +96,8 @@ class CharacterVoiceCallServiceTest {
         assertTrue(instructions.contains("The Turning Point"), "persona should include chapter title");
         assertTrue(instructions.contains("Tell me about the moor."), "history should be embedded");
         assertTrue(instructions.contains("VOICE CALL RULES"), "voice addendum should be present");
+        assertTrue(instructions.contains(CharacterPersonaPromptBuilder.CONDUCT_SECTION_HEADING),
+                "voice should inherit college-classroom conduct rules");
 
         assertEquals("atlas", session.sessionConfig().voice());
 

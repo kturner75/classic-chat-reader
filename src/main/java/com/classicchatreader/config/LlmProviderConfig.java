@@ -24,7 +24,7 @@ public class LlmProviderConfig {
     private static final Logger log = LoggerFactory.getLogger(LlmProviderConfig.class);
 
     // Reasoning provider config
-    @Value("${ai.reasoning.provider:ollama}")
+    @Value("${ai.reasoning.provider:xai}")
     private String reasoningProvider;
 
     @Value("${ai.reasoning.timeout-seconds:180}")
@@ -39,7 +39,7 @@ public class LlmProviderConfig {
     @Value("${ai.reasoning.xai.api-key:}")
     private String reasoningXaiApiKey;
 
-    @Value("${ai.reasoning.xai.model:grok-4.20-reasoning}")
+    @Value("${ai.reasoning.xai.model:grok-4.6}")
     private String reasoningXaiModel;
 
     @Value("${ai.reasoning.openai.base-url:https://api.openai.com/v1}")
@@ -52,7 +52,7 @@ public class LlmProviderConfig {
     private String reasoningOpenAiModel;
 
     // Recap reasoning provider config (can differ from global reasoning provider)
-    @Value("${recap.reasoning.provider:${ai.reasoning.provider:ollama}}")
+    @Value("${recap.reasoning.provider:${ai.reasoning.provider:xai}}")
     private String recapReasoningProvider;
 
     @Value("${recap.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:180}}")
@@ -67,7 +67,7 @@ public class LlmProviderConfig {
     @Value("${recap.reasoning.xai.api-key:${ai.reasoning.xai.api-key:}}")
     private String recapReasoningXaiApiKey;
 
-    @Value("${recap.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.20-reasoning}}")
+    @Value("${recap.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.6}}")
     private String recapReasoningXaiModel;
 
     @Value("${recap.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
@@ -80,7 +80,7 @@ public class LlmProviderConfig {
     private String recapReasoningOpenAiModel;
 
     // Quiz reasoning provider config (defaults to global reasoning provider)
-    @Value("${quiz.reasoning.provider:${ai.reasoning.provider:ollama}}")
+    @Value("${quiz.reasoning.provider:${ai.reasoning.provider:xai}}")
     private String quizReasoningProvider;
 
     @Value("${quiz.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:180}}")
@@ -95,7 +95,7 @@ public class LlmProviderConfig {
     @Value("${quiz.reasoning.xai.api-key:${ai.reasoning.xai.api-key:}}")
     private String quizReasoningXaiApiKey;
 
-    @Value("${quiz.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.20-reasoning}}")
+    @Value("${quiz.reasoning.xai.model:${ai.reasoning.xai.model:grok-4.6}}")
     private String quizReasoningXaiModel;
 
     @Value("${quiz.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
@@ -123,7 +123,7 @@ public class LlmProviderConfig {
     @Value("${ai.chat.xai.api-key:}")
     private String chatXaiApiKey;
 
-    @Value("${ai.chat.xai.model:grok-4.20-non-reasoning}")
+    @Value("${ai.chat.xai.model:grok-4.6}")
     private String chatXaiModel;
 
     @Value("${ai.chat.openai.base-url:https://api.openai.com/v1}")
@@ -172,6 +172,9 @@ public class LlmProviderConfig {
     @Value("${voice.call.voice-catalog.cache-ttl-minutes:1440}")
     private int voiceCatalogCacheTtlMinutes;
 
+    @Value("${voice.call.voice-catalog.cache-file:./data/xai-voice-catalog.json}")
+    private String voiceCatalogCacheFile;
+
     @Bean
     public XaiOAuthTokenManager xaiOAuthTokenManager() {
         return new XaiOAuthTokenManager(xaiOAuthRefreshToken, xaiOAuthEnabled, xaiOAuthRefreshTokenFile);
@@ -186,7 +189,8 @@ public class LlmProviderConfig {
     @Bean
     public XaiVoiceCatalogService xaiVoiceCatalogService() {
         return new XaiVoiceCatalogService(voiceCallXaiApiKey, voiceCatalogUrl,
-                voiceCatalogTimeoutSeconds, voiceCatalogCacheTtlMinutes, xaiOAuthTokenManager());
+                voiceCatalogTimeoutSeconds, voiceCatalogCacheTtlMinutes, xaiOAuthTokenManager(),
+                voiceCatalogCacheFile);
     }
 
     @Bean

@@ -248,25 +248,62 @@ public class CharacterService {
     }
 
     public List<CharacterInfo> getCharactersForBook(String bookId) {
-        return characterRepository.findByBookIdOrderByCreatedAt(bookId).stream()
-                .map(CharacterInfo::from)
-                .collect(Collectors.toList());
+        return toChatAwareInfos(bookId, characterRepository.findByBookIdOrderByCreatedAt(bookId));
     }
 
     public List<CharacterInfo> getCharactersUpToPosition(String bookId, int chapterIndex, int paragraphIndex) {
-        return characterRepository.findByBookIdUpToPosition(bookId, chapterIndex, paragraphIndex).stream()
-                .map(CharacterInfo::from)
-                .collect(Collectors.toList());
+        return toChatAwareInfos(
+                bookId,
+                characterRepository.findByBookIdUpToPosition(bookId, chapterIndex, paragraphIndex)
+        );
     }
 
     public List<CharacterInfo> getNewlyCompletedSince(String bookId, LocalDateTime sinceTime) {
-        return characterRepository.findNewlyCompletedSince(bookId, sinceTime).stream()
-                .map(CharacterInfo::from)
-                .collect(Collectors.toList());
+        return toChatAwareInfos(bookId, characterRepository.findNewlyCompletedSince(bookId, sinceTime));
     }
 
     public Optional<CharacterEntity> getCharacter(String characterId) {
         return characterRepository.findById(characterId);
+    }
+
+    public CharacterInfo toChatAwareInfo(CharacterEntity character) {
+        if (character == null) {
+            return null;
+        }
+        String bookId = character.getBook() != null ? character.getBook().getId() : null;
+        return CharacterInfo.from(character).withChatEligible(isChatEligible(character, bookId));
+    }
+
+    /**
+     * Main (PRIMARY) characters can always chat. If a book has no PRIMARY characters
+     * (common for short stories that only received chapter extraction), discovered
+     * SECONDARY characters are chat-eligible so students are not stuck.
+     */
+    public boolean isChatEligible(CharacterEntity character) {
+        if (character == null) {
+            return false;
+        }
+        String bookId = character.getBook() != null ? character.getBook().getId() : null;
+        return isChatEligible(character, bookId);
+    }
+
+    private boolean isChatEligible(CharacterEntity character, String bookId) {
+        if (character.getCharacterType() == CharacterType.PRIMARY) {
+            return true;
+        }
+        if (bookId == null || bookId.isBlank()) {
+            return false;
+        }
+        return characterRepository.countByBookIdAndCharacterType(bookId, CharacterType.PRIMARY) == 0;
+    }
+
+    private List<CharacterInfo> toChatAwareInfos(String bookId, List<CharacterEntity> characters) {
+        boolean bookHasPrimary = bookId != null
+                && characterRepository.countByBookIdAndCharacterType(bookId, CharacterType.PRIMARY) > 0;
+        return characters.stream()
+                .map(character -> CharacterInfo.from(character).withChatEligible(
+                        character.getCharacterType() == CharacterType.PRIMARY || !bookHasPrimary))
+                .collect(Collectors.toList());
     }
 
     public CharacterStatus getPortraitStatus(String characterId) {

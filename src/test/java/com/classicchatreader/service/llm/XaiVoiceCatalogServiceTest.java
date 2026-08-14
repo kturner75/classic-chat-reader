@@ -2,6 +2,7 @@ package com.classicchatreader.service.llm;
 
 import com.classicchatreader.service.llm.XaiVoiceCatalogService.XaiVoice;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -10,14 +11,27 @@ import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class XaiVoiceCatalogServiceTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void fallbackRoster_includesFlagshipVoicesWithMetadata() {
+        assertTrue(XaiVoiceCatalogService.FALLBACK_VOICES.size() >= 21);
+        assertEquals("male", XaiVoiceCatalogService.KNOWN_VOICES.get("zagan").gender());
+        assertEquals("Powerful, dramatic, and unmistakable",
+                XaiVoiceCatalogService.KNOWN_VOICES.get("zagan").description());
+        assertEquals("female", XaiVoiceCatalogService.KNOWN_VOICES.get("carina").gender());
+    }
 
     @Test
     void getVoices_parsesDocumentedShape_voiceIdWinsOverDisplayName() {
@@ -31,9 +45,12 @@ class XaiVoiceCatalogServiceTest {
 
         List<XaiVoice> voices = service.getVoices();
 
-        assertEquals(List.of(
-                new XaiVoice("ara", null, null),
-                new XaiVoice("zagan", null, null)), voices);
+        assertEquals("ara", voices.get(0).id());
+        assertEquals("female", voices.get(0).gender());
+        assertEquals("Warm, friendly and conversational", voices.get(0).description());
+        assertEquals("zagan", voices.get(1).id());
+        assertEquals("male", voices.get(1).gender());
+        assertEquals("Powerful, dramatic, and unmistakable", voices.get(1).description());
         assertEquals(List.of("Bearer api-key"), authHeaders);
     }
 
@@ -67,9 +84,9 @@ class XaiVoiceCatalogServiceTest {
 
         assertEquals(2, voices.size());
         assertEquals("rex", voices.get(0).id());
-        assertNull(voices.get(0).gender());
-        assertNull(voices.get(0).description());
-        assertEquals(new XaiVoice("eve", null, "bright"), voices.get(1));
+        assertEquals("male", voices.get(0).gender());
+        assertEquals("Deep, calm and steady", voices.get(0).description());
+        assertEquals(new XaiVoice("eve", "female", "bright"), voices.get(1));
     }
 
     @Test
@@ -162,6 +179,7 @@ class XaiVoiceCatalogServiceTest {
         List<XaiVoice> voices = service.getVoices();
 
         assertEquals("luna", voices.get(0).id());
+        assertEquals("female", voices.get(0).gender());
         assertEquals(List.of("Bearer oauth-access-token", "Bearer api-key"), authHeaders);
     }
 
@@ -177,6 +195,31 @@ class XaiVoiceCatalogServiceTest {
 
         assertEquals("atlas", voices.get(0).id());
         assertEquals(List.of("Bearer oauth-access-token"), authHeaders);
+    }
+
+    @Test
+    void getVoices_writesAndReusesDiskCache() {
+        Path cacheFile = tempDir.resolve("xai-voice-catalog.json");
+        AtomicInteger firstCalls = new AtomicInteger();
+        XaiVoiceCatalogService first = new XaiVoiceCatalogService("api-key",
+                "https://api.x.ai/v1/tts/voices", 10, 1440, null,
+                countingWebClient(firstCalls, "{\"voices\":[{\"voice_id\":\"zagan\"}]}"),
+                cacheFile.toString());
+
+        assertEquals("zagan", first.getVoices().get(0).id());
+        assertEquals("male", first.getVoices().get(0).gender());
+        assertEquals(1, firstCalls.get());
+
+        AtomicInteger secondCalls = new AtomicInteger();
+        XaiVoiceCatalogService second = new XaiVoiceCatalogService("api-key",
+                "https://api.x.ai/v1/tts/voices", 10, 1440, null,
+                countingWebClient(secondCalls, "{\"voices\":[{\"voice_id\":\"ara\"}]}"),
+                cacheFile.toString());
+
+        List<XaiVoice> voices = second.getVoices();
+        assertEquals("zagan", voices.get(0).id());
+        assertEquals("Powerful, dramatic, and unmistakable", voices.get(0).description());
+        assertEquals(0, secondCalls.get());
     }
 
     private XaiVoiceCatalogService service(String apiKey, WebClient webClient) {

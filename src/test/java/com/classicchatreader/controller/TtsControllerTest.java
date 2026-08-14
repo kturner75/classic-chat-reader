@@ -3,6 +3,7 @@ package com.classicchatreader.controller;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
+import com.classicchatreader.model.VoiceSettings;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
@@ -18,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
@@ -73,44 +75,130 @@ class TtsControllerTest {
     void getStatus_cacheOnlyWithCdn_setsCachedAvailable() throws Exception {
         when(ttsService.isCacheOnly()).thenReturn(true);
         when(ttsService.isConfigured()).thenReturn(false);
+        when(ttsService.currentProvider()).thenReturn("xai");
         when(voiceAnalysisService.isOllamaAvailable()).thenReturn(true);
         when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(ttsService.listVoices()).thenReturn(List.of(
+                Map.of("id", "eve", "gender", "female", "description", "Bright, energetic and expressive")));
 
         mockMvc.perform(get("/api/tts/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cacheOnly", is(true)))
+                .andExpect(jsonPath("$.configured", is(false)))
+                .andExpect(jsonPath("$.provider", is("xai")))
                 .andExpect(jsonPath("$.openaiConfigured", is(false)))
                 .andExpect(jsonPath("$.cachedAvailable", is(true)))
                 .andExpect(jsonPath("$.ollamaAvailable", is(true)))
-                .andExpect(jsonPath("$.voices[0].id", is("ash")));
+                .andExpect(jsonPath("$.voices[0].id", is("eve")));
     }
 
     @Test
-    void analyzeBook_existingSettingsWithoutForce_returnsSavedSettings() throws Exception {
+    void analyzeBook_existingXaiSettingsWithoutForce_returnsSavedSettings() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setId("book-1");
         book.setTtsEnabled(true);
-        book.setTtsVoice("fable");
+        book.setTtsVoice("zagan");
+        book.setTtsVoiceProvider("xai");
         book.setTtsSpeed(1.15);
-        book.setTtsInstructions("Speak warmly");
-        book.setTtsReasoning("Matches tone");
+        book.setTtsInstructions("Speak dramatically");
+        book.setTtsReasoning("Gothic narrator");
 
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
         when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.currentProvider()).thenReturn("xai");
+        when(ttsService.isCompatibleWithCurrentProvider("zagan", "xai")).thenReturn(true);
+        when(ttsService.resolveVoice("zagan")).thenReturn("zagan");
+        when(ttsService.clampSpeed(1.15)).thenReturn(1.15);
 
         mockMvc.perform(post("/api/tts/analyze/book-1")
                         .header("X-API-Key", "test-api-key"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.voice", is("fable")))
+                .andExpect(jsonPath("$.voice", is("zagan")))
                 .andExpect(jsonPath("$.speed", is(1.15)))
-                .andExpect(jsonPath("$.instructions", is("Speak warmly")))
-                .andExpect(jsonPath("$.reasoning", is("Matches tone")));
+                .andExpect(jsonPath("$.instructions", is("Speak dramatically")))
+                .andExpect(jsonPath("$.reasoning", is("Gothic narrator")))
+                .andExpect(jsonPath("$.provider", is("xai")));
 
         verify(bookRepository, never()).save(org.mockito.ArgumentMatchers.any(BookEntity.class));
         verify(voiceAnalysisService, never()).analyzeBookForVoice(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void analyzeBook_legacyOpenAiVoice_reanalyzesAgainstXaiRoster() throws Exception {
+        BookEntity book = new BookEntity("The Cask of Amontillado", "Edgar Allan Poe", "gutenberg");
+        book.setId("book-1");
+        book.setTtsEnabled(true);
+        book.setTtsVoice("fable");
+        book.setTtsSpeed(1.0);
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.currentProvider()).thenReturn("xai");
+        when(ttsService.isCompatibleWithCurrentProvider("fable", null)).thenReturn(false);
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of());
+        when(voiceAnalysisService.analyzeBookForVoice(anyString(), anyString(), anyString()))
+                .thenReturn(new VoiceSettings("zagan", 0.9, "Dark and ironic", "Male gothic narrator", "xai"));
+        when(bookRepository.save(org.mockito.ArgumentMatchers.any(BookEntity.class))).thenAnswer(
+                invocation -> invocation.getArgument(0));
+
+        mockMvc.perform(post("/api/tts/analyze/book-1")
+                        .header("X-API-Key", "test-api-key"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.voice", is("zagan")))
+                .andExpect(jsonPath("$.reasoning", is("Male gothic narrator")));
+
+        verify(voiceAnalysisService).analyzeBookForVoice(anyString(), anyString(), anyString());
+        verify(bookRepository).save(org.mockito.ArgumentMatchers.argThat(saved ->
+                "zagan".equals(saved.getTtsVoice()) && "xai".equals(saved.getTtsVoiceProvider())));
+    }
+
+    @Test
+    void analyzeBook_storedOpenAiProvider_reanalyzesEvenIfVoiceLooksLikeXai() throws Exception {
+        BookEntity book = new BookEntity("The Brothers Karamazov", "Fyodor Dostoevsky", "gutenberg");
+        book.setId("book-1");
+        book.setTtsEnabled(true);
+        book.setTtsVoice("ara");
+        book.setTtsVoiceProvider("openai");
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.currentProvider()).thenReturn("xai");
+        when(ttsService.isCompatibleWithCurrentProvider("ara", "openai")).thenReturn(false);
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of());
+        when(voiceAnalysisService.analyzeBookForVoice(anyString(), anyString(), anyString()))
+                .thenReturn(new VoiceSettings("orion", 0.9, "Serious literary narrator", "Male philosophical novel", "xai"));
+        when(bookRepository.save(org.mockito.ArgumentMatchers.any(BookEntity.class))).thenAnswer(
+                invocation -> invocation.getArgument(0));
+
+        mockMvc.perform(post("/api/tts/analyze/book-1")
+                        .header("X-API-Key", "test-api-key"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.voice", is("orion")))
+                .andExpect(jsonPath("$.provider", is("xai")));
+
+        verify(voiceAnalysisService).analyzeBookForVoice(anyString(), anyString(), anyString());
+        verify(bookRepository).save(org.mockito.ArgumentMatchers.any(BookEntity.class));
+    }
+
+    @Test
+    void getVoiceSettings_openaiProvider_returnsStoredLegacyVoice() throws Exception {
+        BookEntity book = new BookEntity("The Brothers Karamazov", "Fyodor Dostoevsky", "gutenberg");
+        book.setId("book-1");
+        book.setTtsEnabled(true);
+        book.setTtsVoice("ballad");
+        book.setTtsVoiceProvider("openai");
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(ttsService.isCompatibleWithCurrentProvider("ballad", "openai")).thenReturn(false);
+        when(ttsService.clampSpeed(1.0)).thenReturn(1.0);
+
+        mockMvc.perform(get("/api/tts/settings/book-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.voice", is("ballad")))
+                .andExpect(jsonPath("$.provider", is("openai")));
     }
 
     @Test
@@ -129,7 +217,7 @@ class TtsControllerTest {
                                 }
                                 """))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(content().string("OpenAI API key not configured"));
+                .andExpect(content().string("TTS is not configured"));
     }
 
     @Test
@@ -149,10 +237,11 @@ class TtsControllerTest {
         when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1")).thenReturn(List.of(paragraph));
         when(assetKeyService.buildBookKey(book)).thenReturn("book-one");
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(ttsService.isCacheOnly()).thenReturn(true);
         when(cdnAssetService.isEnabled()).thenReturn(true);
-        when(ttsService.resolveVoice("fable")).thenReturn("fable");
-        when(assetKeyService.buildAudioKey(book, "fable", 2, 0)).thenReturn("audio-key");
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
+        when(assetKeyService.buildAudioKey(book, "orion", 2, 0)).thenReturn("audio-key");
         when(cdnAssetService.buildAssetUrl("audio", "audio-key"))
                 .thenReturn(Optional.of("https://cdn.example.com/audio-key.mp3"));
 
@@ -176,7 +265,7 @@ class TtsControllerTest {
         byte[] cachedAudio = "cached-audio".getBytes();
 
         stubSpeakParagraphLookup(book, chapter, paragraph);
-        when(ttsService.resolveVoice("fable")).thenReturn("fable");
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
         when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(cachedAudio);
 
@@ -195,7 +284,7 @@ class TtsControllerTest {
         ParagraphEntity paragraph = createParagraph("<p>Hello from paragraph.</p>");
 
         stubSpeakParagraphLookup(book, chapter, paragraph);
-        when(ttsService.resolveVoice("fable")).thenReturn("fable");
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
         when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(sessionAuthService.isAuthenticated(any())).thenReturn(false);
@@ -215,10 +304,11 @@ class TtsControllerTest {
         byte[] generatedAudio = "generated-audio".getBytes();
 
         stubSpeakParagraphLookup(book, chapter, paragraph);
-        when(ttsService.resolveVoice("fable")).thenReturn("fable");
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
         when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
         when(ttsService.isConfigured()).thenReturn(true);
+        when(ttsService.currentProvider()).thenReturn("xai");
         when(ttsService.generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any()))
                 .thenReturn(generatedAudio);
 

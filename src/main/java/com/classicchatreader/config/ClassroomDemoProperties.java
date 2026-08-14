@@ -145,6 +145,7 @@ public class ClassroomDemoProperties {
         private String assignmentId;
         private String title;
         private String bookId;
+        private List<String> chapterIds = new ArrayList<>();
         private String chapterId;
         private Integer chapterIndex;
         private String dueAt;
@@ -172,6 +173,14 @@ public class ClassroomDemoProperties {
 
         public void setBookId(String bookId) {
             this.bookId = bookId;
+        }
+
+        public List<String> getChapterIds() {
+            return chapterIds;
+        }
+
+        public void setChapterIds(List<String> chapterIds) {
+            this.chapterIds = chapterIds == null ? new ArrayList<>() : chapterIds;
         }
 
         public String getChapterId() {

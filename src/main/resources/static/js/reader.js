@@ -30,8 +30,11 @@
         ttsEnabled: false,
         ttsAudio: null,
         ttsWaitingForChapter: false,
-        ttsVoiceSettings: null,  // { voice, speed, instructions, reasoning }
+        ttsVoiceSettings: null,  // { voice, speed, instructions, reasoning, provider }
         ttsAvailable: false,
+        ttsProvider: null,
+        ttsDefaultVoice: null,
+        ttsVoiceIds: new Set(),
         ttsOpenAIAvailable: false,
         ttsOpenAIConfigured: false,
         ttsCachedAvailable: false,
@@ -97,9 +100,11 @@
         quizGenerationAvailable: false,
         quizCacheOnly: false,
         quizChapterId: null,
+        quizAssignmentId: null,
         quizQuestions: [],
         quizContentVersion: null,
         quizSelectedAnswers: [],
+        quizQuestionIndex: 0,
         quizSubmitting: false,
         quizResult: null,
         quizDifficultyLevel: 0,
@@ -162,6 +167,10 @@
         accountRequired: false,
         accountClaimSyncedFor: null,
         accountSyncInFlight: false,
+        accountSyncPromise: null,
+        accountSyncGeneration: 0,
+        accountStateRevision: 0,
+        accountStateSyncedRevision: 0,
         lastBookActivitySignature: '',
         favoriteBookIds: new Set(),
         favoriteBookOrder: [],
@@ -170,6 +179,8 @@
         classroomCanTeach: false,
         classroomCanCreateClass: false,
         activeClassroomAssignmentId: null,
+        assignmentMode: false,
+        assignmentWrapupReturn: false,
         classroomHeartbeatTimer: null,
         classroomHeartbeatSessionId: null,
         classroomHeartbeatLastSentAt: 0,
@@ -244,6 +255,13 @@
         libraryCatalogModeBadge: document.getElementById('library-catalog-mode-badge'),
         bookTitle: document.getElementById('book-title'),
         bookAuthor: document.getElementById('book-author'),
+        assignmentModeBanner: document.getElementById('assignment-mode-banner'),
+        assignmentWrapupOverlay: document.getElementById('assignment-wrapup-overlay'),
+        assignmentWrapupBackdrop: document.getElementById('assignment-wrapup-backdrop'),
+        assignmentWrapupClose: document.getElementById('assignment-wrapup-close'),
+        assignmentWrapupTitle: document.getElementById('assignment-wrapup-title'),
+        assignmentWrapupStatus: document.getElementById('assignment-wrapup-status'),
+        assignmentWrapupActions: document.getElementById('assignment-wrapup-actions'),
         favoriteToggle: document.getElementById('favorite-toggle'),
         chapterTitle: document.getElementById('chapter-title'),
         columnLeft: document.getElementById('column-left'),
@@ -346,6 +364,7 @@
         chapterRecapOverlay: document.getElementById('chapter-recap-overlay'),
         chapterRecapBackdrop: document.getElementById('chapter-recap-backdrop'),
         chapterRecapClose: document.getElementById('chapter-recap-close'),
+        chapterRecapTitle: document.getElementById('chapter-recap-title'),
         chapterRecapChapterTitle: document.getElementById('chapter-recap-chapter-title'),
         chapterRecapTabRecap: document.getElementById('chapter-recap-tab-recap'),
         chapterRecapTabChat: document.getElementById('chapter-recap-tab-chat'),
@@ -368,12 +387,19 @@
         chapterRecapChatInput: document.getElementById('chapter-recap-chat-input'),
         chapterRecapChatSend: document.getElementById('chapter-recap-chat-send'),
         chapterQuizStatus: document.getElementById('chapter-quiz-status'),
+        chapterQuizHeading: document.getElementById('chapter-quiz-heading'),
+        chapterQuizProgress: document.getElementById('chapter-quiz-progress'),
         chapterQuizQuestions: document.getElementById('chapter-quiz-questions'),
+        chapterQuizPrev: document.getElementById('chapter-quiz-prev'),
+        chapterQuizNext: document.getElementById('chapter-quiz-next'),
         chapterQuizSubmit: document.getElementById('chapter-quiz-submit'),
         chapterQuizFeedback: document.getElementById('chapter-quiz-feedback'),
         chapterRecapOptout: document.getElementById('chapter-recap-optout'),
         chapterRecapSkip: document.getElementById('chapter-recap-skip'),
         chapterRecapContinue: document.getElementById('chapter-recap-continue'),
+        assignmentQuizActions: document.getElementById('assignment-quiz-actions'),
+        assignmentQuizRetry: document.getElementById('assignment-quiz-retry'),
+        assignmentQuizDone: document.getElementById('assignment-quiz-done'),
         // Illustration elements
         illustrationToggle: document.getElementById('illustration-toggle'),
         illustrationColumn: document.getElementById('illustration-column'),
@@ -1640,10 +1666,11 @@
 
         const hasBook = !!state.currentBook && Array.isArray(state.chapters) && state.chapters.length > 0;
         const hasParagraphs = hasBook && Array.isArray(state.paragraphs) && state.paragraphs.length > 0;
-        const hasPreviousChapter = hasBook && state.currentChapterIndex > 0;
-        const hasNextChapter = hasBook && state.currentChapterIndex < state.chapters.length - 1;
+        const hasPreviousChapter = hasBook && prevNavigableChapterIndex(state.currentChapterIndex) != null;
+        const hasNextChapter = hasBook && nextNavigableChapterIndex(state.currentChapterIndex) != null;
+        const canOpenAssignmentWrapup = isAssignmentMode() && isLastAssignedChapter();
         const hasPreviousPage = hasParagraphs && (state.currentPage > 0 || hasPreviousChapter);
-        const hasNextPage = hasParagraphs && (state.currentPage < state.totalPages - 1 || hasNextChapter);
+        const hasNextPage = hasParagraphs && (state.currentPage < state.totalPages - 1 || hasNextChapter || canOpenAssignmentWrapup);
 
         if (elements.mobileChapterList) elements.mobileChapterList.disabled = !hasBook;
         if (elements.mobilePrevPage) elements.mobilePrevPage.disabled = !hasPreviousPage;
@@ -2010,7 +2037,12 @@
             localStorage.setItem(STORAGE_KEYS.FAVORITE_BOOKS, JSON.stringify(snapshot.favoriteBookIds));
         }
         if (snapshot.bookActivity && typeof snapshot.bookActivity === 'object') {
-            localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(snapshot.bookActivity));
+            const incoming = snapshot.bookActivity;
+            const merged = libraryProgressHelpers
+                && typeof libraryProgressHelpers.unionBookActivityStores === 'function'
+                ? libraryProgressHelpers.unionBookActivityStores(incoming, readBookActivityStore())
+                : incoming;
+            localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(merged));
         }
         if (snapshot.readerPreferences && typeof snapshot.readerPreferences === 'object') {
             const normalized = normalizeReaderPreferences(snapshot.readerPreferences);
@@ -2053,19 +2085,63 @@
         updateFavoriteUi();
     }
 
+    function resetAccountClaimSyncGate() {
+        state.accountClaimSyncedFor = null;
+        state.accountSyncPromise = null;
+        state.accountSyncInFlight = false;
+        state.accountSyncGeneration += 1;
+    }
+
+    function isCurrentAccountSync(generation, syncKey) {
+        return state.accountSyncGeneration === generation
+            && state.accountAuthenticated
+            && (state.accountEmail || 'signed-in-account') === syncKey;
+    }
+
     async function runAccountClaimSync(force = false) {
         if (!state.accountAuthEnabled || !state.accountAuthenticated) {
             return;
         }
         const syncKey = state.accountEmail || 'signed-in-account';
-        if (!force && state.accountClaimSyncedFor === syncKey) {
-            return;
-        }
-        if (state.accountSyncInFlight) {
-            return;
-        }
 
-        state.accountSyncInFlight = true;
+        while (true) {
+            if (state.accountSyncPromise) {
+                try {
+                    await state.accountSyncPromise;
+                } catch (ignored) {
+                }
+                if (!force) {
+                    return;
+                }
+                continue;
+            }
+            if (!force && state.accountClaimSyncedFor === syncKey) {
+                return;
+            }
+            if (force
+                    && state.accountClaimSyncedFor === syncKey
+                    && state.accountStateRevision <= state.accountStateSyncedRevision) {
+                return;
+            }
+
+            const startedRevision = state.accountStateRevision;
+            const generation = state.accountSyncGeneration;
+            state.accountSyncInFlight = true;
+            const job = performAccountClaimSync(syncKey, startedRevision, generation);
+            state.accountSyncPromise = job;
+            try {
+                await job;
+            } finally {
+                if (state.accountSyncPromise === job) {
+                    state.accountSyncPromise = null;
+                    state.accountSyncInFlight = false;
+                }
+            }
+            return;
+        }
+    }
+
+    async function performAccountClaimSync(syncKey, startedRevision, generation) {
         if (isAccountModalVisible()) {
             setAccountStatusMessage('Syncing your reader data...');
         }
@@ -2077,6 +2153,9 @@
                 body: JSON.stringify({ state: collectLocalAccountStateSnapshot() })
             });
             const payload = await readErrorPayload(response);
+            if (!isCurrentAccountSync(generation, syncKey)) {
+                return;
+            }
             if (!response.ok) {
                 const message = firstMessageFromPayload(payload) || 'Unable to sync account data.';
                 if (isAccountModalVisible()) {
@@ -2089,6 +2168,7 @@
                 applyAccountStateSnapshot(payload.state);
             }
             state.accountClaimSyncedFor = syncKey;
+            state.accountStateSyncedRevision = startedRevision;
 
             if (payload?.claimApplied) {
                 showAppToast({
@@ -2117,8 +2197,6 @@
             if (isAccountModalVisible()) {
                 setAccountStatusMessage('Unable to sync account data right now.', 'error');
             }
-        } finally {
-            state.accountSyncInFlight = false;
         }
     }
 
@@ -2180,7 +2258,7 @@
             state.accountRequired = status.accountRequired === true;
 
             if (!state.accountAuthenticated) {
-                state.accountClaimSyncedFor = null;
+                resetAccountClaimSyncGate();
             }
             await loadClassroomCapabilities();
             updateAccountUi();
@@ -2354,7 +2432,7 @@
                 return;
             }
 
-            state.accountClaimSyncedFor = null;
+            resetAccountClaimSyncGate();
             await accountCheckStatus({ triggerSync: true });
             setAccountStatusMessage(firstMessageFromPayload(payload) || 'Signed in.', 'success');
             closeAccountModal();
@@ -2384,7 +2462,7 @@
     async function submitAccountLogout() {
         try {
             await nativeFetch('/api/account/logout', { method: 'POST' });
-            state.accountClaimSyncedFor = null;
+            resetAccountClaimSyncGate();
             await accountCheckStatus({ triggerSync: false });
             setAccountStatusMessage('Signed out.', 'success');
             closeAccountModal();
@@ -2862,6 +2940,37 @@
         };
     }
 
+    function normalizeAssignmentChapters(item) {
+        const raw = Array.isArray(item?.chapters) ? item.chapters : [];
+        const chapters = raw
+            .map((chapter) => {
+                if (!chapter || typeof chapter !== 'object') {
+                    return null;
+                }
+                const chapterId = typeof chapter.chapterId === 'string' && chapter.chapterId.trim()
+                    ? chapter.chapterId.trim()
+                    : null;
+                const chapterIndex = Number.isInteger(chapter.chapterIndex) ? chapter.chapterIndex : null;
+                const chapterTitle = typeof chapter.chapterTitle === 'string' ? chapter.chapterTitle.trim() : '';
+                if (!chapterId && chapterIndex == null && !chapterTitle) {
+                    return null;
+                }
+                return { chapterId, chapterIndex, chapterTitle };
+            })
+            .filter(Boolean);
+        if (chapters.length > 0) {
+            return chapters;
+        }
+        if (item?.chapterId || Number.isInteger(item?.chapterIndex) || item?.chapterTitle) {
+            return [{
+                chapterId: typeof item.chapterId === 'string' && item.chapterId.trim() ? item.chapterId.trim() : null,
+                chapterIndex: Number.isInteger(item.chapterIndex) ? item.chapterIndex : null,
+                chapterTitle: typeof item.chapterTitle === 'string' ? item.chapterTitle.trim() : ''
+            }];
+        }
+        return [];
+    }
+
     function normalizeClassroomContext(payload) {
         const enrolled = payload?.enrolled === true;
         if (!enrolled) {
@@ -2888,6 +2997,7 @@
                     bookId: item.bookId.trim(),
                     bookTitle: typeof item.bookTitle === 'string' ? item.bookTitle.trim() : '',
                     bookAuthor: typeof item.bookAuthor === 'string' ? item.bookAuthor.trim() : '',
+                    chapters: normalizeAssignmentChapters(item),
                     chapterId: typeof item.chapterId === 'string' && item.chapterId.trim().length > 0
                         ? item.chapterId.trim()
                         : null,
@@ -2904,7 +3014,8 @@
                     quizMaxRetries: Number.isInteger(item.quizMaxRetries) ? item.quizMaxRetries : null,
                     quizAttemptsUsed: Number.isInteger(item.quizAttemptsUsed) ? item.quizAttemptsUsed : null,
                     quizAttemptsAllowed: Number.isInteger(item.quizAttemptsAllowed) ? item.quizAttemptsAllowed : null,
-                    quizPassed: typeof item.quizPassed === 'boolean' ? item.quizPassed : null
+                    quizPassed: typeof item.quizPassed === 'boolean' ? item.quizPassed : null,
+                    quizBestScorePercent: Number.isInteger(item.quizBestScorePercent) ? item.quizBestScorePercent : null
                 }))
             : [];
 
@@ -3293,6 +3404,13 @@
         localStorage.setItem(STORAGE_KEYS.BOOK_ACTIVITY, JSON.stringify(store));
     }
 
+    function uniqueCompletedChapterIndexes(values) {
+        return [...new Set((Array.isArray(values) ? values : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 0))]
+            .sort((left, right) => left - right);
+    }
+
     function computeProgressRatio(chapterIndex, pageIndex, totalPages, chapterCount) {
         const safeChapterCount = Math.max(1, Math.round(toFiniteNumber(chapterCount, 1)));
         const safeTotalPages = Math.max(1, Math.round(toFiniteNumber(totalPages, 1)));
@@ -3327,6 +3445,7 @@
             0,
             1
         );
+        const completedChapterIndexes = uniqueCompletedChapterIndexes(raw.completedChapterIndexes);
         const completed = Boolean(raw.completed) || maxProgressRatio >= 0.999;
         return {
             chapterCount,
@@ -3336,6 +3455,7 @@
             progressRatio,
             maxProgressRatio,
             completed,
+            completedChapterIndexes,
             openCount: Math.max(0, Math.round(toFiniteNumber(raw.openCount, 0))),
             lastOpenedAt: typeof raw.lastOpenedAt === 'string' ? raw.lastOpenedAt : null,
             lastReadAt: typeof raw.lastReadAt === 'string' ? raw.lastReadAt : null,
@@ -3393,6 +3513,7 @@
     }
 
     async function selectBookWithResume(book) {
+        exitAssignmentMode({ clearAssignmentId: true });
         const resume = getBookResumePosition(book);
         await selectBook(book, resume.chapterIndex, resume.pageIndex);
     }
@@ -3402,14 +3523,19 @@
         if (chapters.length === 0) {
             return 0;
         }
-        if (assignment?.chapterId) {
-            const byId = chapters.findIndex((chapter) => chapter && chapter.id === assignment.chapterId);
+        const assigned = Array.isArray(assignment?.chapters) ? assignment.chapters : [];
+        const firstId = assigned.length > 0 ? assigned[0].chapterId : assignment?.chapterId;
+        if (firstId) {
+            const byId = chapters.findIndex((chapter) => chapter && chapter.id === firstId);
             if (byId >= 0) {
                 return byId;
             }
         }
-        if (Number.isInteger(assignment?.chapterIndex) && assignment.chapterIndex >= 0) {
-            return clampInteger(assignment.chapterIndex, 0, chapters.length - 1);
+        const firstIndex = assigned.length > 0 && Number.isInteger(assigned[0].chapterIndex)
+            ? assigned[0].chapterIndex
+            : assignment?.chapterIndex;
+        if (Number.isInteger(firstIndex) && firstIndex >= 0) {
+            return clampInteger(firstIndex, 0, chapters.length - 1);
         }
         return 0;
     }
@@ -3535,7 +3661,7 @@
 
     async function openClassroomAssignment(assignment) {
         if (!assignment?.bookId) {
-            return;
+            return false;
         }
         const book = await resolveBookForAssignment(assignment);
         if (!book) {
@@ -3543,27 +3669,331 @@
                 title: 'Assignment unavailable',
                 message: 'That assigned book is not available in this library yet.'
             });
-            return;
+            return false;
         }
         if (assignment.assignmentId) {
             state.activeClassroomAssignmentId = assignment.assignmentId;
+            state.assignmentMode = true;
             void markClassroomAssignmentOpened(assignment.assignmentId);
         }
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);
+        updateAssignmentModeBanner();
         startClassroomHeartbeat();
+        return true;
     }
 
-    function persistCurrentBookActivity() {
+    function activeClassroomAssignment() {
+        if (!state.activeClassroomAssignmentId) {
+            return null;
+        }
+        return (state.classroomAssignments || []).find(
+            (item) => item && item.assignmentId === state.activeClassroomAssignmentId
+        ) || null;
+    }
+
+    function isAssignmentMode() {
+        return state.assignmentMode === true && !!activeClassroomAssignment();
+    }
+
+    function assignmentCharacterChatStarted(assignment) {
+        if (!assignment?.characterChatRequired) {
+            return false;
+        }
+        return assignment.characterChatStarted === true
+            || (assignment.bookId && state.persistedCharacterChatBookIds.has(assignment.bookId));
+    }
+
+    function assignedChapterIndexes() {
+        const assignment = activeClassroomAssignment();
+        if (!assignment) {
+            return [];
+        }
+        const bookChapters = Array.isArray(state.chapters) ? state.chapters : [];
+        const fromIds = (Array.isArray(assignment.chapters) ? assignment.chapters : [])
+            .map((chapter) => {
+                if (chapter?.chapterId) {
+                    const byId = bookChapters.findIndex((item) => item && item.id === chapter.chapterId);
+                    if (byId >= 0) {
+                        return byId;
+                    }
+                }
+                return Number.isInteger(chapter?.chapterIndex) ? chapter.chapterIndex : null;
+            })
+            .filter((index) => Number.isInteger(index));
+        const fromHelper = libraryProgressHelpers && typeof libraryProgressHelpers.assignmentChapterIndexes === 'function'
+            ? libraryProgressHelpers.assignmentChapterIndexes(assignment)
+            : [];
+        const merged = fromIds.length > 0 ? fromIds : fromHelper;
+        return [...new Set(merged)]
+            .filter((index) => Number.isInteger(index) && index >= 0 && index < bookChapters.length)
+            .sort((left, right) => left - right);
+    }
+
+    function navigableChapterIndexes() {
+        if (isAssignmentMode()) {
+            const assigned = assignedChapterIndexes();
+            if (assigned.length > 0) {
+                return assigned;
+            }
+        }
+        return (state.chapters || []).map((_, index) => index);
+    }
+
+    function nextNavigableChapterIndex(fromIndex) {
+        return navigableChapterIndexes().find((index) => index > fromIndex) ?? null;
+    }
+
+    function prevNavigableChapterIndex(fromIndex) {
+        const indexes = navigableChapterIndexes();
+        for (let i = indexes.length - 1; i >= 0; i--) {
+            if (indexes[i] < fromIndex) {
+                return indexes[i];
+            }
+        }
+        return null;
+    }
+
+    function isLastAssignedChapter() {
+        return nextNavigableChapterIndex(state.currentChapterIndex) == null;
+    }
+
+    function canNavigateToChapterIndex(chapterIndex) {
+        if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= state.chapters.length) {
+            return false;
+        }
+        if (!isAssignmentMode()) {
+            return true;
+        }
+        const assigned = assignedChapterIndexes();
+        if (assigned.length === 0) {
+            return true;
+        }
+        return assigned.includes(chapterIndex);
+    }
+
+    function getCurrentBookActivity() {
+        if (!state.currentBook?.id) {
+            return null;
+        }
+        const store = readBookActivityStore();
+        return normalizeBookActivity(state.currentBook, store[state.currentBook.id] || {});
+    }
+
+    function canContinueReadingBeyondAssignment(assignment, activity, characterChatStarted) {
+        if (!assignment || !libraryProgressHelpers) {
+            return false;
+        }
+        if (typeof libraryProgressHelpers.isAssignmentFullyComplete === 'function'
+                && !libraryProgressHelpers.isAssignmentFullyComplete(assignment, activity, characterChatStarted)) {
+            return false;
+        }
+        if (typeof libraryProgressHelpers.isWholeBookAssignment === 'function'
+                && libraryProgressHelpers.isWholeBookAssignment(assignment)) {
+            return false;
+        }
+        const assigned = assignedChapterIndexes();
+        return assigned.length > 0 && assigned.length < state.chapters.length;
+    }
+
+    function updateAssignmentModeBanner() {
+        if (!elements.assignmentModeBanner) {
+            return;
+        }
+        if (!isAssignmentMode()) {
+            elements.assignmentModeBanner.classList.add('hidden');
+            elements.assignmentModeBanner.textContent = '';
+            return;
+        }
+        const assignment = activeClassroomAssignment();
+        const title = assignment.title || assignment.bookTitle || 'Assignment';
+        elements.assignmentModeBanner.textContent = `Assignment · ${title}`;
+        elements.assignmentModeBanner.classList.remove('hidden');
+    }
+
+    function exitAssignmentMode(options = {}) {
+        state.assignmentMode = false;
+        state.assignmentWrapupReturn = false;
+        hideAssignmentWrapup();
+        if (options.clearAssignmentId) {
+            state.activeClassroomAssignmentId = null;
+        }
+        updateAssignmentModeBanner();
+        if (isChapterListVisible()) {
+            renderChapterList();
+        }
+        renderSearchChapterFilterOptions();
+        updateTouchNavigationControls();
+    }
+
+    function continueReadingBeyondAssignment() {
+        hideAssignmentWrapup();
+        exitAssignmentMode();
+        ttsResumeAfterModal();
+    }
+
+    function isAssignmentWrapupVisible() {
+        return elements.assignmentWrapupOverlay
+            && !elements.assignmentWrapupOverlay.classList.contains('hidden');
+    }
+
+    function hideAssignmentWrapup() {
+        if (elements.assignmentWrapupOverlay) {
+            elements.assignmentWrapupOverlay.classList.add('hidden');
+        }
+    }
+
+    function showAssignmentWrapup() {
+        if (!isAssignmentMode() || isChapterRecapVisible()) {
+            return;
+        }
+        persistCurrentBookActivity();
+        renderAssignmentWrapup();
+        if (elements.assignmentWrapupOverlay) {
+            elements.assignmentWrapupOverlay.classList.remove('hidden');
+        }
+        ttsPauseForModal();
+    }
+
+    function maybeShowAssignmentWrapup() {
+        if (!isAssignmentMode() || isAssignmentWrapupVisible() || isChapterRecapVisible()) {
+            return;
+        }
+        showAssignmentWrapup();
+    }
+
+    function maybeRestoreAssignmentWrapup() {
+        if (!state.assignmentWrapupReturn) {
+            return;
+        }
+        window.setTimeout(() => {
+            if (!state.assignmentWrapupReturn) {
+                return;
+            }
+            if (isCharacterBrowserVisible() || isCharacterChatVisible() || isChapterRecapVisible()) {
+                return;
+            }
+            if (!isAssignmentMode()) {
+                state.assignmentWrapupReturn = false;
+                return;
+            }
+            state.assignmentWrapupReturn = false;
+            showAssignmentWrapup();
+        }, 0);
+    }
+
+    function renderAssignmentWrapup() {
+        const assignment = activeClassroomAssignment();
+        if (!assignment || !elements.assignmentWrapupActions) {
+            return;
+        }
+        const activity = getCurrentBookActivity();
+        const characterChatStarted = assignmentCharacterChatStarted(assignment);
+        const canTakeQuiz = libraryProgressHelpers
+            && typeof libraryProgressHelpers.canTakeAssignmentQuiz === 'function'
+            && libraryProgressHelpers.canTakeAssignmentQuiz(assignment, activity);
+        const quizLabel = canTakeQuiz && libraryProgressHelpers.assignmentQuizActionLabel
+            ? libraryProgressHelpers.assignmentQuizActionLabel(assignment)
+            : 'Take Quiz';
+        const chatStillNeeded = assignment.characterChatRequired === true && !characterChatStarted;
+        const fullyComplete = libraryProgressHelpers
+            && typeof libraryProgressHelpers.isAssignmentFullyComplete === 'function'
+            && libraryProgressHelpers.isAssignmentFullyComplete(assignment, activity, characterChatStarted);
+        const showContinue = canContinueReadingBeyondAssignment(assignment, activity, characterChatStarted);
+
+        if (elements.assignmentWrapupTitle) {
+            elements.assignmentWrapupTitle.textContent = fullyComplete ? 'Assignment complete' : 'Reading done';
+        }
+        if (elements.assignmentWrapupStatus) {
+            if (fullyComplete && showContinue) {
+                elements.assignmentWrapupStatus.textContent = 'You finished this assignment. Continue reading the rest of the book, or head back to the library.';
+            } else if (fullyComplete) {
+                elements.assignmentWrapupStatus.textContent = 'You finished this assignment.';
+            } else if (canTakeQuiz && chatStillNeeded) {
+                elements.assignmentWrapupStatus.textContent = 'Take the quiz and chat with a character to finish this assignment.';
+            } else if (canTakeQuiz) {
+                elements.assignmentWrapupStatus.textContent = 'Take the quiz to finish this assignment.';
+            } else if (chatStillNeeded) {
+                elements.assignmentWrapupStatus.textContent = 'Chat with a character to finish this assignment.';
+            } else {
+                elements.assignmentWrapupStatus.textContent = 'This assignment still has remaining work.';
+            }
+        }
+
+        const buttons = [];
+        if (canTakeQuiz) {
+            buttons.push(`<button type="button" class="assignment-wrapup-primary" data-assignment-wrapup="quiz">${escapeHtml(quizLabel)}</button>`);
+        }
+        if (chatStillNeeded) {
+            buttons.push('<button type="button" class="assignment-wrapup-primary" data-assignment-wrapup="chat">Chat with Character</button>');
+        }
+        if (showContinue) {
+            buttons.push('<button type="button" class="assignment-wrapup-primary" data-assignment-wrapup="continue">Continue Reading</button>');
+        }
+        buttons.push('<button type="button" class="assignment-wrapup-secondary" data-assignment-wrapup="library">Back to library</button>');
+        elements.assignmentWrapupActions.innerHTML = buttons.join('');
+    }
+
+    async function handleAssignmentWrapupAction(action) {
+        const assignment = activeClassroomAssignment();
+        if (action === 'library') {
+            state.assignmentWrapupReturn = false;
+            hideAssignmentWrapup();
+            backToLibrary();
+            return;
+        }
+        if (action === 'continue') {
+            continueReadingBeyondAssignment();
+            return;
+        }
+        if (action === 'quiz' && assignment) {
+            hideAssignmentWrapup();
+            state.assignmentWrapupReturn = true;
+            await openAssignmentQuizOverlay(assignment);
+            return;
+        }
+        if (action === 'chat') {
+            hideAssignmentWrapup();
+            state.assignmentWrapupReturn = true;
+            if (!state.characterAvailable) {
+                showAppToast({
+                    title: 'Characters unavailable',
+                    message: 'Character chat is not available for this book right now.'
+                });
+                maybeRestoreAssignmentWrapup();
+                return;
+            }
+            await openCharacterBrowser({ preferChat: true });
+        }
+    }
+
+    async function openClassroomAssignmentChat(assignment) {
+        const opened = await openClassroomAssignment(assignment);
+        if (!opened) {
+            return;
+        }
+        if (!state.characterAvailable) {
+            showAppToast({
+                title: 'Characters unavailable',
+                message: 'Character chat is not available for this book right now.'
+            });
+            return;
+        }
+        await openCharacterBrowser({ preferChat: true });
+    }
+
+    function persistCurrentBookActivity(options = {}) {
         if (!state.currentBook?.id || !Array.isArray(state.chapters) || state.chapters.length === 0) {
             return;
         }
         const chapterCount = Math.max(1, state.chapters.length);
         const totalPages = Math.max(1, state.totalPages || 1);
         const chapterIndex = clampInteger(state.currentChapterIndex, 0, chapterCount - 1);
-        const pageIndex = clampInteger(state.currentPage, 0, totalPages - 1);
-        const signature = `${state.currentBook.id}:${chapterIndex}:${pageIndex}:${totalPages}:${chapterCount}`;
+        const viewedPageIndex = clampInteger(state.currentPage, 0, totalPages - 1);
+        const markChapterComplete = options.markChapterComplete === true;
+        const pageIndex = markChapterComplete ? totalPages - 1 : viewedPageIndex;
+        const signature = `${state.currentBook.id}:${chapterIndex}:${pageIndex}:${totalPages}:${chapterCount}:${markChapterComplete ? 1 : 0}`;
         if (signature === state.lastBookActivitySignature) {
             return;
         }
@@ -3577,6 +4007,11 @@
             const normalized = normalizeBookActivity(state.currentBook, existing);
             const maxProgressRatio = Math.max(normalized.maxProgressRatio, progressRatio);
             const completed = normalized.completed || reachedEnd || maxProgressRatio >= 0.999;
+            const chapterComplete = markChapterComplete || pageIndex >= totalPages - 1;
+            const completedChapterIndexes = uniqueCompletedChapterIndexes([
+                ...(normalized.completedChapterIndexes || []),
+                ...(chapterComplete ? [chapterIndex] : [])
+            ]);
             return {
                 ...normalized,
                 chapterCount,
@@ -3586,12 +4021,14 @@
                 progressRatio,
                 maxProgressRatio,
                 completed,
+                completedChapterIndexes,
                 completedAt: completed ? (normalized.completedAt || now) : null,
                 lastOpenedAt: normalized.lastOpenedAt || now,
                 lastReadAt: now,
                 openCount: Math.max(1, normalized.openCount)
             };
         });
+        state.accountStateRevision += 1;
     }
 
     function syncBookActivityWithLocalBooks() {
@@ -4325,11 +4762,13 @@
         const assignmentLabel = assignment.title
             ? `<div class="book-item-assignment-label">${escapeHtml(assignment.title)}</div>`
             : '';
-        const chapterLabel = assignment.chapterTitle
-            ? `<span class="book-progress-chip">${escapeHtml(assignment.chapterTitle)}</span>`
-            : (Number.isInteger(assignment.chapterIndex)
-                ? `<span class="book-progress-chip">Chapter ${assignment.chapterIndex + 1}</span>`
-                : '<span class="book-progress-chip">Whole book</span>');
+        const chapterLabel = libraryProgressHelpers && typeof libraryProgressHelpers.assignmentChapterLabel === 'function'
+            ? `<span class="book-progress-chip">${escapeHtml(libraryProgressHelpers.assignmentChapterLabel(assignment))}</span>`
+            : (assignment.chapterTitle
+                ? `<span class="book-progress-chip">${escapeHtml(assignment.chapterTitle)}</span>`
+                : (Number.isInteger(assignment.chapterIndex)
+                    ? `<span class="book-progress-chip">Chapter ${assignment.chapterIndex + 1}</span>`
+                    : '<span class="book-progress-chip">Whole book</span>'));
 
         const progressChips = `
                 <span class="book-progress-chip book-progress-chip-status status-${assignmentProgress.statusClass}">${escapeHtml(assignmentProgress.statusLabel)}</span>
@@ -4343,11 +4782,37 @@
         const assignmentIdAttr = assignment.assignmentId
             ? ` data-assignment-id="${escapeHtml(assignment.assignmentId)}"`
             : '';
-        const chapterIdAttr = assignment.chapterId
-            ? ` data-chapter-id="${escapeHtml(assignment.chapterId)}"`
+        const firstChapter = Array.isArray(assignment.chapters) && assignment.chapters.length > 0
+            ? assignment.chapters[0]
+            : null;
+        const chapterIdAttr = (firstChapter?.chapterId || assignment.chapterId)
+            ? ` data-chapter-id="${escapeHtml(firstChapter?.chapterId || assignment.chapterId)}"`
             : '';
-        const chapterIndexAttr = Number.isInteger(assignment.chapterIndex)
-            ? ` data-chapter-index="${assignment.chapterIndex}"`
+        const chapterIndexAttr = Number.isInteger(firstChapter?.chapterIndex)
+            ? ` data-chapter-index="${firstChapter.chapterIndex}"`
+            : (Number.isInteger(assignment.chapterIndex)
+                ? ` data-chapter-index="${assignment.chapterIndex}"`
+                : '');
+        const canTakeQuiz = libraryProgressHelpers
+            && typeof libraryProgressHelpers.canTakeAssignmentQuiz === 'function'
+            && libraryProgressHelpers.canTakeAssignmentQuiz(assignment, activity);
+        const quizActionLabel = canTakeQuiz && libraryProgressHelpers.assignmentQuizActionLabel
+            ? libraryProgressHelpers.assignmentQuizActionLabel(assignment)
+            : 'Take Quiz';
+        const quizAction = canTakeQuiz
+            ? `<button type="button" class="assignment-quiz-action" data-take-assignment-quiz="${escapeHtml(assignment.assignmentId)}">${escapeHtml(quizActionLabel)}</button>`
+            : '';
+        const canChat = libraryProgressHelpers
+            && typeof libraryProgressHelpers.canChatForAssignment === 'function'
+            && libraryProgressHelpers.canChatForAssignment(assignment);
+        const chatActionLabel = canChat && libraryProgressHelpers.assignmentChatActionLabel
+            ? libraryProgressHelpers.assignmentChatActionLabel(assignmentProgress.characterChatStarted)
+            : 'Chat with Character';
+        const chatAction = canChat
+            ? `<button type="button" class="assignment-chat-action" data-open-assignment-chat="${escapeHtml(assignment.assignmentId)}">${escapeHtml(chatActionLabel)}</button>`
+            : '';
+        const cardActions = (quizAction || chatAction)
+            ? `<div class="assignment-card-actions">${quizAction}${chatAction}</div>`
             : '';
         return `
             <div class="book-item"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
@@ -4366,6 +4831,7 @@
                     ${progressChips}
                 </div>
                 <div class="book-item-meta">${escapeHtml(meta)}</div>
+                ${cardActions}
             </div>
         `;
     }
@@ -4594,6 +5060,7 @@
         }
         void ensureCurrentBookMlaCitation();
         updateFavoriteUi();
+        updateAssignmentModeBanner();
         renderSearchChapterFilterOptions();
 
         await ttsCheckAvailability();
@@ -4611,6 +5078,7 @@
         }
         updateRecapOptOutControl();
         closeChapterRecapOverlay(false);
+        hideAssignmentWrapup();
 
         const savedIllustrationMode = localStorage.getItem(STORAGE_KEYS.ILLUSTRATION_MODE);
         if (!state.illustrationMode && savedIllustrationMode === 'true' && state.illustrationAvailable) {
@@ -4650,6 +5118,8 @@
         // Thin BL-025.6 heartbeat while an enrolled student is in the reader.
         if (!(assignmentContextActiveForBook(book.id))) {
             state.activeClassroomAssignmentId = null;
+            state.assignmentMode = false;
+            updateAssignmentModeBanner();
         }
         startClassroomHeartbeat();
     }
@@ -4668,6 +5138,9 @@
     // Load chapter content
     async function loadChapter(chapterIndex, pageIndex = 0, paragraphIndex = 0, suppressTts = false) {
         if (chapterIndex < 0 || chapterIndex >= state.chapters.length) {
+            return false;
+        }
+        if (!canNavigateToChapterIndex(chapterIndex)) {
             return false;
         }
 
@@ -5332,8 +5805,10 @@
             state.currentPage++;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
             renderPage();
-        } else if (state.currentChapterIndex < state.chapters.length - 1) {
+        } else if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
             goToNextChapter(true);
+        } else if (isAssignmentMode()) {
+            maybeShowAssignmentWrapup();
         }
     }
 
@@ -5342,9 +5817,13 @@
             state.currentPage--;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
             renderPage();
-        } else if (state.currentChapterIndex > 0) {
+        } else {
+            const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
+            if (previousChapterIndex == null) {
+                return;
+            }
             // Go to previous chapter, last page
-            loadChapter(state.currentChapterIndex - 1).then(applied => {
+            loadChapter(previousChapterIndex).then(applied => {
                 if (!applied) return;
                 state.currentPage = state.totalPages - 1;
                 if (state.pagesData[state.currentPage]) {
@@ -5425,8 +5904,10 @@
             return;
         }
 
-        if (state.currentChapterIndex < state.chapters.length - 1) {
+        if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
             goToNextChapter(true);
+        } else if (isAssignmentMode()) {
+            maybeShowAssignmentWrapup();
         }
     }
 
@@ -5455,9 +5936,10 @@
             return;
         }
 
-        if (state.currentChapterIndex > 0) {
+        const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
+        if (previousChapterIndex != null) {
             // Go to previous chapter, last paragraph
-            loadChapter(state.currentChapterIndex - 1).then(applied => {
+            loadChapter(previousChapterIndex).then(applied => {
                 if (!applied) return;
                 state.currentPage = state.totalPages - 1;
                 state.currentParagraphIndex = state.paragraphs.length - 1;
@@ -5467,27 +5949,36 @@
     }
 
     function nextChapter() {
-        if (state.currentChapterIndex < state.chapters.length - 1) {
+        if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
             goToNextChapter(true);
+        } else if (isAssignmentMode()) {
+            maybeShowAssignmentWrapup();
         }
     }
 
     function prevChapter() {
-        if (state.currentChapterIndex > 0) {
-            loadChapter(state.currentChapterIndex - 1, 0);
+        const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
+        if (previousChapterIndex != null) {
+            loadChapter(previousChapterIndex, 0);
         }
     }
 
     function shouldShowChapterRecapOnTransition() {
-        return (state.recapAvailable || state.quizAvailable || state.recapChatAvailable) &&
-            !state.recapOptOut &&
-            !state.ttsEnabled &&
-            !state.speedReadingActive;
+        return !isAssignmentMode()
+            && (state.recapAvailable || state.quizAvailable || state.recapChatAvailable)
+            && !state.recapOptOut
+            && !state.ttsEnabled
+            && !state.speedReadingActive;
     }
 
     async function goToNextChapter(showRecap) {
-        const nextChapterIndex = state.currentChapterIndex + 1;
-        if (nextChapterIndex >= state.chapters.length) return;
+        const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
+        if (nextChapterIndex == null) {
+            if (isAssignmentMode()) {
+                maybeShowAssignmentWrapup();
+            }
+            return;
+        }
 
         if (showRecap && shouldShowChapterRecapOnTransition()) {
             if ((state.recapAvailable && state.recapCacheOnly) || (state.quizAvailable && state.quizCacheOnly)) {
@@ -5505,10 +5996,16 @@
     }
 
     async function openChapterRecapOverlay(nextChapterIndex) {
+        if (isAssignmentMode()) {
+            loadChapter(nextChapterIndex, 0);
+            return;
+        }
         if (!state.currentBook) {
             loadChapter(nextChapterIndex, 0);
             return;
         }
+
+        hideAssignmentWrapup();
 
         const currentChapter = state.chapters[state.currentChapterIndex];
         if (!currentChapter) {
@@ -5519,8 +6016,11 @@
         state.recapPendingChapterIndex = nextChapterIndex;
         state.recapChatChapterIndex = state.currentChapterIndex;
         state.quizChapterId = currentChapter.id;
+        state.quizAssignmentId = null;
+        applyRecapPreferenceGating();
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
+        state.quizQuestionIndex = 0;
         state.quizSubmitting = false;
         state.quizResult = null;
         state.quizDifficultyLevel = 0;
@@ -5590,7 +6090,7 @@
         );
     }
 
-    function setChapterRecapTab(tab) {
+    function setChapterRecapTab(tab, options = {}) {
         const validTab = tab === 'chat' || tab === 'quiz' || tab === 'recap' ? tab : 'recap';
         const tabAvailability = {
             recap: !!state.recapAvailable,
@@ -5598,7 +6098,7 @@
             chat: !!state.recapChatAvailable
         };
         let nextTab = validTab;
-        if (!tabAvailability[nextTab]) {
+        if (!options.force && !tabAvailability[nextTab]) {
             const fallback = ['recap', 'quiz', 'chat'].find((candidate) => tabAvailability[candidate]);
             if (fallback) {
                 nextTab = fallback;
@@ -5819,6 +6319,120 @@
         elements.chapterRecapChatMessages.scrollTop = elements.chapterRecapChatMessages.scrollHeight;
     }
 
+    async function openClassroomAssignmentQuiz(assignment) {
+        const opened = await openClassroomAssignment(assignment);
+        if (!opened) {
+            return;
+        }
+        await openAssignmentQuizOverlay(assignment);
+    }
+
+    async function openAssignmentQuizOverlay(assignment) {
+        state.quizAssignmentId = assignment.assignmentId;
+        applyRecapPreferenceGating();
+        state.quizChapterId = assignment.chapterId || assignment.chapters?.[0]?.chapterId || null;
+        state.quizQuestions = [];
+        state.quizSelectedAnswers = [];
+        state.quizQuestionIndex = 0;
+        state.quizSubmitting = false;
+        state.quizResult = null;
+        enterAssignmentQuizOverlay(assignment);
+        if (elements.chapterRecapOverlay) {
+            elements.chapterRecapOverlay.classList.remove('hidden');
+        }
+        setChapterRecapTab('quiz', { force: true });
+        if (elements.chapterQuizStatus) {
+            elements.chapterQuizStatus.textContent = 'Loading quiz...';
+        }
+        await refreshAssignmentQuizOverlay(assignment.assignmentId);
+        ttsPauseForModal();
+    }
+
+    function enterAssignmentQuizOverlay(assignment) {
+        if (elements.chapterRecapOverlay) {
+            elements.chapterRecapOverlay.classList.add('assignment-quiz-mode');
+        }
+        if (elements.chapterRecapTitle) {
+            elements.chapterRecapTitle.textContent = 'Assignment Quiz';
+        }
+        if (elements.chapterQuizHeading) {
+            elements.chapterQuizHeading.textContent = 'Assignment Quiz';
+        }
+        if (elements.chapterRecapChapterTitle) {
+            const title = assignment?.title || assignment?.bookTitle || '';
+            elements.chapterRecapChapterTitle.textContent = title;
+        }
+        if (elements.assignmentQuizActions) {
+            elements.assignmentQuizActions.classList.remove('hidden');
+        }
+        if (elements.assignmentQuizRetry) {
+            elements.assignmentQuizRetry.classList.add('hidden');
+        }
+    }
+
+    function exitAssignmentQuizOverlay() {
+        if (elements.chapterRecapOverlay) {
+            elements.chapterRecapOverlay.classList.remove('assignment-quiz-mode');
+        }
+        if (elements.chapterRecapTitle) {
+            elements.chapterRecapTitle.textContent = 'Chapter Recap';
+        }
+        if (elements.chapterQuizHeading) {
+            elements.chapterQuizHeading.textContent = 'Pop Quiz';
+        }
+        if (elements.assignmentQuizActions) {
+            elements.assignmentQuizActions.classList.add('hidden');
+        }
+        if (elements.assignmentQuizRetry) {
+            elements.assignmentQuizRetry.classList.add('hidden');
+        }
+    }
+
+    async function refreshAssignmentQuizOverlay(assignmentId) {
+        try {
+            persistCurrentBookActivity();
+            await runAccountClaimSync(true);
+            let response = await fetch(`/api/quizzes/assignment/${encodeURIComponent(assignmentId)}`, { cache: 'no-store' });
+            if (!response.ok && (response.status === 401 || response.status === 404)
+                    && state.quizChapterId && isSyntheticDemoAssignmentId(assignmentId)) {
+                await refreshChapterQuizOverlay(state.quizChapterId);
+                return;
+            }
+            if (!response.ok) {
+                if (elements.chapterQuizStatus) {
+                    let message = 'Quiz unavailable right now.';
+                    if (response.status === 409) {
+                        message = 'Finish the assigned reading before taking this quiz.';
+                        try {
+                            const errBody = await response.clone().json();
+                            const detail = errBody?.detail || errBody?.message || errBody?.error;
+                            if (typeof detail === 'string' && detail.trim()) {
+                                message = detail.trim();
+                            }
+                        } catch (ignored) {
+                        }
+                    }
+                    elements.chapterQuizStatus.textContent = message;
+                }
+                state.quizQuestions = [];
+                renderChapterQuizQuestions();
+                setQuizControls();
+                return;
+            }
+            const quiz = await response.json();
+            populateChapterQuizOverlay({
+                status: quiz && quiz.ready ? 'COMPLETED' : 'PENDING',
+                payload: quiz && quiz.payload ? quiz.payload : { questions: [] },
+                difficultyLevel: 0
+            });
+        } catch (error) {
+            console.debug('Failed to load assignment quiz:', error);
+            if (elements.chapterQuizStatus) {
+                elements.chapterQuizStatus.textContent = 'Quiz unavailable right now.';
+            }
+        }
+    }
+
     async function refreshChapterQuizOverlay(chapterId) {
         try {
             const response = await fetch(`/api/quizzes/chapter/${chapterId}`, { cache: 'no-store' });
@@ -5828,6 +6442,7 @@
                 }
                 state.quizQuestions = [];
                 state.quizSelectedAnswers = [];
+                state.quizQuestionIndex = 0;
                 renderChapterQuizQuestions();
                 renderChapterQuizFeedback(null);
                 setQuizControls();
@@ -5843,6 +6458,7 @@
             }
             state.quizQuestions = [];
             state.quizSelectedAnswers = [];
+            state.quizQuestionIndex = 0;
             renderChapterQuizQuestions();
             renderChapterQuizFeedback(null);
             setQuizControls();
@@ -5871,8 +6487,19 @@
             state.quizSelectedAnswers = questions.map((_, index) =>
                 Number.isInteger(previousSelections[index]) ? previousSelections[index] : null
             );
+            if (!Number.isInteger(state.quizQuestionIndex) || state.quizQuestionIndex < 0) {
+                state.quizQuestionIndex = 0;
+            } else if (questions.length > 0 && state.quizQuestionIndex >= questions.length) {
+                state.quizQuestionIndex = questions.length - 1;
+            }
+            const allAnswered = questions.length > 0
+                && state.quizSelectedAnswers.every(value => Number.isInteger(value));
+            if (allAnswered) {
+                state.quizQuestionIndex = questions.length - 1;
+            }
         } else {
             state.quizSelectedAnswers = questions.map(() => null);
+            state.quizQuestionIndex = 0;
             state.quizResult = null;
             renderChapterQuizFeedback(null);
         }
@@ -5899,41 +6526,61 @@
         const questions = Array.isArray(state.quizQuestions) ? state.quizQuestions : [];
         if (questions.length === 0) {
             elements.chapterQuizQuestions.innerHTML = '<div class="chapter-recap-chat-empty">Quiz questions are not ready yet.</div>';
+            setQuizControls();
             return;
         }
 
-        elements.chapterQuizQuestions.innerHTML = questions.map((question, questionIndex) => {
-            const prompt = escapeHtml(question.question || `Question ${questionIndex + 1}`);
-            const options = Array.isArray(question.options) ? question.options : [];
-            const optionsHtml = options.map((option, optionIndex) => {
-                const checked = state.quizSelectedAnswers[questionIndex] === optionIndex ? 'checked' : '';
-                return `
-                    <li>
-                        <label>
-                            <input type="radio" name="chapter-quiz-q-${questionIndex}" data-question-index="${questionIndex}" value="${optionIndex}" ${checked} ${state.quizSubmitting ? 'disabled' : ''} />
-                            <span>${escapeHtml(option)}</span>
-                        </label>
-                    </li>
-                `;
-            }).join('');
+        if (!Number.isInteger(state.quizQuestionIndex) || state.quizQuestionIndex < 0) {
+            state.quizQuestionIndex = 0;
+        }
+        if (state.quizQuestionIndex >= questions.length) {
+            state.quizQuestionIndex = questions.length - 1;
+        }
+
+        const questionIndex = state.quizQuestionIndex;
+        const question = questions[questionIndex];
+        const prompt = escapeHtml(question.question || `Question ${questionIndex + 1}`);
+        const options = Array.isArray(question.options) ? question.options : [];
+        const optionsHtml = options.map((option, optionIndex) => {
+            const checked = state.quizSelectedAnswers[questionIndex] === optionIndex ? 'checked' : '';
             return `
-                <div class="chapter-quiz-question">
-                    <div class="chapter-quiz-question-title">${questionIndex + 1}. ${prompt}</div>
-                    <ul class="chapter-quiz-options">${optionsHtml}</ul>
-                </div>
+                <li>
+                    <label>
+                        <input type="radio" name="chapter-quiz-q-${questionIndex}" data-question-index="${questionIndex}" value="${optionIndex}" ${checked} ${state.quizSubmitting ? 'disabled' : ''} />
+                        <span>${escapeHtml(option)}</span>
+                    </label>
+                </li>
             `;
         }).join('');
 
+        elements.chapterQuizQuestions.innerHTML = `
+            <div class="chapter-quiz-question">
+                <div class="chapter-quiz-question-title">${prompt}</div>
+                <ul class="chapter-quiz-options">${optionsHtml}</ul>
+            </div>
+        `;
+
         elements.chapterQuizQuestions.querySelectorAll('input[type="radio"]').forEach(input => {
             input.addEventListener('change', () => {
-                const questionIndex = Number.parseInt(input.dataset.questionIndex, 10);
+                const selectedQuestionIndex = Number.parseInt(input.dataset.questionIndex, 10);
                 const selectedIndex = Number.parseInt(input.value, 10);
-                if (!Number.isInteger(questionIndex) || questionIndex < 0) return;
+                if (!Number.isInteger(selectedQuestionIndex) || selectedQuestionIndex < 0) return;
                 if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
-                state.quizSelectedAnswers[questionIndex] = selectedIndex;
+                state.quizSelectedAnswers[selectedQuestionIndex] = selectedIndex;
                 setQuizControls();
             });
         });
+        setQuizControls();
+    }
+
+    function goToQuizQuestion(delta) {
+        const questions = Array.isArray(state.quizQuestions) ? state.quizQuestions : [];
+        if (questions.length === 0) return;
+        const nextIndex = state.quizQuestionIndex + delta;
+        if (nextIndex < 0 || nextIndex >= questions.length) return;
+        if (delta > 0 && !Number.isInteger(state.quizSelectedAnswers[state.quizQuestionIndex])) return;
+        state.quizQuestionIndex = nextIndex;
+        renderChapterQuizQuestions();
     }
 
     function setQuizControls() {
@@ -5943,20 +6590,199 @@
             elements.chapterRecapTabQuiz.disabled = quizUnavailable;
             elements.chapterRecapTabQuiz.setAttribute('aria-disabled', quizUnavailable ? 'true' : 'false');
         }
-        if (!elements.chapterQuizSubmit) return;
 
-        const hasQuestions = Array.isArray(state.quizQuestions) && state.quizQuestions.length > 0;
+        const questions = Array.isArray(state.quizQuestions) ? state.quizQuestions : [];
+        const hasQuestions = questions.length > 0;
+        const questionIndex = hasQuestions ? state.quizQuestionIndex : 0;
+        const onLastQuestion = hasQuestions && questionIndex === questions.length - 1;
+        const answeredHere = hasQuestions && Number.isInteger(state.quizSelectedAnswers[questionIndex]);
         const answeredCount = Array.isArray(state.quizSelectedAnswers)
             ? state.quizSelectedAnswers.filter(value => Number.isInteger(value)).length
             : 0;
-        const allAnswered = hasQuestions && answeredCount === state.quizQuestions.length;
+        const allAnswered = hasQuestions && answeredCount === questions.length;
+
+        if (elements.chapterQuizProgress) {
+            elements.chapterQuizProgress.classList.toggle('hidden', !hasQuestions);
+            if (hasQuestions) {
+                elements.chapterQuizProgress.textContent = `Question ${questionIndex + 1} of ${questions.length}`;
+            } else {
+                elements.chapterQuizProgress.textContent = '';
+            }
+        }
+        if (elements.chapterQuizPrev) {
+            elements.chapterQuizPrev.classList.toggle('hidden', !hasQuestions || questionIndex === 0);
+            elements.chapterQuizPrev.disabled = !hasQuestions || questionIndex === 0 || state.quizSubmitting;
+        }
+        if (elements.chapterQuizNext) {
+            elements.chapterQuizNext.classList.toggle('hidden', !hasQuestions || onLastQuestion);
+            elements.chapterQuizNext.disabled = !hasQuestions || onLastQuestion || !answeredHere || state.quizSubmitting;
+        }
+        if (!elements.chapterQuizSubmit) return;
+        const assignmentResultPending = !!state.quizAssignmentId && !!state.quizResult;
+        elements.chapterQuizSubmit.classList.toggle('hidden', !onLastQuestion || assignmentResultPending);
         elements.chapterQuizSubmit.disabled = quizUnavailable
             || state.quizSubmitting
             || !hasQuestions
-            || !allAnswered;
+            || !allAnswered
+            || !onLastQuestion
+            || assignmentResultPending;
         elements.chapterQuizSubmit.textContent = state.quizSubmitting
             ? 'Checking...'
             : 'Check Answers';
+        updateAssignmentQuizRetryControl();
+    }
+
+    function assignmentForQuizOverlay() {
+        if (!state.quizAssignmentId) {
+            return null;
+        }
+        return (state.classroomAssignments || []).find(
+            (item) => item && item.assignmentId === state.quizAssignmentId
+        ) || activeClassroomAssignment();
+    }
+
+    function isSyntheticDemoAssignmentId(assignmentId) {
+        return typeof assignmentId === 'string' && /^assignment-\d+$/.test(assignmentId);
+    }
+
+    function assignmentQuizPassed(result, assignment) {
+        const correctAnswers = Number.isFinite(result?.correctAnswers) ? result.correctAnswers : 0;
+        const totalQuestions = Number.isFinite(result?.totalQuestions) ? result.totalQuestions : 0;
+        if (Number.isInteger(assignment?.quizPassMinCorrect)) {
+            return correctAnswers >= assignment.quizPassMinCorrect;
+        }
+        // No pass threshold: any successfully graded attempt completes the requirement.
+        return totalQuestions > 0;
+    }
+
+    function canRetryAssignmentQuiz(assignment, result) {
+        if (!assignment) {
+            return false;
+        }
+        const perfect = libraryProgressHelpers && typeof libraryProgressHelpers.isAssignmentQuizPerfect === 'function'
+            ? libraryProgressHelpers.isAssignmentQuizPerfect(assignment, result)
+            : false;
+        if (perfect) {
+            return false;
+        }
+        if (libraryProgressHelpers && typeof libraryProgressHelpers.hasAssignmentQuizAttemptsRemaining === 'function') {
+            return libraryProgressHelpers.hasAssignmentQuizAttemptsRemaining(assignment);
+        }
+        if (!Number.isInteger(assignment.quizAttemptsAllowed) || !Number.isInteger(assignment.quizAttemptsUsed)) {
+            return true;
+        }
+        return assignment.quizAttemptsUsed < assignment.quizAttemptsAllowed;
+    }
+
+    function updateAssignmentQuizRetryControl() {
+        if (!elements.assignmentQuizRetry) {
+            return;
+        }
+        const assignment = assignmentForQuizOverlay();
+        const showRetry = !!state.quizAssignmentId
+            && !!state.quizResult
+            && canRetryAssignmentQuiz(assignment, state.quizResult);
+        elements.assignmentQuizRetry.classList.toggle('hidden', !showRetry);
+        if (showRetry) {
+            elements.assignmentQuizRetry.textContent = 'Retry Quiz';
+        }
+    }
+
+    function renderAssignmentQuizFeedback(result) {
+        if (!elements.chapterQuizFeedback) return;
+        if (!result) {
+            elements.chapterQuizFeedback.classList.add('hidden');
+            elements.chapterQuizFeedback.innerHTML = '';
+            updateAssignmentQuizRetryControl();
+            return;
+        }
+
+        const assignment = assignmentForQuizOverlay();
+        const correctAnswers = Number.isFinite(result.correctAnswers) ? result.correctAnswers : 0;
+        const totalQuestions = Number.isFinite(result.totalQuestions) ? result.totalQuestions : 0;
+        const passed = assignmentQuizPassed(result, assignment);
+        const hasPassMin = Number.isInteger(assignment?.quizPassMinCorrect);
+        const passMin = hasPassMin ? assignment.quizPassMinCorrect : totalQuestions;
+        const used = Number.isInteger(assignment?.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
+        const allowed = Number.isInteger(assignment?.quizAttemptsAllowed) ? assignment.quizAttemptsAllowed : null;
+        const remaining = allowed != null ? Math.max(0, allowed - used) : null;
+        const canRetry = canRetryAssignmentQuiz(assignment, result);
+
+        const missed = Array.isArray(result.results)
+            ? result.results.filter(item => item && item.correct === false)
+            : [];
+        const missedItems = missed.map(item => {
+            const qNum = Number.isFinite(item.questionIndex) ? item.questionIndex + 1 : '?';
+            const correctAnswer = escapeHtml(item.correctAnswer || '');
+            return `<li><strong>Q${qNum}</strong> correct answer: ${correctAnswer}</li>`;
+        }).join('');
+
+        let statusLine;
+        if (!hasPassMin) {
+            statusLine = `Quiz submitted (${correctAnswers}/${totalQuestions}).`;
+        } else if (passed) {
+            statusLine = `You passed (${correctAnswers}/${totalQuestions}; need ${passMin}+).`;
+        } else {
+            statusLine = `Not quite (${correctAnswers}/${totalQuestions}; need ${passMin}+).`;
+        }
+        if (remaining != null) {
+            if (passed && canRetry) {
+                statusLine += remaining > 0
+                    ? ` ${remaining} attempt${remaining === 1 ? '' : 's'} left to improve your score.`
+                    : '';
+            } else if (!passed) {
+                statusLine += remaining > 0
+                    ? ` ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
+                    : ' No attempts left.';
+            }
+        }
+
+        elements.chapterQuizFeedback.innerHTML = `
+            <div class="chapter-quiz-feedback-score">${escapeHtml(statusLine)}</div>
+            ${missed.length > 0 ? `<ul class="chapter-quiz-feedback-list">${missedItems}</ul>` : ''}
+            ${canRetry ? `<div class="chapter-quiz-feedback-meta">${passed
+                ? 'You can retry to improve your score, or close this quiz.'
+                : 'Try again, or close this quiz and return later.'}</div>` : ''}
+        `;
+        elements.chapterQuizFeedback.classList.remove('hidden');
+        updateAssignmentQuizRetryControl();
+    }
+
+    function bumpAssignmentQuizAttempt(result) {
+        const assignment = assignmentForQuizOverlay();
+        if (!assignment) {
+            return;
+        }
+        const used = Number.isInteger(assignment.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
+        assignment.quizAttemptsUsed = used + 1;
+        const score = Number.isFinite(result?.scorePercent)
+            ? result.scorePercent
+            : (Number.isFinite(result?.correctAnswers) && Number.isFinite(result?.totalQuestions) && result.totalQuestions > 0
+                ? Math.round((result.correctAnswers * 100) / result.totalQuestions)
+                : null);
+        if (Number.isInteger(score)) {
+            const previous = Number.isInteger(assignment.quizBestScorePercent) ? assignment.quizBestScorePercent : 0;
+            assignment.quizBestScorePercent = Math.max(previous, score);
+        }
+        if (assignmentQuizPassed(result, assignment)) {
+            assignment.quizStatus = 'COMPLETE';
+            assignment.quizPassed = true;
+        }
+    }
+
+    function retryAssignmentQuiz() {
+        if (!state.quizAssignmentId || !canRetryAssignmentQuiz(assignmentForQuizOverlay(), state.quizResult)) {
+            return;
+        }
+        state.quizResult = null;
+        state.quizSelectedAnswers = (state.quizQuestions || []).map(() => null);
+        state.quizQuestionIndex = 0;
+        renderAssignmentQuizFeedback(null);
+        renderChapterQuizQuestions();
+        setQuizControls();
+        if (elements.chapterQuizStatus) {
+            elements.chapterQuizStatus.textContent = 'Try again.';
+        }
     }
 
     function renderChapterQuizFeedback(result) {
@@ -6016,7 +6842,7 @@
     }
 
     async function submitChapterQuiz() {
-        if (!state.quizChapterId || !Array.isArray(state.quizQuestions) || state.quizQuestions.length === 0) {
+        if ((!state.quizChapterId && !state.quizAssignmentId) || !Array.isArray(state.quizQuestions) || state.quizQuestions.length === 0) {
             return;
         }
         if (state.quizSubmitting || !state.quizAvailable) {
@@ -6027,6 +6853,8 @@
         setQuizControls();
 
         try {
+            persistCurrentBookActivity();
+            await runAccountClaimSync(true);
             const payload = {
                 selectedOptionIndexes: state.quizQuestions.map((_, index) =>
                     Number.isInteger(state.quizSelectedAnswers[index]) ? state.quizSelectedAnswers[index] : -1
@@ -6034,11 +6862,24 @@
                 questionIds: state.quizQuestions.map((question) => question?.id || null),
                 contentVersion: state.quizContentVersion || null
             };
-            const response = await fetch(`/api/quizzes/chapter/${state.quizChapterId}/grade`, {
+            let gradeUrl = state.quizAssignmentId
+                ? `/api/quizzes/assignment/${encodeURIComponent(state.quizAssignmentId)}/grade`
+                : `/api/quizzes/chapter/${state.quizChapterId}/grade`;
+            let response = await fetch(gradeUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            if (!response.ok && state.quizAssignmentId && state.quizChapterId
+                    && (response.status === 401 || response.status === 404)
+                    && isSyntheticDemoAssignmentId(state.quizAssignmentId)) {
+                gradeUrl = `/api/quizzes/chapter/${state.quizChapterId}/grade`;
+                response = await fetch(gradeUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
             if (!response.ok) {
                 if (elements.chapterQuizStatus) {
                     let message = response.status === 409
@@ -6068,7 +6909,17 @@
 
             const result = await response.json();
             state.quizResult = result;
-            renderChapterQuizFeedback(result);
+            if (state.quizAssignmentId) {
+                bumpAssignmentQuizAttempt(result);
+                renderAssignmentQuizFeedback(result);
+                await loadClassroomContext();
+                renderAssignmentQuizFeedback(state.quizResult);
+                if (isAssignmentWrapupVisible()) {
+                    renderAssignmentWrapup();
+                }
+            } else {
+                renderChapterQuizFeedback(result);
+            }
         } catch (error) {
             console.debug('Quiz grading failed:', error);
             if (elements.chapterQuizStatus) {
@@ -6174,11 +7025,15 @@
         state.recapPendingChapterIndex = null;
         state.recapChatChapterIndex = null;
         state.quizChapterId = null;
+        state.quizAssignmentId = null;
+        applyRecapPreferenceGating();
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
+        state.quizQuestionIndex = 0;
         state.quizSubmitting = false;
         state.quizResult = null;
         state.quizDifficultyLevel = 0;
+        exitAssignmentQuizOverlay();
         setChapterRecapTab('recap');
         state.recapChatLoading = false;
         clearRecapOverlayError();
@@ -6193,6 +7048,7 @@
         if (restoreAudio) {
             ttsResumeAfterModal();
         }
+        maybeRestoreAssignmentWrapup();
     }
 
     async function isCurrentChapterPauseReady() {
@@ -6351,13 +7207,16 @@
     function renderSearchChapterFilterOptions() {
         if (!elements.searchChapterFilter) return;
         const previous = state.searchChapterFilter;
+        const visibleChapters = navigableChapterIndexes()
+            .map((index) => state.chapters[index])
+            .filter(Boolean);
         const options = ['<option value="">All chapters</option>'];
-        options.push(...state.chapters.map(chapter => (
+        options.push(...visibleChapters.map(chapter => (
             `<option value="${chapter.id}">${escapeHtml(chapter.title)}</option>`
         )));
         elements.searchChapterFilter.innerHTML = options.join('');
 
-        const stillExists = !previous || state.chapters.some(chapter => chapter.id === previous);
+        const stillExists = !previous || visibleChapters.some(chapter => chapter.id === previous);
         state.searchChapterFilter = stillExists ? previous : '';
         elements.searchChapterFilter.value = state.searchChapterFilter;
     }
@@ -6374,6 +7233,15 @@
         const grouped = new Map();
         for (const result of results) {
             const chapterId = result.chapterId || 'unknown-chapter';
+            if (isAssignmentMode()) {
+                const assigned = assignedChapterIndexes();
+                if (assigned.length > 0) {
+                    const allowed = assigned.some((index) => state.chapters[index]?.id === chapterId);
+                    if (!allowed) {
+                        continue;
+                    }
+                }
+            }
             if (!grouped.has(chapterId)) {
                 grouped.set(chapterId, []);
             }
@@ -6474,7 +7342,7 @@
 
     function navigateToChapterParagraph(chapterId, paragraphIndex, highlightQuery = '') {
         const chapterIndex = state.chapters.findIndex(c => c.id === chapterId);
-        if (chapterIndex === -1) return;
+        if (chapterIndex === -1 || !canNavigateToChapterIndex(chapterIndex)) return;
 
         const terms = extractSearchTerms(highlightQuery);
         if (terms.length > 0) {
@@ -6520,6 +7388,10 @@
         void sendClassroomReadingHeartbeat({ force: true });
         stopClassroomHeartbeat();
         state.activeClassroomAssignmentId = null;
+        state.assignmentMode = false;
+        state.assignmentWrapupReturn = false;
+        hideAssignmentWrapup();
+        updateAssignmentModeBanner();
         state.lastBookActivitySignature = '';
         ttsStop();
         closeMobileHeaderMenu();
@@ -6537,6 +7409,7 @@
         state.quizChapterId = null;
         state.quizQuestions = [];
         state.quizSelectedAnswers = [];
+        state.quizQuestionIndex = 0;
         state.quizSubmitting = false;
         state.quizResult = null;
         state.searchChapterFilter = '';
@@ -6602,7 +7475,9 @@
     }
 
     function renderChapterList() {
-        elements.chapterList.innerHTML = state.chapters.map((chapter, index) => {
+        const visibleIndexes = navigableChapterIndexes();
+        elements.chapterList.innerHTML = visibleIndexes.map((index) => {
+            const chapter = state.chapters[index];
             const isCurrent = index === state.currentChapterIndex;
             const isSelected = index === chapterListSelectedIndex;
             return `
@@ -6623,43 +7498,59 @@
     }
 
     function selectChapterFromList(index) {
-        if (index >= 0 && index < state.chapters.length) {
+        if (canNavigateToChapterIndex(index)) {
             hideChapterList();
             loadChapter(index, 0);
         }
     }
 
     function chapterListNavigate(direction) {
-        const newIndex = chapterListSelectedIndex + direction;
-        if (newIndex >= 0 && newIndex < state.chapters.length) {
-            chapterListSelectedIndex = newIndex;
+        const visibleIndexes = navigableChapterIndexes();
+        if (visibleIndexes.length === 0) {
+            return;
+        }
+        const currentPos = visibleIndexes.indexOf(chapterListSelectedIndex);
+        const from = currentPos >= 0 ? currentPos : 0;
+        const newPos = from + direction;
+        if (newPos >= 0 && newPos < visibleIndexes.length) {
+            chapterListSelectedIndex = visibleIndexes[newPos];
             renderChapterList();
             scrollChapterIntoView(chapterListSelectedIndex);
         }
     }
 
-    // Text-to-Speech functions (using backend OpenAI TTS with browser fallback)
+    // Text-to-Speech functions (using backend xAI TTS with browser fallback)
     async function ttsCheckAvailability() {
         state.cacheOnly = false;
         // Check browser speech synthesis support
         state.ttsBrowserAvailable = 'speechSynthesis' in window;
 
-        // Check OpenAI TTS availability
+        // Check server TTS availability
         try {
             const response = await fetch('/api/tts/status');
             const status = await response.json();
-            state.ttsOpenAIConfigured = status.openaiConfigured === true;
+            state.ttsOpenAIConfigured = status.configured === true || status.openaiConfigured === true;
             state.ttsCachedAvailable = status.cachedAvailable === true;
             state.ttsOpenAIAvailable = state.ttsOpenAIConfigured || state.ttsCachedAvailable;
             state.cacheOnly = status.cacheOnly === true;
+            state.ttsProvider = status.provider || null;
+            state.ttsDefaultVoice = status.defaultVoice || null;
+            state.ttsVoiceIds = new Set(
+                (status.voices || [])
+                    .map(voice => String(voice.id || '').trim().toLowerCase())
+                    .filter(Boolean)
+            );
         } catch (error) {
-            console.warn('OpenAI TTS not available:', error);
+            console.warn('Server TTS not available:', error);
             state.ttsOpenAIAvailable = false;
             state.ttsOpenAIConfigured = false;
             state.ttsCachedAvailable = false;
+            state.ttsProvider = null;
+            state.ttsDefaultVoice = null;
+            state.ttsVoiceIds = new Set();
         }
 
-        // TTS is available if either OpenAI or browser is available and the book allows it
+        // TTS is available if either server TTS or browser is available and the book allows it
         state.ttsAvailable = isBookFeatureEnabled('ttsEnabled')
             && isClassroomFeatureEnabled('ttsEnabled')
             && (state.ttsOpenAIAvailable || state.ttsBrowserAvailable);
@@ -6693,21 +7584,58 @@
         };
     }
 
+    function ttsSettingsMatchCurrentProvider(settings) {
+        if (!settings || !settings.voice) return false;
+        const provider = String(settings.provider || '').trim().toLowerCase();
+        const currentProvider = String(state.ttsProvider || '').trim().toLowerCase();
+        if (provider && currentProvider && provider !== currentProvider) return false;
+        const voice = String(settings.voice).trim().toLowerCase();
+        if (state.ttsVoiceIds && state.ttsVoiceIds.size > 0 && !state.ttsVoiceIds.has(voice)) {
+            return false;
+        }
+        return true;
+    }
+
     async function ttsAnalyzeBook() {
         if (!state.currentBook || !state.ttsAvailable) return;
 
+        let leftoverVoice = null;
         try {
-            // First check if settings are already saved
+            // First check if settings are already saved for the current TTS provider
             const savedResponse = await fetch(`/api/tts/settings/${state.currentBook.id}`);
             if (savedResponse.ok && savedResponse.status === 200) {
-                state.ttsVoiceSettings = await savedResponse.json();
-                console.log('Loaded saved voice settings:', state.ttsVoiceSettings);
+                const saved = await savedResponse.json();
+                if (ttsSettingsMatchCurrentProvider(saved)) {
+                    state.ttsVoiceSettings = saved;
+                    console.log('Loaded saved voice settings:', state.ttsVoiceSettings);
+                    return;
+                }
+                leftoverVoice = typeof saved?.voice === 'string' && saved.voice.trim() ? saved.voice.trim() : null;
+                console.log('Saved voice settings are not served by the current TTS provider; re-analyzing', saved);
+            }
+            const analyzeResponse = await fetch(`/api/tts/analyze/${state.currentBook.id}`, { method: 'POST' });
+            if (analyzeResponse.ok) {
+                state.ttsVoiceSettings = await analyzeResponse.json();
+                console.log('Analyzed voice settings:', state.ttsVoiceSettings);
+                showVoiceRecommendation();
                 return;
             }
+            state.ttsVoiceSettings = {
+                voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
+                speed: 1.0,
+                instructions: null,
+                provider: leftoverVoice ? null : (state.ttsProvider || null)
+            };
+            return;
         } catch (error) {
             console.warn('Voice analysis failed:', error);
         }
-        state.ttsVoiceSettings = { voice: 'fable', speed: 1.0, instructions: null };
+        state.ttsVoiceSettings = {
+            voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
+            speed: 1.0,
+            instructions: null,
+            provider: leftoverVoice ? null : (state.ttsProvider || null)
+        };
     }
 
     function showVoiceRecommendation() {
@@ -6814,13 +7742,13 @@
             return;
         }
 
-        // If OpenAI is not available, use browser TTS directly
+        // If server TTS is not available, use browser TTS directly
         if (!state.ttsOpenAIAvailable) {
             ttsSpeakBrowser(text);
             return;
         }
 
-        // Try OpenAI TTS first (includes server-side cache check)
+        // Try server TTS first (includes server-side cache check)
         state.ttsUsingBrowser = false;
         updateModeIndicator();
 
@@ -6907,7 +7835,7 @@
                 if (typeof error?.message === 'string' && error.message.startsWith('TTS auth required')) {
                     console.warn('Sensitive TTS requires collaborator sign-in in public mode; using browser speech.');
                 } else {
-                    console.error('OpenAI TTS fetch error, falling back to browser:', error);
+                    console.error('Server TTS fetch error, falling back to browser:', error);
                 }
                 if (state.ttsEnabled && state.ttsBrowserAvailable) {
                     ttsSpeakBrowser(text);
@@ -6947,7 +7875,7 @@
                 URL.revokeObjectURL(blobUrl);
             }
 
-            console.error('OpenAI TTS audio error, falling back to browser:', event);
+            console.error('Server TTS audio error, falling back to browser:', event);
             // Fall back to browser TTS
             if (state.ttsEnabled && state.ttsBrowserAvailable) {
                 ttsSpeakBrowser(text);
@@ -6971,7 +7899,7 @@
                 URL.revokeObjectURL(blobUrl);
             }
 
-            console.error('OpenAI TTS playback error, falling back to browser:', error);
+            console.error('Server TTS playback error, falling back to browser:', error);
             // Fall back to browser TTS
             if (state.ttsEnabled && state.ttsBrowserAvailable) {
                 ttsSpeakBrowser(text);
@@ -6981,26 +7909,30 @@
 
     function ttsAdvanceAndContinue() {
         const wasLastParagraph = state.currentParagraphIndex >= state.paragraphs.length - 1;
-        const wasLastChapter = state.currentChapterIndex >= state.chapters.length - 1;
+        const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
 
-        if (wasLastParagraph && wasLastChapter) {
-            // End of book
-            ttsStop();
+        if (wasLastParagraph) {
+            // TTS reads the whole paragraph, including remaining split-page fragments.
+            persistCurrentBookActivity({ markChapterComplete: true });
+            if (nextChapterIndex == null) {
+                ttsStop();
+                if (isAssignmentMode()) {
+                    maybeShowAssignmentWrapup();
+                }
+                return;
+            }
+            // Keep TTS chapter transitions uninterrupted by recap overlay.
+            goToNextChapter(false);
             return;
         }
 
-        if (wasLastParagraph) {
-            // Keep TTS chapter transitions uninterrupted by recap overlay.
-            goToNextChapter(false);
-        } else {
-            // TTS reads the full paragraph at once, so continuation pages must not replay it.
-            nextParagraph({ skipCurrentFragments: true });
-            ttsSpeakCurrent();
-        }
+        // TTS reads the full paragraph at once, so continuation pages must not replay it.
+        nextParagraph({ skipCurrentFragments: true });
+        ttsSpeakCurrent();
     }
 
     async function ttsPrefetchNext() {
-        // Don't prefetch if OpenAI TTS is not available (browser TTS doesn't benefit from prefetch)
+        // Don't prefetch if server TTS is not available (browser TTS doesn't benefit from prefetch)
         if (!state.ttsOpenAIAvailable || !state.ttsEnabled) return;
         if (state.ttsCachedAvailable && !state.ttsOpenAIConfigured) return;
         if (state.authPublicMode && !state.authCanAccessSensitive) return;
@@ -7136,7 +8068,7 @@
         }
 
         utterance.onend = () => {
-            // Only advance if still using browser TTS (not switched to OpenAI)
+            // Only advance if still using browser TTS (not switched to server TTS)
             if (state.ttsEnabled && state.ttsUsingBrowser) {
                 ttsAdvanceAndContinue();
             }
@@ -7509,11 +8441,16 @@
 
     function showSpeedReadingChapterPause() {
         speedReadingPause();
+        persistCurrentBookActivity({ markChapterComplete: true });
 
-        const nextChapterIndex = state.currentChapterIndex + 1;
-        if (nextChapterIndex < state.chapters.length) {
+        const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
+        if (nextChapterIndex != null) {
             elements.speedReadingChapterTitle.textContent = `Next Chapter: ${state.chapters[nextChapterIndex].title}`;
             elements.speedReadingContinue.disabled = false;
+        } else if (isAssignmentMode()) {
+            exitSpeedReading(true);
+            maybeShowAssignmentWrapup();
+            return;
         } else {
             elements.speedReadingChapterTitle.textContent = 'End of book';
             elements.speedReadingContinue.disabled = true;
@@ -7523,9 +8460,12 @@
     }
 
     async function continueSpeedReading() {
-        const nextChapterIndex = state.currentChapterIndex + 1;
-        if (nextChapterIndex >= state.chapters.length) {
+        const nextChapterIndex = nextNavigableChapterIndex(state.currentChapterIndex);
+        if (nextChapterIndex == null) {
             exitSpeedReading();
+            if (isAssignmentMode()) {
+                maybeShowAssignmentWrapup();
+            }
             return;
         }
 
@@ -8279,7 +9219,8 @@
 
     function applyRecapPreferenceGating() {
         state.recapAvailable = !!state.recapBackendAvailable && !!state.readerPreferences?.recapTabEnabled;
-        state.quizAvailable = !!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled;
+        state.quizAvailable = !!state.quizAssignmentId
+            || (!!state.quizBackendAvailable && !!state.readerPreferences?.quizTabEnabled);
         state.recapChatAvailable = !!state.recapChatBackendAvailable && !!state.readerPreferences?.chatTabEnabled;
     }
 
@@ -8565,7 +9506,21 @@
         }
     }
 
-    async function openCharacterBrowser() {
+    function canChatWithCharacter(character) {
+        if (!state.characterChatAvailable || !character) {
+            return false;
+        }
+        if (character.chatEligible === true || character.characterType === 'PRIMARY') {
+            return true;
+        }
+        if (character.chatEligible === false) {
+            return false;
+        }
+        const hasPrimary = (state.characters || []).some((item) => item && item.characterType === 'PRIMARY');
+        return !hasPrimary;
+    }
+
+    async function openCharacterBrowser(options = {}) {
         if (!state.currentBook) return;
 
         ttsPauseForModal();
@@ -8608,6 +9563,16 @@
 
         showCharacterListView();
         elements.characterBrowserModal.classList.remove('hidden');
+
+        const preferChat = options.preferChat === true;
+        if (preferChat) {
+            const chatable = (state.characters || []).filter((item) => canChatWithCharacter(item));
+            if (chatable.length === 1) {
+                await openCharacterChat(chatable[0].id);
+            } else if (state.characters.length === 1) {
+                showCharacterDetail(state.characters[0].id);
+            }
+        }
     }
 
     function openCharacterBrowserToCharacter(characterId) {
@@ -8625,6 +9590,7 @@
         if (!skipAudioResume) {
             ttsResumeAfterModal();
         }
+        maybeRestoreAssignmentWrapup();
     }
 
     function showCharacterListView() {
@@ -8697,9 +9663,9 @@
             elements.characterDetailPortrait.src = '';
         }
 
-        // Show/hide chat button based on character type (only PRIMARY can chat)
+        // Show/hide chat button: PRIMARY characters, or SECONDARY when the book has no PRIMARY.
         if (elements.characterChatBtn) {
-            if (character.characterType === 'PRIMARY' && state.characterChatAvailable) {
+            if (canChatWithCharacter(character)) {
                 elements.characterChatBtn.classList.remove('hidden');
             } else {
                 elements.characterChatBtn.classList.add('hidden');
@@ -8821,6 +9787,7 @@
         elements.chatInput.value = '';
         updateCharacterChatDownloadButton();
         ttsResumeAfterModal();
+        maybeRestoreAssignmentWrapup();
     }
 
     function updateCharacterChatInputState() {
@@ -9747,6 +10714,34 @@
                 return;
             }
 
+            const takeQuizButton = e.target.closest('[data-take-assignment-quiz]');
+            if (takeQuizButton && elements.libraryView.contains(takeQuizButton)) {
+                e.preventDefault();
+                e.stopPropagation();
+                const assignmentId = takeQuizButton.dataset.takeAssignmentQuiz;
+                const assignment = (state.classroomAssignments || []).find(
+                    (item) => item && item.assignmentId === assignmentId
+                );
+                if (assignment) {
+                    await openClassroomAssignmentQuiz(assignment);
+                }
+                return;
+            }
+
+            const assignmentChatButton = e.target.closest('[data-open-assignment-chat]');
+            if (assignmentChatButton && elements.libraryView.contains(assignmentChatButton)) {
+                e.preventDefault();
+                e.stopPropagation();
+                const assignmentId = assignmentChatButton.dataset.openAssignmentChat;
+                const assignment = (state.classroomAssignments || []).find(
+                    (item) => item && item.assignmentId === assignmentId
+                );
+                if (assignment) {
+                    await openClassroomAssignmentChat(assignment);
+                }
+                return;
+            }
+
             const bookItem = e.target.closest('.book-item[data-book-id]');
             if (!bookItem || !elements.libraryView.contains(bookItem)) {
                 return;
@@ -10321,6 +11316,27 @@
         if (elements.chapterRecapBackdrop) {
             elements.chapterRecapBackdrop.addEventListener('click', () => closeChapterRecapOverlay(true));
         }
+        if (elements.assignmentWrapupClose) {
+            elements.assignmentWrapupClose.addEventListener('click', () => {
+                hideAssignmentWrapup();
+                ttsResumeAfterModal();
+            });
+        }
+        if (elements.assignmentWrapupBackdrop) {
+            elements.assignmentWrapupBackdrop.addEventListener('click', () => {
+                hideAssignmentWrapup();
+                ttsResumeAfterModal();
+            });
+        }
+        if (elements.assignmentWrapupActions) {
+            elements.assignmentWrapupActions.addEventListener('click', (e) => {
+                const button = e.target.closest('[data-assignment-wrapup]');
+                if (!button) {
+                    return;
+                }
+                void handleAssignmentWrapupAction(button.dataset.assignmentWrapup);
+            });
+        }
         if (elements.chapterRecapSkip) {
             elements.chapterRecapSkip.addEventListener('click', skipChapterRecap);
         }
@@ -10360,6 +11376,18 @@
         }
         if (elements.chapterQuizSubmit) {
             elements.chapterQuizSubmit.addEventListener('click', submitChapterQuiz);
+        }
+        if (elements.assignmentQuizRetry) {
+            elements.assignmentQuizRetry.addEventListener('click', retryAssignmentQuiz);
+        }
+        if (elements.assignmentQuizDone) {
+            elements.assignmentQuizDone.addEventListener('click', () => closeChapterRecapOverlay(true));
+        }
+        if (elements.chapterQuizPrev) {
+            elements.chapterQuizPrev.addEventListener('click', () => goToQuizQuestion(-1));
+        }
+        if (elements.chapterQuizNext) {
+            elements.chapterQuizNext.addEventListener('click', () => goToQuizQuestion(1));
         }
         if (elements.chapterRecapChatInput) {
             elements.chapterRecapChatInput.addEventListener('input', () => {
@@ -10754,6 +11782,15 @@
                     closePromptModal();
                 }
                 // Don't process other shortcuts when modal is open
+                return;
+            }
+
+            if (isAssignmentWrapupVisible()) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    hideAssignmentWrapup();
+                    ttsResumeAfterModal();
+                }
                 return;
             }
 

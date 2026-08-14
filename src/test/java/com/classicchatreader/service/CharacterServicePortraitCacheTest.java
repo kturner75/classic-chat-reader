@@ -103,6 +103,22 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void secondaryCharacterIsChatEligibleWhenBookHasNoPrimary() {
+        character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
+        when(characterRepository.countByBookIdAndCharacterType(
+                "book-1", com.classicchatreader.entity.CharacterType.PRIMARY)).thenReturn(0L);
+        assertEquals(true, service.isChatEligible(character));
+    }
+
+    @Test
+    void secondaryCharacterIsNotChatEligibleWhenPrimaryExists() {
+        character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
+        when(characterRepository.countByBookIdAndCharacterType(
+                "book-1", com.classicchatreader.entity.CharacterType.PRIMARY)).thenReturn(1L);
+        assertEquals(false, service.isChatEligible(character));
+    }
+
+    @Test
     void startupRecoveryRestoresFailedPortraitInCacheOnlyMode() throws Exception {
         String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
         ReflectionTestUtils.setField(service, "cacheOnly", true);

@@ -50,17 +50,26 @@ public record ClassroomContextResponse(
         }
     }
 
+    public record AssignmentChapterRef(
+            String chapterId,
+            Integer chapterIndex,
+            String chapterTitle
+    ) {
+    }
+
     public record ClassAssignment(
             String assignmentId,
             String title,
             String bookId,
             String bookTitle,
             String bookAuthor,
+            List<AssignmentChapterRef> chapters,
             String chapterId,
             Integer chapterIndex,
             String chapterTitle,
             String dueAt,
             boolean quizRequired,
+            String quizSource,
             QuizRequirementStatus quizStatus,
             boolean characterChatRequired,
             boolean bookAvailable,
@@ -68,7 +77,8 @@ public record ClassroomContextResponse(
             Integer quizMaxRetries,
             Integer quizAttemptsUsed,
             Integer quizAttemptsAllowed,
-            Boolean quizPassed
+            Boolean quizPassed,
+            Integer quizBestScorePercent
     ) {
         /** Backward-compatible constructor without character-chat / pass-rule fields. */
         public ClassAssignment(
@@ -90,14 +100,17 @@ public record ClassroomContextResponse(
                     bookId,
                     bookTitle,
                     bookAuthor,
+                    chapterId == null ? List.of() : List.of(new AssignmentChapterRef(chapterId, chapterIndex, chapterTitle)),
                     chapterId,
                     chapterIndex,
                     chapterTitle,
                     dueAt,
                     quizRequired,
+                    null,
                     quizStatus,
                     false,
                     bookAvailable,
+                    null,
                     null,
                     null,
                     null,
@@ -127,14 +140,17 @@ public record ClassroomContextResponse(
                     bookId,
                     bookTitle,
                     bookAuthor,
+                    chapterId == null ? List.of() : List.of(new AssignmentChapterRef(chapterId, chapterIndex, chapterTitle)),
                     chapterId,
                     chapterIndex,
                     chapterTitle,
                     dueAt,
                     quizRequired,
+                    null,
                     quizStatus,
                     characterChatRequired,
                     bookAvailable,
+                    null,
                     null,
                     null,
                     null,
