@@ -126,6 +126,10 @@ public class AssignmentQuizService {
             String userId, String assignmentId, SaveAssignmentQuizRequest request) {
         AssignmentEntity assignment = requireTeacherAssignment(userId, assignmentId);
         lockAssignmentQuizExclusive(assignment);
+        if (entityManager != null && entityManager.contains(assignment)) {
+            entityManager.refresh(assignment);
+        }
+        assignment = requireTeacherAssignment(userId, assignmentId);
         if (request == null || request.questions() == null || request.questions().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one question is required.");
         }

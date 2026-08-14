@@ -548,7 +548,8 @@ public class ClassroomAdminService {
                 assignment.getQuizSource() == null ? null : assignment.getQuizSource().trim().toUpperCase());
         boolean shouldResetWindow = quizSourceChanged
                 || chapterChanged
-                || (hasRules && (rulesChanged || publishedNow || availabilityOpenedEarlier
+                || publishedNow
+                || (hasRules && (rulesChanged || availabilityOpenedEarlier
                 || assignment.getQuizRulesActivatedAt() == null));
         if (shouldResetWindow) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));

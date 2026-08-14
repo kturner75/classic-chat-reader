@@ -3597,7 +3597,7 @@
 
     async function openClassroomAssignment(assignment) {
         if (!assignment?.bookId) {
-            return;
+            return false;
         }
         const book = await resolveBookForAssignment(assignment);
         if (!book) {
@@ -3605,7 +3605,7 @@
                 title: 'Assignment unavailable',
                 message: 'That assigned book is not available in this library yet.'
             });
-            return;
+            return false;
         }
         if (assignment.assignmentId) {
             state.activeClassroomAssignmentId = assignment.assignmentId;
@@ -3617,6 +3617,7 @@
         await selectBook(book, chapterIndex, 0);
         updateAssignmentModeBanner();
         startClassroomHeartbeat();
+        return true;
     }
 
     function activeClassroomAssignment() {
@@ -3904,7 +3905,10 @@
     }
 
     async function openClassroomAssignmentChat(assignment) {
-        await openClassroomAssignment(assignment);
+        const opened = await openClassroomAssignment(assignment);
+        if (!opened) {
+            return;
+        }
         if (!state.characterAvailable) {
             showAppToast({
                 title: 'Characters unavailable',
@@ -6243,7 +6247,10 @@
     }
 
     async function openClassroomAssignmentQuiz(assignment) {
-        await openClassroomAssignment(assignment);
+        const opened = await openClassroomAssignment(assignment);
+        if (!opened) {
+            return;
+        }
         await openAssignmentQuizOverlay(assignment);
     }
 
