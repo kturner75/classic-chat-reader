@@ -39,14 +39,13 @@ WHERE quiz_required = TRUE
 ALTER TABLE quiz_attempts
     ADD COLUMN assignment_id VARCHAR(255) NULL;
 
--- Attach a legacy chapter attempt only when exactly one quiz-required assignment
--- matches that chapter. Multiple same-chapter assignments leave assignment_id
--- null so every CHAPTER assignment can still see the shared history.
+-- Attach a legacy chapter attempt only when the student has exactly one
+-- matching enrolled quiz-required assignment for that chapter.
 UPDATE quiz_attempts
 SET assignment_id = (
     SELECT a.id
     FROM assignments a
-    LEFT JOIN enrollments e
+    INNER JOIN enrollments e
       ON e.term_id = a.term_id
      AND e.user_id = quiz_attempts.user_id
      AND e.deleted_at IS NULL
@@ -54,8 +53,7 @@ SET assignment_id = (
     WHERE a.chapter_id = quiz_attempts.chapter_id
       AND a.quiz_required = TRUE
       AND a.deleted_at IS NULL
-    ORDER BY CASE WHEN e.user_id IS NOT NULL THEN 0 ELSE 1 END,
-             CASE WHEN a.status = 'PUBLISHED' THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN a.status = 'PUBLISHED' THEN 0 ELSE 1 END,
              a.created_at
     LIMIT 1
 )
@@ -64,6 +62,11 @@ WHERE assignment_id IS NULL
   AND (
     SELECT COUNT(*)
     FROM assignments a2
+    INNER JOIN enrollments e2
+      ON e2.term_id = a2.term_id
+     AND e2.user_id = quiz_attempts.user_id
+     AND e2.deleted_at IS NULL
+     AND e2.status = 'ACTIVE'
     WHERE a2.chapter_id = quiz_attempts.chapter_id
       AND a2.quiz_required = TRUE
       AND a2.deleted_at IS NULL

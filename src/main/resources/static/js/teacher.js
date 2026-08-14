@@ -1819,7 +1819,7 @@
         const chapterIds = selectedChapterIds();
         if (state.editingAssignmentId) {
             const existing = state.assignments.find(item => item.assignmentId === state.editingAssignmentId);
-            const isDraft = String(existing?.status || '').toUpperCase() !== 'PUBLISHED';
+            const isDraft = String(existing?.status || '').toUpperCase() === 'DRAFT';
             if (isDraft) {
                 await api(`/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}`, {
                     method: 'PUT',
