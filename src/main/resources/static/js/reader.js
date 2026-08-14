@@ -2084,6 +2084,12 @@
         updateFavoriteUi();
     }
 
+    function resetAccountClaimSyncGate() {
+        state.accountClaimSyncedFor = null;
+        state.accountSyncPromise = null;
+        state.accountSyncInFlight = false;
+    }
+
     async function runAccountClaimSync(force = false) {
         if (!state.accountAuthEnabled || !state.accountAuthenticated) {
             return;
@@ -2113,13 +2119,15 @@
             const startedRevision = state.accountStateRevision;
             state.accountSyncInFlight = true;
             const job = performAccountClaimSync(syncKey, startedRevision);
-            state.accountSyncPromise = job.finally(() => {
+            state.accountSyncPromise = job;
+            try {
+                await job;
+            } finally {
                 if (state.accountSyncPromise === job) {
                     state.accountSyncPromise = null;
                     state.accountSyncInFlight = false;
                 }
-            });
-            await job;
+            }
             return;
         }
     }
@@ -2238,7 +2246,7 @@
             state.accountRequired = status.accountRequired === true;
 
             if (!state.accountAuthenticated) {
-                state.accountClaimSyncedFor = null;
+                resetAccountClaimSyncGate();
             }
             await loadClassroomCapabilities();
             updateAccountUi();
@@ -2412,7 +2420,7 @@
                 return;
             }
 
-            state.accountClaimSyncedFor = null;
+            resetAccountClaimSyncGate();
             await accountCheckStatus({ triggerSync: true });
             setAccountStatusMessage(firstMessageFromPayload(payload) || 'Signed in.', 'success');
             closeAccountModal();
@@ -2442,7 +2450,7 @@
     async function submitAccountLogout() {
         try {
             await nativeFetch('/api/account/logout', { method: 'POST' });
-            state.accountClaimSyncedFor = null;
+            resetAccountClaimSyncGate();
             await accountCheckStatus({ triggerSync: false });
             setAccountStatusMessage('Signed out.', 'success');
             closeAccountModal();
