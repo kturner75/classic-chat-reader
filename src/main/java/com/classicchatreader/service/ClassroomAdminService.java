@@ -550,7 +550,7 @@ public class ClassroomAdminService {
                 || chapterChanged
                 || (hasRules && (rulesChanged || publishedNow || availabilityOpenedEarlier
                 || assignment.getQuizRulesActivatedAt() == null));
-        if (shouldResetWindow && "PUBLISHED".equalsIgnoreCase(nextStatus)) {
+        if (shouldResetWindow) {
             assignment.setQuizRulesActivatedAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         }
     }

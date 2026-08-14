@@ -1533,6 +1533,10 @@
     }
 
     function assignmentQuizSuggestPath(suffix) {
+        const formChapterIds = selectedChapterIds();
+        if (state.quizHost === 'assignment' && formChapterIds.length === 1) {
+            return `/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(formChapterIds[0])}/${suffix}`;
+        }
         if (state.quizHost === 'assignment' && state.editingAssignmentId) {
             return `/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}/${suffix}`;
         }
@@ -1806,15 +1810,32 @@
     }
 
     async function ensureDraftAssignment() {
-        if (state.editingAssignmentId) return state.editingAssignmentId;
         const title = String(el['assignment-title'].value || '').trim();
         const bookId = el['assignment-book'].value;
+        const chapterIds = selectedChapterIds();
+        if (state.editingAssignmentId) {
+            const existing = state.assignments.find(item => item.assignmentId === state.editingAssignmentId);
+            const isDraft = String(existing?.status || '').toUpperCase() !== 'PUBLISHED';
+            if (isDraft) {
+                await api(`/api/classroom/assignments/${encodeURIComponent(state.editingAssignmentId)}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        title,
+                        bookId,
+                        chapterIds,
+                        quizRequired: true,
+                        status: 'DRAFT'
+                    })
+                });
+            }
+            return state.editingAssignmentId;
+        }
         const saved = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/assignments`, {
             method: 'POST',
             body: JSON.stringify({
                 title,
                 bookId,
-                chapterIds: selectedChapterIds(),
+                chapterIds,
                 quizRequired: true,
                 status: 'DRAFT'
             })
@@ -1827,10 +1848,26 @@
     async function loadEffectiveQuizForAssignment(assignmentId) {
         const optionCount = defaultOptionCount();
         const slotCount = defaultSlotCount();
-        const effective = await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/effective-quiz`);
-        const questions = Array.isArray(effective.questions) ? effective.questions : [];
+        const formChapterIds = selectedChapterIds();
+        const previewChapterId = formChapterIds.length === 1 ? formChapterIds[0] : '';
+        const assignmentEffective = assignmentId
+            ? await api(`/api/classroom/assignments/${encodeURIComponent(assignmentId)}/effective-quiz`)
+            : null;
+        const useCustom = assignmentEffective?.quizSource === 'CUSTOM'
+            && Array.isArray(assignmentEffective.questions)
+            && assignmentEffective.questions.length > 0;
+        const effective = useCustom
+            ? assignmentEffective
+            : (previewChapterId
+                ? await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/chapters/${encodeURIComponent(previewChapterId)}/effective-quiz`)
+                : assignmentEffective || {});
+        const questions = Array.isArray(effective.questions)
+            ? effective.questions
+            : (Array.isArray(effective.effectiveQuestions) ? effective.effectiveQuestions : []);
+        const chapterDefaultAvailable = effective.chapterDefaultAvailable
+            ?? (Array.isArray(effective.generatedQuestions) && effective.generatedQuestions.length > 0);
         state.quizContentVersion = effective.contentVersion || null;
-        state.quizHasGenerated = Boolean(effective.chapterDefaultAvailable) && questions.length > 0;
+        state.quizHasGenerated = Boolean(chapterDefaultAvailable) && questions.length > 0;
         state.quizGeneratedBase = state.quizHasGenerated
             ? questions.map(question => questionFromApi(question, optionCount, new Set(questions.map(item => item.id).filter(Boolean))))
             : [];
