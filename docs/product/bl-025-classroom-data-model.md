@@ -389,7 +389,7 @@ Append-only education-record-adjacent telemetry.
 | `event_type` | VARCHAR(64) NOT NULL | See enum below |
 | `book_id` / `chapter_id` / `paragraph_index` | optional | |
 | `assignment_id` | VARCHAR(255) NULL | |
-| `duration_ms` | BIGINT NULL | Server may clamp; client-reported for heartbeats. **BL-042.5 voice:** Call Character / realtime duration (not minutes). |
+| `duration_ms` | BIGINT NULL | Server may clamp **`READING_HEARTBEAT` only** (`[0, 120_000]`). **BL-042.5 voice:** Call Character / realtime duration (not minutes); do **not** apply the heartbeat clamp — sessions can run longer. |
 | `progress_percent` | INT NULL | 0–100 |
 | `session_id` | VARCHAR(255) NULL | Client reading session |
 | `idempotency_key` | VARCHAR(120) NULL | Optional client key; UNIQUE when not null for dedupe |
@@ -403,13 +403,13 @@ Append-only education-record-adjacent telemetry.
 
 **Event types (v1):** `READING_HEARTBEAT`, `CHAPTER_OPEN`, `CHAPTER_COMPLETE`, `BOOK_PROGRESS`, `QUIZ_ATTEMPT`, `ASSIGNMENT_VIEW`, `AI_TOKEN_USAGE`.
 
-**BL-042.5 this-term cut** (reuse this table; no second ledger, no new column names): `event_type` = `AI_TOKEN_USAGE`; `feature` = `CHAT` (character chat) or `VOICE` (Call Character / realtime). Cost on `estimated_cost_micros`; voice duration on `duration_ms`; `billed_via` + cached tokens in `metadata_json`. Full acceptance in `docs/product/backlog.md` → `BL-042.5`.
+**BL-042.5 this-term cut** (reuse this table; no second ledger, no new column names): `event_type` = `AI_TOKEN_USAGE`; `feature` = `CHAT` (character chat) or `VOICE` (Call Character / realtime). Cost on `estimated_cost_micros`; voice duration on `duration_ms` (do **not** apply the `READING_HEARTBEAT` `[0, 120_000]` clamp — Call Character sessions can run longer); `billed_via` + cached tokens in `metadata_json`. Full acceptance in `docs/product/backlog.md` → `BL-042.5`.
 
 **Write path (PR-10 acceptance):**
 
 - Prefer **async** ingest (queue or `@Async`) off the critical path of page turns; sync OK for low pilot volume if rate-limited.
 - **Heartbeat max frequency:** 1 per `(user_id, session_id, book_id)` per **60s** (server drop/coalesce extras).
-- `duration_ms`: client may send elapsed since last heartbeat; server clamps to `[0, 120_000]` per event.
+- `duration_ms` on **`READING_HEARTBEAT` only:** client may send elapsed since last heartbeat; server clamps to `[0, 120_000]` per event. This clamp does **not** apply to `AI_TOKEN_USAGE` / `VOICE` (Call Character) — persist the real session duration.
 - **Never trust** client `school_id` / `term_id` / `class_section_id` — derive from active membership for actor.
 - Token events may also be written from server-side LLM callers (authoritative) to avoid relying solely on client.
 - Indexes: `(term_id, user_id, occurred_at)`, `(term_id, event_type, occurred_at)`, `(school_id, occurred_at)`, `(user_id, occurred_at)`, unique partial-style: unique on `idempotency_key` where not null (portable: unique on column allowing multiple NULLs on Postgres/H2/MariaDB).
