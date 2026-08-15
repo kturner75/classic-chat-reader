@@ -25,7 +25,7 @@ class AssignmentQuizMigrationTest {
         flyway.clean();
         flyway.migrate();
         flyway.validate();
-        assertEquals("28", flyway.info().current().getVersion().getVersion());
+        assertEquals("29", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
             try (ResultSet columns = connection.getMetaData().getColumns(null, null, "QUIZ_ATTEMPTS", "CHAPTER_ID")) {
@@ -33,6 +33,12 @@ class AssignmentQuizMigrationTest {
                 assertEquals(1, columns.getInt("NULLABLE"));
             }
             try (ResultSet columns = connection.getMetaData().getColumns(null, null, "QUIZ_ATTEMPTS", "ASSIGNMENT_ID")) {
+                assertTrue(columns.next());
+            }
+            try (ResultSet columns = connection.getMetaData().getColumns(null, null, "BOOKS", "ILLUSTRATION_COVER_SUBJECT")) {
+                assertTrue(columns.next());
+            }
+            try (ResultSet columns = connection.getMetaData().getColumns(null, null, "BOOKS", "ILLUSTRATION_COVER_FOCUS")) {
                 assertTrue(columns.next());
             }
         }
