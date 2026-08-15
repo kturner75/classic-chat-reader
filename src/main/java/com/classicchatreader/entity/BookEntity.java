@@ -48,6 +48,10 @@ public class BookEntity {
     private String illustrationSetting; // Cultural/geographic setting (e.g., "19th century Russia, Russian Orthodox")
     @Column(length = 2000)
     private String illustrationStyleReasoning;
+    @Column(length = 32)
+    private String illustrationCoverSubject;
+    @Column(columnDefinition = "TEXT")
+    private String illustrationCoverFocus;
     private Boolean illustrationEnabled = false;
 
     // Character Prefetch Tracking
@@ -120,6 +124,12 @@ public class BookEntity {
 
     public String getIllustrationStyleReasoning() { return illustrationStyleReasoning; }
     public void setIllustrationStyleReasoning(String illustrationStyleReasoning) { this.illustrationStyleReasoning = illustrationStyleReasoning; }
+
+    public String getIllustrationCoverSubject() { return illustrationCoverSubject; }
+    public void setIllustrationCoverSubject(String illustrationCoverSubject) { this.illustrationCoverSubject = illustrationCoverSubject; }
+
+    public String getIllustrationCoverFocus() { return illustrationCoverFocus; }
+    public void setIllustrationCoverFocus(String illustrationCoverFocus) { this.illustrationCoverFocus = illustrationCoverFocus; }
 
     public Boolean getIllustrationEnabled() { return illustrationEnabled; }
     public void setIllustrationEnabled(Boolean illustrationEnabled) { this.illustrationEnabled = illustrationEnabled; }

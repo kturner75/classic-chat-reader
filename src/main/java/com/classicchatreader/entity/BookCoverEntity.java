@@ -17,10 +17,10 @@ public class BookCoverEntity {
 
     private String imageFilename;
 
-    @Column(length = 2000)
+    @Column(columnDefinition = "TEXT")
     private String generatedPrompt;
 
-    @Column(length = 2000)
+    @Column(columnDefinition = "TEXT")
     private String promptOverride;
 
     @Column(length = 64)

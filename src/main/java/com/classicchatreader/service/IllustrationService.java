@@ -338,7 +338,9 @@ public class IllustrationService {
                     book.getIllustrationStyle(),
                     book.getIllustrationPromptPrefix(),
                     book.getIllustrationSetting(),
-                    book.getIllustrationStyleReasoning()
+                    book.getIllustrationStyleReasoning(),
+                    book.getIllustrationCoverSubject(),
+                    book.getIllustrationCoverFocus()
             );
         }
         if (cacheOnly) {
@@ -361,6 +363,8 @@ public class IllustrationService {
         book.setIllustrationPromptPrefix(settings.promptPrefix());
         book.setIllustrationSetting(settings.setting());
         book.setIllustrationStyleReasoning(settings.reasoning());
+        book.setIllustrationCoverSubject(settings.coverSubject());
+        book.setIllustrationCoverFocus(settings.coverFocus());
         bookRepository.save(book);
 
         log.info("Analyzed illustration style for '{}': {} - {}",

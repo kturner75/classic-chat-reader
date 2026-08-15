@@ -74,6 +74,15 @@ public class IllustrationStyleAnalysisService {
             - expressionist: Bold colors, emotional distortion, psychological intensity
               Best for: Psychological drama, modernist works, existential themes (Dostoevsky, Kafka, Poe)
 
+            Also choose a coverSubject for a text-free book cover (the app overlays the real title):
+            - character: only if one specific person is the book's symbol (e.g. Hester Prynne)
+            - place: when a building, landscape, or city is the icon (e.g. the House of Usher)
+            - object: a defining artifact (e.g. a white whale, a raven)
+            - emblem: a simple symbolic image when no single character or place is the icon
+
+            Put the cover choice in coverSubject and coverFocus only. promptPrefix must stay style-only
+            (medium, palette, atmosphere) so chapter illustrations and portraits do not inherit a cover subject.
+
             Consider the book's:
             - Genre and emotional tone
             - Time period and setting
@@ -90,9 +99,11 @@ public class IllustrationStyleAnalysisService {
             Respond with ONLY valid JSON in this exact format, no other text:
             {
               "style": "style_name",
-              "promptPrefix": "A detailed prompt prefix describing the visual style, e.g., 'vintage watercolor illustration, soft pastels, romantic atmosphere,'",
+              "coverSubject": "character|place|object|emblem",
+              "coverFocus": "One concrete cover subject, e.g. the decaying House of Usher, no people",
+              "promptPrefix": "Style only, e.g. 'gothic woodcut, high contrast, stormy atmosphere,'",
               "setting": "The specific cultural, geographic, and historical setting (country, time period, religion/culture, architectural style)",
-              "reasoning": "Brief explanation of why this style fits the book"
+              "reasoning": "Brief explanation of why this style and cover subject fit the book"
             }
             """, title, author, truncateText(openingText, 1500));
 
@@ -107,13 +118,40 @@ public class IllustrationStyleAnalysisService {
                     settingsNode.get("style").asText("pen-and-ink"),
                     settingsNode.has("promptPrefix") ? settingsNode.get("promptPrefix").asText() : "detailed book illustration,",
                     settingsNode.has("setting") ? settingsNode.get("setting").asText() : null,
-                    settingsNode.has("reasoning") ? settingsNode.get("reasoning").asText() : "AI recommended"
+                    settingsNode.has("reasoning") ? settingsNode.get("reasoning").asText() : "AI recommended",
+                    normalizeCoverSubject(textOrNull(settingsNode, "coverSubject")),
+                    blankToNull(textOrNull(settingsNode, "coverFocus"))
             );
 
         } catch (Exception e) {
             log.error("Failed to analyze book for illustration style", e);
             return IllustrationSettings.defaults();
         }
+    }
+
+    static String textOrNull(JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field)) {
+            return null;
+        }
+        return node.get(field).asText();
+    }
+
+    static String normalizeCoverSubject(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim().toLowerCase();
+        return switch (value) {
+            case "character", "place", "object", "emblem" -> value;
+            default -> null;
+        };
+    }
+
+    static String blankToNull(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return raw.trim();
     }
 
     private String truncateText(String text, int maxLength) {
