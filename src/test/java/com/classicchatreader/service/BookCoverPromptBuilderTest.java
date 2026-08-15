@@ -80,23 +80,26 @@ class BookCoverPromptBuilderTest {
     }
 
     @Test
-    void clipsAssembledPromptToStorageLimit() {
+    void keepsLongStyleAndDescriptionUncut() {
         BookEntity book = new BookEntity("The Scarlet Letter", "Nathaniel Hawthorne", "gutenberg");
-        book.setDescription("x".repeat(500));
+        String description = "x".repeat(500);
+        String prefix = "p".repeat(1000);
+        String setting = "s".repeat(1000);
+        String focus = "f".repeat(500);
+        book.setDescription(description);
         IllustrationSettings style = new IllustrationSettings(
                 "oil-painting",
-                "p".repeat(1000),
-                "s".repeat(1000),
+                prefix,
+                setting,
                 "reason",
                 "emblem",
-                "f".repeat(500)
+                focus
         );
         String prompt = BookCoverPromptBuilder.build(book, style);
-        assertTrue(prompt.length() <= BookCoverPromptBuilder.MAX_PROMPT_LENGTH);
-        assertTrue(prompt.contains("Setting: "));
-        assertTrue(prompt.contains("Themes: "));
+        assertTrue(prompt.contains(prefix));
+        assertTrue(prompt.contains(setting));
+        assertTrue(prompt.contains(description));
+        assertTrue(prompt.contains(focus));
         assertTrue(prompt.contains("No title text"));
-        assertTrue(prompt.contains("s".repeat(20)));
-        assertTrue(prompt.contains("x".repeat(20)));
     }
 }

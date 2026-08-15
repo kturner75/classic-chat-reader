@@ -50,7 +50,7 @@ public class BookEntity {
     private String illustrationStyleReasoning;
     @Column(length = 32)
     private String illustrationCoverSubject;
-    @Column(length = 500)
+    @Column(columnDefinition = "TEXT")
     private String illustrationCoverFocus;
     private Boolean illustrationEnabled = false;
 

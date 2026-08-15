@@ -10,29 +10,17 @@ import com.classicchatreader.model.IllustrationSettings;
 final class BookCoverPromptBuilder {
 
     static final String DEFAULT_PREFIX = "classic literary illustration,";
-    static final int MAX_PROMPT_LENGTH = 2000;
-    static final int MAX_COVER_FOCUS_LENGTH = 500;
-    static final int MAX_PREFIX_IN_PROMPT = 280;
-    static final int MAX_FOCUS_IN_PROMPT = 180;
-    static final int MAX_SETTING_IN_PROMPT = 200;
-    static final int MAX_THEMES_IN_PROMPT = 200;
 
     private BookCoverPromptBuilder() {
     }
 
     static String build(BookEntity book, IllustrationSettings style) {
-        String prefix = clip(
-                style == null || style.promptPrefix() == null || style.promptPrefix().isBlank()
-                        ? DEFAULT_PREFIX
-                        : style.promptPrefix(),
-                MAX_PREFIX_IN_PROMPT);
-        String setting = clip(
-                style == null || style.setting() == null ? "" : style.setting(),
-                MAX_SETTING_IN_PROMPT);
-        String description = clip(
-                book.getDescription() == null ? "" : book.getDescription(),
-                MAX_THEMES_IN_PROMPT);
-        String prompt = prefix
+        String setting = style == null || style.setting() == null ? "" : style.setting();
+        String prefix = style == null || style.promptPrefix() == null || style.promptPrefix().isBlank()
+                ? DEFAULT_PREFIX
+                : style.promptPrefix();
+        String description = book.getDescription() == null ? "" : book.getDescription();
+        return prefix
                 + " text-free illustrated book cover artwork for "
                 + book.getTitle()
                 + " by "
@@ -49,23 +37,15 @@ final class BookCoverPromptBuilder {
                 + setting
                 + ". Themes: "
                 + description;
-        if (prompt.length() <= MAX_PROMPT_LENGTH) {
-            return prompt;
-        }
-        // Last resort: shrink prefix only; never drop the fixed rules or tail.
-        int overflow = prompt.length() - MAX_PROMPT_LENGTH;
-        String shorterPrefix = clip(prefix, Math.max(0, prefix.length() - overflow));
-        return shorterPrefix + prompt.substring(prefix.length());
     }
 
     static String coverSubjectGuidance(IllustrationSettings style) {
         String subject = style == null ? null : style.coverSubject();
         String focus = style == null ? null : style.coverFocus();
-        String clippedFocus = focus == null || focus.isBlank()
-                ? null
-                : clip(focus.trim(), MAX_FOCUS_IN_PROMPT);
         if (subject == null) {
-            String hint = clippedFocus == null ? "" : "Suggested focus: " + clippedFocus + ". ";
+            String hint = (focus == null || focus.isBlank())
+                    ? ""
+                    : "Suggested focus: " + focus.trim() + ". ";
             return hint
                     + "Choose one iconic focal subject that best represents this book: "
                     + "a specific character only if that person is the book's symbol; "
@@ -76,8 +56,8 @@ final class BookCoverPromptBuilder {
         }
         StringBuilder guidance = new StringBuilder();
         guidance.append("Cover subject class: ").append(subject).append(". ");
-        if (clippedFocus != null) {
-            guidance.append("Cover focus: ").append(clippedFocus).append(". ");
+        if (focus != null && !focus.isBlank()) {
+            guidance.append("Cover focus: ").append(focus.trim()).append(". ");
         }
         if ("character".equals(subject)) {
             guidance.append("Show a visible face with a clear expression — not a silhouette, ")
@@ -86,12 +66,5 @@ final class BookCoverPromptBuilder {
             guidance.append("Do not add a person. ");
         }
         return guidance.toString();
-    }
-
-    static String clip(String value, int maxLength) {
-        if (value == null || value.length() <= maxLength) {
-            return value;
-        }
-        return value.substring(0, maxLength);
     }
 }

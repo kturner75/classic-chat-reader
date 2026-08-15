@@ -25,7 +25,7 @@ class AssignmentQuizMigrationTest {
         flyway.clean();
         flyway.migrate();
         flyway.validate();
-        assertEquals("29", flyway.info().current().getVersion().getVersion());
+        assertEquals("30", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
             try (ResultSet columns = connection.getMetaData().getColumns(null, null, "QUIZ_ATTEMPTS", "CHAPTER_ID")) {

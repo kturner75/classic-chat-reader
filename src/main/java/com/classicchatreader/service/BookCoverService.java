@@ -418,7 +418,7 @@ public class BookCoverService {
     @Transactional
     public void updateCoverPrompt(String bookId, String prompt) {
         bookCoverRepository.findByBookId(bookId).ifPresent(cover -> {
-            cover.setGeneratedPrompt(BookCoverPromptBuilder.clip(prompt, BookCoverPromptBuilder.MAX_PROMPT_LENGTH));
+            cover.setGeneratedPrompt(prompt);
             bookCoverRepository.save(cover);
         });
     }
