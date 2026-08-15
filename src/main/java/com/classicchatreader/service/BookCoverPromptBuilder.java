@@ -10,6 +10,8 @@ import com.classicchatreader.model.IllustrationSettings;
 final class BookCoverPromptBuilder {
 
     static final String DEFAULT_PREFIX = "classic literary illustration,";
+    static final int MAX_PROMPT_LENGTH = 2000;
+    static final int MAX_COVER_FOCUS_LENGTH = 500;
 
     private BookCoverPromptBuilder() {
     }
@@ -23,7 +25,7 @@ final class BookCoverPromptBuilder {
         if (description.length() > 500) {
             description = description.substring(0, 500);
         }
-        return prefix
+        String prompt = prefix
                 + " text-free illustrated book cover artwork for "
                 + book.getTitle()
                 + " by "
@@ -32,12 +34,14 @@ final class BookCoverPromptBuilder {
                 + coverSubjectGuidance(style)
                 + "Match the recommended art style and atmosphere. "
                 + "Strong contrast, rich color, readable at small thumbnail size. "
-                + "No title text, no author text, no words, no letters, no typography, no logos. "
+                + "No title text, no author names, no unrequested words, typography, or logos. "
+                + "A letter or emblem that is the chosen cover focus may appear as painted imagery, not typeset title. "
                 + "Avoid tiny decorative borders, printed paper texture, dense background detail, "
                 + "and generic unrelated portraits. Setting: "
                 + setting
                 + ". Themes: "
                 + description;
+        return clip(prompt, MAX_PROMPT_LENGTH);
     }
 
     static String coverSubjectGuidance(IllustrationSettings style) {
@@ -46,7 +50,7 @@ final class BookCoverPromptBuilder {
         if (subject == null) {
             String hint = (focus == null || focus.isBlank())
                     ? ""
-                    : "Suggested focus: " + focus.trim() + ". ";
+                    : "Suggested focus: " + clip(focus.trim(), MAX_COVER_FOCUS_LENGTH) + ". ";
             return hint
                     + "Choose one iconic focal subject that best represents this book: "
                     + "a specific character only if that person is the book's symbol; "
@@ -58,7 +62,7 @@ final class BookCoverPromptBuilder {
         StringBuilder guidance = new StringBuilder();
         guidance.append("Cover subject class: ").append(subject).append(". ");
         if (focus != null && !focus.isBlank()) {
-            guidance.append("Cover focus: ").append(focus.trim()).append(". ");
+            guidance.append("Cover focus: ").append(clip(focus.trim(), MAX_COVER_FOCUS_LENGTH)).append(". ");
         }
         if ("character".equals(subject)) {
             guidance.append("Show a visible face with a clear expression — not a silhouette, ")
@@ -67,5 +71,12 @@ final class BookCoverPromptBuilder {
             guidance.append("Do not add a person. ");
         }
         return guidance.toString();
+    }
+
+    static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 }

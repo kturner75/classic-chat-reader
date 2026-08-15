@@ -47,6 +47,9 @@ class BookCoverPromptBuilderTest {
         );
         String prompt = BookCoverPromptBuilder.build(book, style);
         assertTrue(prompt.contains("visible face"));
+        assertTrue(prompt.contains("Hester Prynne with the scarlet A"));
+        assertTrue(prompt.contains("letter or emblem that is the chosen cover focus"));
+        assertFalse(prompt.contains("no letters"));
         assertFalse(prompt.contains("Do not add a person"));
     }
 
@@ -74,5 +77,21 @@ class BookCoverPromptBuilderTest {
         assertTrue(prompt.contains("Do not default to a portrait"));
         assertTrue(prompt.contains("If the subject is a person, show a visible face"));
         assertFalse(prompt.contains("Cover subject class:"));
+    }
+
+    @Test
+    void clipsAssembledPromptToStorageLimit() {
+        BookEntity book = new BookEntity("The Scarlet Letter", "Nathaniel Hawthorne", "gutenberg");
+        book.setDescription("x".repeat(500));
+        IllustrationSettings style = new IllustrationSettings(
+                "oil-painting",
+                "p".repeat(1000),
+                "s".repeat(1000),
+                "reason",
+                "emblem",
+                "f".repeat(500)
+        );
+        String prompt = BookCoverPromptBuilder.build(book, style);
+        assertTrue(prompt.length() <= BookCoverPromptBuilder.MAX_PROMPT_LENGTH);
     }
 }

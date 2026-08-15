@@ -151,7 +151,11 @@ public class IllustrationStyleAnalysisService {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        return raw.trim();
+        String value = raw.trim();
+        if (value.length() > BookCoverPromptBuilder.MAX_COVER_FOCUS_LENGTH) {
+            return value.substring(0, BookCoverPromptBuilder.MAX_COVER_FOCUS_LENGTH);
+        }
+        return value;
     }
 
     private String truncateText(String text, int maxLength) {
