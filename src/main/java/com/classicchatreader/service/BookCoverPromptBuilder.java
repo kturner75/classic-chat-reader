@@ -43,8 +43,12 @@ final class BookCoverPromptBuilder {
     static String coverSubjectGuidance(IllustrationSettings style) {
         String subject = style == null ? null : style.coverSubject();
         String focus = style == null ? null : style.coverFocus();
-        if (subject == null && (focus == null || focus.isBlank())) {
-            return "Choose one iconic focal subject that best represents this book: "
+        if (subject == null) {
+            String hint = (focus == null || focus.isBlank())
+                    ? ""
+                    : "Suggested focus: " + focus.trim() + ". ";
+            return hint
+                    + "Choose one iconic focal subject that best represents this book: "
                     + "a specific character only if that person is the book's symbol; "
                     + "otherwise a place, object, or emblem. Do not default to a portrait. "
                     + "If the subject is a person, show a visible face with a clear expression "
@@ -52,9 +56,7 @@ final class BookCoverPromptBuilder {
                     + "If the subject is a place, object, or emblem, do not add a person. ";
         }
         StringBuilder guidance = new StringBuilder();
-        if (subject != null) {
-            guidance.append("Cover subject class: ").append(subject).append(". ");
-        }
+        guidance.append("Cover subject class: ").append(subject).append(". ");
         if (focus != null && !focus.isBlank()) {
             guidance.append("Cover focus: ").append(focus.trim()).append(". ");
         }

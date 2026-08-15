@@ -57,4 +57,22 @@ class BookCoverPromptBuilderTest {
         assertTrue(prompt.startsWith(BookCoverPromptBuilder.DEFAULT_PREFIX));
         assertTrue(prompt.contains("Do not default to a portrait"));
     }
+
+    @Test
+    void focusWithoutSubjectUsesGenericGuidance() {
+        BookEntity book = new BookEntity("The Scarlet Letter", "Nathaniel Hawthorne", "gutenberg");
+        IllustrationSettings style = new IllustrationSettings(
+                "oil-painting",
+                "painterly literary oil,",
+                "Puritan New England",
+                "partial analysis",
+                null,
+                "Hester Prynne with the scarlet A"
+        );
+        String prompt = BookCoverPromptBuilder.build(book, style);
+        assertTrue(prompt.contains("Suggested focus: Hester Prynne with the scarlet A"));
+        assertTrue(prompt.contains("Do not default to a portrait"));
+        assertTrue(prompt.contains("If the subject is a person, show a visible face"));
+        assertFalse(prompt.contains("Cover subject class:"));
+    }
 }
