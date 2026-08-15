@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ## Implementation handoff (classroom)
 
@@ -108,7 +108,7 @@ Last updated: 2026-08-14
 13. ~~**`BL-054` character-chat conduct guardrails** (college-appropriate)~~ **prompt v1 shipped** (`CharacterPersonaPromptBuilder` CONDUCT block shared by text + voice; golden-set tests). Optional output fallback (`BL-054.5`) remains if prompt-only still leaks in QA.
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -156,6 +156,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-13: Shipped `BL-054` prompt v1: shared CONDUCT block on `CharacterPersonaPromptBuilder` (text + voice), in-character refusal style, golden-set tests. Optional output fallback (`BL-054.5`) remains if prompt-only still leaks in QA.
 - 2026-08-12: `BL-025.10` pilot drill-down demo pack for Jessica 1:1 (America/Chicago): teacher roster → student overview with six partner sections; durable assignment opened + thin reader heartbeat; backlog/demo script updated. Quiz soak/bugfixes remain Kevin’s lane unless a showstopper surfaces.
 - 2026-08-14: Refined `BL-042` in place (no new theme) with this-term child **`BL-042.5`**: per-student character-chat + voice cost events, teacher/ops rollup vs the **$500** AI envelope, and a noisy first-occurrence alert when SuperGrok OAuth falls back to the xAI API key. Purpose: measure real per-student AI $ this term so the next **$750/section/semester** quote is evidence-based. Docs only.
+- 2026-08-15: Added `BL-055` (teacher-defined trophies; Kevin + Boss first pass 2026-08-14). Class/term named awards with one cached AI badge, server-side triggers + backfill + manual award; student sees own trophies, teacher sees them on `BL-025.10` overview; no class leaderboard (FERPA). Kevin add: assignment-wizard optional trophy for on-time 100% completion (`BL-055.6`). Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -234,6 +235,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Support private tracking by default.
 - Add optional social sharing entry points for selected trophies for growth experiments.
 - Design unlock rules to be deterministic and auditable.
+- Current Direction (2026-08-15):
+- Teacher-defined classroom trophies (named award + cached badge; class/term or assignment-scoped; server-awarded) are `BL-055`, not this consumer catalog.
 - Exit Criteria for Discovery:
 - Initial trophy catalog (v1) with explicit unlock conditions.
 - Event tracking schema for unlock evaluation.
@@ -1354,6 +1357,91 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-13: Captured from Kevin: college audience; keep chats fun and engaging; mild character-aligned flirtation OK; do not play along with NSFW or other inappropriate attempts; be careful not to over-censor.
 - 2026-08-13: Prompt v1 shipped — CONDUCT block on `CharacterPersonaPromptBuilder` (text + voice), in-character refusal, golden-set tests. `BL-054.5` output fallback still optional.
 - 2026-08-13: Softened CONDUCT wording after a local hello to Fortunato hit the provider-error fallback. Keep the same allow/deny rules, but avoid stacking graphic banned terms in the system prompt so ordinary greetings are not refused.
+
+### BL-055 - Teacher-Defined Trophies
+- Type: Feature
+- Priority: P2 (classroom delight; not fall-start blocking)
+- Effort: L
+- Status: Proposed
+- Problem: Teachers want to reward specific student accomplishments (quiz bar, finish a book, complete an assignment on time at 100%, etc.) with a **named trophy** and a **badge image**. Nothing like this exists — consumer quiz trophies (`BL-019` / `BL-018.4`) are a fixed product catalog, not teacher-authored classroom awards.
+- Audience: College classroom (Jessica / ENGL 1020 style). Student sees **own** trophies; teacher sees them on the existing student overview (`BL-025.10`). **No class leaderboard in v1** (FERPA).
+- Current Direction (2026-08-14, Kevin + Boss first pass):
+- Teacher creates a trophy on a **class/term**: title, short description, **one AI-generated badge image cached on the trophy definition** (not per student).
+- Teacher picks a **trigger** (and later a combo).
+- Award is **server-side** from events we already trust (quiz attempts, assignment/book completion, thin reading heartbeat). Do **not** trust the client (same lesson as the reading-complete gate).
+- **Backfill** students who already qualified when the teacher creates the trophy late.
+- Teacher can also **manually award** for things the system cannot see.
+- v1 triggers:
+  - Min quiz score (optional: first try only)
+  - Finish a book / finish the assigned chapters
+  - Finish every assignment in the term
+  - Thin “time in reader” threshold (`BL-025.6` heartbeat; label approximate)
+  - N distinct days with a heartbeat
+  - Combo: e.g. finish the book AND pass the quiz
+  - Manual teacher award
+  - **Assignment-scoped (first-class, not only the class-level catalog):** complete **this assignment on time** and at **100%** (perfect score) — see `BL-055.6`
+- Out of v1:
+  - Class leaderboards / first-in-class races
+  - Chat-quality or “good discussion” trophies
+  - Per-student unique badge generation (cost)
+  - K-12 / parent view
+- Current Direction (2026-08-15, Kevin add — assignment-wizard trophy):
+- In the existing assignment **create/edit wizard**, optional **“award a trophy”** for completing **this assignment on time** and at **100%** (perfect score).
+- AI may **suggest trophy title + badge** from the assignment theme (book / included chapters). Teacher **always** edits/overrides before save.
+- This is a **first-class trigger** (assignment-scoped), not only a class-level trophy catalog.
+- Still: **one generated badge per trophy definition**, **server-side award**, **backfill if published late**.
+- Cost of suggest title/badge sits with `BL-042` (same family as quiz suggest-*).
+- Hard parts to call out:
+  - Server evaluation + replay/backfill
+  - Badge gen once per definition; store + reuse; content-policy on the image prompt; cost under `BL-042`
+  - FERPA: awards are education records; show on `BL-025.10` overview; no bulk public wall
+  - A11y: badge needs alt text from title/description (`BL-044`)
+- Scope Buckets:
+- Trophy definition + award data model (class/term and assignment-scoped definitions; one cached badge per definition).
+- Server-side award engine over trusted events (quiz attempts, assignment/book completion, heartbeat); no client-claimed unlocks.
+- Teacher create/edit UI + one-shot badge generation with content-policy on the image prompt.
+- Student own-trophy display + teacher view on the existing `BL-025.10` overview (no public wall).
+- Backfill/replay when a definition is created or published late.
+- Manual teacher award for accomplishments the system cannot see.
+- Assignment-wizard option + AI title/badge suggest (`BL-055.6`).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-055.1 Data model + award engine | Proposed | Class/term (and assignment-scoped) trophy definitions + award rows; server evaluator over trusted events (quiz attempts, assignment/book completion, thin heartbeat). Do not trust the client. | Definitions persist; awards are written only by the server from events we already trust |
+| BL-055.2 Teacher create/edit + badge gen | Proposed | Teacher creates/edits title, short description, trigger (and later combo); **one AI-generated badge cached on the definition** (not per student); content-policy on the image prompt; cost under `BL-042` | Teacher can save a trophy with a reusable badge; regenerating the definition does not mint per-student images |
+| BL-055.3 Student + teacher overview display | Proposed | Student sees own trophies; teacher sees them on the existing `BL-025.10` student overview. Badge alt text from title/description (`BL-044`). No class leaderboard / public wall | Student and teacher-of-term can see awarded trophies; no bulk public display |
+| BL-055.4 Backfill job | Proposed | When a trophy is created or published late, replay trusted events and award students who already qualified | Late-created trophies award already-qualified rostered students without a client round-trip |
+| BL-055.5 Manual award | Proposed | Teacher can grant a defined trophy to a student for accomplishments the system cannot see | Teacher-of-term can award/revoke a manual grant; grant is an education record like automatic awards |
+| BL-055.6 Assignment-wizard option + AI title/badge suggest | Proposed | **v1-adjacent.** Optional “award a trophy” on the existing assignment create/edit wizard for completing **this assignment on time** at **100%** (perfect score). AI may suggest title + badge from the assignment theme (book / included chapters); teacher always edits/overrides before save. Assignment-scoped first-class trigger, not only the class-level catalog. One badge per definition; server-side award; backfill if published late. Suggest cost sits with `BL-042` (same family as quiz suggest-*) | Teacher can attach an on-time/perfect-score trophy while creating or editing an assignment; suggested title/badge are optional and never publish without teacher confirmation |
+- Discovery Questions:
+- Is “100% / perfect score” quiz-only, or every scored checklist item on the assignment?
+- What is “on time” when an assignment has no due date — ineligible for this trigger, or treat as always on time?
+- Combo triggers: stored as a small expression, or a fixed list of AND-pairs in v1?
+- Badge regeneration: replace the cached image in place, or version the definition so already-awarded rows keep the old art?
+- Manual award: can the teacher also revoke an automatic award, or only add grants the engine cannot see?
+- Should student landing Achievements (`BL-018.4`) show classroom trophies, or keep them on a class-scoped surface only?
+- Acceptance Criteria:
+- Teacher can define a named trophy on a class/term (and, via `.6`, on an assignment) with title, description, trigger, and one cached badge.
+- Awards are written server-side from trusted events or an explicit teacher grant; the client cannot self-award.
+- Creating or publishing a trophy late backfills already-qualified students.
+- Student sees own trophies; teacher sees them on `BL-025.10`; there is no class leaderboard or public wall in v1.
+- Badge images have alt text derived from title/description.
+- Assignment-wizard suggest title/badge never publish without teacher confirmation; suggest usage is attributable under `BL-042`.
+- Dependency Notes:
+- Distinct from consumer quiz trophies (`BL-019` / `BL-018.4` / `BL-020.3`); do not overload that catalog for teacher-authored awards.
+- Time-in-reader and distinct-day triggers depend on the thin `BL-025.6` heartbeat; label those awards approximate.
+- Teacher display reuses `BL-025.10` overview (pilot drill-down); do not invent a bulk public trophy wall.
+- Badge gen + assignment-wizard title/badge suggest are AI cost events under `BL-042` (same family as quiz suggest-*).
+- FERPA: awards are education records (`BL-043`); college classroom only in v1 — no K-12 / parent view.
+- A11y alt text on badges is `BL-044` / classroom surface hygiene, not a separate VPAT slice.
+- Assignment-wizard option (`.6`) extends the existing assignment create/edit path (`BL-025.4`); do not fork a second assignment editor.
+- Risks:
+- Client-trusted unlocks would repeat the reading-complete-gate failure mode — keep evaluation on the server.
+- Per-student badge generation would blow `BL-042` cost; cache one image per definition.
+- A class leaderboard or “first to finish” race is a FERPA/public-wall problem; keep v1 private-to-student + teacher overview.
+- Session Log:
+- 2026-08-14: Captured from Kevin + Boss first pass: teacher-defined named trophies + one cached AI badge; server-side triggers (quiz bar, finish book/chapters, finish all term assignments, approximate time-in-reader, N heartbeat days, combos, manual award); backfill late creates; student own view + teacher `BL-025.10` overview; no leaderboard (FERPA). Out of v1: chat-quality trophies, per-student unique badges, K-12 / parent view.
+- 2026-08-15: Kevin add — assignment-wizard optional trophy for completing **this assignment on time** at **100%** (perfect score); AI may suggest title + badge from book/chapters; teacher always overrides before save; assignment-scoped first-class trigger (`BL-055.6`). Docs only.
 
 ## P0
 
