@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.service.llm.XaiOAuthTokenManager;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -10,6 +11,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
+import java.util.Optional;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -24,6 +28,7 @@ public class BookCoverImageGeneratorService {
     private static final Logger log = LoggerFactory.getLogger(BookCoverImageGeneratorService.class);
 
     private final ComfyUIService comfyUIService;
+    private final XaiOAuthTokenManager oauthTokenManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${book-cover.generation.provider:comfyui}")
@@ -68,13 +73,14 @@ public class BookCoverImageGeneratorService {
     private WebClient xaiClient;
     private WebClient openaiClient;
 
-    public BookCoverImageGeneratorService(ComfyUIService comfyUIService) {
+    public BookCoverImageGeneratorService(ComfyUIService comfyUIService, XaiOAuthTokenManager oauthTokenManager) {
         this.comfyUIService = comfyUIService;
+        this.oauthTokenManager = oauthTokenManager;
     }
 
     @PostConstruct
     public void init() {
-        this.xaiClient = buildClient(xaiBaseUrl, xaiApiKey);
+        this.xaiClient = buildClient(xaiBaseUrl, null);
         this.openaiClient = buildClient(openaiBaseUrl, openaiApiKey);
         log.info("Book cover image generator provider: {}", getProviderName());
     }
@@ -105,7 +111,12 @@ public class BookCoverImageGeneratorService {
     }
 
     private String generateWithXai(String prompt, String cacheKey) throws Exception {
-        ensureConfigured(xaiApiKey, "xAI");
+        Optional<String> oauthToken = oauthTokenManager != null
+                ? oauthTokenManager.getAccessToken()
+                : Optional.empty();
+        String bearer = resolveXaiBearer(oauthToken, xaiApiKey);
+        boolean usingOAuth = oauthToken.isPresent();
+        log.info("event=book_cover_xai_request auth_source={}", usingOAuth ? "oauth" : "api_key");
         ObjectNode request = objectMapper.createObjectNode();
         request.put("model", xaiModel);
         request.put("prompt", prompt);
@@ -114,8 +125,21 @@ public class BookCoverImageGeneratorService {
         request.put("aspect_ratio", xaiAspectRatio);
         request.put("resolution", xaiResolution);
 
-        byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI");
-        return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+        try {
+            byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", bearer);
+            return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+        } catch (WebClientResponseException e) {
+            if (usingOAuth && e.getStatusCode().value() == 401) {
+                oauthTokenManager.invalidate();
+                if (xaiApiKey != null && !xaiApiKey.isBlank()) {
+                    log.warn("event=book_cover_xai_oauth_rejected retrying_with=api_key");
+                    byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", xaiApiKey);
+                    return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+                }
+                log.warn("event=book_cover_xai_oauth_rejected no_api_key_fallback");
+            }
+            throw e;
+        }
     }
 
     private String generateWithOpenAi(String prompt, String cacheKey) throws Exception {
@@ -128,14 +152,19 @@ public class BookCoverImageGeneratorService {
         request.put("quality", openaiQuality);
         request.put("output_format", openaiOutputFormat);
 
-        byte[] imageBytes = postImageGenerationRequest(openaiClient, request, "OpenAI");
+        byte[] imageBytes = postImageGenerationRequest(openaiClient, request, "OpenAI", null);
         return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
     }
 
-    private byte[] postImageGenerationRequest(WebClient client, ObjectNode request, String providerName) throws Exception {
-        String response = client.post()
+    private byte[] postImageGenerationRequest(
+            WebClient client, ObjectNode request, String providerName, String bearerToken) throws Exception {
+        var spec = client.post()
                 .uri("/images/generations")
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            spec = spec.header("Authorization", "Bearer " + bearerToken);
+        }
+        String response = spec
                 .bodyValue(objectMapper.writeValueAsString(request))
                 .retrieve()
                 .bodyToMono(String.class)
@@ -160,6 +189,15 @@ public class BookCoverImageGeneratorService {
         }
 
         throw new IllegalStateException(providerName + " image response did not include b64_json or url");
+    }
+
+    static String resolveXaiBearer(Optional<String> oauthToken, String apiKey) {
+        String bearer = oauthToken == null ? apiKey : oauthToken.orElse(apiKey);
+        if (bearer == null || bearer.isBlank()) {
+            throw new IllegalStateException(
+                    "xAI cover generation unavailable: SuperGrok OAuth token missing and no XAI_API_KEY");
+        }
+        return bearer;
     }
 
     private WebClient buildClient(String baseUrl, String apiKey) {
