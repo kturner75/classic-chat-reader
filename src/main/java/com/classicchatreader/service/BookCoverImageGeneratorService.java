@@ -129,11 +129,14 @@ public class BookCoverImageGeneratorService {
             byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", bearer);
             return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
         } catch (WebClientResponseException e) {
-            if (usingOAuth && e.getStatusCode().value() == 401 && xaiApiKey != null && !xaiApiKey.isBlank()) {
-                log.warn("event=book_cover_xai_oauth_rejected retrying_with=api_key");
+            if (usingOAuth && e.getStatusCode().value() == 401) {
                 oauthTokenManager.invalidate();
-                byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", xaiApiKey);
-                return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+                if (xaiApiKey != null && !xaiApiKey.isBlank()) {
+                    log.warn("event=book_cover_xai_oauth_rejected retrying_with=api_key");
+                    byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", xaiApiKey);
+                    return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+                }
+                log.warn("event=book_cover_xai_oauth_rejected no_api_key_fallback");
             }
             throw e;
         }
