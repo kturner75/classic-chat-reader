@@ -380,24 +380,7 @@ public class BookCoverService {
             return existingPrompt;
         }
         IllustrationSettings style = illustrationService.getOrAnalyzeBookStyle(bookId, false);
-        return buildCoverPrompt(book, style);
-    }
-
-    private String buildCoverPrompt(BookEntity book, IllustrationSettings style) {
-        String setting = style == null || style.setting() == null ? "" : style.setting();
-        String prefix = style == null || style.promptPrefix() == null ? "classic literary illustration," : style.promptPrefix();
-        String description = book.getDescription() == null ? "" : book.getDescription();
-        if (description.length() > 500) {
-            description = description.substring(0, 500);
-        }
-        return String.format(
-                "%s text-free illustrated book cover artwork for %s by %s. One bold central character facing the viewer, visible face with a clear expression, not a silhouette, not back-turned, not a featureless shadow. Strong contrast, rich color palette, painterly literary illustration, readable at small thumbnail size. No title text, no author text, no words, no letters, no typography, no logos. Avoid tiny decorative borders, printed paper texture, dense background detail, and generic unrelated portraits. Setting: %s. Themes: %s",
-                prefix,
-                book.getTitle(),
-                book.getAuthor(),
-                setting,
-                description
-        );
+        return BookCoverPromptBuilder.build(book, style);
     }
 
     @Transactional

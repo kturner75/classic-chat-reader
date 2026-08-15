@@ -74,6 +74,15 @@ public class IllustrationStyleAnalysisService {
             - expressionist: Bold colors, emotional distortion, psychological intensity
               Best for: Psychological drama, modernist works, existential themes (Dostoevsky, Kafka, Poe)
 
+            Also choose a coverSubject for a text-free book cover (the app overlays the real title):
+            - character: only if one specific person is the book's symbol (e.g. Hester Prynne)
+            - place: when a building, landscape, or city is the icon (e.g. the House of Usher)
+            - object: a defining artifact (e.g. a white whale, a raven)
+            - emblem: a simple symbolic image when no single character or place is the icon
+
+            Fold that choice into promptPrefix as a short cover-focus clause, e.g.
+            "gothic woodcut, decaying manor as the sole focal subject, no portrait,"
+
             Consider the book's:
             - Genre and emotional tone
             - Time period and setting
@@ -90,9 +99,10 @@ public class IllustrationStyleAnalysisService {
             Respond with ONLY valid JSON in this exact format, no other text:
             {
               "style": "style_name",
-              "promptPrefix": "A detailed prompt prefix describing the visual style, e.g., 'vintage watercolor illustration, soft pastels, romantic atmosphere,'",
+              "coverSubject": "character|place|object|emblem",
+              "promptPrefix": "Visual style plus a short cover-focus clause, e.g., 'gothic woodcut, decaying manor as the sole focal subject,'",
               "setting": "The specific cultural, geographic, and historical setting (country, time period, religion/culture, architectural style)",
-              "reasoning": "Brief explanation of why this style fits the book"
+              "reasoning": "Brief explanation of why this style and cover subject fit the book"
             }
             """, title, author, truncateText(openingText, 1500));
 
