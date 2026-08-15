@@ -391,7 +391,7 @@ public class BookCoverService {
             description = description.substring(0, 500);
         }
         return String.format(
-                "%s text-free illustrated book cover artwork for %s by %s. One bold central subject, simple silhouette, strong contrast, rich color palette, painterly literary illustration, limited fine detail, readable at small thumbnail size. No title text, no author text, no words, no letters, no typography, no logos. Avoid tiny decorative borders, printed paper texture, dense background detail, and generic unrelated portraits. Setting: %s. Themes: %s",
+                "%s text-free illustrated book cover artwork for %s by %s. One bold central character facing the viewer, visible face with a clear expression, not a silhouette, not back-turned, not a featureless shadow. Strong contrast, rich color palette, painterly literary illustration, readable at small thumbnail size. No title text, no author text, no words, no letters, no typography, no logos. Avoid tiny decorative borders, printed paper texture, dense background detail, and generic unrelated portraits. Setting: %s. Themes: %s",
                 prefix,
                 book.getTitle(),
                 book.getAuthor(),
