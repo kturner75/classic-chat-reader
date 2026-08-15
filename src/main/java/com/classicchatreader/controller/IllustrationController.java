@@ -88,7 +88,9 @@ public class IllustrationController {
                     book.getIllustrationStyle(),
                     book.getIllustrationPromptPrefix(),
                     book.getIllustrationSetting(),
-                    book.getIllustrationStyleReasoning()
+                    book.getIllustrationStyleReasoning(),
+                    book.getIllustrationCoverSubject(),
+                    book.getIllustrationCoverFocus()
             );
             return ResponseEntity.ok(settings);
         }
