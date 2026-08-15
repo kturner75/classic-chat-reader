@@ -93,5 +93,9 @@ class BookCoverPromptBuilderTest {
         );
         String prompt = BookCoverPromptBuilder.build(book, style);
         assertTrue(prompt.length() <= BookCoverPromptBuilder.MAX_PROMPT_LENGTH);
+        assertTrue(prompt.contains("Setting: "));
+        assertTrue(prompt.contains("Themes: "));
+        assertTrue(prompt.contains("s".repeat(20)));
+        assertTrue(prompt.contains("x".repeat(20)));
     }
 }

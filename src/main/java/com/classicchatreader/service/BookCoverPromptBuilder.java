@@ -17,15 +17,19 @@ final class BookCoverPromptBuilder {
     }
 
     static String build(BookEntity book, IllustrationSettings style) {
-        String setting = style == null || style.setting() == null ? "" : style.setting();
-        String prefix = style == null || style.promptPrefix() == null || style.promptPrefix().isBlank()
-                ? DEFAULT_PREFIX
-                : style.promptPrefix();
-        String description = book.getDescription() == null ? "" : book.getDescription();
-        if (description.length() > 500) {
-            description = description.substring(0, 500);
-        }
-        String prompt = prefix
+        String setting = clip(
+                style == null || style.setting() == null ? "" : style.setting(),
+                300);
+        String prefix = clip(
+                style == null || style.promptPrefix() == null || style.promptPrefix().isBlank()
+                        ? DEFAULT_PREFIX
+                        : style.promptPrefix(),
+                400);
+        String description = clip(
+                book.getDescription() == null ? "" : book.getDescription(),
+                300);
+        String tail = "Setting: " + setting + ". Themes: " + description;
+        String head = prefix
                 + " text-free illustrated book cover artwork for "
                 + book.getTitle()
                 + " by "
@@ -37,11 +41,9 @@ final class BookCoverPromptBuilder {
                 + "No title text, no author names, no unrequested words, typography, or logos. "
                 + "A letter or emblem that is the chosen cover focus may appear as painted imagery, not typeset title. "
                 + "Avoid tiny decorative borders, printed paper texture, dense background detail, "
-                + "and generic unrelated portraits. Setting: "
-                + setting
-                + ". Themes: "
-                + description;
-        return clip(prompt, MAX_PROMPT_LENGTH);
+                + "and generic unrelated portraits. ";
+        int headBudget = Math.max(0, MAX_PROMPT_LENGTH - tail.length());
+        return clip(head, headBudget) + tail;
     }
 
     static String coverSubjectGuidance(IllustrationSettings style) {
