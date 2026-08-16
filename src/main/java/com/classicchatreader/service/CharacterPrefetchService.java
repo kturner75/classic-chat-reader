@@ -1,8 +1,8 @@
 package com.classicchatreader.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterType;
@@ -12,19 +12,17 @@ import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
+import com.classicchatreader.service.llm.LlmOptions;
+import com.classicchatreader.service.llm.LlmProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -38,41 +36,27 @@ public class CharacterPrefetchService {
     private final CharacterRepository characterRepository;
     private final ParagraphRepository paragraphRepository;
     private final CharacterService characterService;
+    private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${ai.reasoning.ollama.base-url}")
-    private String ollamaBaseUrl;
-
-    @Value("${ai.reasoning.ollama.model}")
-    private String ollamaModel;
-
-    @Value("${character.prefetch.timeout-seconds:60}")
-    private int timeoutSeconds;
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
-
-    private WebClient webClient;
 
     public CharacterPrefetchService(
             BookRepository bookRepository,
             ChapterRepository chapterRepository,
             CharacterRepository characterRepository,
             ParagraphRepository paragraphRepository,
-            CharacterService characterService) {
+            CharacterService characterService,
+            @Qualifier("reasoningLlmProvider") LlmProvider reasoningProvider) {
         this.bookRepository = bookRepository;
         this.chapterRepository = chapterRepository;
         this.characterRepository = characterRepository;
         this.paragraphRepository = paragraphRepository;
         this.characterService = characterService;
-    }
-
-    @PostConstruct
-    public void init() {
-        this.webClient = WebClient.builder()
-                .baseUrl(ollamaBaseUrl)
-                .build();
-        log.info("Character prefetch service initialized");
+        this.reasoningProvider = reasoningProvider;
+        log.info("Character prefetch service initialized with provider: {}",
+                reasoningProvider.getProviderName());
     }
 
     public record PrefetchedCharacter(
@@ -104,9 +88,24 @@ public class CharacterPrefetchService {
             return;
         }
 
+        if (!reasoningProvider.isAvailable()) {
+            log.warn("Reasoning provider '{}' unavailable; leaving character prefetch incomplete for '{}' so it retries",
+                    reasoningProvider.getProviderName(), book.getTitle());
+            return;
+        }
+
         log.info("Starting character prefetch for '{}' by {}", book.getTitle(), book.getAuthor());
 
-        List<PrefetchedCharacter> mainCharacters = queryMainCharacters(book.getTitle(), book.getAuthor());
+        List<PrefetchedCharacter> mainCharacters;
+        try {
+            mainCharacters = queryMainCharacters(book.getTitle(), book.getAuthor());
+        } catch (Exception e) {
+            // Only a usable answer may mark prefetch done. Latching the flag on an
+            // infrastructure failure permanently strands the book with no PRIMARY characters.
+            log.error("Character prefetch failed for '{}' by {}; leaving prefetch incomplete so it retries",
+                    book.getTitle(), book.getAuthor(), e);
+            return;
+        }
 
         if (mainCharacters.isEmpty()) {
             log.info("No main characters returned for '{}' - LLM may not know this book well", book.getTitle());
@@ -219,40 +218,16 @@ public class CharacterPrefetchService {
         return updated;
     }
 
-    private List<PrefetchedCharacter> queryMainCharacters(String title, String author) {
+    /**
+     * Returns the main characters the model knows for this book. An empty list means the
+     * model does not know the book; any failure throws so the caller can retry later.
+     */
+    private List<PrefetchedCharacter> queryMainCharacters(String title, String author)
+            throws JsonProcessingException {
         String prompt = buildPrefetchPrompt(title, author);
-
-        try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", ollamaModel,
-                    "prompt", prompt,
-                    "stream", false,
-                    "options", Map.of("temperature", 0.2)  // Low temperature for factual responses
-            );
-
-            String response = webClient.post()
-                    .uri("/api/generate")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(timeoutSeconds))
-                    .block();
-
-            JsonNode responseNode = objectMapper.readTree(response);
-            String generatedText = responseNode.get("response").asText();
-
-            String json = extractJsonArray(generatedText);
-            return parseCharacters(json);
-
-        } catch (WebClientResponseException e) {
-            log.error("Ollama API error during character prefetch: {} - {}",
-                    e.getStatusCode(), e.getResponseBodyAsString());
-            return List.of();
-        } catch (Exception e) {
-            log.error("Failed to prefetch characters for '{}' by {}", title, author, e);
-            return List.of();
-        }
+        // Low temperature for factual responses.
+        String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.2));
+        return parseCharacters(extractJsonArray(generatedText));
     }
 
     private String buildPrefetchPrompt(String title, String author) {
@@ -285,25 +260,21 @@ public class CharacterPrefetchService {
             """, title, author);
     }
 
-    private List<PrefetchedCharacter> parseCharacters(String json) {
+    private List<PrefetchedCharacter> parseCharacters(String json) throws JsonProcessingException {
         List<PrefetchedCharacter> characters = new ArrayList<>();
-        try {
-            JsonNode charactersArray = objectMapper.readTree(json);
-            for (JsonNode charNode : charactersArray) {
-                String name = charNode.has("name") ? charNode.get("name").asText() : "";
-                String description = charNode.has("description")
-                        ? charNode.get("description").asText()
-                        : "A main character in the story";
-                int chapterNumber = charNode.has("firstChapterNumber")
-                        ? charNode.get("firstChapterNumber").asInt(1)
-                        : 1;
+        JsonNode charactersArray = objectMapper.readTree(json);
+        for (JsonNode charNode : charactersArray) {
+            String name = charNode.has("name") ? charNode.get("name").asText() : "";
+            String description = charNode.has("description")
+                    ? charNode.get("description").asText()
+                    : "A main character in the story";
+            int chapterNumber = charNode.has("firstChapterNumber")
+                    ? charNode.get("firstChapterNumber").asInt(1)
+                    : 1;
 
-                if (!name.isBlank()) {
-                    characters.add(new PrefetchedCharacter(name, description, chapterNumber));
-                }
+            if (!name.isBlank()) {
+                characters.add(new PrefetchedCharacter(name, description, chapterNumber));
             }
-        } catch (Exception e) {
-            log.error("Failed to parse prefetched characters JSON: {}", json, e);
         }
         return characters;
     }
@@ -364,13 +335,14 @@ public class CharacterPrefetchService {
         if (start >= 0 && end > start) {
             return text.substring(start, end + 1);
         }
-        // If no array found, check if it's an empty response
+        // "I don't know this book" is a real answer and may be recorded as prefetched.
         if (text.trim().equalsIgnoreCase("[]") || text.toLowerCase().contains("unfamiliar") ||
                 text.toLowerCase().contains("don't know")) {
             return "[]";
         }
-        log.warn("No JSON array found in prefetch response, returning empty: {}",
-                text.length() > 200 ? text.substring(0, 200) + "..." : text);
-        return "[]";
+        // Anything else is an unusable response, not an empty cast. Treat it as a failure
+        // so the book stays retryable rather than being recorded as having no characters.
+        throw new IllegalStateException("No JSON array found in prefetch response: "
+                + (text.length() > 200 ? text.substring(0, 200) + "..." : text));
     }
 }
