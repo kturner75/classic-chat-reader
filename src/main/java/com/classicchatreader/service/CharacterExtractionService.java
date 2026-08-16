@@ -36,6 +36,9 @@ public class CharacterExtractionService {
     @Value("${character.extraction.max-characters-per-chapter:5}")
     private int maxCharactersPerChapter;
 
+    @Value("${character.extraction.max-context-chars:24000}")
+    private int maxContextChars;
+
     public record ExtractedCharacter(
         String name,
         String description,
@@ -81,7 +84,7 @@ public class CharacterExtractionService {
                 bookTitle,
                 author,
                 chapterTitle,
-                chapterContent,
+                truncateChapterContent(chapterContent, chapterTitle),
                 existingCharactersList
         );
 
@@ -169,7 +172,7 @@ public class CharacterExtractionService {
             """,
                 bookTitle, author, chapterTitle,
                 existingCharactersList,
-                truncateText(chapterContent, 3000),
+                chapterContent,
                 maxCharactersPerChapter);
     }
 
@@ -206,6 +209,21 @@ public class CharacterExtractionService {
                 """ + truncateText(malformedResponse, 2500) + """
                 ---
                 """;
+    }
+
+    /**
+     * Chapter text is the whole signal for character extraction, so it gets a far larger
+     * budget than the incidental repair prompt. Truncating here silently drops every
+     * character introduced in the tail of a chapter, which is why the cut is logged.
+     */
+    private String truncateChapterContent(String chapterContent, String chapterTitle) {
+        if (chapterContent == null || chapterContent.length() <= maxContextChars) {
+            return chapterContent == null ? "" : chapterContent;
+        }
+        log.warn("Chapter '{}' is {} chars; truncating to {} for character extraction. "
+                        + "Characters introduced after the cut will not be found.",
+                chapterTitle, chapterContent.length(), maxContextChars);
+        return chapterContent.substring(0, maxContextChars) + "...";
     }
 
     private String truncateText(String text, int maxLength) {
