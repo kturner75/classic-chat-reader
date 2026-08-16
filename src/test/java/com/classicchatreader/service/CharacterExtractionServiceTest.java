@@ -14,6 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,37 @@ class CharacterExtractionServiceTest {
         service = new CharacterExtractionService(reasoningProvider);
         ReflectionTestUtils.setField(service, "cacheOnly", false);
         ReflectionTestUtils.setField(service, "maxCharactersPerChapter", 5);
+        ReflectionTestUtils.setField(service, "maxContextChars", 24000);
+    }
+
+    @Test
+    void extractCharactersFromChapter_sendsWholeChapterWhenWithinContextBudget() {
+        // A single-chapter short story (The Cask of Amontillado is ~12.5k chars) must reach
+        // the model intact; the old hardcoded 3000-char cut hid every late-appearing character.
+        String tail = "For the love of God, Montresor!";
+        String chapterContent = "The thousand injuries of Fortunato I had borne as I best could. "
+                + "x".repeat(12000) + tail;
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("[]");
+
+        service.extractCharactersFromChapter(
+                "The Cask of Amontillado", "Edgar Allan Poe", "Chapter 1", chapterContent, List.of());
+
+        verify(reasoningProvider).generate(contains(tail), any());
+    }
+
+    @Test
+    void extractCharactersFromChapter_truncatesChapterBeyondContextBudget() {
+        ReflectionTestUtils.setField(service, "maxContextChars", 500);
+        String tail = "Luchesi cannot tell Amontillado from Sherry.";
+        String chapterContent = "y".repeat(600) + tail;
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("[]");
+
+        service.extractCharactersFromChapter(
+                "The Cask of Amontillado", "Edgar Allan Poe", "Chapter 1", chapterContent, List.of());
+
+        verify(reasoningProvider).generate(argThat(prompt -> !prompt.contains(tail)), any());
     }
 
     @Test
