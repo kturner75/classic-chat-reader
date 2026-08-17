@@ -294,19 +294,21 @@ public class LlmProviderConfig {
 
     /**
      * Interactive chat must not sit on grok-4.6's default high reasoning (30s+).
-     * Non-reasoning chat models omit the field. If chat is still pointed at a
-     * reasoning model, force low effort unless the operator set an override.
+     * Non-reasoning chat models omit the field (including any operator override).
+     * If chat is still pointed at a reasoning model, force low effort unless
+     * the operator set an override.
      */
     private String resolveXaiReasoningEffort(String purpose, String xaiModel) {
-        if (!"chat".equals(purpose)) {
+        if (!"chat".equals(purpose) || !isXaiReasoningChatModel(xaiModel)) {
             return null;
         }
         if (chatXaiReasoningEffort != null && !chatXaiReasoningEffort.isBlank()) {
             return chatXaiReasoningEffort.trim();
         }
-        if (xaiModel != null && (xaiModel.startsWith("grok-4.6") || xaiModel.startsWith("grok-4.5"))) {
-            return "low";
-        }
-        return null;
+        return "low";
+    }
+
+    private static boolean isXaiReasoningChatModel(String xaiModel) {
+        return xaiModel != null && (xaiModel.startsWith("grok-4.6") || xaiModel.startsWith("grok-4.5"));
     }
 }
