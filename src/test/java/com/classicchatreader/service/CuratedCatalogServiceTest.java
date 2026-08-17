@@ -93,10 +93,11 @@ class CuratedCatalogServiceTest {
     void curatedCatalogStaysInNonIncreasingDownloadOrder() {
         List<CuratedCatalogService.CuratedCatalogBook> books = curatedCatalogService.getPopularBooks();
         for (int i = 1; i < books.size(); i++) {
+            CuratedCatalogService.CuratedCatalogBook previous = books.get(i - 1);
+            CuratedCatalogService.CuratedCatalogBook current = books.get(i);
             assertTrue(
-                    books.get(i - 1).downloadCount() >= books.get(i).downloadCount(),
-                    () -> "catalog order broke between " + books.get(i - 1).title()
-                            + " and " + books.get(i).title());
+                    previous.downloadCount() >= current.downloadCount(),
+                    "catalog order broke between " + previous.title() + " and " + current.title());
         }
     }
 }
