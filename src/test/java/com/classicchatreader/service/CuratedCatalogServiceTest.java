@@ -88,4 +88,15 @@ class CuratedCatalogServiceTest {
                 .anyMatch(book -> book.aliases().stream()
                         .anyMatch(alias -> alias.toLowerCase().contains("jumping frog"))));
     }
+
+    @Test
+    void curatedCatalogStaysInNonIncreasingDownloadOrder() {
+        List<CuratedCatalogService.CuratedCatalogBook> books = curatedCatalogService.getPopularBooks();
+        for (int i = 1; i < books.size(); i++) {
+            assertTrue(
+                    books.get(i - 1).downloadCount() >= books.get(i).downloadCount(),
+                    () -> "catalog order broke between " + books.get(i - 1).title()
+                            + " and " + books.get(i).title());
+        }
+    }
 }
