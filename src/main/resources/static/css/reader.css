@@ -1099,7 +1099,8 @@ a.my-chat-card:focus-visible,
 }
 
 .assignment-quiz-action,
-.assignment-chat-action {
+.assignment-chat-action,
+.assignment-open-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -4607,6 +4608,7 @@ kbd {
         width: 100%;
     }
 
+    .book-item-assignment .assignment-open-action,
     .book-item-assignment .assignment-quiz-action,
     .book-item-assignment .assignment-chat-action {
         flex: 1 1 100%;

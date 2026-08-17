@@ -250,7 +250,7 @@ async function expectInsideCard(card, locator) {
   expect(childBox.y + childBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 1);
 }
 
-test('assignment card keeps pills, progress, and CTA inside the card on a phone', async ({ page }) => {
+test('assignment card keeps title, late chip, status, and Open inside the card on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({
@@ -275,21 +275,24 @@ test('assignment card keeps pills, progress, and CTA inside the card on a phone'
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await expect(assignment).toBeVisible();
-  await expect(assignment).toContainText('Whole book');
+  await expect(assignment.locator('.book-item-title')).toHaveText('Read, quiz, and chat');
   await expect(assignment).toContainText('3d late');
-  await expect(assignment).toContainText('Quiz status unknown');
-  await expect(assignment).toContainText('Character chat required');
   await expect(assignment).toContainText('In progress');
-  await expect(assignment).toContainText('0/3 complete');
-  await expect(assignment.locator('.assignment-chat-action')).toHaveText('Chat with Character');
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
+  await expect(assignment).not.toContainText('Whole book');
+  await expect(assignment).not.toContainText('Quiz status unknown');
+  await expect(assignment).not.toContainText('Character chat required');
+  await expect(assignment).not.toContainText('0/3 complete');
+  await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
+  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
 
   const chips = assignment.locator('.book-progress-chip');
-  await expect(chips).toHaveCount(6);
+  await expect(chips).toHaveCount(2);
   const chipCount = await chips.count();
   for (let index = 0; index < chipCount; index += 1) {
     await expectInsideCard(assignment, chips.nth(index));
   }
-  await expectInsideCard(assignment, assignment.locator('.assignment-chat-action'));
+  await expectInsideCard(assignment, assignment.locator('.assignment-open-action'));
 
   const chipBoxes = await chips.evaluateAll((elements) => elements.map((element) => {
     const box = element.getBoundingClientRect();
@@ -310,10 +313,12 @@ test('BL-047 first Library return rerenders completed quiz and all assignment re
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment).toContainText('Pass 1+');
+  await expect(assignment.locator('.book-item-title')).toHaveText('Read, quiz, and chat');
+  await expect(assignment).toContainText('Not started');
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
-  await expect(assignment.locator('.assignment-chat-action')).toHaveText('Chat with Character');
-  await assignment.locator('.book-item-title').click();
+  await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
+  await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toHaveText('Assignment · Read, quiz, and chat');
 
@@ -326,8 +331,9 @@ test('BL-047 first Library return rerenders completed quiz and all assignment re
   await page.locator('#back-to-library').click();
 
   await expect.poll(() => state.classroomContextRequests).toBe(2);
-  await expect(assignment).toContainText('Quiz complete');
-  await expect(assignment).toContainText('3/3 complete');
+  await expect(assignment).toContainText('Complete');
+  await expect(assignment).not.toContainText('Quiz complete');
+  await expect(assignment).not.toContainText('3/3 complete');
 });
 
 test('Take Quiz stays hidden until reading is complete and opens the assignment quiz overlay', async ({ page }) => {
@@ -352,8 +358,15 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment.locator('.assignment-quiz-action')).toHaveText('Take Quiz');
-  await assignment.locator('.assignment-quiz-action').click();
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
+  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
+  await page.keyboard.press('ArrowRight');
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
   const overlay = page.locator('#chapter-recap-overlay');
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveClass(/assignment-quiz-mode/);
@@ -393,7 +406,13 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await assignment.locator('.assignment-quiz-action').click();
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
+  await page.keyboard.press('ArrowRight');
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
   await page.locator('#chapter-quiz-questions input[type="radio"]').first().check();
   await page.locator('#chapter-quiz-submit').click();
   await expect(page.locator('#chapter-quiz-feedback')).toContainText('You passed');
@@ -423,10 +442,12 @@ test('Retry Quiz appears after a failed attempt while retries remain', async ({ 
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment.locator('.assignment-quiz-action')).toHaveText('Retry Quiz');
+  await expect(assignment).toContainText('In progress');
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
+  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
 });
 
-test('Chat with Character on the assignment card opens chat when one character is available', async ({ page }) => {
+test('Open on the assignment card opens the assignment, not character chat', async ({ page }) => {
   await installApiMocks(page, {
     quizStatus: 'PENDING',
     characterChatRequired: true
@@ -434,15 +455,27 @@ test('Chat with Character on the assignment card opens chat when one character i
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
-  await assignment.locator('.assignment-chat-action').click();
+  await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
+  await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toBeVisible();
-  await expect(page.locator('#character-chat-modal')).toBeVisible();
-  await expect(page.locator('#chat-character-name')).toHaveText(TEST_CHARACTER.name);
+  await expect(page.locator('#character-chat-modal')).toBeHidden();
 });
 
-test('secondary-only characters can be chatted with from the assignment card', async ({ page }) => {
+test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 1,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
   await installApiMocks(page, {
     quizStatus: 'PENDING',
     characterChatRequired: true,
@@ -456,7 +489,13 @@ test('secondary-only characters can be chatted with from the assignment card', a
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await assignment.locator('.assignment-chat-action').click();
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
+  await page.keyboard.press('ArrowRight');
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="chat"]').click();
   await expect(page.locator('#character-chat-modal')).toBeVisible();
   await expect(page.locator('#chat-character-name')).toHaveText('Fortunato');
 });
@@ -483,7 +522,7 @@ test('end-of-reading wrap-up offers Take Quiz and Chat, not Continue Reading', a
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await assignment.locator('.book-item-title').click();
+  await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toBeVisible();
   await expect(page.locator('#chapter-title')).toContainText('Chapter One');
@@ -521,7 +560,8 @@ test('Continue Reading exits assignment mode and restores the full chapter list'
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await assignment.locator('.book-item-title').click();
+  await expect(assignment.locator('.assignment-due')).toHaveCount(0);
+  await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toHaveText('Assignment · Read chapter one');
   await expect(page.locator('#chapter-title')).toContainText('Chapter One');
@@ -559,8 +599,9 @@ test('multi-chapter assignment wrap-up waits until the last assigned chapter', a
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment).toContainText('Chapter One, Chapter Two');
-  await assignment.locator('.book-item-title').click();
+  await expect(assignment.locator('.book-item-title')).toHaveText('Chapters one and two');
+  await expect(assignment).not.toContainText('Chapter One, Chapter Two');
+  await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#chapter-title')).toContainText('Chapter One');
 
@@ -602,5 +643,7 @@ test('exhausted quiz attempts hide Take Quiz and Retry Quiz', async ({ page }) =
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await expect(assignment).toBeVisible();
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
+  await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
 });
