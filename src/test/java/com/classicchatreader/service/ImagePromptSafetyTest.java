@@ -81,6 +81,7 @@ class ImagePromptSafetyTest {
         assertTrue(ImagePromptSafety.isBlocked("depict a rape scene"));
         assertTrue(ImagePromptSafety.isBlocked("graphic gore close-up"));
         assertTrue(ImagePromptSafety.isBlocked("suggestive pose of an adolescent"));
+        assertTrue(ImagePromptSafety.isBlocked("graphic scene of soldiers torturing and dismembering prisoners"));
         assertFalse(ImagePromptSafety.isBlocked("bold woodcut, gory mere-flood, slain dragon"));
         String prepared = ImagePromptSafety.prepareForGeneration("sexualized child portrait");
         assertFalse(prepared.toLowerCase().contains("sexualized"));
