@@ -783,8 +783,16 @@
             return (root.scrollHeight - context.window.scrollY - context.window.innerHeight) < 96;
         }
 
+        function pageCanScroll() {
+            const root = documentRef.documentElement;
+            return root.scrollHeight - context.window.innerHeight > 96;
+        }
+
         function updateScrollJump() {
             if (!scrollJump) return;
+            const canScroll = pageCanScroll();
+            scrollJump.classList.toggle('hidden', !canScroll);
+            if (!canScroll) return;
             const toBottom = !isNearPageBottom();
             scrollJump.textContent = toBottom ? 'To bottom' : 'To top';
             scrollJump.setAttribute('aria-label', toBottom ? 'Scroll to bottom' : 'Scroll to top');
