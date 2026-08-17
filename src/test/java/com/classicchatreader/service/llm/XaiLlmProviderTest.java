@@ -21,6 +21,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class XaiLlmProviderTest {
 
     @Test
+    void buildRequestBody_includesReasoningEffortWhenConfigured() {
+        XaiLlmProvider provider = new XaiLlmProvider("api-key", "grok-4.6", 10, null, (WebClient) null, "low");
+
+        var body = provider.buildRequestBody("prompt", LlmOptions.withTemperature(0.5));
+
+        assertEquals("low", body.get("reasoning_effort"));
+    }
+
+    @Test
+    void buildRequestBody_omitsReasoningEffortForNonReasoningModels() {
+        XaiLlmProvider provider = new XaiLlmProvider("api-key", "grok-4.20-0309-non-reasoning", 10);
+
+        var body = provider.buildRequestBody("prompt", LlmOptions.withTemperature(0.5));
+
+        assertTrue(!body.containsKey("reasoning_effort"));
+    }
+
+    @Test
     void generate_noOAuthManager_usesApiKey() {
         List<String> authHeaders = new ArrayList<>();
         XaiLlmProvider provider = new XaiLlmProvider(

@@ -123,8 +123,11 @@ public class LlmProviderConfig {
     @Value("${ai.chat.xai.api-key:}")
     private String chatXaiApiKey;
 
-    @Value("${ai.chat.xai.model:grok-4.6}")
+    @Value("${ai.chat.xai.model:grok-4.20-0309-non-reasoning}")
     private String chatXaiModel;
+
+    @Value("${ai.chat.xai.reasoning-effort:}")
+    private String chatXaiReasoningEffort;
 
     @Value("${ai.chat.openai.base-url:https://api.openai.com/v1}")
     private String chatOpenAiBaseUrl;
@@ -269,9 +272,10 @@ public class LlmProviderConfig {
                     log.warn("Neither xAI OAuth nor API key configured for {} provider, falling back to Ollama", purpose);
                     yield new OllamaLlmProvider(ollamaBaseUrl, ollamaModel, timeoutSeconds);
                 }
-                log.info("Creating xAI provider for {}: model={}, oauth={}",
-                        purpose, xaiModel, oauthTokenManager.isConfigured());
-                yield new XaiLlmProvider(xaiApiKey, xaiModel, timeoutSeconds, oauthTokenManager);
+                String reasoningEffort = resolveXaiReasoningEffort(purpose, xaiModel);
+                log.info("Creating xAI provider for {}: model={}, oauth={}, reasoningEffort={}",
+                        purpose, xaiModel, oauthTokenManager.isConfigured(), reasoningEffort);
+                yield new XaiLlmProvider(xaiApiKey, xaiModel, timeoutSeconds, oauthTokenManager, reasoningEffort);
             }
             case "openai" -> {
                 if (openAiApiKey == null || openAiApiKey.isBlank()) {
@@ -286,5 +290,23 @@ public class LlmProviderConfig {
                 yield new OllamaLlmProvider(ollamaBaseUrl, ollamaModel, timeoutSeconds);
             }
         };
+    }
+
+    /**
+     * Interactive chat must not sit on grok-4.6's default high reasoning (30s+).
+     * Non-reasoning chat models omit the field. If chat is still pointed at a
+     * reasoning model, force low effort unless the operator set an override.
+     */
+    private String resolveXaiReasoningEffort(String purpose, String xaiModel) {
+        if (!"chat".equals(purpose)) {
+            return null;
+        }
+        if (chatXaiReasoningEffort != null && !chatXaiReasoningEffort.isBlank()) {
+            return chatXaiReasoningEffort.trim();
+        }
+        if (xaiModel != null && (xaiModel.startsWith("grok-4.6") || xaiModel.startsWith("grok-4.5"))) {
+            return "low";
+        }
+        return null;
     }
 }
