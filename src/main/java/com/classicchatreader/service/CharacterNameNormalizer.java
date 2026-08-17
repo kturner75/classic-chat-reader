@@ -1,16 +1,15 @@
 package com.classicchatreader.service;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Shared character-name identity rules used by extraction, prefetch, persistence,
  * cache import, and display dedupe. The identity key is what makes "Sally",
- * "sally", and "Sally." the same record.
+ * "sally", and "Sally." the same record without collapsing distinct people.
  */
 public final class CharacterNameNormalizer {
 
@@ -25,16 +24,15 @@ public final class CharacterNameNormalizer {
 
     /**
      * Stable uniqueness key: case, punctuation, hyphen, and whitespace insensitive.
-     * Titles are kept so {@code Mrs. Allen} and a different person named
-     * {@code Allen} do not share a unique constraint.
+     * Titles and given names are kept so {@code Mrs. Bennet} and
+     * {@code Elizabeth Bennet} do not share a unique constraint.
      */
     public static String identityKey(String name) {
         return joinTokens(tokenize(name));
     }
 
     /**
-     * Title-stripped form used for last-name-only variant matching
-     * ({@code Tilney} vs {@code Mr. Tilney}).
+     * Title-stripped tokens for generic-role detection only. Not an identity key.
      */
     public static String variantKey(String name) {
         List<String> parts = tokenize(name);
@@ -57,35 +55,13 @@ public final class CharacterNameNormalizer {
         return !leftKey.isBlank() && leftKey.equals(rightKey);
     }
 
+    /**
+     * Conservative match used by extraction, prefetch, and upsert.
+     * Only exact identity-key equality counts; shared surnames or stripped
+     * titles must not collapse distinct people.
+     */
     public static boolean isNameVariant(String existingName, String candidateName) {
-        if (isSameIdentity(existingName, candidateName)) {
-            return true;
-        }
-        String existingVariant = variantKey(existingName);
-        String candidateVariant = variantKey(candidateName);
-        if (existingVariant.isBlank() || candidateVariant.isBlank()) {
-            return false;
-        }
-        if (existingVariant.equals(candidateVariant)) {
-            return true;
-        }
-        if (isLastNameOnly(candidateVariant) && lastNameMatches(existingVariant, candidateVariant)) {
-            return true;
-        }
-        return isLastNameOnly(existingVariant) && lastNameMatches(candidateVariant, existingVariant);
-    }
-
-    public static boolean isLastNameOnly(String variantKey) {
-        return variantKey != null && !variantKey.isBlank() && !variantKey.contains(" ");
-    }
-
-    public static boolean lastNameMatches(String variantA, String variantB) {
-        if (variantA == null || variantB == null || variantA.isBlank() || variantB.isBlank()) {
-            return false;
-        }
-        String lastA = variantA.substring(variantA.lastIndexOf(' ') + 1);
-        String lastB = variantB.substring(variantB.lastIndexOf(' ') + 1);
-        return !lastA.isBlank() && lastA.equals(lastB);
+        return isSameIdentity(existingName, candidateName);
     }
 
     public static String fallbackKey(String id) {
@@ -96,17 +72,40 @@ public final class CharacterNameNormalizer {
         if (name == null) {
             return new ArrayList<>();
         }
-        String cleaned = name.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z\\s-]", " ")
-                .replace("-", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isEmpty()) {
-            return new ArrayList<>();
+        String normalized = Normalizer.normalize(name, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT);
+        List<String> parts = new ArrayList<>();
+        StringBuilder token = new StringBuilder();
+        for (int i = 0; i < normalized.length(); ) {
+            int codePoint = normalized.codePointAt(i);
+            i += Character.charCount(codePoint);
+            if (isTokenSeparator(codePoint)) {
+                flushToken(parts, token);
+            } else if (Character.isLetterOrDigit(codePoint)) {
+                token.appendCodePoint(codePoint);
+            } else {
+                flushToken(parts, token);
+            }
         }
-        return Arrays.stream(cleaned.split(" "))
-                .filter(part -> !part.isBlank())
-                .collect(Collectors.toCollection(ArrayList::new));
+        flushToken(parts, token);
+        return parts;
+    }
+
+    private static boolean isTokenSeparator(int codePoint) {
+        return Character.isWhitespace(codePoint)
+                || codePoint == '-'
+                || codePoint == '\u2010'
+                || codePoint == '\u2011'
+                || codePoint == '\u2012'
+                || codePoint == '\u2013'
+                || codePoint == '\u2014';
+    }
+
+    private static void flushToken(List<String> parts, StringBuilder token) {
+        if (!token.isEmpty()) {
+            parts.add(token.toString());
+            token.setLength(0);
+        }
     }
 
     private static String joinTokens(List<String> parts) {

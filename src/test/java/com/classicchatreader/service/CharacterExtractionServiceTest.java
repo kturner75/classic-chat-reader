@@ -143,6 +143,28 @@ class CharacterExtractionServiceTest {
     }
 
     @Test
+    void extractCharactersFromChapter_keepsDistinctPeopleWhoShareASurnameOrTitle() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name": "Elizabeth Bennet", "description": "The second daughter", "approximateParagraphIndex": 2},
+                  {"name": "Mrs. Allen", "description": "A chaperone", "approximateParagraphIndex": 4}
+                ]
+                """);
+
+        List<ExtractedCharacter> result = service.extractCharactersFromChapter(
+                "Pride and Prejudice",
+                "Jane Austen",
+                "Chapter 1",
+                "Mrs. Bennet spoke. Mr. Allen arrived later.",
+                List.of("Mrs. Bennet", "Mr. Allen")
+        );
+
+        assertEquals(2, result.size());
+        assertEquals("Elizabeth Bennet", result.get(0).name());
+        assertEquals("Mrs. Allen", result.get(1).name());
+    }
+
+    @Test
     void extractCharactersFromChapter_throwsWhenRepairStillInvalid() {
         when(reasoningProvider.generate(any(), any()))
                 .thenReturn("[{\"name\":\"Herbert\" \"description\":\"Broken\"}]")

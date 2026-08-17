@@ -90,7 +90,10 @@ public class V31__character_name_identity_key extends BaseJavaMigration {
             }
         }
 
-        boolean conversationsExist = tableExists(connection, "character_chat_conversations");
+        boolean hasDuplicates = groups.values().stream().anyMatch(group -> group.size() >= 2);
+        if (hasDuplicates) {
+            requireConversationsTable(connection);
+        }
         for (List<CharacterRow> group : groups.values()) {
             if (group.size() < 2) {
                 continue;
@@ -98,15 +101,7 @@ public class V31__character_name_identity_key extends BaseJavaMigration {
             group.sort(winnerOrder());
             CharacterRow winner = group.get(0);
             for (int i = 1; i < group.size(); i++) {
-                CharacterRow loser = group.get(i);
-                if (conversationsExist) {
-                    repointConversations(connection, loser.id(), winner.id());
-                }
-                try (PreparedStatement delete = connection.prepareStatement(
-                        "DELETE FROM characters WHERE id = ?")) {
-                    delete.setString(1, loser.id());
-                    delete.executeUpdate();
-                }
+                deleteLoserAfterSuccessfulRepoint(connection, group.get(i).id(), winner.id());
             }
         }
     }
@@ -127,14 +122,115 @@ public class V31__character_name_identity_key extends BaseJavaMigration {
         }
     }
 
-    private static void repointConversations(Connection connection, String fromCharacterId, String toCharacterId)
+    private static void deleteLoserAfterSuccessfulRepoint(
+            Connection connection, String loserId, String winnerId) throws SQLException {
+        int conversationsBefore = countConversations(connection, loserId);
+        int updated = repointConversations(connection, loserId, winnerId);
+        int conversationsAfter = countConversations(connection, loserId);
+        if (conversationsAfter != 0) {
+            throw new SQLException("Refusing to delete character '" + loserId
+                    + "': " + conversationsAfter
+                    + " conversation(s) still point at it after re-point.");
+        }
+        if (conversationsBefore > 0 && updated < conversationsBefore) {
+            throw new SQLException("Refusing to delete character '" + loserId
+                    + "': re-point updated " + updated + " of " + conversationsBefore
+                    + " conversation(s).");
+        }
+        try (PreparedStatement delete = connection.prepareStatement(
+                "DELETE FROM characters WHERE id = ?")) {
+            delete.setString(1, loserId);
+            delete.executeUpdate();
+        }
+    }
+
+    private static int repointConversations(Connection connection, String fromCharacterId, String toCharacterId)
             throws SQLException {
         try (PreparedStatement update = connection.prepareStatement(
                 "UPDATE character_chat_conversations SET character_id = ? WHERE character_id = ?")) {
             update.setString(1, toCharacterId);
             update.setString(2, fromCharacterId);
-            update.executeUpdate();
+            return update.executeUpdate();
         }
+    }
+
+    private static int countConversations(Connection connection, String characterId) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT COUNT(*) FROM character_chat_conversations WHERE character_id = ?")) {
+            query.setString(1, characterId);
+            try (ResultSet result = query.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private static void requireConversationsTable(Connection connection) throws SQLException {
+        if (!conversationsTableReachable(connection)) {
+            throw new SQLException(
+                    "character_chat_conversations was not found; refusing to delete duplicate "
+                            + "characters because chat rows would be cascade-deleted.");
+        }
+    }
+
+    private static boolean conversationsTableReachable(Connection connection) {
+        if (findTableIgnoreCase(connection, "character_chat_conversations") != null) {
+            try {
+                probeConversationsTable(connection);
+                return true;
+            } catch (SQLException ignored) {
+                return false;
+            }
+        }
+        try {
+            probeConversationsTable(connection);
+            return true;
+        } catch (SQLException ignored) {
+            return false;
+        }
+    }
+
+    private static void probeConversationsTable(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet ignored = statement.executeQuery(
+                     "SELECT 1 FROM character_chat_conversations WHERE 1 = 0")) {
+            // Table is readable; Flyway will roll back if this probe or later DML fails.
+        }
+    }
+
+    private static String findTableIgnoreCase(Connection connection, String tableName) {
+        String catalog = null;
+        String schema = null;
+        try {
+            catalog = connection.getCatalog();
+        } catch (SQLException ignored) {
+            // Catalog is optional for discovery.
+        }
+        try {
+            schema = connection.getSchema();
+        } catch (SQLException ignored) {
+            // Schema is optional for discovery.
+        }
+        String found = scanTables(connection, catalog, schema, tableName);
+        if (found != null) {
+            return found;
+        }
+        return scanTables(connection, null, null, tableName);
+    }
+
+    private static String scanTables(Connection connection, String catalog, String schema, String tableName) {
+        try (ResultSet tables = connection.getMetaData()
+                .getTables(catalog, schema, "%", new String[]{"TABLE"})) {
+            while (tables.next()) {
+                String actual = tables.getString("TABLE_NAME");
+                if (actual != null && actual.equalsIgnoreCase(tableName)) {
+                    return actual;
+                }
+            }
+        } catch (SQLException ignored) {
+            return null;
+        }
+        return null;
     }
 
     private static Comparator<CharacterRow> winnerOrder() {
@@ -155,19 +251,6 @@ public class V31__character_name_identity_key extends BaseJavaMigration {
         }
         String lower = product.toLowerCase(Locale.ROOT);
         return lower.contains("mysql") || lower.contains("mariadb");
-    }
-
-    private static boolean tableExists(Connection connection, String tableName) throws SQLException {
-        try (ResultSet tables = connection.getMetaData()
-                .getTables(null, null, tableName, new String[]{"TABLE"})) {
-            if (tables.next()) {
-                return true;
-            }
-        }
-        try (ResultSet tables = connection.getMetaData()
-                .getTables(null, null, tableName.toUpperCase(Locale.ROOT), new String[]{"TABLE"})) {
-            return tables.next();
-        }
     }
 
     private record NameRow(String id, String name) {

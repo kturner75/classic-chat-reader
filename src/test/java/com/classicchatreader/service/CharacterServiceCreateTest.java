@@ -75,7 +75,7 @@ class CharacterServiceCreateTest {
     }
 
     @Test
-    void createCharacter_skipsNormalizedAndLastNameVariants() {
+    void createCharacter_skipsSameIdentityKeyOnly() {
         CharacterEntity existing = persisted("char-1", "Sally", CharacterType.SECONDARY, CharacterStatus.COMPLETED);
         when(characterRepository.findByBookIdAndNameKey("book-northanger", "sally")).thenReturn(List.of());
         when(characterRepository.findAllByBookIdAndNameIgnoreCase("book-northanger", "Sally."))
@@ -84,6 +84,66 @@ class CharacterServiceCreateTest {
 
         assertNull(service.createCharacter(book, chapter, "Sally.", "A sister.", 4));
         verify(characterRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createCharacter_doesNotCollapseMrsBennetAndElizabethBennet() {
+        CharacterEntity mrsBennet = persisted("char-mrs", "Mrs. Bennet", CharacterType.PRIMARY, CharacterStatus.COMPLETED);
+        when(characterRepository.findByBookIdAndNameKey("book-northanger", "elizabeth bennet")).thenReturn(List.of());
+        when(characterRepository.findAllByBookIdAndNameIgnoreCase("book-northanger", "Elizabeth Bennet"))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-northanger")).thenReturn(List.of(mrsBennet));
+        when(characterRepository.saveAndFlush(any(CharacterEntity.class))).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("char-elizabeth");
+            return saved;
+        });
+
+        CharacterEntity created = service.createCharacter(
+                book, chapter, "Elizabeth Bennet", "The second Bennet daughter.", 6);
+
+        assertEquals("char-elizabeth", created.getId());
+        assertEquals("elizabeth bennet", created.getNameKey());
+    }
+
+    @Test
+    void createCharacter_doesNotCollapseMrAllenAndMrsAllen() {
+        CharacterEntity mrAllen = persisted("char-mr", "Mr. Allen", CharacterType.SECONDARY, CharacterStatus.COMPLETED);
+        when(characterRepository.findByBookIdAndNameKey("book-northanger", "mrs allen")).thenReturn(List.of());
+        when(characterRepository.findAllByBookIdAndNameIgnoreCase("book-northanger", "Mrs. Allen"))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-northanger")).thenReturn(List.of(mrAllen));
+        when(characterRepository.saveAndFlush(any(CharacterEntity.class))).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("char-mrs");
+            return saved;
+        });
+
+        CharacterEntity created = service.createCharacter(
+                book, chapter, "Mrs. Allen", "Catherine's Bath chaperone.", 2);
+
+        assertEquals("char-mrs", created.getId());
+        assertEquals("mrs allen", created.getNameKey());
+    }
+
+    @Test
+    void createCharacter_doesNotCollapseUnicodeOrNumericLookalikes() {
+        CharacterEntity jose = persisted("char-jose", "José", CharacterType.SECONDARY, CharacterStatus.COMPLETED);
+        when(characterRepository.findByBookIdAndNameKey("book-northanger", "jos")).thenReturn(List.of());
+        when(characterRepository.findAllByBookIdAndNameIgnoreCase("book-northanger", "Jos"))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-northanger")).thenReturn(List.of(jose));
+        when(characterRepository.saveAndFlush(any(CharacterEntity.class))).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("char-jos");
+            return saved;
+        });
+
+        CharacterEntity created = service.createCharacter(book, chapter, "Jos", "A different person.", 3);
+
+        assertEquals("char-jos", created.getId());
+        assertEquals("jos", created.getNameKey());
+        assertEquals("josé", jose.getNameKey());
     }
 
     @Test

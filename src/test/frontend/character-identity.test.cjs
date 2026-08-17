@@ -14,6 +14,17 @@ test('identityKey collapses case, punctuation, and whitespace', () => {
     assert.equal(identityKey('Henry-Tilney'), 'henry tilney');
 });
 
+test('identityKey preserves Unicode letters and digits and keeps distinct people apart', () => {
+    assert.equal(identityKey('José'), 'josé');
+    assert.equal(identityKey('Jos'), 'jos');
+    assert.equal(identityKey('Émile'), 'émile');
+    assert.equal(identityKey('Mile'), 'mile');
+    assert.equal(identityKey('Agent 47'), 'agent 47');
+    assert.equal(identityKey('Agent'), 'agent');
+    assert.notEqual(identityKey('Mrs. Bennet'), identityKey('Elizabeth Bennet'));
+    assert.notEqual(identityKey('Mr. Allen'), identityKey('Mrs. Allen'));
+});
+
 test('dedupeByIdentity keeps the stronger Sally and drops residual copies', () => {
     const pending = { id: 'a', name: 'Sally', characterType: 'SECONDARY', status: 'PENDING', portraitReady: false };
     const completed = { id: 'b', name: 'Sally.', characterType: 'SECONDARY', status: 'COMPLETED', portraitReady: true };

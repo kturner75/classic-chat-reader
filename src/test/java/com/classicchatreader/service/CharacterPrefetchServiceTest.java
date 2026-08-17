@@ -178,4 +178,33 @@ class CharacterPrefetchServiceTest {
         verify(characterService).upsertCharacter(any(), any(), eq("Sally"), any(), anyInt(), eq(CharacterType.PRIMARY));
         verify(characterService).queuePortraitGeneration("character-sally");
     }
+
+    @Test
+    void prefetch_doesNotCollapseDistinctAllensOrBennets() {
+        ChapterEntity chapter = new ChapterEntity();
+        chapter.setId("chapter-0");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(chapter));
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name": "Mr. Allen", "description": "A Bath acquaintance.", "firstChapterNumber": 1},
+                  {"name": "Mrs. Allen", "description": "His wife.", "firstChapterNumber": 1},
+                  {"name": "Mrs. Bennet", "description": "A mother.", "firstChapterNumber": 1},
+                  {"name": "Elizabeth Bennet", "description": "Her daughter.", "firstChapterNumber": 1}
+                ]
+                """);
+        when(characterService.upsertCharacter(any(), any(), any(), any(), anyInt(), any()))
+                .thenAnswer(invocation -> {
+                    CharacterEntity saved = new CharacterEntity();
+                    saved.setId("character-" + invocation.getArgument(2));
+                    saved.setName(invocation.getArgument(2));
+                    return new CharacterService.CharacterUpsert(saved, true, false);
+                });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterService).upsertCharacter(any(), any(), eq("Mr. Allen"), any(), anyInt(), eq(CharacterType.PRIMARY));
+        verify(characterService).upsertCharacter(any(), any(), eq("Mrs. Allen"), any(), anyInt(), eq(CharacterType.PRIMARY));
+        verify(characterService).upsertCharacter(any(), any(), eq("Mrs. Bennet"), any(), anyInt(), eq(CharacterType.PRIMARY));
+        verify(characterService).upsertCharacter(any(), any(), eq("Elizabeth Bennet"), any(), anyInt(), eq(CharacterType.PRIMARY));
+    }
 }

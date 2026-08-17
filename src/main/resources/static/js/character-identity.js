@@ -12,9 +12,11 @@
             return '';
         }
         return name
+            .normalize('NFKC')
             .toLowerCase()
-            .replace(/[^a-z\s-]/g, ' ')
+            .replace(/[\u2010-\u2014]/g, ' ')
             .replace(/-/g, ' ')
+            .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
             .replace(/\s+/g, ' ')
             .trim();
     }

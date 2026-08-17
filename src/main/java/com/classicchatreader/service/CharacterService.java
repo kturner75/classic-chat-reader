@@ -388,7 +388,6 @@ public class CharacterService {
                 .map(CharacterEntity::getName)
                 .collect(Collectors.toList());
         Set<String> primaryNameIndex = buildPrimaryNameIndex(book.getId());
-        Set<String> primaryTokenIndex = buildPrimaryTokenIndex(primaryNameIndex);
         long secondaryCount = characterRepository
                 .countByBookIdAndCharacterType(book.getId(), CharacterType.SECONDARY);
         int remainingSecondarySlots = Math.max(0, maxSecondaryPerBook - (int) secondaryCount);
@@ -418,7 +417,7 @@ public class CharacterService {
                         log.debug("Skipping '{}' - name not clearly defined", ec.name());
                         continue;
                     }
-                    if (isPossiblyConfusedWithPrimary(primaryNameIndex, primaryTokenIndex, ec.name())) {
+                    if (isPossiblyConfusedWithPrimary(primaryNameIndex, ec.name())) {
                         log.debug("Skipping '{}' - matches primary character name", ec.name());
                         continue;
                     }
@@ -607,35 +606,14 @@ public class CharacterService {
                 .stream()
                 .filter(character -> character.getCharacterType() == CharacterType.PRIMARY)
                 .map(CharacterEntity::getName)
-                .map(CharacterNameNormalizer::variantKey)
+                .map(CharacterNameNormalizer::identityKey)
                 .filter(normalized -> !normalized.isBlank())
                 .collect(Collectors.toSet());
     }
 
-    private Set<String> buildPrimaryTokenIndex(Set<String> primaryNameIndex) {
-        return primaryNameIndex.stream()
-                .flatMap(primary -> Arrays.stream(primary.split(" ")))
-                .map(String::trim)
-                .filter(token -> token.length() > 1)
-                .collect(Collectors.toSet());
-    }
-
-    private boolean isPossiblyConfusedWithPrimary(Set<String> primaryNameIndex,
-                                                  Set<String> primaryTokenIndex,
-                                                  String name) {
-        String normalizedNew = CharacterNameNormalizer.variantKey(name);
-        if (normalizedNew.isBlank()) {
-            return true;
-        }
-        if (primaryNameIndex.contains(normalizedNew)) {
-            return true;
-        }
-        if (CharacterNameNormalizer.isLastNameOnly(normalizedNew)) {
-            return primaryNameIndex.stream()
-                    .anyMatch(primary -> CharacterNameNormalizer.lastNameMatches(primary, normalizedNew));
-        }
-        return Arrays.stream(normalizedNew.split(" "))
-                .anyMatch(primaryTokenIndex::contains);
+    private boolean isPossiblyConfusedWithPrimary(Set<String> primaryNameIndex, String name) {
+        String identityKey = CharacterNameNormalizer.identityKey(name);
+        return identityKey.isBlank() || primaryNameIndex.contains(identityKey);
     }
 
     private boolean isClearlyNamed(String name) {
@@ -652,7 +630,7 @@ public class CharacterService {
         if (isGenericDescriptorPhrase(trimmed)) {
             return false;
         }
-        String normalized = CharacterNameNormalizer.variantKey(name);
+        String normalized = CharacterNameNormalizer.identityKey(name);
         if (normalized.isBlank()) {
             return false;
         }
@@ -663,7 +641,7 @@ public class CharacterService {
     }
 
     private boolean isGenericDescriptorPhrase(String name) {
-        String normalized = CharacterNameNormalizer.variantKey(name);
+        String normalized = CharacterNameNormalizer.identityKey(name);
         if (normalized.isBlank()) {
             return true;
         }
@@ -687,7 +665,7 @@ public class CharacterService {
             if (i == 0) {
                 firstTokenHasUppercase = true;
             }
-            String normalizedToken = CharacterNameNormalizer.variantKey(token);
+            String normalizedToken = CharacterNameNormalizer.identityKey(token);
             if (!normalizedToken.isBlank() && !GENERIC_DESCRIPTOR_TOKENS.contains(normalizedToken)) {
                 uppercaseNonGenericTokens++;
             }
