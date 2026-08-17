@@ -12,7 +12,8 @@ const {
     canChatForAssignment,
     assignmentChatActionLabel,
     isAssignmentFullyComplete,
-    unionBookActivityStores
+    unionBookActivityStores,
+    assignmentCardBookSubtitle
 } = require('../../main/resources/static/js/library-progress.js');
 
 test('returns not-started snapshot at 0% progress', () => {
@@ -467,4 +468,18 @@ test('unionBookActivityStores keeps local completed chapters from a later persis
     assert.deepEqual(merged['book-1'].completedChapterIndexes, [0]);
     assert.equal(merged['book-1'].lastPage, 1);
     assert.equal(merged['book-1'].maxProgressRatio, 0.5);
+});
+
+test('assignment card book subtitle is shown when it adds information', () => {
+    assert.equal(assignmentCardBookSubtitle('Read Chapter 1', 'Pride and Prejudice'), 'Pride and Prejudice');
+    assert.equal(assignmentCardBookSubtitle('  Read Chapter 1  ', '  Pride and Prejudice  '), 'Pride and Prejudice');
+});
+
+test('assignment card book subtitle is omitted when the title already is the book', () => {
+    assert.equal(assignmentCardBookSubtitle('Pride and Prejudice', 'Pride and Prejudice'), '');
+    assert.equal(assignmentCardBookSubtitle('pride and prejudice', 'Pride and Prejudice'), '');
+    assert.equal(assignmentCardBookSubtitle('Pride  and   Prejudice', 'Pride and Prejudice'), '');
+    assert.equal(assignmentCardBookSubtitle('', 'Pride and Prejudice'), '');
+    assert.equal(assignmentCardBookSubtitle('Read Chapter 1', ''), '');
+    assert.equal(assignmentCardBookSubtitle(null, 'Pride and Prejudice'), '');
 });

@@ -323,10 +323,14 @@ html, body {
     color: var(--muted-color);
 }
 
-.book-item-assignment-label {
+.book-item-assignment-label,
+.book-item-assignment-book {
     margin-top: 0.24rem;
     font-size: 0.76rem;
+    line-height: 1.25;
     color: #6f603f;
+    overflow-wrap: anywhere;
+    max-width: 100%;
 }
 
 .book-progress-chip.assignment-due {
@@ -1077,8 +1081,11 @@ a.my-chat-card:focus-visible,
     min-width: 0;
 }
 
-.book-item-assignment .book-item-title {
+.book-item-assignment .book-item-title,
+.book-item-assignment .book-item-assignment-book {
     overflow-wrap: anywhere;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .book-item-assignment .book-item-progress {
@@ -4685,6 +4692,10 @@ kbd {
 
     .book-item-author {
         font-size: 0.86rem;
+    }
+
+    .book-item-assignment-book {
+        font-size: 0.72rem;
     }
 
     .book-item-meta {
