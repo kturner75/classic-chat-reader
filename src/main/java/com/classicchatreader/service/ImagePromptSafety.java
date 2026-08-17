@@ -34,8 +34,9 @@ final class ImagePromptSafety {
     private static final Pattern BLOCKED = Pattern.compile(
             "(?i)(?<!\\p{L})("
                     + "nude|nudity|naked|topless|lingerie|erotic|erotica|porn|pornograph(?:y|ic)|"
-                    + "nsfw|sexual|sexuality|seductive|undress(?:ed|ing)?|unclothed|"
-                    + "nipples?|cleavage|genitals?|intercourse|orgasm|explicit sex"
+                    + "nsfw|sexual(?:ity|ized|izing|ly)?|seductive|undress(?:ed|ing)?|unclothed|"
+                    + "nipples?|cleavage|genitals?|intercourse|orgasm|explicit sex|"
+                    + "dismember(?:ed|ment)?|decapitat(?:e|ed|ion)?|torture"
                     + ")(?!\\p{L})"
     );
 

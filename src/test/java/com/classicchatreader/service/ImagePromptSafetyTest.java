@@ -72,4 +72,14 @@ class ImagePromptSafetyTest {
                 || prepared.endsWith(ImagePromptSafety.SUFFIX));
         assertTrue(prepared.contains("atmospheric public setting"));
     }
+
+    @Test
+    void rejectsInflectedSexualAndGraphicViolenceTerms() {
+        assertTrue(ImagePromptSafety.isBlocked("sexualized child portrait"));
+        assertTrue(ImagePromptSafety.isBlocked("sexually explicit bedroom scene"));
+        assertTrue(ImagePromptSafety.isBlocked("graphic dismemberment and torture"));
+        String prepared = ImagePromptSafety.prepareForGeneration("sexualized child portrait");
+        assertFalse(prepared.toLowerCase().contains("sexualized"));
+        assertTrue(prepared.contains("atmospheric public setting"));
+    }
 }
