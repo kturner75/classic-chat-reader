@@ -110,7 +110,7 @@ Last updated: 2026-08-17
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -161,6 +161,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-15: Added `BL-055` (teacher-defined trophies; Kevin + Boss first pass 2026-08-14). Class/term named awards with one cached AI badge, server-side triggers + backfill + manual award; student sees own trophies, teacher sees them on `BL-025.10` overview; no class leaderboard (FERPA). Kevin add: assignment-wizard optional trophy for on-time 100% completion (`BL-055.6`). Docs only.
 - 2026-08-16: Added `BL-056` after Kevin could not discover Fortunato on *Cask of Amontillado* (incognito TTS + `demo_teacher` `j`-key through the whole story). Local row exists as `SECONDARY` at ch 0 / p 0. Correction the same day: **SECONDARY must still discover and show in the roster**; PRIMARY is a separate preference (Kevin still wants Fortunato PRIMARY as the only character). Docs only.
 - 2026-08-17: Added `BL-057` (dedicated assignment page + reduced landing card). Student landing cards currently dump the full assignment dashboard and overflow on mobile; CSS wrap (PR #121) is the demo-night bandage. Product direction: compact card (title, 1–2 chips, Open) + dedicated page for progress / quiz / character-chat / late / actions. Out of epic: thin landing-card hotfix already in flight. Cross-links `BL-025.4` / `BL-025.11`. Docs only.
+- 2026-08-17: Added `BL-058` (assignment Open / persist leftovers). The #121–#125 soak loop shipped the skinny landing card + Open/resume/persist-suppression; Uncle Bob left a Low / not-blocking chapter-hop persist-before-load leftover on #125 (`0a63b90` / merge `cb04f32`). Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1555,6 +1556,39 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Putting Open → book (skipping the page) would hide quiz / character-chat / late detail again.
 - Session Log:
 - 2026-08-17: Captured as product direction after mobile landing cards overflowed during soak (scope, late, quiz, character-chat required, progress, Chat CTA on one card). CSS wrap is a bandage (PR #121). Dedicated page + reduced card is the IA. Thin/reduced landing-card hotfix stays a separate in-flight PR. Docs only; no UI in this capture.
+
+### BL-058 - Assignment Open / Persist Leftovers (Low)
+- Type: Improvement / tech debt
+- Priority: P2
+- Effort: S
+- Status: Proposed
+- Problem: The #121–#125 soak loop shipped the skinny landing card + Open/resume/persist-suppression. Reviewers left **Low / not-blocking** items rather than hold the demo.
+- Collect these (from Uncle Bob on #125 HEAD `0a63b90` / merge `cb04f32`):
+  1. **Chapter hops persist before `loadChapter` resolves.** `nextPage`/`prevPage` last-page branches, `nextChapter`/`prevChapter`, and `selectChapterFromList` still call `allowBookActivityPersist()` before `loadChapter` finishes. A failed hop after a failed Continue can persist that index with stale `totalPages`. Prefer the `navigateToChapterParagraph` pattern (only allow persist after the chapter actually loaded).
+- Out of this epic:
+  - Skinny card / book subtitle / Open wrap-up (shipped #121–#124).
+  - Persist-suppression until nav succeeds (shipped #125).
+  - Older #105 security leftovers and open #108 hardening (not this theme).
+  - Dedicated assignment page (`BL-057`).
+- Scope Buckets:
+- Persist-after-successful-load on chapter hops so a failed hop cannot write a new index with stale `totalPages`.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-058.1 Persist after successful load on chapter hops | Proposed | `nextPage`/`prevPage` last-page branches, `nextChapter`/`prevChapter`, and `selectChapterFromList` should follow `navigateToChapterParagraph`: call `allowBookActivityPersist()` only after `loadChapter` succeeds. | A failed chapter hop after a failed Continue does not persist the hop index with stale `totalPages` |
+- Acceptance Criteria:
+- Chapter-hop paths do not call `allowBookActivityPersist()` before `loadChapter` resolves.
+- A failed hop after a failed Continue does not persist that chapter index with stale `totalPages`.
+- Search/bookmark jumps that already use `navigateToChapterParagraph` stay unchanged.
+- This epic does not reopen skinny-card / Open wrap-up (#121–#124), persist-suppression (#125), #105/#108 hardening, or `BL-057`.
+- Dependency Notes:
+- Follow-on to shipped #125 persist-suppression (`0a63b90` / merge `cb04f32`). Cross-link only; do not reopen that PR.
+- Pattern to copy: `navigateToChapterParagraph` (allow persist only after the chapter actually loaded).
+- Distinct from `BL-057` (dedicated assignment page + reduced landing card).
+- Risks:
+- Leaving hop paths on the old allow-then-load order recreates the failed-Continue stale-`totalPages` persist after a later failed hop.
+- Session Log:
+- 2026-08-17: Captured Low / not-blocking leftover from Uncle Bob on #125 rather than hold the demo. Docs only; no reader change in this capture.
 
 ## P0
 
