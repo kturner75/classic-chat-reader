@@ -131,7 +131,7 @@ public class ComfyUIService {
    * @return The prompt_id for polling
    */
   public String submitWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
-    ObjectNode workflow = buildWorkflow(positivePrompt, outputFilename);
+    ObjectNode workflow = buildWorkflow(ImagePromptSafety.prepareForGeneration(positivePrompt), outputFilename);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("prompt", workflow);
@@ -305,7 +305,7 @@ public class ComfyUIService {
     ObjectNode node7 = objectMapper.createObjectNode();
     node7.put("class_type", "CLIPTextEncode");
     ObjectNode node7Inputs = objectMapper.createObjectNode();
-    node7Inputs.put("text", "text, watermark, blurry, bad quality, deformed, ugly, low resolution");
+    node7Inputs.put("text", ImagePromptSafety.COMFY_NEGATIVE);
     ArrayNode clipLink7 = objectMapper.createArrayNode();
     clipLink7.add("4").add(1);
     node7Inputs.set("clip", clipLink7);
@@ -374,7 +374,7 @@ public class ComfyUIService {
    * Uses portrait-specific dimensions (512x640 by default).
    */
   public String submitPortraitWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
-    ObjectNode workflow = buildPortraitWorkflow(positivePrompt, outputFilename);
+    ObjectNode workflow = buildPortraitWorkflow(ImagePromptSafety.prepareForGeneration(positivePrompt), outputFilename);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("prompt", workflow);
@@ -546,7 +546,7 @@ public class ComfyUIService {
   // ===== Book Cover Methods =====
 
   public String submitBookCoverWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
-    ObjectNode workflow = buildBookCoverWorkflow(positivePrompt, outputFilename);
+    ObjectNode workflow = buildBookCoverWorkflow(ImagePromptSafety.prepareForGeneration(positivePrompt), outputFilename);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("prompt", workflow);
@@ -694,7 +694,7 @@ public class ComfyUIService {
     ObjectNode node7 = objectMapper.createObjectNode();
     node7.put("class_type", "CLIPTextEncode");
     ObjectNode node7Inputs = objectMapper.createObjectNode();
-    node7Inputs.put("text", "text, letters, words, typography, title, author name, watermark, signature, logo, blurry, bad quality, low resolution, cropped");
+    node7Inputs.put("text", ImagePromptSafety.COMFY_COVER_NEGATIVE);
     ArrayNode clipLink7 = objectMapper.createArrayNode();
     clipLink7.add("4").add(1);
     node7Inputs.set("clip", clipLink7);
@@ -789,7 +789,7 @@ public class ComfyUIService {
     ObjectNode node7 = objectMapper.createObjectNode();
     node7.put("class_type", "CLIPTextEncode");
     ObjectNode node7Inputs = objectMapper.createObjectNode();
-    node7Inputs.put("text", "text, watermark, blurry, bad quality, deformed, ugly, low resolution, disfigured face, extra limbs");
+    node7Inputs.put("text", ImagePromptSafety.COMFY_PORTRAIT_NEGATIVE);
     ArrayNode clipLink7 = objectMapper.createArrayNode();
     clipLink7.add("4").add(1);
     node7Inputs.set("clip", clipLink7);

@@ -56,6 +56,9 @@ public class CharacterPortraitService {
             - Suggests mood through lighting and background elements
             - Does NOT show a direct frontal face view
             - Maintains cultural accuracy for the book's setting
+            - Uses fully clothed period dress only
+
+            %s
 
             Start your prompt with this style prefix: %s
 
@@ -68,12 +71,13 @@ public class CharacterPortraitService {
                 bookStyle.style(),
                 settingContext,
                 bookStyle.style(),
+                ImagePromptSafety.LLM_RULES,
                 bookStyle.promptPrefix());
 
         try {
             String generatedPrompt = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.7)).trim();
 
-            generatedPrompt = cleanPrompt(generatedPrompt);
+            generatedPrompt = ImagePromptSafety.prepareForGeneration(cleanPrompt(generatedPrompt));
 
             log.info("Generated portrait prompt for '{}': {}", characterName,
                     truncateText(generatedPrompt, 100));
@@ -88,9 +92,10 @@ public class CharacterPortraitService {
 
     private String buildFallbackPrompt(String characterName, String description,
                                        IllustrationSettings bookStyle) {
-        return bookStyle.promptPrefix() + " portrait of " + characterName +
+        return ImagePromptSafety.prepareForGeneration(
+                bookStyle.promptPrefix() + " portrait of " + characterName +
                 ", " + truncateText(description, 50) +
-                ", atmospheric book illustration, 3/4 view, period clothing";
+                ", atmospheric book illustration, 3/4 view, period clothing");
     }
 
     private String truncateText(String text, int maxLength) {
