@@ -55,9 +55,9 @@ public final class CharacterIdentity {
 
     public static Comparator<CharacterEntity> comparator() {
         return Comparator
-                .comparing(CharacterIdentity::typeRank).reversed()
-                .thenComparing(CharacterIdentity::statusRank).reversed()
-                .thenComparing(CharacterIdentity::hasPortrait).reversed()
+                .comparing(CharacterIdentity::typeRank, Comparator.reverseOrder())
+                .thenComparing(CharacterIdentity::statusRank, Comparator.reverseOrder())
+                .thenComparing(CharacterIdentity::hasPortrait, Comparator.reverseOrder())
                 .thenComparing(CharacterIdentity::firstChapterIndex)
                 .thenComparing(CharacterEntity::getFirstParagraphIndex)
                 .thenComparing(CharacterIdentity::createdAtOrMax)

@@ -139,9 +139,9 @@ public class V31__character_name_identity_key extends BaseJavaMigration {
 
     private static Comparator<CharacterRow> winnerOrder() {
         return Comparator
-                .comparing(CharacterRow::primary).reversed()
-                .thenComparing(CharacterRow::statusRank).reversed()
-                .thenComparing(CharacterRow::hasPortrait).reversed()
+                .comparing(CharacterRow::primary, Comparator.reverseOrder())
+                .thenComparing(CharacterRow::statusRank, Comparator.reverseOrder())
+                .thenComparing(CharacterRow::hasPortrait, Comparator.reverseOrder())
                 .thenComparingInt(CharacterRow::chapterIndex)
                 .thenComparingInt(CharacterRow::paragraphIndex)
                 .thenComparing(CharacterRow::createdAt)
