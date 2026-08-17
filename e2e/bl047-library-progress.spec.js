@@ -639,19 +639,23 @@ test('paragraph and chapter shortcuts persist after dismissing Open wrap-up', as
 
   await page.keyboard.press('j');
   await expect(page.locator('#chapter-title')).toContainText('Chapter Two');
-  let activity = await page.evaluate(() => {
-    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
-    return store['book-1'] || null;
-  });
-  expect(activity.lastChapterIndex).toBe(1);
+  await expect.poll(async () => {
+    const activity = await page.evaluate(() => {
+      const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+      return store['book-1'] || null;
+    });
+    return activity && activity.lastChapterIndex;
+  }).toBe(1);
 
   await page.keyboard.press('L');
   await expect(page.locator('#chapter-title')).toContainText('Chapter Three');
-  activity = await page.evaluate(() => {
-    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
-    return store['book-1'] || null;
-  });
-  expect(activity.lastChapterIndex).toBe(2);
+  await expect.poll(async () => {
+    const activity = await page.evaluate(() => {
+      const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+      return store['book-1'] || null;
+    });
+    return activity && activity.lastChapterIndex;
+  }).toBe(2);
 });
 
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
