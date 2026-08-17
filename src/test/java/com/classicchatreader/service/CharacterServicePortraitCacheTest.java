@@ -39,6 +39,7 @@ class CharacterServicePortraitCacheTest {
     @Mock private CharacterPortraitService portraitService;
     @Mock private IllustrationService illustrationService;
     @Mock private ComfyUIService comfyUIService;
+    @Mock private CharacterPortraitImageGeneratorService portraitImageGenerator;
 
     private CharacterService service;
     private CharacterEntity character;
@@ -55,6 +56,7 @@ class CharacterServicePortraitCacheTest {
                 portraitService,
                 illustrationService,
                 comfyUIService,
+                portraitImageGenerator,
                 new AssetKeyService()
         );
         service.setSelf(service);
