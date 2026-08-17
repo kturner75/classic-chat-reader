@@ -1,6 +1,5 @@
 package com.classicchatreader.service;
 
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -51,7 +50,7 @@ final class ImagePromptSafety {
         if (isBlocked(cleaned)) {
             cleaned = fallbackScene(withoutSuffix(cleaned));
         }
-        if (!cleaned.toLowerCase(Locale.ROOT).contains("school-appropriate book illustration")) {
+        if (!hasTrailingSuffix(cleaned)) {
             cleaned = cleaned + SUFFIX;
         }
         return cleaned.trim();
@@ -61,10 +60,18 @@ final class ImagePromptSafety {
         return prompt != null && BLOCKED.matcher(withoutSuffix(prompt)).find();
     }
 
+    private static boolean hasTrailingSuffix(String prompt) {
+        return prompt.endsWith(SUFFIX) || prompt.endsWith(SUFFIX.trim());
+    }
+
     private static String withoutSuffix(String prompt) {
-        String lower = prompt.toLowerCase(Locale.ROOT);
-        int idx = lower.indexOf("school-appropriate book illustration");
-        return idx >= 0 ? prompt.substring(0, idx).trim() : prompt;
+        if (prompt.endsWith(SUFFIX)) {
+            return prompt.substring(0, prompt.length() - SUFFIX.length()).trim();
+        }
+        if (prompt.endsWith(SUFFIX.trim())) {
+            return prompt.substring(0, prompt.length() - SUFFIX.trim().length()).trim();
+        }
+        return prompt;
     }
 
     private static String fallbackScene(String original) {
@@ -77,7 +84,10 @@ final class ImagePromptSafety {
     private static String stylePrefix(String original) {
         int comma = original.indexOf(',');
         if (comma > 0 && comma < 80) {
-            return original.substring(0, comma + 1) + " ";
+            String prefix = original.substring(0, comma + 1) + " ";
+            if (!BLOCKED.matcher(prefix).find()) {
+                return prefix;
+            }
         }
         return "";
     }

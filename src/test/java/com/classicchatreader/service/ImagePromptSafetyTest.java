@@ -54,4 +54,22 @@ class ImagePromptSafetyTest {
         assertFalse(ImagePromptSafety.isBlocked("warrior in mail breastplate on a longship"));
         assertFalse(ImagePromptSafety.isBlocked("the pilgrims leave the Tabard for Canterbury"));
     }
+
+    @Test
+    void dropsBlockedStylePrefix() {
+        String prepared = ImagePromptSafety.prepareForGeneration("nude watercolor, a garden scene");
+        assertFalse(prepared.toLowerCase().contains("nude"));
+        assertTrue(prepared.contains("atmospheric public setting"));
+        assertTrue(prepared.contains(ImagePromptSafety.SUFFIX.trim()));
+    }
+
+    @Test
+    void doesNotTrustSafetyPhraseInTheMiddleOfAPrompt() {
+        String prepared = ImagePromptSafety.prepareForGeneration(
+                "School-appropriate book illustration, nude portrait");
+        assertFalse(prepared.toLowerCase().contains("nude"));
+        assertTrue(prepared.endsWith(ImagePromptSafety.SUFFIX.trim())
+                || prepared.endsWith(ImagePromptSafety.SUFFIX));
+        assertTrue(prepared.contains("atmospheric public setting"));
+    }
 }
