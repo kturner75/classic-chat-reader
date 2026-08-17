@@ -187,7 +187,9 @@ async function installApiMocks(page, options = {}) {
       });
     }
     if (method === 'GET' && path === `/api/library/${book.id}/annotations`) return json(route, 200, []);
-    if (method === 'GET' && path === `/api/library/${book.id}/bookmarks`) return json(route, 200, []);
+    if (method === 'GET' && path === `/api/library/${book.id}/bookmarks`) {
+      return json(route, 200, options.bookmarks || []);
+    }
     if (method === 'GET' && path === `/api/characters/book/${book.id}/up-to`) {
       return json(route, 200, [character]);
     }
@@ -839,6 +841,70 @@ test('Continue Reading keeps the saved resume when the open chapter never loaded
   expect(afterLibrary.lastChapterIndex).toBe(0);
   expect(afterLibrary.lastPage).toBe(0);
   expect(afterLibrary.totalPages).toBe(5);
+});
+
+test('successful bookmark jump after a failed Continue persists the recovered position', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 3,
+        lastChapterIndex: 2,
+        lastPage: 1,
+        totalPages: 3,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    assignmentTitle: 'Read chapter one',
+    assignmentChapters: [{ chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'Chapter One' }],
+    quizRequired: false,
+    quizStatus: 'NOT_REQUIRED',
+    characterChatRequired: false,
+    failChapterIds: ['chapter-3'],
+    bookmarks: [{
+      chapterId: 'chapter-2',
+      chapterTitle: 'Chapter Two',
+      paragraphIndex: 0,
+      snippet: 'The complete text of chapter-2.'
+    }]
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="continue"]').click();
+  await expect(wrapup).toBeHidden();
+  await expect(page.locator('#column-left')).toContainText('Content not available');
+
+  await page.keyboard.press('B');
+  const bookmarks = page.locator('#bookmarks-overlay');
+  await expect(bookmarks).toBeVisible();
+  await bookmarks.locator('.bookmark-list-item').first().click();
+  await expect(bookmarks).toBeHidden();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter Two');
+
+  await expect.poll(async () => {
+    const activity = await page.evaluate(() => {
+      const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+      return store['book-1'] || null;
+    });
+    return activity && activity.lastChapterIndex;
+  }).toBe(1);
+
+  await page.locator('#back-to-library').click();
+  await expect(page.locator('#library-view')).toBeVisible();
+  const afterLibrary = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+    return store['book-1'] || null;
+  });
+  expect(afterLibrary.lastChapterIndex).toBe(1);
 });
 
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {

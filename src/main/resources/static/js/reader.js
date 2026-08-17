@@ -7350,18 +7350,24 @@
 
         loadPromise.then(applied => {
             if (!applied) return;
+            allowBookActivityPersist();
             // Find which page contains this paragraph
+            let rendered = false;
             for (let i = 0; i < state.pagesData.length; i++) {
                 const pageData = state.pagesData[i];
                 if (paragraphIndex >= pageData.startParagraph && paragraphIndex <= pageData.endParagraph) {
                     state.currentPage = i;
                     state.currentParagraphIndex = paragraphIndex;
                     renderPage();
+                    rendered = true;
                     if (state.ttsEnabled) {
                         ttsSpeakCurrent();
                     }
                     break;
                 }
+            }
+            if (!rendered) {
+                persistCurrentBookActivity();
             }
         });
     }
