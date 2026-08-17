@@ -110,7 +110,7 @@ Last updated: 2026-08-17
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -163,6 +163,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-17: Added `BL-057` (dedicated assignment page + reduced landing card). Student landing cards currently dump the full assignment dashboard and overflow on mobile; CSS wrap (PR #121) is the demo-night bandage. Product direction: compact card (title, 1–2 chips, Open) + dedicated page for progress / quiz / character-chat / late / actions. Out of epic: thin landing-card hotfix already in flight. Cross-links `BL-025.4` / `BL-025.11`. Docs only.
 - 2026-08-17: Added `BL-058` (assignment Open / persist leftovers). The #121–#125 soak loop shipped the skinny landing card + Open/resume/persist-suppression; Uncle Bob left a Low / not-blocking chapter-hop persist-before-load leftover on #125 (`0a63b90` / merge `cb04f32`). Docs only.
 - 2026-08-17: Added `BL-059` (speed up `GET /api/library`). Kevin E2E / DevTools on prod: ~21.4s total, ~21.2s TTFB — server-side catalog work, not the network. First pass: cache + slim landing DTO + optional public cache headers + timing. Cross-links landing soak / `BL-047` library progress. Docs only.
+- 2026-08-17: Added `BL-060` (arrow keys as j/k paragraph navigation). Kevin soak: desktop paragraph nav is `j`/`k` only (`BL-023` checklist); wants **Down Arrow = j** and **Up Arrow = k** when the reader is the focused surface. Keep j/k; do not steal arrows from search, text fields, chapter list, or overlays. Update `?` overlay + BL-023 checklist when implemented. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1639,6 +1640,45 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - HTTP cache on a payload that later grows per-user progress would leak or freeze the wrong student’s assignment state.
 - Session Log:
 - 2026-08-17: Kevin E2E, DevTools timing on prod `GET /api/library` (~21.4s total, ~21.2s TTFB). Captured as P2 improvement; first pass is cache + slim DTO + optional public headers + measurement. Docs only; no runtime change in this capture.
+
+### BL-060 - Arrow Keys as j/k Paragraph Navigation
+- Type: Improvement
+- Priority: P2
+- Effort: S
+- Status: Proposed
+- Problem: Desktop reader paragraph navigation is `j` (down) / `k` (up) only (`BL-023` keyboard checklist). Kevin wants **Down Arrow = j** and **Up Arrow = k** as alternatives.
+- Current Direction:
+- Keep existing `j`/`k`.
+- Add `ArrowDown` / `ArrowUp` as aliases when the reader is the focused surface (same `nextParagraph` / `prevParagraph` + TTS interrupt path as `j`/`k`).
+- Do **not** steal arrows inside search, text fields, chapter list, or overlays that already use arrows (`BL-023` chapter list `ArrowUp`/`ArrowDown`/`Enter`/`Escape`; also bookmarks list and mobile header menu, which already treat arrows as `j`/`k` list moves).
+- Page nav already aliases `←`/`→` to `h`/`l`; this epic is the vertical equivalent for paragraphs, not a new page/chapter binding.
+- Update the `?` shortcuts overlay (today lists `j`/`k` only for paragraph next/previous) and the `BL-023` desktop keyboard checklist when implemented.
+- Out of this epic:
+  - Changing `j`/`k` themselves or remapping page/chapter keys.
+  - Binding arrows for page or chapter navigation (page already has `←`/`→`).
+  - Mobile touch nav (`BL-023` Done).
+- Scope Buckets:
+- `ArrowDown`/`ArrowUp` aliases for paragraph next/previous on the focused reader surface.
+- Focus/overlay guards so search, inputs, chapter list, and existing arrow overlays keep native/existing behavior.
+- `?` shortcuts overlay copy + `docs/product/bl-023-qa-checklist.md` desktop keyboard row.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-060.1 Arrow aliases + focus guards | Proposed | Map `ArrowDown`→`nextParagraph` and `ArrowUp`→`prevParagraph` only when the reader is the focused surface; skip when focus is in search/text fields or when chapter list / bookmarks / other arrow-using overlays are open | Desktop reader: Down = j, Up = k; arrows still move the chapter list (and other existing overlay lists) and still type-navigate in inputs |
+| BL-060.2 Shortcuts overlay + BL-023 checklist | Proposed | Document `j`/`k` or `↓`/`↑` on the `?` overlay; add an ArrowUp/Down paragraph-nav row to the BL-023 desktop keyboard checklist without weakening the chapter-list arrow check | Overlay and checklist mention both j/k and arrows; chapter-list ArrowUp/Down/Enter/Escape check remains |
+- Acceptance Criteria:
+- With the reader focused and no overlay/input capturing keys, **Down Arrow** advances a paragraph like `j` and **Up Arrow** goes back like `k`.
+- Existing `j`/`k` behavior is unchanged.
+- Arrows are not stolen inside search, text fields, the chapter list, or overlays that already use arrows (`BL-023` chapter list `ArrowUp`/`ArrowDown`/`Enter`/`Escape`).
+- `?` shortcuts overlay documents the arrow aliases.
+- `docs/product/bl-023-qa-checklist.md` desktop keyboard checklist covers arrow paragraph nav and still verifies chapter-list arrows.
+- Dependency Notes:
+- Extends shipped `BL-023` desktop keyboard behavior; do not reopen that Done epic except to update the checklist when this ships.
+- Distinct from `BL-051` (browser Back / history), `BL-013` (broader a11y pass), and page `←`/`→` aliases already in the overlay.
+- Risks:
+- Binding arrows globally would break chapter-list and bookmark-list keyboard nav (already ArrowUp/Down + j/k) and native caret movement in search/notes.
+- Session Log:
+- 2026-08-17: Kevin soak — wants Down Arrow = j and Up Arrow = k as paragraph-nav alternatives. Captured as P2/S. Docs only; no reader change in this capture.
 
 ## P0
 
