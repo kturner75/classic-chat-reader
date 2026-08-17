@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 ## Implementation handoff (classroom)
 
@@ -37,6 +37,7 @@ Last updated: 2026-08-15
 - ~~Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat.~~ **Fixed in BL-047:** refreshed classroom context rerenders the visible Library immediately, so the first return shows **3/3 complete**.
 - ~~The teacher workspace can show **Reading Buddy enabled** while the deployment-wide rollout is off without explaining that students cannot use it.~~ **Fixed in BL-048:** the saved policy remains intact, while the control clearly shows deployment unavailability and student settings remain unusable.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
+- **Cask / Fortunato never discovered** after a full short-story read (incognito TTS + `demo_teacher` `j`-key) — empty roster. **`SECONDARY` must still discover and appear in the roster**; PRIMARY is a separate chat-lead preference. Tracked in `BL-056`.
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
 **Partner feedback (2026-07-16 educator call — Jessica):**
@@ -107,8 +108,9 @@ Last updated: 2026-08-15
 12. **`BL-043` FERPA P0 pilot blockers** (2026-08-11 privacy review): prod auth gate, OAuth link consent, LLM DPA/subprocessors, invite lifecycle, access-log writers, account delete + retention purge, server chat-export API — triage from `BL-043` work tracker before fall start (**2026-08-24**)
 13. ~~**`BL-054` character-chat conduct guardrails** (college-appropriate)~~ **prompt v1 shipped** (`CharacterPersonaPromptBuilder` CONDUCT block shared by text + voice; golden-set tests). Optional output fallback (`BL-054.5`) remains if prompt-only still leaks in QA.
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
+15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**. (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -157,6 +159,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-12: `BL-025.10` pilot drill-down demo pack for Jessica 1:1 (America/Chicago): teacher roster → student overview with six partner sections; durable assignment opened + thin reader heartbeat; backlog/demo script updated. Quiz soak/bugfixes remain Kevin’s lane unless a showstopper surfaces.
 - 2026-08-14: Refined `BL-042` in place (no new theme) with this-term child **`BL-042.5`**: per-student character-chat + voice cost events, teacher/ops rollup vs the **$500** AI envelope, and a noisy first-occurrence alert when SuperGrok OAuth falls back to the xAI API key. Purpose: measure real per-student AI $ this term so the next **$750/section/semester** quote is evidence-based. Docs only.
 - 2026-08-15: Added `BL-055` (teacher-defined trophies; Kevin + Boss first pass 2026-08-14). Class/term named awards with one cached AI badge, server-side triggers + backfill + manual award; student sees own trophies, teacher sees them on `BL-025.10` overview; no class leaderboard (FERPA). Kevin add: assignment-wizard optional trophy for on-time 100% completion (`BL-055.6`). Docs only.
+- 2026-08-16: Added `BL-056` after Kevin could not discover Fortunato on *Cask of Amontillado* (incognito TTS + `demo_teacher` `j`-key through the whole story). Local row exists as `SECONDARY` at ch 0 / p 0. Correction the same day: **SECONDARY must still discover and show in the roster**; PRIMARY is a separate preference (Kevin still wants Fortunato PRIMARY as the only character). Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1442,6 +1445,68 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-14: Captured from Kevin + Boss first pass: teacher-defined named trophies + one cached AI badge; server-side triggers (quiz bar, finish book/chapters, finish all term assignments, approximate time-in-reader, N heartbeat days, combos, manual award); backfill late creates; student own view + teacher `BL-025.10` overview; no leaderboard (FERPA). Out of v1: chat-quality trophies, per-student unique badges, K-12 / parent view.
 - 2026-08-15: Kevin add — assignment-wizard optional trophy for completing **this assignment on time** at **100%** (perfect score); AI may suggest title + badge from book/chapters; teacher always overrides before save; assignment-scoped first-class trigger (`BL-055.6`). Docs only.
+
+### BL-056 - Cask of Amontillado Never Discovers Fortunato
+- Type: Bug
+- Priority: P1 (ENGL 1020 Week 2; do not treat Cask as a character-chat demo book until fixed)
+- Effort: S
+- Status: In Progress (code fixes on PR #112; prod publish + portrait provider still open)
+- Problem: After reading the entire *Cask of Amontillado* (PG **1063**), **Fortunato never appears** in the character roster and is never “discovered.” The Imagine portrait could not be tested because discovery never happened.
+- Repro (2026-08-15 night, Kevin):
+  - Phone **incognito**, not logged in, **audio playback** through the whole short story → no discovery, empty roster.
+  - Signed in **`demo_teacher@example.com`**, **`j`** paragraph-by-paragraph through the book → same.
+- Product direction (2026-08-16, Kevin):
+  - **`SECONDARY` characters must still be discovered and shown in the roster.** Type is not a roster/discovery filter.
+  - Separately, Fortunato should be **`PRIMARY`** because he is the only extracted character (chat-lead / Call Character).
+- Local probe (2026-08-16, not a fix):
+  - Book `8167f57f-f088-4726-aa50-d63971d1b15d`; `characterEnabled` + `illustrationEnabled` true.
+  - Fortunato row `COMPLETED`, `SECONDARY`, `firstChapterIndex=0`, `firstParagraphIndex=0`, `portraitReady=true`.
+  - `GET /api/characters/book/{id}/up-to?chapterIndex=0&paragraphIndex=0` returns Fortunato (no type filter).
+  - Reader roster/`up-to`/discovery toast do **not** exclude `SECONDARY`. Chat/call is the PRIMARY gate (`isChatEligible`: PRIMARY always; SECONDARY only when the book has no PRIMARY).
+  - Reader `j` → `nextParagraph()` → `renderPage()` → `scheduleCharacterDiscoveryCheck()`. Opening page 1 should already discover him if rows+flags+portrait are live.
+  - Empty roster is **not** explained by him being SECONDARY, and **not** by a late first-appearance index. Likely **prod missing character rows / flag path**, or discovery not running on the phone/TTS path.
+- Root cause (2026-08-16 investigation — three independent defects, two now fixed):
+  1. **Prod has no character rows at all.** `application-prod.properties` sets `generation.cache-only=true`, so prod generates nothing; characters must be pregenerated locally and transferred. `data/transfers/` has portrait transfers only for books `121` and `25344` — nothing for `1063`. This is the `BL-052.3` publish gap, and it fully explains the empty roster on the phone. The local probe was correct: not a reader bug, not a SECONDARY filter.
+  2. **Extraction only ever saw 3,000 chars of a chapter.** `CharacterExtractionService` truncated chapter text to a hardcoded `3000`. Library median chapter is **12,318** chars (p95 **37,468**), so ~75% of every chapter was discarded on every book. Fatal for single-chapter short works, which have no later chapter to catch stragglers: the Cask window ends at paragraph 13 and Montresor first appears at 17, so he was unreachable. Explains why the Cask had exactly one character.
+  3. **Book-level prefetch was hardwired to a dead Ollama and latched failure permanently.** `CharacterPrefetchService` built its own WebClient against `ai.reasoning.ollama.base-url`, ignoring `ai.reasoning.provider` (`xai`). Every call failed, the exception was swallowed, and the empty result was recorded as “model doesn’t know this book” by setting `character_prefetch_completed = true` — a flag nothing ever resets. Explains why Fortunato was SECONDARY and why **10 books** carry zero PRIMARY characters (`1063`, `3189`, `512`, `10623`, `16376`, `8601`, `12242`, `2554`, + 2 CIA World Factbook rows).
+- Verified after fix (2026-08-16, local): the Cask went from one SECONDARY character to `Fortunato` (p0) **and `Montresor` (p72)**, both `PRIMARY`. Montresor had never been extracted before at all. `BL-056.2` (ops SQL to mark PRIMARY) is now **moot** — working prefetch types them correctly without manual SQL.
+- Scope Buckets:
+  - Confirm prod (and the phone path) has the Fortunato row, flags, and portrait — vs local-only metadata.
+  - Keep discovery/roster working for SECONDARY; do not “fix” empty roster by only flipping type.
+  - ~~Mark Fortunato `PRIMARY` as a separate product preference~~ — resolved by the prefetch fix; no ops SQL needed.
+  - QA discovery toast + roster (SECONDARY would be enough) **and** chat after PRIMARY.
+- Blocked on (2026-08-16):
+  - **Portraits.** Character portraits are hardwired to `ComfyUIService`; only book covers have a provider abstraction (`book-cover.generation.provider` = comfyui|xai|openai). Kevin does not want to run ComfyUI. Regen currently fails with `2 portraits failed` / `comfyuiAvailable: false`. This blocks discovery end-to-end because the reader gates discovery on `portraitReady` in three places and `CharacterService.isAvailable()` requires `comfyUIService.isAvailable()`. **Needs a decision: wire portraits to Grok Imagine / `gpt-image-1`, or decouple discovery from `portraitReady`.**
+- Out of scope: re-pregen portrait unless the file is actually missing; Imagine-for-illos wiring.
+- Work Tracker:
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-056.1 Confirm env (prod vs local) | Done | Prod is `generation.cache-only=true` and has no transfer artifact for `1063`; empty roster is the `BL-052.3` publish gap, not a reader bug | Confirmed prod has no character rows for the Cask |
+| BL-056.2 Mark Fortunato PRIMARY | Done (obsolete) | Superseded by BL-056.5 — working prefetch types both characters PRIMARY with no ops SQL | Fortunato is PRIMARY without manual intervention |
+| BL-056.3 QA discovery + roster + chat | Blocked | Full Cask read on the same paths Kevin used (incognito TTS + signed-in `j`) | Blocked on BL-056.6 — no portraits means `portraitReady=false` and discovery never fires |
+| BL-056.4 Chapter context budget | Done (PR #112) | Replace hardcoded 3000-char truncation with `character.extraction.max-context-chars` (default 24000); log when the cut applies. Recap/quiz were already configurable at 6000/7000 | Montresor is extracted from the Cask; verified locally 2026-08-16 |
+| BL-056.5 Prefetch provider + latch | Done (PR #112) | Route `CharacterPrefetchService` through `reasoningLlmProvider` (xai) instead of hardwired Ollama; only latch `character_prefetch_completed` on a usable answer so failures stay retryable. Adds `CharacterPrefetchServiceTest` (service had none) | Both Cask characters come back PRIMARY; verified locally 2026-08-16 |
+| BL-056.6 Portrait image provider | **Ready — decision needed** | Portraits are hardwired to ComfyUI, which Kevin does not want to run. Either extend the `book-cover.generation.provider` pattern (xai `grok-imagine-image` / openai `gpt-image-1`) to portraits, or decouple discovery from `portraitReady` | Portraits generate without ComfyUI, **or** characters are discoverable without a portrait |
+| BL-056.7 Reset latched books + regen | Ready | 10 books carry a stuck `character_prefetch_completed=true` with zero PRIMARY. Flags reset 2026-08-16; Cask regenerated. Remaining: `3189`, `512`, `10623`, `16376`, `8601`, `12242`, `1459`, `2554`. Script: `regen_bl052_characters.sh` (untracked, repo root) | Each book has correct PRIMARY/SECONDARY rows under the new budget. Do not run before BL-056.6 — every book will hit the same portrait failure |
+| BL-056.8 Possessive/plural name match | Proposed | `buildNamePattern` builds `\bMontresor\b`, which cannot match the family plural `Montresors` at paragraphs 17 and 36, so first-appearance lands at **72 of 77** — discoverable only on the second-to-last page. Allow an optional `'s` / `s'` / `s` suffix | Montresor is discoverable early in the story; affects any book with a family surname |
+- Discovery Questions:
+  - Should **every** single-character short story auto-PRIMARY, or only Cask for now?
+  - If prod rows are missing, is this a `BL-052.3` publish gap (transfer portraits/characters) rather than a reader bug?
+  - Does TTS/audio advance fail to schedule discovery on phone even when `up-to` would return the character?
+- Acceptance Criteria:
+  - After a full Cask read on prod (or the path students will use), Fortunato is **discovered and on the roster regardless of PRIMARY vs SECONDARY**.
+  - Fortunato is then `PRIMARY` and chat-eligible (separate product preference).
+  - Portrait is reachable once discovered (CDN cache-bust if needed).
+- Dependency Notes:
+  - Progressive discovery: `ccr-production-ops` / character-progressive-discovery. Same family as Scarlet Letter first-appearance + SECONDARY repair.
+  - Week 2 partner title under `BL-052`; publish/transfer is routine ops if rows are missing on prod.
+  - Required-chat assignments (`BL-025.11`) cannot use Cask until this is green.
+- Session Log:
+- 2026-08-16: Logged from Kevin’s Cask audio + `j`-key repro. Local up-to already returns Fortunato as SECONDARY at 0/0. Kevin: he should be PRIMARY as the only character.
+- 2026-08-16: Kevin correction — **SECONDARY must still be discovered and shown in the roster.** Empty roster is not “because he is SECONDARY.” PRIMARY remains a separate chat-lead preference. Docs only; no SQL/code change in this capture.
+- 2026-08-16: Investigation found three independent defects (see Root cause). Two fixed on PR #112 (`claude/fortunato-discovery-bug-f86ddd`): the 3000-char extraction truncation (`BL-056.4`) and the Ollama-hardwired prefetch with its permanent failure latch (`BL-056.5`). 727 tests pass. Verified locally: the Cask now yields Fortunato **and Montresor**, both PRIMARY — Montresor had never been extracted at all. `BL-056.2` is obsolete; no ops SQL needed.
+- 2026-08-16: Local ops during the session — reset `character_prefetch_completed` on 10 latched books; repaired a pre-existing Flyway V25 checksum mismatch (`1700911374` → `-252007371`; DB still carries the older, looser V25 backfill affecting 6 of 13 `quiz_attempts` rows — unrelated to characters); regenerated the Cask. Regen surfaced `2 portraits failed` / `comfyuiAvailable: false`.
+- 2026-08-16: **Stopped on the portrait provider question (`BL-056.6`).** Kevin does not want ComfyUI. Portraits have no provider abstraction (covers do), and discovery is gated on `portraitReady`, so the remaining 8 books (`BL-056.7`) should not be regenerated until this is decided. New `BL-056.8` logged for the possessive/plural name-match gap that leaves Montresor at paragraph 72 of 77.
 
 ## P0
 
