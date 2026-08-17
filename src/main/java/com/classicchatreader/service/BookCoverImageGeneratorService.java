@@ -1,26 +1,18 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.service.llm.XaiOAuthTokenManager;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Optional;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.time.Duration;
-import java.util.Base64;
 
 @Service
 public class BookCoverImageGeneratorService {
@@ -29,6 +21,7 @@ public class BookCoverImageGeneratorService {
 
     private final ComfyUIService comfyUIService;
     private final XaiOAuthTokenManager oauthTokenManager;
+    private final ImageGenerationHttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${book-cover.generation.provider:comfyui}")
@@ -73,15 +66,19 @@ public class BookCoverImageGeneratorService {
     private WebClient xaiClient;
     private WebClient openaiClient;
 
-    public BookCoverImageGeneratorService(ComfyUIService comfyUIService, XaiOAuthTokenManager oauthTokenManager) {
+    public BookCoverImageGeneratorService(
+            ComfyUIService comfyUIService,
+            XaiOAuthTokenManager oauthTokenManager,
+            ImageGenerationHttpClient httpClient) {
         this.comfyUIService = comfyUIService;
         this.oauthTokenManager = oauthTokenManager;
+        this.httpClient = httpClient;
     }
 
     @PostConstruct
     public void init() {
-        this.xaiClient = buildClient(xaiBaseUrl, null);
-        this.openaiClient = buildClient(openaiBaseUrl, openaiApiKey);
+        this.xaiClient = httpClient.buildClient(xaiBaseUrl, null);
+        this.openaiClient = httpClient.buildClient(openaiBaseUrl, openaiApiKey);
         log.info("Book cover image generator provider: {}", getProviderName());
     }
 
@@ -128,14 +125,14 @@ public class BookCoverImageGeneratorService {
 
         try {
             byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", bearer);
-            return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+            return comfyUIService.saveBookCoverImage(cacheKey, imageBytes);
         } catch (WebClientResponseException e) {
             if (usingOAuth && e.getStatusCode().value() == 401) {
                 oauthTokenManager.invalidate();
                 if (xaiApiKey != null && !xaiApiKey.isBlank()) {
                     log.warn("event=book_cover_xai_oauth_rejected retrying_with=api_key");
                     byte[] imageBytes = postImageGenerationRequest(xaiClient, request, "xAI", xaiApiKey);
-                    return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+                    return comfyUIService.saveBookCoverImage(cacheKey, imageBytes);
                 }
                 log.warn("event=book_cover_xai_oauth_rejected no_api_key_fallback");
             }
@@ -154,42 +151,12 @@ public class BookCoverImageGeneratorService {
         request.put("output_format", openaiOutputFormat);
 
         byte[] imageBytes = postImageGenerationRequest(openaiClient, request, "OpenAI", null);
-        return comfyUIService.saveBookCoverImage(cacheKey, ensurePng(imageBytes));
+        return comfyUIService.saveBookCoverImage(cacheKey, imageBytes);
     }
 
     private byte[] postImageGenerationRequest(
             WebClient client, ObjectNode request, String providerName, String bearerToken) throws Exception {
-        var spec = client.post()
-                .uri("/images/generations")
-                .contentType(MediaType.APPLICATION_JSON);
-        if (bearerToken != null && !bearerToken.isBlank()) {
-            spec = spec.header("Authorization", "Bearer " + bearerToken);
-        }
-        String response = spec
-                .bodyValue(objectMapper.writeValueAsString(request))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block(Duration.ofSeconds(Math.max(30, timeoutSeconds)));
-
-        JsonNode image = objectMapper.readTree(response).path("data").path(0);
-        String b64 = image.path("b64_json").asText("");
-        if (!b64.isBlank()) {
-            return Base64.getDecoder().decode(b64);
-        }
-
-        String url = image.path("url").asText("");
-        if (!url.isBlank()) {
-            return WebClient.builder()
-                    .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(64 * 1024 * 1024))
-                    .build()
-                    .get()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .block(Duration.ofSeconds(Math.max(30, timeoutSeconds)));
-        }
-
-        throw new IllegalStateException(providerName + " image response did not include b64_json or url");
+        return httpClient.postAndDecodePng(client, request, providerName, bearerToken, timeoutSeconds);
     }
 
     static String resolveXaiBearer(Optional<String> oauthToken, String apiKey) {
@@ -201,15 +168,6 @@ public class BookCoverImageGeneratorService {
         return bearer;
     }
 
-    private WebClient buildClient(String baseUrl, String apiKey) {
-        WebClient.Builder builder = WebClient.builder()
-                .baseUrl(baseUrl)
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(64 * 1024 * 1024));
-        if (apiKey != null && !apiKey.isBlank()) {
-            builder.defaultHeader("Authorization", "Bearer " + apiKey);
-        }
-        return builder.build();
-    }
 
     private void ensureConfigured(String apiKey, String providerName) {
         if (apiKey == null || apiKey.isBlank()) {
@@ -217,15 +175,4 @@ public class BookCoverImageGeneratorService {
         }
     }
 
-    private byte[] ensurePng(byte[] imageBytes) throws Exception {
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
-        if (image == null) {
-            throw new IllegalArgumentException("Generated book cover response was not a supported image");
-        }
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        if (!ImageIO.write(image, "png", output)) {
-            throw new IllegalStateException("Unable to encode generated book cover as PNG");
-        }
-        return output.toByteArray();
-    }
 }

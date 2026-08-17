@@ -662,6 +662,22 @@ public class ComfyUIService {
     return cachedFilename;
   }
 
+  /**
+   * Writes portrait bytes produced outside a ComfyUI workflow (for example by Grok Imagine)
+   * into the same cache the ComfyUI path uses, so readers and transfers stay provider-agnostic.
+   */
+  public String savePortraitImage(String cacheKey, byte[] imageData) throws IOException {
+    if (imageData == null || imageData.length == 0) {
+      throw new IOException("Portrait image is empty");
+    }
+    String cachedFilename = resolveCacheFilename(cacheKey, "manual-" + System.currentTimeMillis());
+    Path cachedPath = safeResolve(portraitCacheDir, cachedFilename);
+    Files.createDirectories(cachedPath.getParent());
+    Files.write(cachedPath, imageData);
+    log.info("Saved portrait image: {}", cachedPath);
+    return cachedFilename;
+  }
+
   private ObjectNode buildBookCoverWorkflow(String positivePrompt, String outputFilename) {
     ObjectNode workflow = objectMapper.createObjectNode();
 

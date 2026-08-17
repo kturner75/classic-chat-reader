@@ -68,6 +68,7 @@ public class CharacterService {
     private final CharacterPortraitService portraitService;
     private final IllustrationService illustrationService;
     private final ComfyUIService comfyUIService;
+    private final CharacterPortraitImageGeneratorService portraitImageGenerator;
     private final AssetKeyService assetKeyService;
 
     @Value("${character.secondary.max-per-book:40}")
@@ -113,6 +114,7 @@ public class CharacterService {
             CharacterPortraitService portraitService,
             IllustrationService illustrationService,
             ComfyUIService comfyUIService,
+            CharacterPortraitImageGeneratorService portraitImageGenerator,
             AssetKeyService assetKeyService) {
         this.characterRepository = characterRepository;
         this.chapterAnalysisRepository = chapterAnalysisRepository;
@@ -123,6 +125,7 @@ public class CharacterService {
         this.portraitService = portraitService;
         this.illustrationService = illustrationService;
         this.comfyUIService = comfyUIService;
+        this.portraitImageGenerator = portraitImageGenerator;
         this.assetKeyService = assetKeyService;
     }
 
@@ -150,7 +153,7 @@ public class CharacterService {
     }
 
     public boolean isAvailable() {
-        return extractionService.isReasoningProviderAvailable() && comfyUIService.isAvailable();
+        return extractionService.isReasoningProviderAvailable() && portraitImageGenerator.isAvailable();
     }
 
     public boolean isQueueProcessorRunning() {
@@ -712,17 +715,11 @@ public class CharacterService {
             self.updatePortraitPrompt(characterId, portraitPrompt);
 
             String outputPrefix = "portrait_" + characterId;
-            String promptId = comfyUIService.submitPortraitWorkflow(portraitPrompt, outputPrefix, cacheKey);
+            String filename = portraitImageGenerator.generatePortrait(portraitPrompt, outputPrefix, cacheKey);
 
-            ComfyUIService.IllustrationResult result = comfyUIService.pollForPortraitCompletion(promptId);
-
-            if (result.success()) {
-                self.updateCharacterStatus(characterId, CharacterStatus.COMPLETED, cacheKey, null);
-                log.info("Portrait completed for character: {}", character.getName());
-            } else {
-                self.handlePortraitFailure(characterId, result.errorMessage(), true);
-                log.warn("Portrait generation failed for '{}': {}", character.getName(), result.errorMessage());
-            }
+            self.updateCharacterStatus(characterId, CharacterStatus.COMPLETED, filename, null);
+            log.info("Portrait completed for character: {} via {}",
+                    character.getName(), portraitImageGenerator.getProviderName());
 
         } catch (Exception e) {
             log.error("Failed to generate portrait for character: {}", character.getName(), e);
