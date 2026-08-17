@@ -424,6 +424,22 @@
         };
     }
 
+    function normalizeAssignmentCardTitle(value) {
+        return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+    }
+
+    function assignmentCardBookSubtitle(assignmentTitle, bookTitle) {
+        const heading = normalizeAssignmentCardTitle(assignmentTitle);
+        const book = normalizeAssignmentCardTitle(bookTitle);
+        if (!book || !heading) {
+            return '';
+        }
+        if (heading.localeCompare(book, undefined, { sensitivity: 'accent' }) === 0) {
+            return '';
+        }
+        return book;
+    }
+
     return {
         buildBookProgressSnapshot,
         buildAssignmentProgressSnapshot,
@@ -438,6 +454,7 @@
         isAssignmentFullyComplete,
         isAssignmentQuizPerfect,
         hasAssignmentQuizAttemptsRemaining,
-        unionBookActivityStores
+        unionBookActivityStores,
+        assignmentCardBookSubtitle
     };
 });

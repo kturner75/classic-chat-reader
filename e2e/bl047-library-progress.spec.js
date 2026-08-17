@@ -250,7 +250,7 @@ async function expectInsideCard(card, locator) {
   expect(childBox.y + childBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 1);
 }
 
-test('assignment card keeps title, late chip, status, and Open inside the card on a phone', async ({ page }) => {
+test('assignment card keeps title, book subtitle, late chip, status, and Open inside the card on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({
@@ -276,6 +276,7 @@ test('assignment card keeps title, late chip, status, and Open inside the card o
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await expect(assignment).toBeVisible();
   await expect(assignment.locator('.book-item-title')).toHaveText('Read, quiz, and chat');
+  await expect(assignment.locator('.book-item-assignment-book')).toHaveText('BL-047 Assignment Book');
   await expect(assignment).toContainText('3d late');
   await expect(assignment).toContainText('In progress');
   await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
@@ -292,6 +293,8 @@ test('assignment card keeps title, late chip, status, and Open inside the card o
   for (let index = 0; index < chipCount; index += 1) {
     await expectInsideCard(assignment, chips.nth(index));
   }
+  await expectInsideCard(assignment, assignment.locator('.book-item-title'));
+  await expectInsideCard(assignment, assignment.locator('.book-item-assignment-book'));
   await expectInsideCard(assignment, assignment.locator('.assignment-open-action'));
 
   const chipBoxes = await chips.evaluateAll((elements) => elements.map((element) => {
@@ -303,6 +306,53 @@ test('assignment card keeps title, late chip, status, and Open inside the card o
       expect(boxesOverlap(chipBoxes[i], chipBoxes[j]), `chip ${i} should not overlap chip ${j}`).toBe(false);
     }
   }
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+});
+
+test('assignment card omits the book subtitle when the title already is the book', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installApiMocks(page, {
+    assignmentTitle: 'BL-047 Assignment Book',
+    quizRequired: false,
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment.locator('.book-item-title')).toHaveText('BL-047 Assignment Book');
+  await expect(assignment.locator('.book-item-assignment-book')).toHaveCount(0);
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
+  await expect(assignment).not.toContainText('Quiz status unknown');
+  await expect(assignment).not.toContainText('Character chat required');
+  await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
+  await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+});
+
+test('assignment card wraps a long book subtitle inside the phone-width card', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const longBook = {
+    ...TEST_BOOK,
+    title: 'The History of Tom Jones, a Foundling, Together With Several Other Very Long Words'
+  };
+  await installApiMocks(page, {
+    book: longBook,
+    assignmentTitle: 'Read Chapter 1',
+    quizRequired: false,
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment.locator('.book-item-title')).toHaveText('Read Chapter 1');
+  await expect(assignment.locator('.book-item-assignment-book')).toHaveText(longBook.title);
+  await expectInsideCard(assignment, assignment.locator('.book-item-title'));
+  await expectInsideCard(assignment, assignment.locator('.book-item-assignment-book'));
+  await expectInsideCard(assignment, assignment.locator('.assignment-open-action'));
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   expect(overflow).toBe(false);

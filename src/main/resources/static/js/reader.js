@@ -4759,6 +4759,13 @@
         const bookTitle = localEntry?.book?.title || assignment.bookTitle || 'Assigned Book';
         const assignmentTitle = typeof assignment.title === 'string' ? assignment.title.trim() : '';
         const title = assignmentTitle || bookTitle;
+        const bookSubtitle = libraryProgressHelpers
+            && typeof libraryProgressHelpers.assignmentCardBookSubtitle === 'function'
+            ? libraryProgressHelpers.assignmentCardBookSubtitle(assignmentTitle, bookTitle)
+            : '';
+        const bookSubtitleMarkup = bookSubtitle
+            ? `<div class="book-item-assignment-book">${escapeHtml(bookSubtitle)}</div>`
+            : '';
         const activity = localEntry?.activity || null;
         const assignmentProgress = buildAssignmentProgressSnapshot(assignment, activity);
         const due = formatAssignmentDueLabel(assignment.dueAt);
@@ -4790,6 +4797,7 @@
                     <div class="book-item-title-row">
                         <div class="book-item-title">${escapeHtml(title)}</div>
                     </div>
+                    ${bookSubtitleMarkup}
                     <div class="book-item-progress">
                         ${dueChip}
                         <span class="book-progress-chip book-progress-chip-status status-${assignmentProgress.statusClass}">${escapeHtml(assignmentProgress.statusLabel)}</span>
