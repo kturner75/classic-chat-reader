@@ -611,9 +611,7 @@ public class AccountClaimSyncService {
                 latestTimestamp(existing.lastOpenedAt(), incoming.lastOpenedAt()),
                 latestTimestamp(existing.lastReadAt(), incoming.lastReadAt()),
                 latestTimestamp(existing.completedAt(), incoming.completedAt()),
-                sanitizeCompletedChapterIndexes(
-                        unionCompletedChapters(existing.completedChapterIndexes(), incoming.completedChapterIndexes()),
-                        firstNonNullPositive(primary.chapterCount(), existing.chapterCount(), incoming.chapterCount()))
+                unionCompletedChapters(existing.completedChapterIndexes(), incoming.completedChapterIndexes())
         );
     }
 

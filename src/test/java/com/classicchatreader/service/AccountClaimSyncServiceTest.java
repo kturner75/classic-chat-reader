@@ -790,4 +790,43 @@ class AccountClaimSyncServiceTest {
                 List.of(0, 1, 2),
                 result.state().bookActivity().get("book-1").completedChapterIndexes());
     }
+
+    @Test
+    void claimAndSync_preservesCompletedChaptersWhenNewerSnapshotHasSmallerChapterCount() {
+        String userId = "user-1";
+        String readerId = "reader-cookie-1";
+
+        UserReaderStateEntity existing = new UserReaderStateEntity();
+        existing.setUserId(userId);
+        existing.setStateJson("{"
+                + "\"favoriteBookIds\":[],"
+                + "\"bookActivity\":{\"book-1\":{"
+                + "\"chapterCount\":10,"
+                + "\"completedChapterIndexes\":[8],"
+                + "\"lastReadAt\":\"2026-08-01T10:00:00Z\""
+                + "}},"
+                + "\"readerPreferences\":null,"
+                + "\"recapOptOut\":{}"
+                + "}");
+
+        when(userReaderClaimRepository.existsByUserIdAndReaderId(userId, readerId)).thenReturn(true);
+        when(userReaderStateRepository.findById(userId)).thenReturn(Optional.of(existing));
+        when(userReaderStateRepository.save(any(UserReaderStateEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AccountStateSnapshot incoming = new AccountStateSnapshot(
+                List.of(),
+                Map.of("book-1", new AccountStateSnapshot.BookActivity(
+                        5, 1, 0, 10, 0.2, 0.2, false, 1, null, "2026-08-16T12:00:00Z", null, List.of(0, 1))),
+                null,
+                Map.of()
+        );
+
+        AccountClaimSyncService.ClaimSyncResult result =
+                accountClaimSyncService.claimAndSync(userId, readerId, incoming);
+
+        assertEquals(
+                List.of(0, 1, 8),
+                result.state().bookActivity().get("book-1").completedChapterIndexes());
+    }
 }
