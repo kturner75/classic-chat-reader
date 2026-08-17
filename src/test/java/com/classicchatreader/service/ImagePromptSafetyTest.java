@@ -83,8 +83,12 @@ class ImagePromptSafetyTest {
         assertTrue(ImagePromptSafety.isBlocked("suggestive pose of an adolescent"));
         assertTrue(ImagePromptSafety.isBlocked("graphic scene of soldiers torturing and dismembering prisoners"));
         assertTrue(ImagePromptSafety.isBlocked("sex scene between two adults"));
+        assertTrue(ImagePromptSafety.isBlocked("bare-breasted portrait"));
+        assertTrue(ImagePromptSafety.isBlocked("exposed breasts"));
+        assertTrue(ImagePromptSafety.isBlocked("close-up beheading with exposed entrails"));
         assertFalse(ImagePromptSafety.isBlocked("bold woodcut, gory mere-flood, slain dragon"));
         assertFalse(ImagePromptSafety.isBlocked("Essex countryside at dusk"));
+        assertFalse(ImagePromptSafety.isBlocked("warrior in mail breastplate on a longship"));
         String prepared = ImagePromptSafety.prepareForGeneration("sexualized child portrait");
         assertFalse(prepared.toLowerCase().contains("sexualized"));
         assertTrue(prepared.contains("atmospheric public setting"));
