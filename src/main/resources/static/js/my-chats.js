@@ -1280,6 +1280,35 @@
 
         retry.addEventListener('click', () => void loadConversation());
         form.addEventListener('submit', sendMessage);
+        // Safari can report isComposing=false on the IME-confirm Enter because
+        // compositionend already ran. Treat that same-tick Enter as composition.
+        let composerComposing = false;
+        let suppressImeConfirmEnter = false;
+        composer.addEventListener('compositionstart', () => {
+            composerComposing = true;
+        });
+        composer.addEventListener('compositionend', () => {
+            composerComposing = false;
+            suppressImeConfirmEnter = true;
+            setTimeout(() => {
+                suppressImeConfirmEnter = false;
+            }, 0);
+        });
+        composer.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.shiftKey) {
+                return;
+            }
+            if (composerComposing || event.isComposing || event.keyCode === 229 || suppressImeConfirmEnter) {
+                suppressImeConfirmEnter = false;
+                return;
+            }
+            event.preventDefault();
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        });
         callButton?.addEventListener('click', () => void startCall());
         callMute?.addEventListener('click', toggleCallMute);
         callEnd?.addEventListener('click', () => void finishCall());
