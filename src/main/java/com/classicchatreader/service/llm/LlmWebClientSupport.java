@@ -27,7 +27,7 @@ final class LlmWebClientSupport {
                 .bodyToMono(String.class)
                 .timeout(timeout)
                 .retryWhen(Retry.max(1)
-                        .filter(LlmProviderException::isTransient)
+                        .filter(LlmProviderException::isRetriableConnectionFailure)
                         .doBeforeRetry(signal -> log.warn(
                                 "event=llm_transient_retry provider={} error={}",
                                 provider, signal.failure().toString())))
