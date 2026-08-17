@@ -161,6 +161,10 @@ test('signed-in landing shelf opens full history, filters, loads more, and resum
   await page.locator('.my-chat-card', { hasText: 'Elizabeth Bennet' }).getByRole('link', { name: 'Resume chat' }).click();
   await expect(page).toHaveURL(/\/my-chats\?session=session-1$/);
   await expect(page.locator('#my-chat-conversation-title')).toHaveText('Elizabeth Bennet');
+  await expect(page.locator('#my-chat-toolbar')).toBeVisible();
+  await expect(page.locator('#my-chat-open-book')).toBeVisible();
+  await expect(page.locator('#my-chat-download')).toBeVisible();
+  await expect(page.locator('#my-chat-scroll-jump')).toBeVisible();
   await expect(page.locator('#my-chat-messages')).toContainText('First impressions can be misleading.');
 
   await page.locator('#my-chat-composer').fill('Do you remember me?');

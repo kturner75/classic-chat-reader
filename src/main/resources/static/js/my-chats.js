@@ -689,6 +689,7 @@
         const unavailable = documentRef.getElementById('my-chat-conversation-unavailable');
         const openBook = documentRef.getElementById('my-chat-open-book');
         const download = documentRef.getElementById('my-chat-download');
+        const scrollJump = documentRef.getElementById('my-chat-scroll-jump');
         const callButton = documentRef.getElementById('my-chat-call');
         const callLaunchStatus = documentRef.getElementById('my-chat-call-launch-status');
         const callModal = documentRef.getElementById('my-chat-call-modal');
@@ -774,6 +775,38 @@
             }
             loading.classList.add('hidden');
             error.classList.add('hidden');
+            updateScrollJump();
+        }
+
+        function isNearPageBottom() {
+            const root = documentRef.documentElement;
+            return (root.scrollHeight - context.window.scrollY - context.window.innerHeight) < 96;
+        }
+
+        function pageCanScroll() {
+            const root = documentRef.documentElement;
+            return root.scrollHeight - context.window.innerHeight > 96;
+        }
+
+        function updateScrollJump() {
+            if (!scrollJump) return;
+            const canScroll = pageCanScroll();
+            scrollJump.classList.toggle('hidden', !canScroll);
+            if (!canScroll) return;
+            const toBottom = !isNearPageBottom();
+            scrollJump.textContent = toBottom ? 'To bottom' : 'To top';
+            scrollJump.setAttribute('aria-label', toBottom ? 'Scroll to bottom' : 'Scroll to top');
+        }
+
+        function jumpConversation() {
+            const reduceMotion = context.window.matchMedia
+                && context.window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const behavior = reduceMotion ? 'auto' : 'smooth';
+            if (isNearPageBottom()) {
+                context.window.scrollTo({ top: 0, behavior });
+            } else {
+                context.window.scrollTo({ top: documentRef.documentElement.scrollHeight, behavior });
+            }
         }
 
         async function loadVoiceStatus() {
@@ -1279,6 +1312,9 @@
         }
 
         retry.addEventListener('click', () => void loadConversation());
+        scrollJump?.addEventListener('click', jumpConversation);
+        context.window.addEventListener('scroll', updateScrollJump, { passive: true });
+        context.window.addEventListener('resize', updateScrollJump);
         form.addEventListener('submit', sendMessage);
         // Safari can report isComposing=false on the IME-confirm Enter because
         // compositionend already ran. Treat that same-tick Enter as composition.

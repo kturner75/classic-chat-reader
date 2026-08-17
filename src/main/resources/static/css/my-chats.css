@@ -463,13 +463,42 @@ a:focus-visible {
     margin-bottom: 0.8rem;
 }
 
-.my-chats-form-actions,
-.my-chat-conversation-actions {
+.my-chats-form-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.55rem;
     margin-top: 0.8rem;
+}
+
+.my-chat-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: 50rem;
+    margin: 0 auto 1rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    background: rgba(253, 251, 247, 0.94);
+    box-shadow: 0 8px 20px rgba(61, 49, 32, 0.05);
+    backdrop-filter: blur(12px);
+}
+
+.my-chat-toolbar-action {
+    min-height: 2.25rem;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.86rem;
+}
+
+.my-chat-toolbar .my-chat-call-action {
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    padding: 0.3rem 0.75rem;
 }
 
 .my-chat-call-action {
@@ -498,11 +527,15 @@ a:focus-visible {
 }
 
 .my-chat-call-launch-status {
-    min-height: 1.4em;
-    margin: 0.35rem 0 0;
+    flex: 1 1 100%;
+    min-height: 0;
+    margin: 0;
     color: var(--danger);
-    font-size: 0.9rem;
-    text-align: right;
+    font-size: 0.86rem;
+}
+
+.my-chat-call-launch-status:empty {
+    display: none;
 }
 
 .my-chats-callout {
@@ -523,6 +556,9 @@ a:focus-visible {
 }
 
 .my-chat-conversation-heading {
+    max-width: 50rem;
+    margin-left: auto;
+    margin-right: auto;
     border-bottom: 1px solid var(--border);
     padding-bottom: 1.2rem;
 }
@@ -863,5 +899,15 @@ a:focus-visible {
 
     .my-chat-conversation-heading h1 {
         font-size: clamp(2rem, 11vw, 3rem);
+    }
+
+    .my-chat-toolbar {
+        gap: 0.35rem;
+        padding: 0.4rem;
+    }
+
+    .my-chat-toolbar-action,
+    .my-chat-toolbar .my-chat-call-action {
+        flex: 1 1 calc(50% - 0.35rem);
     }
 }
