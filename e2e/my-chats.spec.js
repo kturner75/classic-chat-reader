@@ -164,7 +164,7 @@ test('signed-in landing shelf opens full history, filters, loads more, and resum
   await expect(page.locator('#my-chat-messages')).toContainText('First impressions can be misleading.');
 
   await page.locator('#my-chat-composer').fill('Do you remember me?');
-  await page.locator('#my-chat-send').click();
+  await page.locator('#my-chat-composer').press('Enter');
   await expect(page.locator('#my-chat-messages')).toContainText('I remember this conversation.');
   expect(state.detailRequests).toContain('session-1');
   expect(state.continueRequests).toEqual([{ sessionId: 'session-1', body: { content: 'Do you remember me?', context: SESSION_ONE.context } }]);

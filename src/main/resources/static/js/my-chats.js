@@ -1280,6 +1280,17 @@
 
         retry.addEventListener('click', () => void loadConversation());
         form.addEventListener('submit', sendMessage);
+        composer.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
+                return;
+            }
+            event.preventDefault();
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        });
         callButton?.addEventListener('click', () => void startCall());
         callMute?.addEventListener('click', toggleCallMute);
         callEnd?.addEventListener('click', () => void finishCall());
