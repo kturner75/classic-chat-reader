@@ -362,8 +362,11 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
   await page.keyboard.press('ArrowRight');
-  await page.locator('#assignment-wrapup-overlay [data-assignment-wrapup="quiz"]').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
   const overlay = page.locator('#chapter-recap-overlay');
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveClass(/assignment-quiz-mode/);
@@ -404,8 +407,12 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
   await page.keyboard.press('ArrowRight');
-  await page.locator('#assignment-wrapup-overlay [data-assignment-wrapup="quiz"]').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
   await page.locator('#chapter-quiz-questions input[type="radio"]').first().check();
   await page.locator('#chapter-quiz-submit').click();
   await expect(page.locator('#chapter-quiz-feedback')).toContainText('You passed');
@@ -483,8 +490,12 @@ test('secondary-only characters can be chatted with from assignment wrap-up', as
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
   await page.keyboard.press('ArrowRight');
-  await page.locator('#assignment-wrapup-overlay [data-assignment-wrapup="chat"]').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="chat"]').click();
   await expect(page.locator('#character-chat-modal')).toBeVisible();
   await expect(page.locator('#chat-character-name')).toHaveText('Fortunato');
 });
