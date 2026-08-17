@@ -60,19 +60,22 @@ class CharacterPortraitImageGeneratorServiceTest {
     @Test
     void xaiIsAvailableWithOAuthAndNoApiKey() {
         useProvider("xai");
-        when(oauthTokenManager.getAccessToken()).thenReturn(Optional.of("oauth-token"));
+        when(oauthTokenManager.isConfigured()).thenReturn(true);
 
         assertThat(service.isAvailable()).isTrue();
         // The whole point of the change: a down ComfyUI must not gate the character feature.
         verify(comfyUIService, never()).isAvailable();
+        // Status polls must not mint or refresh a SuperGrok token.
+        verify(oauthTokenManager, never()).getAccessToken();
     }
 
     @Test
     void xaiIsUnavailableWithNeitherOAuthNorApiKey() {
         useProvider("xai");
-        when(oauthTokenManager.getAccessToken()).thenReturn(Optional.empty());
+        when(oauthTokenManager.isConfigured()).thenReturn(false);
 
         assertThat(service.isAvailable()).isFalse();
+        verify(oauthTokenManager, never()).getAccessToken();
     }
 
     @Test

@@ -78,11 +78,15 @@ public class CharacterPortraitImageGeneratorService {
 
     /**
      * True when the configured provider can currently accept work. ComfyUI needs a reachable
-     * local server; xAI needs either a SuperGrok OAuth token or an API key.
+     * local server; xAI needs SuperGrok OAuth configured or an API key.
+     *
+     * <p>Do not call {@link XaiOAuthTokenManager#getAccessToken()} here. Status polls hit this
+     * path, and minting a token just to render feature flags can block for the refresh timeout
+     * and rotate the refresh credential. Actual token exchange stays in {@link #generateWithXai}.
      */
     public boolean isAvailable() {
         if ("xai".equals(getProviderName())) {
-            boolean hasOAuth = oauthTokenManager != null && oauthTokenManager.getAccessToken().isPresent();
+            boolean hasOAuth = oauthTokenManager != null && oauthTokenManager.isConfigured();
             return hasOAuth || (xaiApiKey != null && !xaiApiKey.isBlank());
         }
         return comfyUIService.isAvailable();
