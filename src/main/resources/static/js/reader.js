@@ -4815,23 +4815,25 @@
             ? `<div class="assignment-card-actions">${quizAction}${chatAction}</div>`
             : '';
         return `
-            <div class="book-item"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
-                <div class="book-item-title-row">
-                    <div class="book-item-title">${escapeHtml(title)}</div>
+            <div class="book-item book-item-assignment"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
+                <div class="book-item-body">
+                    <div class="book-item-title-row">
+                        <div class="book-item-title">${escapeHtml(title)}</div>
+                    </div>
+                    <div class="book-item-author">${escapeHtml(author)}</div>
+                    ${assignmentLabel}
+                    <div class="book-item-progress">
+                        ${chapterLabel}
+                        ${dueChip}
+                        ${quizChip}
+                        ${characterChatChip}
+                    </div>
+                    <div class="book-item-progress book-item-progress-status">
+                        ${progressChips}
+                    </div>
+                    <div class="book-item-meta">${escapeHtml(meta)}</div>
+                    ${cardActions}
                 </div>
-                <div class="book-item-author">${escapeHtml(author)}</div>
-                ${assignmentLabel}
-                <div class="book-item-progress">
-                    ${chapterLabel}
-                    ${dueChip}
-                    ${quizChip}
-                    ${characterChatChip}
-                </div>
-                <div class="book-item-progress">
-                    ${progressChips}
-                </div>
-                <div class="book-item-meta">${escapeHtml(meta)}</div>
-                ${cardActions}
             </div>
         `;
     }

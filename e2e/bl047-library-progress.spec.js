@@ -50,12 +50,13 @@ async function installApiMocks(page, options = {}) {
   const book = options.book || TEST_BOOK;
   const character = options.character || TEST_CHARACTER;
   let quizAttemptsUsed = options.quizAttemptsUsed || 0;
-  const assignmentChapters = options.assignmentChapters || book.chapters.map((chapter, index) => ({
+  const wholeBook = options.wholeBook === true;
+  const assignmentChapters = options.assignmentChapters || (wholeBook ? [] : book.chapters.map((chapter, index) => ({
     chapterId: chapter.id,
     chapterIndex: index,
     chapterTitle: chapter.title
-  }));
-  const firstChapter = assignmentChapters[0] || book.chapters[0] || { id: 'chapter-1', title: 'Chapter One' };
+  })));
+  const firstChapter = assignmentChapters[0] || (wholeBook ? {} : (book.chapters[0] || { id: 'chapter-1', title: 'Chapter One' }));
 
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -91,9 +92,10 @@ async function installApiMocks(page, options = {}) {
           bookTitle: book.title,
           bookAuthor: book.author,
           chapters: assignmentChapters,
-          chapterId: firstChapter.chapterId || firstChapter.id,
-          chapterIndex: Number.isInteger(firstChapter.chapterIndex) ? firstChapter.chapterIndex : 0,
-          chapterTitle: firstChapter.chapterTitle || firstChapter.title,
+          chapterId: wholeBook ? null : (firstChapter.chapterId || firstChapter.id),
+          chapterIndex: wholeBook ? null : (Number.isInteger(firstChapter.chapterIndex) ? firstChapter.chapterIndex : 0),
+          chapterTitle: wholeBook ? null : (firstChapter.chapterTitle || firstChapter.title),
+          dueAt: options.dueAt || null,
           quizRequired: options.quizRequired !== false,
           quizSource: 'CHAPTER',
           quizStatus: options.quizStatus || (options.quizRequired === false ? 'NOT_REQUIRED' : pendingThenComplete),
@@ -232,6 +234,76 @@ async function installApiMocks(page, options = {}) {
 
   return state;
 }
+
+function boxesOverlap(a, b) {
+  return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+}
+
+async function expectInsideCard(card, locator) {
+  const cardBox = await card.boundingBox();
+  const childBox = await locator.boundingBox();
+  expect(cardBox, 'assignment card should be measurable').toBeTruthy();
+  expect(childBox, 'card child should be measurable').toBeTruthy();
+  expect(childBox.x).toBeGreaterThanOrEqual(cardBox.x - 1);
+  expect(childBox.y).toBeGreaterThanOrEqual(cardBox.y - 1);
+  expect(childBox.x + childBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+  expect(childBox.y + childBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 1);
+}
+
+test('assignment card keeps pills, progress, and CTA inside the card on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 12,
+        lastChapterIndex: 0,
+        lastPage: 1,
+        progressRatio: 0.02,
+        maxProgressRatio: 0.02,
+        lastReadAt: '2026-08-16T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    wholeBook: true,
+    dueAt: new Date(Date.now() - (3 * 86_400_000)).toISOString(),
+    quizRequired: true,
+    quizStatus: 'UNKNOWN',
+    characterChatRequired: true
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment).toBeVisible();
+  await expect(assignment).toContainText('Whole book');
+  await expect(assignment).toContainText('3d late');
+  await expect(assignment).toContainText('Quiz status unknown');
+  await expect(assignment).toContainText('Character chat required');
+  await expect(assignment).toContainText('In progress');
+  await expect(assignment).toContainText('0/3 complete');
+  await expect(assignment.locator('.assignment-chat-action')).toHaveText('Chat with Character');
+
+  const chips = assignment.locator('.book-progress-chip');
+  await expect(chips).toHaveCount(6);
+  const chipCount = await chips.count();
+  for (let index = 0; index < chipCount; index += 1) {
+    await expectInsideCard(assignment, chips.nth(index));
+  }
+  await expectInsideCard(assignment, assignment.locator('.assignment-chat-action'));
+
+  const chipBoxes = await chips.evaluateAll((elements) => elements.map((element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+  }));
+  for (let i = 0; i < chipBoxes.length; i += 1) {
+    for (let j = i + 1; j < chipBoxes.length; j += 1) {
+      expect(boxesOverlap(chipBoxes[i], chipBoxes[j]), `chip ${i} should not overlap chip ${j}`).toBe(false);
+    }
+  }
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+});
 
 test('BL-047 first Library return rerenders completed quiz and all assignment requirements', async ({ page }) => {
   const state = await installApiMocks(page);
