@@ -23,6 +23,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,18 +75,19 @@ class CharacterPrefetchServiceTest {
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [{"name": "Montresor", "description": "The narrator.", "firstChapterNumber": 1}]
                 """);
-        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Montresor"))
-                .thenReturn(Optional.empty());
-        when(characterRepository.save(any())).thenAnswer(invocation -> {
-            CharacterEntity saved = invocation.getArgument(0);
-            saved.setId("character-1");
-            return saved;
-        });
+        when(characterService.upsertCharacter(any(), any(), any(), any(), anyInt(), any()))
+                .thenAnswer(invocation -> {
+                    CharacterEntity saved = new CharacterEntity();
+                    saved.setId("character-1");
+                    saved.setName(invocation.getArgument(2));
+                    return new CharacterService.CharacterUpsert(saved, true, false);
+                });
 
         service.prefetchCharactersForBook(BOOK_ID);
 
         verify(reasoningProvider).generate(any(), any());
-        verify(characterRepository).save(any(CharacterEntity.class));
+        verify(characterService).upsertCharacter(any(), any(), eq("Montresor"), any(), anyInt(), eq(CharacterType.PRIMARY));
+        verify(characterService).queuePortraitGeneration("character-1");
         assertThat(book.getCharacterPrefetchCompleted()).isTrue();
     }
 
@@ -141,12 +144,38 @@ class CharacterPrefetchServiceTest {
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [{"name": "Fortunato", "description": "The insulted connoisseur who follows Montresor into the vaults.", "firstChapterNumber": 1}]
                 """);
-        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Fortunato"))
-                .thenReturn(Optional.of(existing));
+        when(characterService.upsertCharacter(any(), any(), eq("Fortunato"), any(), anyInt(), eq(CharacterType.PRIMARY)))
+                .thenReturn(new CharacterService.CharacterUpsert(existing, false, true));
 
         service.prefetchCharactersForBook(BOOK_ID);
 
-        assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
+        verify(characterService, never()).queuePortraitGeneration(any());
         assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_dedupesNormalizedNamesFromTheModelBeforeUpsert() {
+        ChapterEntity chapter = new ChapterEntity();
+        chapter.setId("chapter-0");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(chapter));
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name": "Sally", "description": "A sister.", "firstChapterNumber": 1},
+                  {"name": "Sally.", "description": "The same sister.", "firstChapterNumber": 1},
+                  {"name": "  sally  ", "description": "Again.", "firstChapterNumber": 1}
+                ]
+                """);
+        when(characterService.upsertCharacter(any(), any(), any(), any(), anyInt(), any()))
+                .thenAnswer(invocation -> {
+                    CharacterEntity saved = new CharacterEntity();
+                    saved.setId("character-sally");
+                    saved.setName(invocation.getArgument(2));
+                    return new CharacterService.CharacterUpsert(saved, true, false);
+                });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterService).upsertCharacter(any(), any(), eq("Sally"), any(), anyInt(), eq(CharacterType.PRIMARY));
+        verify(characterService).queuePortraitGeneration("character-sally");
     }
 }

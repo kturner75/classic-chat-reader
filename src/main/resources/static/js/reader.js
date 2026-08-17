@@ -9124,6 +9124,10 @@
     }
 
     function mergeCharacterLists(primaryList, secondaryList) {
+        const identity = globalThis.CharacterIdentity;
+        if (identity && typeof identity.mergeAndDedupe === 'function') {
+            return identity.mergeAndDedupe(primaryList, secondaryList);
+        }
         const byId = new Map();
         primaryList.forEach(character => byId.set(character.id, character));
         secondaryList.forEach(character => byId.set(character.id, character));
@@ -9538,24 +9542,39 @@
                 `/api/characters/book/${state.currentBook.id}/up-to?chapterIndex=${chapterIndex}&paragraphIndex=${paragraphIndex}`
             );
             const upToCharacters = await response.json();
-            let mergedCharacters = upToCharacters;
+            let mergedCharacters = Array.isArray(upToCharacters) ? upToCharacters : [];
 
             if (state.discoveredCharacterIds.size > 0) {
+                const allResponse = await fetch(`/api/characters/book/${state.currentBook.id}`);
+                const allCharacters = await allResponse.json();
+                const identity = globalThis.CharacterIdentity;
+                if (identity && typeof identity.retainLiveDiscoveries === 'function') {
+                    const retained = identity.retainLiveDiscoveries(
+                        Array.from(state.discoveredCharacterIds),
+                        Array.from(state.discoveredCharacterDetails.values()),
+                        allCharacters
+                    );
+                    state.discoveredCharacterIds = new Set(retained.ids);
+                    state.discoveredCharacterDetails = new Map(
+                        retained.details.map((character) => [character.id, character])
+                    );
+                    saveDiscoveredCharacters();
+                    saveDiscoveredCharacterDetails();
+                }
                 const cachedDiscovered = Array.from(state.discoveredCharacterDetails.values());
                 const cachedIds = new Set(cachedDiscovered.map(c => c.id));
                 const missingIds = Array.from(state.discoveredCharacterIds).filter(id => !cachedIds.has(id));
                 let discoveredCharacters = cachedDiscovered;
 
                 if (missingIds.length > 0) {
-                    const allResponse = await fetch(`/api/characters/book/${state.currentBook.id}`);
-                    const allCharacters = await allResponse.json();
-                    const missingCharacters = allCharacters.filter(c => missingIds.includes(c.id));
+                    const missingCharacters = (Array.isArray(allCharacters) ? allCharacters : [])
+                        .filter(c => missingIds.includes(c.id));
                     missingCharacters.forEach(recordDiscoveredCharacter);
                     saveDiscoveredCharacterDetails();
                     discoveredCharacters = mergeCharacterLists(cachedDiscovered, missingCharacters);
                 }
 
-                mergedCharacters = mergeCharacterLists(upToCharacters, discoveredCharacters);
+                mergedCharacters = mergeCharacterLists(mergedCharacters, discoveredCharacters);
             }
 
             state.characters = sortCharacters(mergedCharacters);

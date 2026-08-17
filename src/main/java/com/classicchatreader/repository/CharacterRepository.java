@@ -24,6 +24,10 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
 
     Optional<CharacterEntity> findByBookIdAndNameIgnoreCase(String bookId, String name);
 
+    List<CharacterEntity> findAllByBookIdAndNameIgnoreCase(String bookId, String name);
+
+    List<CharacterEntity> findByBookIdAndNameKey(String bookId, String nameKey);
+
     List<CharacterEntity> findByBookIdAndStatus(String bookId, CharacterStatus status);
 
     List<CharacterEntity> findByBookIdAndFirstChapterIdOrderByFirstParagraphIndex(String bookId, String firstChapterId);

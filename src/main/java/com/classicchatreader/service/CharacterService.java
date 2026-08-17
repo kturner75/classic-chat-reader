@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -303,7 +304,7 @@ public class CharacterService {
     private List<CharacterInfo> toChatAwareInfos(String bookId, List<CharacterEntity> characters) {
         boolean bookHasPrimary = bookId != null
                 && characterRepository.countByBookIdAndCharacterType(bookId, CharacterType.PRIMARY) > 0;
-        return characters.stream()
+        return CharacterIdentity.dedupe(characters).stream()
                 .map(character -> CharacterInfo.from(character).withChatEligible(
                         character.getCharacterType() == CharacterType.PRIMARY || !bookHasPrimary))
                 .collect(Collectors.toList());
@@ -450,19 +451,70 @@ public class CharacterService {
     @Transactional
     public CharacterEntity createCharacter(BookEntity book, ChapterEntity chapter,
                                            String name, String description, int paragraphIndex) {
-        Optional<CharacterEntity> existing = characterRepository.findByBookIdAndNameIgnoreCase(book.getId(), name);
-        if (existing.isPresent()) {
-            log.debug("Character '{}' already exists for book '{}'", name, book.getTitle());
-            return null;
+        CharacterUpsert upsert = upsertCharacter(
+                book, chapter, name, description, paragraphIndex, CharacterType.SECONDARY);
+        return upsert.created() ? upsert.character() : null;
+    }
+
+    /**
+     * Shared create/promote path for chapter analysis and main-character prefetch.
+     * Identity is the normalized name key, not the raw display string, so repeated
+     * or concurrent generation cannot persist "Sally" / "sally" / "Sally." as
+     * separate rows.
+     */
+    @Transactional
+    public CharacterUpsert upsertCharacter(BookEntity book, ChapterEntity chapter,
+                                           String name, String description, int paragraphIndex,
+                                           CharacterType characterType) {
+        String displayName = CharacterNameNormalizer.displayName(name);
+        String nameKey = CharacterNameNormalizer.identityKey(displayName);
+        if (displayName.isBlank() || nameKey.isBlank()) {
+            log.debug("Skipping blank or unnormalizable character name '{}'", name);
+            return CharacterUpsert.skipped();
         }
 
-        if (isNameVariantOfExisting(book.getId(), name)) {
-            log.debug("Character '{}' appears to be a variant of an existing name for '{}'", name, book.getTitle());
-            return null;
+        CharacterEntity existing = findExistingCharacter(book.getId(), displayName, nameKey);
+        if (existing != null) {
+            return adoptExistingCharacter(existing, description, characterType);
         }
 
+        try {
+            return self.insertNewCharacter(
+                    book, chapter, displayName, description, paragraphIndex, characterType);
+        } catch (DataIntegrityViolationException e) {
+            log.info("Character '{}' raced another writer for book '{}'; adopting existing row",
+                    displayName, book.getTitle());
+            CharacterEntity raced = findExistingCharacter(book.getId(), displayName, nameKey);
+            if (raced != null) {
+                return adoptExistingCharacter(raced, description, characterType);
+            }
+            throw e;
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CharacterUpsert insertNewCharacter(BookEntity book, ChapterEntity chapter,
+                                              String name, String description, int paragraphIndex,
+                                              CharacterType characterType) {
         CharacterEntity character = new CharacterEntity(book, name, description, chapter, paragraphIndex);
-        return characterRepository.save(character);
+        if (characterType != null) {
+            character.setCharacterType(characterType);
+        }
+        return CharacterUpsert.created(characterRepository.saveAndFlush(character));
+    }
+
+    public record CharacterUpsert(CharacterEntity character, boolean created, boolean promoted) {
+        static CharacterUpsert skipped() {
+            return new CharacterUpsert(null, false, false);
+        }
+
+        static CharacterUpsert created(CharacterEntity character) {
+            return new CharacterUpsert(character, true, false);
+        }
+
+        static CharacterUpsert existing(CharacterEntity character, boolean promoted) {
+            return new CharacterUpsert(character, false, promoted);
+        }
     }
 
     /**
@@ -503,63 +555,51 @@ public class CharacterService {
         });
     }
 
-    private boolean isNameVariantOfExisting(String bookId, String name) {
-        String normalizedNew = normalizeName(name);
-        if (normalizedNew.isEmpty()) {
-            return true;
+    private CharacterEntity findExistingCharacter(String bookId, String name, String nameKey) {
+        List<CharacterEntity> byKey = characterRepository.findByBookIdAndNameKey(bookId, nameKey);
+        if (!byKey.isEmpty()) {
+            return byKey.stream().reduce(CharacterIdentity::prefer).orElse(null);
         }
 
-        List<CharacterEntity> existingCharacters = characterRepository.findByBookIdOrderByCreatedAt(bookId);
-        for (CharacterEntity existing : existingCharacters) {
-            String normalizedExisting = normalizeName(existing.getName());
-            if (normalizedExisting.isEmpty()) {
-                continue;
-            }
-            if (normalizedExisting.equals(normalizedNew)) {
-                return true;
-            }
-            if (isLastNameOnly(normalizedNew) && lastNameMatches(normalizedExisting, normalizedNew)) {
-                return true;
-            }
-            if (isLastNameOnly(normalizedExisting) && lastNameMatches(normalizedNew, normalizedExisting)) {
-                return true;
+        List<CharacterEntity> byExactName = characterRepository.findAllByBookIdAndNameIgnoreCase(bookId, name);
+        if (!byExactName.isEmpty()) {
+            return byExactName.stream().reduce(CharacterIdentity::prefer).orElse(null);
+        }
+
+        CharacterEntity variant = null;
+        for (CharacterEntity existing : characterRepository.findByBookIdOrderByCreatedAt(bookId)) {
+            if (CharacterNameNormalizer.isNameVariant(existing.getName(), name)) {
+                variant = CharacterIdentity.prefer(variant, existing);
             }
         }
-        return false;
+        return variant;
     }
 
-    private String normalizeName(String name) {
-        if (name == null) {
-            return "";
+    private CharacterUpsert adoptExistingCharacter(CharacterEntity existing,
+                                                   String description,
+                                                   CharacterType requestedType) {
+        boolean promoted = false;
+        boolean changed = false;
+        if (requestedType == CharacterType.PRIMARY && existing.getCharacterType() != CharacterType.PRIMARY) {
+            existing.setCharacterType(CharacterType.PRIMARY);
+            promoted = true;
+            changed = true;
         }
-        String cleaned = name.toLowerCase()
-                .replaceAll("[^a-z\\s-]", " ")
-                .replace("-", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isEmpty()) {
-            return "";
+        if (description != null && !description.isBlank()
+                && (existing.getDescription() == null
+                || description.length() > existing.getDescription().length())) {
+            existing.setDescription(description);
+            changed = true;
         }
-        List<String> parts = Arrays.stream(cleaned.split(" "))
-                .filter(part -> !part.isBlank())
-                .collect(Collectors.toList());
-        while (!parts.isEmpty() && NAME_TITLES.contains(parts.get(0))) {
-            parts.remove(0);
+        if (changed) {
+            characterRepository.save(existing);
         }
-        return String.join(" ", parts).trim();
-    }
-
-    private boolean isLastNameOnly(String normalizedName) {
-        if (normalizedName.isBlank()) {
-            return false;
+        if (promoted) {
+            log.info("Promoted existing character '{}' to PRIMARY", existing.getName());
+        } else {
+            log.debug("Character '{}' already exists; skipping insert", existing.getName());
         }
-        return normalizedName.split(" ").length == 1;
-    }
-
-    private boolean lastNameMatches(String normalizedA, String normalizedB) {
-        String lastA = normalizedA.substring(normalizedA.lastIndexOf(' ') + 1);
-        String lastB = normalizedB.substring(normalizedB.lastIndexOf(' ') + 1);
-        return !lastA.isBlank() && lastA.equals(lastB);
+        return CharacterUpsert.existing(existing, promoted);
     }
 
     private Set<String> buildPrimaryNameIndex(String bookId) {
@@ -567,7 +607,7 @@ public class CharacterService {
                 .stream()
                 .filter(character -> character.getCharacterType() == CharacterType.PRIMARY)
                 .map(CharacterEntity::getName)
-                .map(this::normalizeName)
+                .map(CharacterNameNormalizer::variantKey)
                 .filter(normalized -> !normalized.isBlank())
                 .collect(Collectors.toSet());
     }
@@ -583,16 +623,16 @@ public class CharacterService {
     private boolean isPossiblyConfusedWithPrimary(Set<String> primaryNameIndex,
                                                   Set<String> primaryTokenIndex,
                                                   String name) {
-        String normalizedNew = normalizeName(name);
+        String normalizedNew = CharacterNameNormalizer.variantKey(name);
         if (normalizedNew.isBlank()) {
             return true;
         }
         if (primaryNameIndex.contains(normalizedNew)) {
             return true;
         }
-        if (isLastNameOnly(normalizedNew)) {
+        if (CharacterNameNormalizer.isLastNameOnly(normalizedNew)) {
             return primaryNameIndex.stream()
-                    .anyMatch(primary -> lastNameMatches(primary, normalizedNew));
+                    .anyMatch(primary -> CharacterNameNormalizer.lastNameMatches(primary, normalizedNew));
         }
         return Arrays.stream(normalizedNew.split(" "))
                 .anyMatch(primaryTokenIndex::contains);
@@ -612,7 +652,7 @@ public class CharacterService {
         if (isGenericDescriptorPhrase(trimmed)) {
             return false;
         }
-        String normalized = normalizeName(name);
+        String normalized = CharacterNameNormalizer.variantKey(name);
         if (normalized.isBlank()) {
             return false;
         }
@@ -623,7 +663,7 @@ public class CharacterService {
     }
 
     private boolean isGenericDescriptorPhrase(String name) {
-        String normalized = normalizeName(name);
+        String normalized = CharacterNameNormalizer.variantKey(name);
         if (normalized.isBlank()) {
             return true;
         }
@@ -647,7 +687,7 @@ public class CharacterService {
             if (i == 0) {
                 firstTokenHasUppercase = true;
             }
-            String normalizedToken = normalizeName(token);
+            String normalizedToken = CharacterNameNormalizer.variantKey(token);
             if (!normalizedToken.isBlank() && !GENERIC_DESCRIPTOR_TOKENS.contains(normalizedToken)) {
                 uppercaseNonGenericTokens++;
             }
