@@ -791,10 +791,13 @@
         }
 
         function jumpConversation() {
+            const reduceMotion = context.window.matchMedia
+                && context.window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const behavior = reduceMotion ? 'auto' : 'smooth';
             if (isNearPageBottom()) {
-                context.window.scrollTo({ top: 0, behavior: 'smooth' });
+                context.window.scrollTo({ top: 0, behavior });
             } else {
-                context.window.scrollTo({ top: documentRef.documentElement.scrollHeight, behavior: 'smooth' });
+                context.window.scrollTo({ top: documentRef.documentElement.scrollHeight, behavior });
             }
         }
 
