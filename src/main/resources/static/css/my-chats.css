@@ -556,6 +556,9 @@ a:focus-visible {
 }
 
 .my-chat-conversation-heading {
+    max-width: 50rem;
+    margin-left: auto;
+    margin-right: auto;
     border-bottom: 1px solid var(--border);
     padding-bottom: 1.2rem;
 }
