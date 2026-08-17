@@ -24,6 +24,20 @@ class CuratedCatalogServiceTest {
     }
 
     @Test
+    void searchFindsNewlyCuratedPopularTitles() {
+        assertTrue(curatedCatalogService.search("romeo").stream()
+                .anyMatch(book -> book.gutenbergId() == 1513));
+        assertTrue(curatedCatalogService.search("gatsby").stream()
+                .anyMatch(book -> book.gutenbergId() == 64317));
+        assertTrue(curatedCatalogService.search("room with a view").stream()
+                .anyMatch(book -> book.gutenbergId() == 2641));
+        assertTrue(curatedCatalogService.search("beowulf").stream()
+                .anyMatch(book -> book.gutenbergId() == 16328));
+        assertTrue(curatedCatalogService.search("blue castle").stream()
+                .anyMatch(book -> book.gutenbergId() == 67979));
+    }
+
+    @Test
     void searchFindsAnthologyVolumesByContainedShortWorkAlias() {
         assertTrue(curatedCatalogService.search("amontillado").stream()
                 .anyMatch(book -> book.gutenbergId() == 1063));
