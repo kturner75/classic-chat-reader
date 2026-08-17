@@ -479,7 +479,8 @@ a:focus-visible {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.45rem;
-    margin: 0 0 1rem;
+    max-width: 50rem;
+    margin: 0 auto 1rem;
     padding: 0.45rem 0.55rem;
     border: 1px solid var(--border);
     border-radius: 0.85rem;
