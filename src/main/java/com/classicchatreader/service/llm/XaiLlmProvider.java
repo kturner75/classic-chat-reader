@@ -30,42 +30,43 @@ public class XaiLlmProvider implements LlmProvider {
     private final String model;
     private final int timeoutSeconds;
     private final String apiKey;
+    private final String reasoningEffort;
     private final XaiOAuthTokenManager oauthTokenManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds) {
-        this(apiKey, model, timeoutSeconds, null);
+        this(apiKey, model, timeoutSeconds, null, WebClient.builder().baseUrl(BASE_URL).build(), null);
     }
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager) {
-        this(apiKey, model, timeoutSeconds, oauthTokenManager, WebClient.builder().baseUrl(BASE_URL).build());
+        this(apiKey, model, timeoutSeconds, oauthTokenManager, WebClient.builder().baseUrl(BASE_URL).build(), null);
+    }
+
+    public XaiLlmProvider(String apiKey, String model, int timeoutSeconds,
+                          XaiOAuthTokenManager oauthTokenManager, String reasoningEffort) {
+        this(apiKey, model, timeoutSeconds, oauthTokenManager,
+                WebClient.builder().baseUrl(BASE_URL).build(), reasoningEffort);
     }
 
     // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
     XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager, WebClient webClient) {
+        this(apiKey, model, timeoutSeconds, oauthTokenManager, webClient, null);
+    }
+
+    XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager,
+                   WebClient webClient, String reasoningEffort) {
         this.apiKey = apiKey;
         this.model = model;
         this.timeoutSeconds = timeoutSeconds;
         this.oauthTokenManager = oauthTokenManager;
         this.webClient = webClient;
-        log.info("xAI LLM provider initialized: model={}", model);
+        this.reasoningEffort = reasoningEffort != null && !reasoningEffort.isBlank() ? reasoningEffort : null;
+        log.info("xAI LLM provider initialized: model={} reasoningEffort={}", model, this.reasoningEffort);
     }
 
     @Override
     public String generate(String prompt, LlmOptions options) {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", model);
-        requestBody.put("messages", List.of(
-                Map.of("role", "user", "content", prompt)
-        ));
-        requestBody.put("temperature", options.temperature());
-
-        if (options.topP() != null) {
-            requestBody.put("top_p", options.topP());
-        }
-        if (options.maxTokens() != null) {
-            requestBody.put("max_tokens", options.maxTokens());
-        }
+        Map<String, Object> requestBody = buildRequestBody(prompt, options);
 
         Optional<String> oauthToken = oauthTokenManager != null
                 ? oauthTokenManager.getAccessToken()
@@ -112,6 +113,27 @@ public class XaiLlmProvider implements LlmProvider {
             }
             throw new LlmProviderException("Failed to generate response from xAI", e);
         }
+    }
+
+    Map<String, Object> buildRequestBody(String prompt, LlmOptions options) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", List.of(
+                Map.of("role", "user", "content", prompt)
+        ));
+        requestBody.put("temperature", options.temperature());
+
+        if (options.topP() != null) {
+            requestBody.put("top_p", options.topP());
+        }
+        if (options.maxTokens() != null) {
+            requestBody.put("max_tokens", options.maxTokens());
+        }
+        if (reasoningEffort != null) {
+            // grok-4.6 / grok-4.5 default to high reasoning; chat completions accept this top-level field.
+            requestBody.put("reasoning_effort", reasoningEffort);
+        }
+        return requestBody;
     }
 
     private String callChatCompletions(Map<String, Object> requestBody, String bearerToken) {

@@ -110,7 +110,7 @@ Use these settings as baseline profiles in `src/main/resources/application.prope
 
 Notes:
 - `generation.cache-only=true` blocks artifact generation workflows (recaps/quizzes/illustrations/character generation pipelines) but does not disable chat.
-- Chat availability is controlled by `ai.chat.enabled` plus chat provider availability/configuration. The default LLM provider is xAI (`grok-4.6` for chat and reasoning) using SuperGrok OAuth when `XAI_OAUTH_REFRESH_TOKEN` / `./data/xai-oauth-refresh-token` is present, otherwise `XAI_API_KEY`. Set `ai.chat.provider=openai` to opt into OpenAI.
+- Chat availability is controlled by `ai.chat.enabled` plus chat provider availability/configuration. The default LLM provider is xAI (`grok-4.20-0309-non-reasoning` for interactive chat, `grok-4.6` for reasoning jobs) using SuperGrok OAuth when `XAI_OAUTH_REFRESH_TOKEN` / `./data/xai-oauth-refresh-token` is present, otherwise `XAI_API_KEY`. Set `ai.chat.provider=openai` to opt into OpenAI.
 - Read-aloud TTS uses xAI (`POST /v1/tts`) with the same SuperGrok OAuth / `XAI_API_KEY` credentials, and the live voice roster from `GET /v1/tts/voices`. Keep `tts.cache-only=true` on public environments when TTS generation costs should be avoided.
 - When `deployment.mode=public`, sensitive generation/chat APIs require authentication:
   - `X-API-Key` matching `security.public.api-key` (or env `PUBLIC_API_KEY`), or
