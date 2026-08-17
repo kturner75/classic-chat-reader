@@ -518,6 +518,7 @@ test('Open wrap-up preserves a later saved resume position', async ({ page }) =>
         chapterCount: 3,
         lastChapterIndex: 2,
         lastPage: 1,
+        totalPages: 3,
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
