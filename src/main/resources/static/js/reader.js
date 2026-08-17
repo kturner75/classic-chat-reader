@@ -181,6 +181,7 @@
         activeClassroomAssignmentId: null,
         assignmentMode: false,
         assignmentWrapupReturn: false,
+        suppressAssignmentOpenPersist: false,
         classroomHeartbeatTimer: null,
         classroomHeartbeatSessionId: null,
         classroomHeartbeatLastSentAt: 0,
@@ -3676,11 +3677,20 @@
             state.assignmentMode = true;
             void markClassroomAssignmentOpened(assignment.assignmentId);
         }
+        const storedActivity = normalizeBookActivity(book, readBookActivityStore()[book.id] || {});
+        const snapshot = buildAssignmentProgressSnapshot(assignment, storedActivity);
+        const readingComplete = snapshot.readingComplete === true
+            || assignment.quizStatus === 'COMPLETE';
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
+        // When wrap-up opens immediately, do not persist that synthetic chapter-0/page-0 jump.
+        state.suppressAssignmentOpenPersist = readingComplete;
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);
         updateAssignmentModeBanner();
         startClassroomHeartbeat();
+        if (readingComplete) {
+            showAssignmentWrapup();
+        }
         return true;
     }
 
@@ -3828,6 +3838,7 @@
     }
 
     function continueReadingBeyondAssignment() {
+        allowBookActivityPersist();
         hideAssignmentWrapup();
         exitAssignmentMode();
         ttsResumeAfterModal();
@@ -3983,7 +3994,14 @@
         await openCharacterBrowser({ preferChat: true });
     }
 
+    function allowBookActivityPersist() {
+        state.suppressAssignmentOpenPersist = false;
+    }
+
     function persistCurrentBookActivity(options = {}) {
+        if (state.suppressAssignmentOpenPersist) {
+            return;
+        }
         if (!state.currentBook?.id || !Array.isArray(state.chapters) || state.chapters.length === 0) {
             return;
         }
@@ -4719,61 +4737,15 @@
     }
 
     function renderClassroomAssignmentItem(assignment, localEntry) {
-        const title = localEntry?.book?.title || assignment.bookTitle || 'Assigned Book';
-        const author = normalizeAuthorName(localEntry?.book?.author || assignment.bookAuthor || '');
+        const bookTitle = localEntry?.book?.title || assignment.bookTitle || 'Assigned Book';
+        const assignmentTitle = typeof assignment.title === 'string' ? assignment.title.trim() : '';
+        const title = assignmentTitle || bookTitle;
         const activity = localEntry?.activity || null;
         const assignmentProgress = buildAssignmentProgressSnapshot(assignment, activity);
-        const meta = localEntry || activity
-            ? formatAssignmentProgressMeta(assignmentProgress, activity)
-            : (assignment.bookAvailable ? 'Open this book to start the assignment.' : 'Book not available in this library yet.');
         const due = formatAssignmentDueLabel(assignment.dueAt);
-        const dueChip = due.label
-            ? `<span class="book-progress-chip assignment-due${due.overdue ? ' overdue' : ''}">${escapeHtml(due.label)}</span>`
+        const dueChip = due.overdue && due.label
+            ? `<span class="book-progress-chip assignment-due overdue">${escapeHtml(due.label)}</span>`
             : '';
-
-        let quizChip = '';
-        if (assignment.quizStatus === 'COMPLETE') {
-            quizChip = '<span class="book-progress-chip assignment-quiz-complete">Quiz complete</span>';
-        } else if (assignment.quizStatus === 'PENDING') {
-            if (Number.isInteger(assignment.quizPassMinCorrect) && Number.isInteger(assignment.quizAttemptsAllowed)) {
-                const used = Number.isInteger(assignment.quizAttemptsUsed) ? assignment.quizAttemptsUsed : 0;
-                const remaining = Math.max(0, assignment.quizAttemptsAllowed - used);
-                const passLabel = `Pass ${assignment.quizPassMinCorrect}+`;
-                const attemptLabel = remaining > 0
-                    ? `${remaining} attempt${remaining === 1 ? '' : 's'} left`
-                    : 'No attempts left';
-                quizChip = `<span class="book-progress-chip assignment-quiz-required">${escapeHtml(passLabel)} · ${escapeHtml(attemptLabel)}</span>`;
-            } else {
-                quizChip = '<span class="book-progress-chip assignment-quiz-required">Quiz required</span>';
-            }
-        } else if (assignment.quizStatus === 'NOT_REQUIRED' || assignment.quizRequired === false) {
-            quizChip = '';
-        } else if (assignment.quizRequired) {
-            quizChip = '<span class="book-progress-chip assignment-quiz-unknown">Quiz status unknown</span>';
-        }
-
-        let characterChatChip = '';
-        if (assignment.characterChatRequired) {
-            characterChatChip = assignmentProgress.characterChatStarted
-                ? '<span class="book-progress-chip assignment-character-chat-started">Character chat started</span>'
-                : '<span class="book-progress-chip assignment-character-chat-required">Character chat required</span>';
-        }
-
-        const assignmentLabel = assignment.title
-            ? `<div class="book-item-assignment-label">${escapeHtml(assignment.title)}</div>`
-            : '';
-        const chapterLabel = libraryProgressHelpers && typeof libraryProgressHelpers.assignmentChapterLabel === 'function'
-            ? `<span class="book-progress-chip">${escapeHtml(libraryProgressHelpers.assignmentChapterLabel(assignment))}</span>`
-            : (assignment.chapterTitle
-                ? `<span class="book-progress-chip">${escapeHtml(assignment.chapterTitle)}</span>`
-                : (Number.isInteger(assignment.chapterIndex)
-                    ? `<span class="book-progress-chip">Chapter ${assignment.chapterIndex + 1}</span>`
-                    : '<span class="book-progress-chip">Whole book</span>'));
-
-        const progressChips = `
-                <span class="book-progress-chip book-progress-chip-status status-${assignmentProgress.statusClass}">${escapeHtml(assignmentProgress.statusLabel)}</span>
-                <span class="book-progress-chip assignment-progress-summary">${escapeHtml(assignmentProgress.summaryLabel)}</span>
-            `;
 
         const bookId = localEntry?.book?.id || assignment.bookId || '';
         const bookIdAttr = bookId
@@ -4793,45 +4765,20 @@
             : (Number.isInteger(assignment.chapterIndex)
                 ? ` data-chapter-index="${assignment.chapterIndex}"`
                 : '');
-        const canTakeQuiz = libraryProgressHelpers
-            && typeof libraryProgressHelpers.canTakeAssignmentQuiz === 'function'
-            && libraryProgressHelpers.canTakeAssignmentQuiz(assignment, activity);
-        const quizActionLabel = canTakeQuiz && libraryProgressHelpers.assignmentQuizActionLabel
-            ? libraryProgressHelpers.assignmentQuizActionLabel(assignment)
-            : 'Take Quiz';
-        const quizAction = canTakeQuiz
-            ? `<button type="button" class="assignment-quiz-action" data-take-assignment-quiz="${escapeHtml(assignment.assignmentId)}">${escapeHtml(quizActionLabel)}</button>`
-            : '';
-        const canChat = libraryProgressHelpers
-            && typeof libraryProgressHelpers.canChatForAssignment === 'function'
-            && libraryProgressHelpers.canChatForAssignment(assignment);
-        const chatActionLabel = canChat && libraryProgressHelpers.assignmentChatActionLabel
-            ? libraryProgressHelpers.assignmentChatActionLabel(assignmentProgress.characterChatStarted)
-            : 'Chat with Character';
-        const chatAction = canChat
-            ? `<button type="button" class="assignment-chat-action" data-open-assignment-chat="${escapeHtml(assignment.assignmentId)}">${escapeHtml(chatActionLabel)}</button>`
-            : '';
-        const cardActions = (quizAction || chatAction)
-            ? `<div class="assignment-card-actions">${quizAction}${chatAction}</div>`
-            : '';
         return `
-            <div class="book-item"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
-                <div class="book-item-title-row">
-                    <div class="book-item-title">${escapeHtml(title)}</div>
+            <div class="book-item book-item-assignment"${bookIdAttr}${assignmentIdAttr}${chapterIdAttr}${chapterIndexAttr}>
+                <div class="book-item-body">
+                    <div class="book-item-title-row">
+                        <div class="book-item-title">${escapeHtml(title)}</div>
+                    </div>
+                    <div class="book-item-progress">
+                        ${dueChip}
+                        <span class="book-progress-chip book-progress-chip-status status-${assignmentProgress.statusClass}">${escapeHtml(assignmentProgress.statusLabel)}</span>
+                    </div>
+                    <div class="assignment-card-actions">
+                        <button type="button" class="assignment-open-action">Open</button>
+                    </div>
                 </div>
-                <div class="book-item-author">${escapeHtml(author)}</div>
-                ${assignmentLabel}
-                <div class="book-item-progress">
-                    ${chapterLabel}
-                    ${dueChip}
-                    ${quizChip}
-                    ${characterChatChip}
-                </div>
-                <div class="book-item-progress">
-                    ${progressChips}
-                </div>
-                <div class="book-item-meta">${escapeHtml(meta)}</div>
-                ${cardActions}
             </div>
         `;
     }
@@ -5801,6 +5748,7 @@
 
     // Navigation functions
     function nextPage() {
+        allowBookActivityPersist();
         if (state.currentPage < state.totalPages - 1) {
             state.currentPage++;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
@@ -5813,6 +5761,7 @@
     }
 
     function prevPage() {
+        allowBookActivityPersist();
         if (state.currentPage > 0) {
             state.currentPage--;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
@@ -7385,6 +7334,7 @@
             event.preventDefault();
         }
         persistCurrentBookActivity();
+        allowBookActivityPersist();
         void sendClassroomReadingHeartbeat({ force: true });
         stopClassroomHeartbeat();
         state.activeClassroomAssignmentId = null;
@@ -7499,6 +7449,7 @@
 
     function selectChapterFromList(index) {
         if (canNavigateToChapterIndex(index)) {
+            allowBookActivityPersist();
             hideChapterList();
             loadChapter(index, 0);
         }
@@ -10738,6 +10689,21 @@
                 );
                 if (assignment) {
                     await openClassroomAssignmentChat(assignment);
+                }
+                return;
+            }
+
+            const assignmentOpenButton = e.target.closest('.assignment-open-action');
+            if (assignmentOpenButton && elements.libraryView.contains(assignmentOpenButton)) {
+                e.preventDefault();
+                e.stopPropagation();
+                const assignmentItem = assignmentOpenButton.closest('.book-item[data-assignment-id]');
+                const assignmentId = assignmentItem?.dataset.assignmentId;
+                const assignment = (state.classroomAssignments || []).find(
+                    (item) => item && item.assignmentId === assignmentId
+                );
+                if (assignment) {
+                    await openClassroomAssignment(assignment);
                 }
                 return;
             }

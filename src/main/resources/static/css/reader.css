@@ -1066,15 +1066,41 @@ a.my-chat-card:focus-visible,
     color: var(--muted-color);
 }
 
+.book-item-assignment {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.book-item-assignment .book-item-body {
+    width: 100%;
+    min-width: 0;
+}
+
+.book-item-assignment .book-item-title {
+    overflow-wrap: anywhere;
+}
+
+.book-item-assignment .book-item-progress {
+    max-width: 100%;
+}
+
+.book-item-assignment .book-progress-chip {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
 .assignment-card-actions {
     margin-top: 0.55rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
+    max-width: 100%;
 }
 
 .assignment-quiz-action,
-.assignment-chat-action {
+.assignment-chat-action,
+.assignment-open-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1086,6 +1112,9 @@ a.my-chat-card:focus-visible,
     font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
 }
 
 .assignment-mode-banner {
@@ -4573,6 +4602,16 @@ kbd {
     .book-item {
         padding: 0.82rem 0.95rem;
         gap: 0.72rem;
+    }
+
+    .book-item-assignment .assignment-card-actions {
+        width: 100%;
+    }
+
+    .book-item-assignment .assignment-open-action,
+    .book-item-assignment .assignment-quiz-action,
+    .book-item-assignment .assignment-chat-action {
+        flex: 1 1 100%;
     }
 
     .book-cover {
