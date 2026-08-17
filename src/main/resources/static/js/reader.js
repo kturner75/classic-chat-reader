@@ -11,6 +11,7 @@
         currentBookCitationPromise: null,
         currentChapterIndex: 0,
         chapterLoadRequestId: 0,
+        chapterContentLoaded: false,
         chapters: [],
         paragraphs: [],
         currentPage: 0,
@@ -3848,8 +3849,10 @@
         }
         const chapterIndex = clampInteger(resume.chapterIndex, 0, chapterCount - 1);
         const pageIndex = Number.isInteger(resume.pageIndex) ? Math.max(0, resume.pageIndex) : 0;
-        if (chapterIndex === state.currentChapterIndex && pageIndex === state.currentPage) {
-            return false;
+        if (chapterIndex === state.currentChapterIndex
+                && pageIndex === state.currentPage
+                && state.chapterContentLoaded) {
+            return true;
         }
         return loadChapter(chapterIndex, pageIndex);
     }
@@ -3857,9 +3860,11 @@
     async function continueReadingBeyondAssignment() {
         hideAssignmentWrapup();
         exitAssignmentMode();
-        await restoreSuppressedAssignmentResume();
-        allowBookActivityPersist();
-        persistCurrentBookActivity();
+        const restored = await restoreSuppressedAssignmentResume();
+        if (restored) {
+            allowBookActivityPersist();
+            persistCurrentBookActivity();
+        }
         ttsResumeAfterModal();
     }
 
@@ -4997,6 +5002,7 @@
         }
         state.chapters = book.chapters;
         state.currentChapterIndex = chapterIndex;
+        state.chapterContentLoaded = false;
         state.newCharacterQueue = [];
         state.currentToastCharacter = null;
         state.discoveredCharacterIds = loadDiscoveredCharacters(book.id);
@@ -5120,6 +5126,7 @@
 
         const loadRequestId = ++state.chapterLoadRequestId;
 
+        state.chapterContentLoaded = false;
         state.ttsWaitingForChapter = true;
         state.currentChapterIndex = chapterIndex;
         localStorage.setItem(STORAGE_KEYS.LAST_CHAPTER, chapterIndex);
@@ -5163,12 +5170,14 @@
             // Queue recap generation asynchronously (no-op when disabled or already generated)
             requestChapterRecapGeneration(chapter.id);
             requestChapterQuizGeneration(chapter.id);
+            state.chapterContentLoaded = true;
             return true;
         } catch (error) {
             if (loadRequestId !== state.chapterLoadRequestId || error?.name === 'AbortError') {
                 return false;
             }
             state.ttsWaitingForChapter = false;
+            state.chapterContentLoaded = false;
             console.error('Failed to load chapter:', error);
             state.paragraphs = [];
             elements.columnLeft.innerHTML = '<p class="no-content">Content not available</p>';
@@ -5775,12 +5784,13 @@
 
     // Navigation functions
     function nextPage() {
-        allowBookActivityPersist();
         if (state.currentPage < state.totalPages - 1) {
+            allowBookActivityPersist();
             state.currentPage++;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
             renderPage();
         } else if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
+            allowBookActivityPersist();
             goToNextChapter(true);
         } else if (isAssignmentMode()) {
             maybeShowAssignmentWrapup();
@@ -5788,8 +5798,8 @@
     }
 
     function prevPage() {
-        allowBookActivityPersist();
         if (state.currentPage > 0) {
+            allowBookActivityPersist();
             state.currentPage--;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
             renderPage();
@@ -5798,6 +5808,7 @@
             if (previousChapterIndex == null) {
                 return;
             }
+            allowBookActivityPersist();
             // Go to previous chapter, last page
             loadChapter(previousChapterIndex).then(applied => {
                 if (!applied) return;
@@ -5848,7 +5859,6 @@
     }
 
     function nextParagraph(options = {}) {
-        allowBookActivityPersist();
         const paragraphIndex = state.currentParagraphIndex;
         const lastParagraphIndex = state.paragraphs.length - 1;
 
@@ -5857,6 +5867,7 @@
             ? -1
             : findNextPageForParagraph(paragraphIndex, state.currentPage);
         if (nextFragmentPage >= 0) {
+            allowBookActivityPersist();
             state.currentPage = nextFragmentPage;
             state.currentParagraphIndex = paragraphIndex;
             renderPage();
@@ -5867,6 +5878,7 @@
         }
 
         if (paragraphIndex < lastParagraphIndex) {
+            allowBookActivityPersist();
             state.currentParagraphIndex = paragraphIndex + 1;
             const targetPage = findPageForParagraph(state.currentParagraphIndex);
             if (targetPage >= 0) {
@@ -5882,6 +5894,7 @@
         }
 
         if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
+            allowBookActivityPersist();
             goToNextChapter(true);
         } else if (isAssignmentMode()) {
             maybeShowAssignmentWrapup();
@@ -5889,12 +5902,12 @@
     }
 
     function prevParagraph() {
-        allowBookActivityPersist();
         const paragraphIndex = state.currentParagraphIndex;
 
         // Walk earlier fragments of the current paragraph before moving to the previous one.
         const prevFragmentPage = findPrevPageForParagraph(paragraphIndex, state.currentPage);
         if (prevFragmentPage >= 0) {
+            allowBookActivityPersist();
             state.currentPage = prevFragmentPage;
             state.currentParagraphIndex = paragraphIndex;
             renderPage();
@@ -5902,6 +5915,7 @@
         }
 
         if (paragraphIndex > 0) {
+            allowBookActivityPersist();
             state.currentParagraphIndex = paragraphIndex - 1;
             // Prefer the last page that still contains the previous paragraph (end of a split).
             const targetPage = findPageForParagraph(state.currentParagraphIndex, { preferLast: true });
@@ -5916,6 +5930,7 @@
 
         const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
         if (previousChapterIndex != null) {
+            allowBookActivityPersist();
             // Go to previous chapter, last paragraph
             loadChapter(previousChapterIndex).then(applied => {
                 if (!applied) return;
@@ -5927,8 +5942,8 @@
     }
 
     function nextChapter() {
-        allowBookActivityPersist();
         if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
+            allowBookActivityPersist();
             goToNextChapter(true);
         } else if (isAssignmentMode()) {
             maybeShowAssignmentWrapup();
@@ -5936,9 +5951,9 @@
     }
 
     function prevChapter() {
-        allowBookActivityPersist();
         const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
         if (previousChapterIndex != null) {
+            allowBookActivityPersist();
             loadChapter(previousChapterIndex, 0);
         }
     }
@@ -7343,18 +7358,24 @@
 
         loadPromise.then(applied => {
             if (!applied) return;
+            allowBookActivityPersist();
             // Find which page contains this paragraph
+            let rendered = false;
             for (let i = 0; i < state.pagesData.length; i++) {
                 const pageData = state.pagesData[i];
                 if (paragraphIndex >= pageData.startParagraph && paragraphIndex <= pageData.endParagraph) {
                     state.currentPage = i;
                     state.currentParagraphIndex = paragraphIndex;
                     renderPage();
+                    rendered = true;
                     if (state.ttsEnabled) {
                         ttsSpeakCurrent();
                     }
                     break;
                 }
+            }
+            if (!rendered) {
+                persistCurrentBookActivity();
             }
         });
     }
