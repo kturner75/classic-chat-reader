@@ -511,6 +511,50 @@ test('Open shows wrap-up when quiz is complete even without local reading activi
   await expect(wrapup.locator('[data-assignment-wrapup="quiz"]')).toHaveCount(0);
 });
 
+test('Open wrap-up preserves a later saved resume position', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 3,
+        lastChapterIndex: 2,
+        lastPage: 1,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    assignmentTitle: 'Read chapter one',
+    assignmentChapters: [{ chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'Chapter One' }],
+    quizRequired: false,
+    quizStatus: 'NOT_REQUIRED',
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="library"]').click();
+  await expect(page.locator('#library-view')).toBeVisible();
+
+  const activity = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+    return store['book-1'] || null;
+  });
+  expect(activity.lastChapterIndex).toBe(2);
+  expect(activity.lastPage).toBe(1);
+
+  await page.locator('#completed-books-list .book-item[data-book-id="book-1"]').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#assignment-mode-banner')).toBeHidden();
+  await expect(page.locator('#chapter-title')).toContainText('Chapter Three');
+});
+
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({

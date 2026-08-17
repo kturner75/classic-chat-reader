@@ -181,6 +181,7 @@
         activeClassroomAssignmentId: null,
         assignmentMode: false,
         assignmentWrapupReturn: false,
+        suppressAssignmentOpenPersist: false,
         classroomHeartbeatTimer: null,
         classroomHeartbeatSessionId: null,
         classroomHeartbeatLastSentAt: 0,
@@ -3681,6 +3682,8 @@
         const readingComplete = snapshot.readingComplete === true
             || assignment.quizStatus === 'COMPLETE';
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
+        // When wrap-up opens immediately, do not persist that synthetic chapter-0/page-0 jump.
+        state.suppressAssignmentOpenPersist = readingComplete;
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);
         updateAssignmentModeBanner();
@@ -3835,6 +3838,7 @@
     }
 
     function continueReadingBeyondAssignment() {
+        allowBookActivityPersist();
         hideAssignmentWrapup();
         exitAssignmentMode();
         ttsResumeAfterModal();
@@ -3990,7 +3994,14 @@
         await openCharacterBrowser({ preferChat: true });
     }
 
+    function allowBookActivityPersist() {
+        state.suppressAssignmentOpenPersist = false;
+    }
+
     function persistCurrentBookActivity(options = {}) {
+        if (state.suppressAssignmentOpenPersist) {
+            return;
+        }
         if (!state.currentBook?.id || !Array.isArray(state.chapters) || state.chapters.length === 0) {
             return;
         }
@@ -5737,6 +5748,7 @@
 
     // Navigation functions
     function nextPage() {
+        allowBookActivityPersist();
         if (state.currentPage < state.totalPages - 1) {
             state.currentPage++;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
@@ -5749,6 +5761,7 @@
     }
 
     function prevPage() {
+        allowBookActivityPersist();
         if (state.currentPage > 0) {
             state.currentPage--;
             state.currentParagraphIndex = state.pagesData[state.currentPage].startParagraph;
@@ -7321,6 +7334,7 @@
             event.preventDefault();
         }
         persistCurrentBookActivity();
+        allowBookActivityPersist();
         void sendClassroomReadingHeartbeat({ force: true });
         stopClassroomHeartbeat();
         state.activeClassroomAssignmentId = null;
@@ -7435,6 +7449,7 @@
 
     function selectChapterFromList(index) {
         if (canNavigateToChapterIndex(index)) {
+            allowBookActivityPersist();
             hideChapterList();
             loadChapter(index, 0);
         }
