@@ -3837,10 +3837,29 @@
         updateTouchNavigationControls();
     }
 
-    function continueReadingBeyondAssignment() {
-        allowBookActivityPersist();
+    async function restoreSuppressedAssignmentResume() {
+        if (!state.suppressAssignmentOpenPersist || !state.currentBook) {
+            return false;
+        }
+        const resume = getBookResumePosition(state.currentBook);
+        const chapterCount = Array.isArray(state.chapters) ? state.chapters.length : 0;
+        if (chapterCount === 0) {
+            return false;
+        }
+        const chapterIndex = clampInteger(resume.chapterIndex, 0, chapterCount - 1);
+        const pageIndex = Number.isInteger(resume.pageIndex) ? Math.max(0, resume.pageIndex) : 0;
+        if (chapterIndex === state.currentChapterIndex && pageIndex === state.currentPage) {
+            return false;
+        }
+        return loadChapter(chapterIndex, pageIndex);
+    }
+
+    async function continueReadingBeyondAssignment() {
         hideAssignmentWrapup();
         exitAssignmentMode();
+        await restoreSuppressedAssignmentResume();
+        allowBookActivityPersist();
+        persistCurrentBookActivity();
         ttsResumeAfterModal();
     }
 
@@ -3955,7 +3974,7 @@
             return;
         }
         if (action === 'continue') {
-            continueReadingBeyondAssignment();
+            await continueReadingBeyondAssignment();
             return;
         }
         if (action === 'quiz' && assignment) {
@@ -5821,6 +5840,7 @@
     }
 
     function nextParagraph(options = {}) {
+        allowBookActivityPersist();
         const paragraphIndex = state.currentParagraphIndex;
         const lastParagraphIndex = state.paragraphs.length - 1;
 
@@ -5861,6 +5881,7 @@
     }
 
     function prevParagraph() {
+        allowBookActivityPersist();
         const paragraphIndex = state.currentParagraphIndex;
 
         // Walk earlier fragments of the current paragraph before moving to the previous one.
@@ -5898,6 +5919,7 @@
     }
 
     function nextChapter() {
+        allowBookActivityPersist();
         if (nextNavigableChapterIndex(state.currentChapterIndex) != null) {
             goToNextChapter(true);
         } else if (isAssignmentMode()) {
@@ -5906,6 +5928,7 @@
     }
 
     function prevChapter() {
+        allowBookActivityPersist();
         const previousChapterIndex = prevNavigableChapterIndex(state.currentChapterIndex);
         if (previousChapterIndex != null) {
             loadChapter(previousChapterIndex, 0);
