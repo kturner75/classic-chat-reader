@@ -12,8 +12,8 @@ import java.time.Duration;
 
 /**
  * Shared WebClient POST helper for LLM providers.
- * xAI/Cloudflare often RST idle keep-alive sockets; new connections avoid that,
- * and connection-reset still retries a couple of times.
+ * xAI/Cloudflare often RST idle keep-alive sockets; new connections avoid that.
+ * Connection-reset still retries once (not client timeouts).
  */
 final class LlmWebClientSupport {
 
@@ -36,7 +36,7 @@ final class LlmWebClientSupport {
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(timeout)
-                .retryWhen(Retry.max(2)
+                .retryWhen(Retry.max(1)
                         .filter(LlmProviderException::isRetriableConnectionFailure)
                         .doBeforeRetry(signal -> log.warn(
                                 "event=llm_transient_retry provider={} error={}",
