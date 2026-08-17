@@ -86,6 +86,7 @@ class ImagePromptSafetyTest {
         assertTrue(ImagePromptSafety.isBlocked("bare-breasted portrait"));
         assertTrue(ImagePromptSafety.isBlocked("exposed breasts"));
         assertTrue(ImagePromptSafety.isBlocked("close-up beheading with exposed entrails"));
+        assertTrue(ImagePromptSafety.isBlocked("shirtless portrait of an adolescent boy in a romantic pose"));
         assertFalse(ImagePromptSafety.isBlocked("bold woodcut, gory mere-flood, slain dragon"));
         assertFalse(ImagePromptSafety.isBlocked("Essex countryside at dusk"));
         assertFalse(ImagePromptSafety.isBlocked("warrior in mail breastplate on a longship"));

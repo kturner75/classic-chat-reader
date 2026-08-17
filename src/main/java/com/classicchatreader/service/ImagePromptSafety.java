@@ -35,12 +35,21 @@ final class ImagePromptSafety {
             "(?i)(?<!\\p{L})("
                     + "nude|nudity|naked|topless|lingerie|erotic|erotica|porn|pornograph(?:y|ic)|"
                     + "nsfw|sexual(?:ity|ized|izing|ly)?|seductive|suggestive|undress(?:ed|ing)?|unclothed|"
+                    + "shirtless|bikini|"
                     + "nipples?|cleavage|genitals?|intercourse|orgasm|explicit sex|\\bsex\\b|"
                     + "bare[- ]?breast(?:s|ed)?|exposed breasts?|"
                     + "dismember(?:ed|ment|ing)?|decapitat(?:e|ed|ing|ion)?|behead(?:ing|ed)?|"
                     + "tortur(?:e|ed|es|ing)|entrails|"
                     + "rape|raping|raped|graphic gore"
                     + ")(?!\\p{L})"
+    );
+
+    private static final Pattern MINOR = Pattern.compile(
+            "(?i)(?<!\\p{L})(child|children|adolescent|teenager|teen|underage|minor)(?!\\p{L})"
+    );
+
+    private static final Pattern MINOR_ROMANCE = Pattern.compile(
+            "(?i)(?<!\\p{L})(romantic|romance|lover|kissing)(?!\\p{L})"
     );
 
     private ImagePromptSafety() {
@@ -61,7 +70,12 @@ final class ImagePromptSafety {
     }
 
     static boolean isBlocked(String prompt) {
-        return prompt != null && BLOCKED.matcher(withoutSuffix(prompt)).find();
+        if (prompt == null) {
+            return false;
+        }
+        String body = withoutSuffix(prompt);
+        return BLOCKED.matcher(body).find()
+                || (MINOR.matcher(body).find() && MINOR_ROMANCE.matcher(body).find());
     }
 
     private static boolean hasTrailingSuffix(String prompt) {
