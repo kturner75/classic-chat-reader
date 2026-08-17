@@ -32,6 +32,8 @@ class BookCoverPromptBuilderTest {
         assertFalse(prompt.contains("simple silhouette"));
         assertFalse(prompt.contains("One bold central character facing the viewer"));
         assertTrue(prompt.contains("No title text"));
+        assertTrue(prompt.contains("School-appropriate book illustration"));
+        assertTrue(prompt.contains("No nudity"));
     }
 
     @Test

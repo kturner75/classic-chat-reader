@@ -20,7 +20,7 @@ final class BookCoverPromptBuilder {
                 ? DEFAULT_PREFIX
                 : style.promptPrefix();
         String description = book.getDescription() == null ? "" : book.getDescription();
-        return prefix
+        return ImagePromptSafety.prepareForGeneration(prefix
                 + " text-free illustrated book cover artwork for "
                 + book.getTitle()
                 + " by "
@@ -36,7 +36,7 @@ final class BookCoverPromptBuilder {
                 + "Setting: "
                 + setting
                 + ". Themes: "
-                + description;
+                + description);
     }
 
     static String coverSubjectGuidance(IllustrationSettings style) {

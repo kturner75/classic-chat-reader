@@ -94,10 +94,11 @@ public class BookCoverImageGeneratorService {
     }
 
     public String generateBookCover(String prompt, String outputFilename, String cacheKey) throws Exception {
+        String safePrompt = ImagePromptSafety.prepareForGeneration(prompt);
         return switch (getProviderName()) {
-            case "xai" -> generateWithXai(prompt, cacheKey);
-            case "openai" -> generateWithOpenAi(prompt, cacheKey);
-            default -> generateWithComfyUi(prompt, outputFilename, cacheKey);
+            case "xai" -> generateWithXai(safePrompt, cacheKey);
+            case "openai" -> generateWithOpenAi(safePrompt, cacheKey);
+            default -> generateWithComfyUi(safePrompt, outputFilename, cacheKey);
         };
     }
 

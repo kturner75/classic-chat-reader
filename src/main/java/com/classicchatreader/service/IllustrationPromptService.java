@@ -41,8 +41,7 @@ public class IllustrationPromptService {
             String chapterContent,
             IllustrationSettings styleSettings) {
         if (cacheOnly) {
-            return styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
-                    ", chapter " + chapterTitle + ", atmospheric book illustration";
+            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings);
         }
 
         String settingContext = styleSettings.setting() != null
@@ -79,6 +78,8 @@ public class IllustrationPromptService {
             - Include lighting, time of day, weather if relevant
             - Keep it evocative and atmospheric rather than literal
 
+            %s
+
             Start your prompt with this style prefix: %s
 
             Respond with ONLY the image prompt, no explanation or other text. The prompt should be 50-150 words.
@@ -89,13 +90,14 @@ public class IllustrationPromptService {
                 styleSettings.style(),
                 settingContext,
                 truncateText(chapterContent, 2000),
+                ImagePromptSafety.LLM_RULES,
                 styleSettings.promptPrefix());
 
         try {
             String generatedPrompt = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.7)).trim();
 
             // Clean up the prompt - remove any quotes or extra formatting
-            generatedPrompt = cleanPrompt(generatedPrompt);
+            generatedPrompt = ImagePromptSafety.prepareForGeneration(cleanPrompt(generatedPrompt));
 
             log.info("Generated illustration prompt for chapter '{}': {}", chapterTitle,
                     truncateText(generatedPrompt, 100));
@@ -105,9 +107,15 @@ public class IllustrationPromptService {
         } catch (Exception e) {
             log.error("Failed to generate illustration prompt for chapter: {}", chapterTitle, e);
             // Return a fallback prompt using the style prefix
-            return styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
-                    ", chapter " + chapterTitle + ", atmospheric book illustration";
+            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings);
         }
+    }
+
+    private String fallbackPrompt(String bookTitle, String author, String chapterTitle,
+                                  IllustrationSettings styleSettings) {
+        return ImagePromptSafety.prepareForGeneration(
+                styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
+                        ", chapter " + chapterTitle + ", atmospheric book illustration");
     }
 
     private String truncateText(String text, int maxLength) {
