@@ -785,6 +785,62 @@ test('Continue Reading keeps the saved resume when chapter restore fails', async
   expect(afterLibrary.totalPages).toBe(3);
 });
 
+test('Continue Reading keeps the saved resume when the open chapter never loaded', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 3,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 5,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    assignmentTitle: 'Read chapter one',
+    assignmentChapters: [{ chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'Chapter One' }],
+    quizRequired: false,
+    quizStatus: 'NOT_REQUIRED',
+    characterChatRequired: false,
+    failChapterIds: ['chapter-1']
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await expect(page.locator('#column-left')).toContainText('Content not available');
+
+  await wrapup.locator('[data-assignment-wrapup="continue"]').click();
+  await expect(wrapup).toBeHidden();
+  await expect(page.locator('#assignment-mode-banner')).toBeHidden();
+  await expect(page.locator('#column-left')).toContainText('Content not available');
+
+  const activity = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+    return store['book-1'] || null;
+  });
+  expect(activity.lastChapterIndex).toBe(0);
+  expect(activity.lastPage).toBe(0);
+  expect(activity.totalPages).toBe(5);
+
+  await page.locator('#back-to-library').click();
+  await expect(page.locator('#library-view')).toBeVisible();
+  const afterLibrary = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('reader_bookActivity') || '{}');
+    return store['book-1'] || null;
+  });
+  expect(afterLibrary.lastChapterIndex).toBe(0);
+  expect(afterLibrary.lastPage).toBe(0);
+  expect(afterLibrary.totalPages).toBe(5);
+});
+
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({

@@ -11,6 +11,7 @@
         currentBookCitationPromise: null,
         currentChapterIndex: 0,
         chapterLoadRequestId: 0,
+        chapterContentLoaded: false,
         chapters: [],
         paragraphs: [],
         currentPage: 0,
@@ -3848,7 +3849,9 @@
         }
         const chapterIndex = clampInteger(resume.chapterIndex, 0, chapterCount - 1);
         const pageIndex = Number.isInteger(resume.pageIndex) ? Math.max(0, resume.pageIndex) : 0;
-        if (chapterIndex === state.currentChapterIndex && pageIndex === state.currentPage) {
+        if (chapterIndex === state.currentChapterIndex
+                && pageIndex === state.currentPage
+                && state.chapterContentLoaded) {
             return true;
         }
         return loadChapter(chapterIndex, pageIndex);
@@ -4991,6 +4994,7 @@
         }
         state.chapters = book.chapters;
         state.currentChapterIndex = chapterIndex;
+        state.chapterContentLoaded = false;
         state.newCharacterQueue = [];
         state.currentToastCharacter = null;
         state.discoveredCharacterIds = loadDiscoveredCharacters(book.id);
@@ -5114,6 +5118,7 @@
 
         const loadRequestId = ++state.chapterLoadRequestId;
 
+        state.chapterContentLoaded = false;
         state.ttsWaitingForChapter = true;
         state.currentChapterIndex = chapterIndex;
         localStorage.setItem(STORAGE_KEYS.LAST_CHAPTER, chapterIndex);
@@ -5157,12 +5162,14 @@
             // Queue recap generation asynchronously (no-op when disabled or already generated)
             requestChapterRecapGeneration(chapter.id);
             requestChapterQuizGeneration(chapter.id);
+            state.chapterContentLoaded = true;
             return true;
         } catch (error) {
             if (loadRequestId !== state.chapterLoadRequestId || error?.name === 'AbortError') {
                 return false;
             }
             state.ttsWaitingForChapter = false;
+            state.chapterContentLoaded = false;
             console.error('Failed to load chapter:', error);
             state.paragraphs = [];
             elements.columnLeft.innerHTML = '<p class="no-content">Content not available</p>';
