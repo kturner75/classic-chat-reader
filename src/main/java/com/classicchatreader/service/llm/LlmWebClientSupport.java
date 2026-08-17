@@ -3,15 +3,17 @@ package com.classicchatreader.service.llm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
 
 /**
- * Shared WebClient POST helper for LLM providers. Retries once on transient
- * connection drops (idle keep-alive reset, timeout) so a stale pooled socket
- * does not fail an otherwise valid chat turn.
+ * Shared WebClient POST helper for LLM providers.
+ * xAI/Cloudflare often RST idle keep-alive sockets; new connections avoid that,
+ * and connection-reset still retries a couple of times.
  */
 final class LlmWebClientSupport {
 
@@ -20,13 +22,21 @@ final class LlmWebClientSupport {
     private LlmWebClientSupport() {
     }
 
+    static WebClient xaiWebClient(String baseUrl) {
+        HttpClient httpClient = HttpClient.create().keepAlive(false).compress(true);
+        return WebClient.builder()
+                .baseUrl(baseUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+    }
+
     static String postJson(WebClient.RequestBodySpec spec, Object body, Duration timeout, String provider) {
         return spec.contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(timeout)
-                .retryWhen(Retry.max(1)
+                .retryWhen(Retry.max(2)
                         .filter(LlmProviderException::isRetriableConnectionFailure)
                         .doBeforeRetry(signal -> log.warn(
                                 "event=llm_transient_retry provider={} error={}",
