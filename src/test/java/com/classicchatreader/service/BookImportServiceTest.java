@@ -284,6 +284,24 @@ class BookImportServiceTest {
         assertFalse(result.success());
         assertEquals("existing-id", result.bookId());
         assertEquals("Book already imported", result.message());
+        verify(bookStorageService, never()).updateBookFeatures(anyString(), any(), any(), any());
+    }
+
+    @Test
+    void importBookEnablesTtsForAlreadyImportedCuratedTitle() {
+        when(bookStorageService.existsBySource("gutenberg", "1513")).thenReturn(true);
+        when(bookStorageService.findBySource("gutenberg", "1513"))
+            .thenReturn(Optional.of(new Book(
+                    "romeo-id", "Romeo and Juliet", "William Shakespeare", "", null, List.of(),
+                    false, false, false)));
+        when(curatedCatalogService.isCuratedGutenbergId(1513)).thenReturn(true);
+
+        ImportResult result = bookImportService.importBook(1513);
+
+        assertFalse(result.success());
+        assertEquals("romeo-id", result.bookId());
+        assertEquals("Book already imported", result.message());
+        verify(bookStorageService).updateBookFeatures("romeo-id", true, null, null);
     }
 
     @Test

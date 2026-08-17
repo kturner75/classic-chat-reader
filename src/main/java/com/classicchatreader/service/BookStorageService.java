@@ -277,22 +277,24 @@ public class BookStorageService {
             entity.getDescription(),
             resolveCoverUrl(entity),
             chapters,
-            Boolean.TRUE.equals(entity.getTtsEnabled()),
+            isTtsEnabled(entity),
             Boolean.TRUE.equals(entity.getIllustrationEnabled()),
             Boolean.TRUE.equals(entity.getCharacterEnabled()),
             isCuratedBook(entity)
         );
     }
 
+    /**
+     * Read-aloud is on when the stored flag is set, or when the title is in
+     * the curated catalog. Catalog membership is applied only at first import,
+     * so later additions (Romeo and Juliet, Gatsby, …) otherwise stay silent.
+     */
+    public boolean isTtsEnabled(BookEntity entity) {
+        return Boolean.TRUE.equals(entity.getTtsEnabled()) || isCuratedBook(entity);
+    }
+
     private boolean isCuratedBook(BookEntity entity) {
-        if (!"gutenberg".equalsIgnoreCase(entity.getSource()) || entity.getSourceId() == null) {
-            return false;
-        }
-        try {
-            return curatedCatalogService.isCuratedGutenbergId(Integer.parseInt(entity.getSourceId()));
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return curatedCatalogService.isCuratedGutenbergSource(entity.getSource(), entity.getSourceId());
     }
 
     private String resolveCoverUrl(BookEntity entity) {

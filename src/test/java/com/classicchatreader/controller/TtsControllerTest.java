@@ -8,10 +8,12 @@ import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.AssetKeyService;
+import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.PublicSessionAuthService;
 import com.classicchatreader.service.TtsService;
 import com.classicchatreader.service.VoiceAnalysisService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -70,6 +72,16 @@ class TtsControllerTest {
 
     @MockitoBean
     private PublicSessionAuthService sessionAuthService;
+
+    @MockitoBean
+    private BookStorageService bookStorageService;
+
+    @BeforeEach
+    void stubStoredTtsFlag() {
+        when(bookStorageService.isTtsEnabled(org.mockito.ArgumentMatchers.any(BookEntity.class)))
+                .thenAnswer(invocation -> Boolean.TRUE.equals(
+                        invocation.getArgument(0, BookEntity.class).getTtsEnabled()));
+    }
 
     @Test
     void getStatus_cacheOnlyWithCdn_setsCachedAvailable() throws Exception {
@@ -292,6 +304,43 @@ class TtsControllerTest {
         mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().string("Authentication required for uncached TTS generation"));
+
+        verify(ttsService, never()).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
+    }
+
+    @Test
+    void speakParagraph_curatedBookWithoutStoredFlag_allowsPlayback() throws Exception {
+        BookEntity book = createTtsEnabledBook();
+        book.setTtsEnabled(false);
+        book.setSource("gutenberg");
+        book.setSourceId("1513");
+        ChapterEntity chapter = createChapter(book);
+        ParagraphEntity paragraph = createParagraph("<p>Two households, both alike in dignity.</p>");
+        byte[] cachedAudio = "romeo-audio".getBytes();
+
+        stubSpeakParagraphLookup(book, chapter, paragraph);
+        when(bookStorageService.isTtsEnabled(book)).thenReturn(true);
+        when(ttsService.resolvePlaybackVoice(null, null, null)).thenReturn("orion");
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "orion")).thenReturn(cachedAudio);
+
+        mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(cachedAudio));
+    }
+
+    @Test
+    void speakParagraph_nonCuratedBookWithoutStoredFlag_forbidden() throws Exception {
+        BookEntity book = createTtsEnabledBook();
+        book.setTtsEnabled(false);
+        ChapterEntity chapter = createChapter(book);
+        ParagraphEntity paragraph = createParagraph("<p>Hello from paragraph.</p>");
+
+        stubSpeakParagraphLookup(book, chapter, paragraph);
+        when(bookStorageService.isTtsEnabled(book)).thenReturn(false);
+
+        mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0"))
+                .andExpect(status().isForbidden());
 
         verify(ttsService, never()).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
     }

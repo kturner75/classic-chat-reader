@@ -236,6 +236,14 @@ public class BookImportService {
         String sourceId = String.valueOf(gutenbergId);
         if (bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId)) {
             Optional<Book> existing = bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId);
+            // Re-import is a no-op for content, but catalog membership may have
+            // been added after the first import. Flip TTS on so already-imported
+            // curated titles can read aloud without a delete/reimport.
+            if (curatedCatalogService.isCuratedGutenbergId(gutenbergId)
+                    && existing.isPresent()
+                    && !existing.get().ttsEnabled()) {
+                bookStorageService.updateBookFeatures(existing.get().id(), true, null, null);
+            }
             return new ImportResult(
                 false,
                 existing.map(Book::id).orElse(null),
