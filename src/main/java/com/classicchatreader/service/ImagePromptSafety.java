@@ -36,7 +36,8 @@ final class ImagePromptSafety {
                     + "nude|nudity|naked|topless|lingerie|erotic|erotica|porn|pornograph(?:y|ic)|"
                     + "nsfw|sexual(?:ity|ized|izing|ly)?|seductive|undress(?:ed|ing)?|unclothed|"
                     + "nipples?|cleavage|genitals?|intercourse|orgasm|explicit sex|"
-                    + "dismember(?:ed|ment)?|decapitat(?:e|ed|ion)?|torture"
+                    + "dismember(?:ed|ment)?|decapitat(?:e|ed|ion)?|torture|"
+                    + "rape|raping|raped|graphic gore"
                     + ")(?!\\p{L})"
     );
 
