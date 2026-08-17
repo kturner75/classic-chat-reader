@@ -110,7 +110,7 @@ Last updated: 2026-08-17
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -162,6 +162,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-16: Added `BL-056` after Kevin could not discover Fortunato on *Cask of Amontillado* (incognito TTS + `demo_teacher` `j`-key through the whole story). Local row exists as `SECONDARY` at ch 0 / p 0. Correction the same day: **SECONDARY must still discover and show in the roster**; PRIMARY is a separate preference (Kevin still wants Fortunato PRIMARY as the only character). Docs only.
 - 2026-08-17: Added `BL-057` (dedicated assignment page + reduced landing card). Student landing cards currently dump the full assignment dashboard and overflow on mobile; CSS wrap (PR #121) is the demo-night bandage. Product direction: compact card (title, 1–2 chips, Open) + dedicated page for progress / quiz / character-chat / late / actions. Out of epic: thin landing-card hotfix already in flight. Cross-links `BL-025.4` / `BL-025.11`. Docs only.
 - 2026-08-17: Added `BL-058` (assignment Open / persist leftovers). The #121–#125 soak loop shipped the skinny landing card + Open/resume/persist-suppression; Uncle Bob left a Low / not-blocking chapter-hop persist-before-load leftover on #125 (`0a63b90` / merge `cb04f32`). Docs only.
+- 2026-08-17: Added `BL-059` (speed up `GET /api/library`). Kevin E2E / DevTools on prod: ~21.4s total, ~21.2s TTFB — server-side catalog work, not the network. First pass: cache + slim landing DTO + optional public cache headers + timing. Cross-links landing soak / `BL-047` library progress. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1589,6 +1590,55 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Leaving hop paths on the old allow-then-load order recreates the failed-Continue stale-`totalPages` persist after a later failed hop.
 - Session Log:
 - 2026-08-17: Captured Low / not-blocking leftover from Uncle Bob on #125 rather than hold the demo. Docs only; no reader change in this capture.
+
+### BL-059 - Speed up GET /api/library (Landing Library Load)
+- Type: Improvement
+- Priority: P2 (not Jessica-dry-run blocking)
+- Effort: M
+- Status: Proposed
+- Problem: The landing page waits a long time for the library catalog. Prod `GET https://classicchatreader.com/api/library` measured **~21.4s total, ~21.2s TTFB** (queue/download tiny). This is **server-side work**, not the network.
+- Current code: `LibraryController.listBooks()` → `bookStorageService.getAllBooks()` returning `List<Book>`. `getAllBooks()` does `bookRepository.findAll()` then `toBookDto` per title (chapter list + per-book cover lookup). Kevin hypothesis: send **cached responses**.
+- Current Direction (first pass):
+  1. Cache the catalog list (in-memory + short TTL and/or explicit invalidate on import/delete/feature-toggle). Stale-while-revalidate is fine for the landing list.
+  2. Consider a **slim landing DTO** (id, title, author, cover url, flags) instead of hydrating full `Book` graphs if `getAllBooks` is doing heavy IO per title.
+  3. HTTP cache headers for anonymous/public catalog if safe (do not cache per-user progress in the same payload).
+  4. Measure: log/timing on `getAllBooks` so we know if it is disk scan, DB, or cover/status fan-out.
+- Out of this epic:
+  - Rewriting storage.
+  - CDN for JSON unless cheap.
+- Scope Buckets:
+- In-process catalog cache with short TTL and/or invalidate on import, delete, and feature-toggle.
+- Slim landing payload so the catalog list is not a full `Book` graph per title.
+- Optional public HTTP cache headers only when the payload is anonymous catalog (no per-user progress).
+- Timing/diagnostics on `getAllBooks` to name the bottleneck before a larger rewrite.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-059.1 Time `getAllBooks` | Proposed | Log/timing around `findAll`, `toBookDto`, chapter hydration, and cover lookup so the 21s TTFB has a named cause | One prod or prod-like measurement says whether the cost is disk scan, DB, or cover/status fan-out |
+| BL-059.2 Catalog list cache | Proposed | In-memory cache of the landing catalog with short TTL and/or explicit invalidate on import/delete/feature-toggle; stale-while-revalidate is acceptable | Repeat `GET /api/library` after a warm cache is not ~21s TTFB; a catalog mutation does not serve a permanently stale list |
+| BL-059.3 Slim landing DTO | Proposed | Landing list returns id, title, author, cover url, flags — not a full `Book` graph — if hydration is a measured cost | Catalog JSON no longer includes per-title chapter lists (or equivalent heavy fields) unless a later measure says they are cheap |
+| BL-059.4 Public cache headers | Proposed | Add HTTP cache headers for anonymous/public catalog only; do not cache per-user progress in the same payload | Unauthenticated catalog may be cached; signed-in progress/assignment fields are not in that cached body |
+- Discovery Questions:
+- Is the 21s mostly `findAll` + chapter lazy-load, per-book cover queries, or something else (curated-flag checks, serialization)?
+- Can the landing list stay a shared public catalog, with progress still coming from classroom context / local activity (`BL-047` / `BL-018`)?
+- What invalidate events are required besides import, delete, and feature-toggle (cover ready, curated flag, admin PATCH)?
+- Acceptance Criteria:
+- Landing `GET /api/library` is no longer ~21s TTFB on a warm catalog (measure before/after; cache and/or slim DTO as the first pass).
+- Catalog mutations (import / delete / feature-toggle) do not leave a permanently stale landing list.
+- Per-user progress is not cached inside the public catalog payload (`BL-047` assignment progress stays on classroom context / client refresh, not this list).
+- Timing exists so a later rewrite is justified by a named bottleneck, not a guess.
+- This epic does not rewrite storage or add a JSON CDN unless that path is cheap and already in ops.
+- Dependency Notes:
+- Observed during Kevin 2026-08-17 landing E2E / DevTools (same session window as the #121–#125 landing soak). Cross-link only; do not reopen those PRs.
+- Distinct from `BL-047` (assignment dashboard / Library progress refresh after returning from the reader). That bug is **Done**; this is catalog **latency**.
+- Complements `BL-053` (classroom concurrent capacity): a 21s library TTFB will dominate any same-hour class load, but this epic is a single-request catalog fix, not a droplet soak.
+- Invalidate path should respect `BL-007` admin-only import/delete/feature-toggle.
+- Landing IA stays `BL-018` / `BL-057`; this epic does not change card density or assignment Open.
+- Risks:
+- Caching the current full `Book` graph without a slim DTO still ships a heavy payload and may hide N+1 cover/chapter work behind a TTL.
+- HTTP cache on a payload that later grows per-user progress would leak or freeze the wrong student’s assignment state.
+- Session Log:
+- 2026-08-17: Kevin E2E, DevTools timing on prod `GET /api/library` (~21.4s total, ~21.2s TTFB). Captured as P2 improvement; first pass is cache + slim DTO + optional public headers + measurement. Docs only; no runtime change in this capture.
 
 ## P0
 
