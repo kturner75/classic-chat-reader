@@ -138,4 +138,17 @@ public final class SensitiveApiRequestMatcher {
 
         return EndpointType.NONE;
     }
+
+    /**
+     * Classroom suggest routes are GENERATION for rate limits, but teachers
+     * authenticate with an account session rather than an operator API key
+     * or collaborator cookie.
+     */
+    public static boolean acceptsAccountPrincipal(String method, String path) {
+        if (!"POST".equals(method) || path == null) {
+            return false;
+        }
+        return ASSIGNMENT_SUGGEST_PATH.matcher(path).matches()
+                || CHAPTER_SUGGEST_PATH.matcher(path).matches();
+    }
 }

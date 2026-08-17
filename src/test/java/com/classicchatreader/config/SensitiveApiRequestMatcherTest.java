@@ -8,6 +8,8 @@ import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointTy
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.ADMIN;
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.NONE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SensitiveApiRequestMatcherTest {
 
@@ -38,6 +40,26 @@ class SensitiveApiRequestMatcherTest {
                 "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(
                 "GET", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+    }
+
+    @Test
+    void acceptsAccountPrincipal_onlyClassroomSuggestPosts() {
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/assignments/asg-1/suggest-distractors"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-questions"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/pregen/book/book-1"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/quizzes/chapter/ch-1/generate"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "PATCH", "/api/library/book-1/features"));
     }
 
     @Test

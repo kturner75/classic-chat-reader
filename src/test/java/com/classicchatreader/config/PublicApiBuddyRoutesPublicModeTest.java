@@ -57,7 +57,8 @@ class PublicApiBuddyRoutesPublicModeTest {
                 2,
                 0,
                 0,
-                0
+                0,
+                null
         );
         responseBody = new StringWriter();
         lenient().when(response.getWriter()).thenReturn(new PrintWriter(responseBody));
