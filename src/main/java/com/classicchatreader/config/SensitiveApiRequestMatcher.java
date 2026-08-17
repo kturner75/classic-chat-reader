@@ -44,7 +44,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern ASSIGNMENT_SUGGEST_PATH =
             Pattern.compile("^/api/classroom/assignments/[^/]+/suggest-(questions|distractors)$");
     private static final Pattern CHAPTER_SUGGEST_PATH =
-            Pattern.compile("^/api/classroom/terms/[^/]+/chapters/[^/]+/suggest-[^/]+$");
+            Pattern.compile("^/api/classroom/terms/[^/]+/chapters/[^/]+/suggest-(questions|distractors)$");
     private static final Pattern LIBRARY_FEATURES_PATH = Pattern.compile("^/api/library/[^/]+/features$");
     private static final Pattern LIBRARY_COVER_REQUEST_PATH = Pattern.compile("^/api/library/[^/]+/cover/request$");
     private static final Pattern LIBRARY_COVER_RETRY_PATH = Pattern.compile("^/api/library/[^/]+/cover/retry$");

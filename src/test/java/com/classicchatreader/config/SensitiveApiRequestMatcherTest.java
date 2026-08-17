@@ -40,6 +40,8 @@ class SensitiveApiRequestMatcherTest {
                 "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(
                 "GET", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
     }
 
     @Test
@@ -60,6 +62,8 @@ class SensitiveApiRequestMatcherTest {
                 "POST", "/api/quizzes/chapter/ch-1/generate"));
         assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "PATCH", "/api/library/book-1/features"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
     }
 
     @Test
