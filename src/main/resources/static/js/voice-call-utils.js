@@ -80,30 +80,68 @@
     // xAI semantics: user transcript updates are CUMULATIVE (each event replaces
     // the whole user caption, possibly correcting earlier text); assistant
     // transcript deltas are appended.
+    function eventItemId(event) {
+        if (!event || typeof event !== 'object') return null;
+        const raw = event.item_id ?? event.itemId ?? event.item?.id ?? null;
+        return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    }
+
     function createTranscriptTracker(options = {}) {
         const now = options.now || (() => Date.now());
         let userPartial = '';
         let assistantPartial = '';
+        let currentUserItemId = null;
+        // Once response.created (or hangup flush) commits a user utterance, late
+        // transcription.completed / updated events for that same item must not
+        // reopen userPartial. Hangup flush would otherwise persist the last
+        // spoken line a second time into My Chats / the character thread.
+        let userUtteranceCommitted = false;
+        const finalizedUserItemIds = new Set();
         const finalized = [];
+
+        function lastFinalized(role) {
+            for (let i = finalized.length - 1; i >= 0; i--) {
+                if (finalized[i].role === role) return finalized[i];
+            }
+            return null;
+        }
 
         function finalizeUser() {
             const content = userPartial.trim();
+            const itemId = currentUserItemId;
             userPartial = '';
-            if (content) {
-                finalized.push({ role: 'user', content, timestamp: now() });
-                return finalized[finalized.length - 1];
+            currentUserItemId = null;
+            if (!content) {
+                return null;
             }
-            return null;
+            if (itemId && finalizedUserItemIds.has(itemId)) {
+                return null;
+            }
+            const lastUser = lastFinalized('user');
+            if (userUtteranceCommitted && lastUser && lastUser.content === content) {
+                if (itemId) finalizedUserItemIds.add(itemId);
+                return null;
+            }
+            userUtteranceCommitted = true;
+            if (itemId) finalizedUserItemIds.add(itemId);
+            finalized.push({ role: 'user', content, timestamp: now() });
+            return finalized[finalized.length - 1];
         }
 
         function finalizeAssistant() {
             const content = assistantPartial.trim();
             assistantPartial = '';
-            if (content) {
-                finalized.push({ role: 'character', content, timestamp: now() });
-                return finalized[finalized.length - 1];
+            if (!content) {
+                return null;
             }
-            return null;
+            // Both response.output_audio_transcript.done and response.done (or
+            // the audio_transcript.done alias) can carry the same full text.
+            const last = finalized[finalized.length - 1];
+            if (last && last.role === 'character' && last.content === content) {
+                return null;
+            }
+            finalized.push({ role: 'character', content, timestamp: now() });
+            return finalized[finalized.length - 1];
         }
 
         // Consumes one realtime event; returns an array of turns finalized by it.
@@ -113,17 +151,38 @@
                 return [];
             }
 
+            if (type === 'input_audio_buffer.speech_started') {
+                userUtteranceCommitted = false;
+                return [];
+            }
+
             // Only updates the running caption here; finalization is anchored solely
-            // to input_audio_buffer.committed / response.created below so a turn is
-            // never finalized twice if both a transcription-completed and a
-            // buffer-committed event arrive for the same utterance.
+            // to response.created / hangup flush so a turn is never finalized twice
+            // if both a transcription-completed and a buffer-committed event arrive
+            // for the same utterance.
             if (type === 'conversation.item.input_audio_transcription.updated'
                     || type === 'conversation.item.input_audio_transcription.completed') {
                 const transcript = event.transcript
                     ?? event.item?.content?.[0]?.transcript
                     ?? '';
+                const itemId = eventItemId(event);
+                const content = typeof transcript === 'string' ? transcript.trim() : '';
+                const lastUser = lastFinalized('user');
+                if (itemId && finalizedUserItemIds.has(itemId)) {
+                    return [];
+                }
+                if (userUtteranceCommitted) {
+                    if (!itemId || (lastUser && lastUser.content === content)) {
+                        if (itemId && lastUser && lastUser.content === content) {
+                            finalizedUserItemIds.add(itemId);
+                        }
+                        return [];
+                    }
+                    userUtteranceCommitted = false;
+                }
                 if (transcript) {
                     userPartial = transcript;
+                    if (itemId) currentUserItemId = itemId;
                 }
                 return [];
             }
@@ -168,6 +227,8 @@
         }
 
         // Flushes both partial captions (e.g. when the call ends mid-turn).
+        // Must not re-emit a turn already finalized live — hangup is the second
+        // writer of the same last utterance when a late caption reopened it.
         function flush() {
             const turns = [];
             const user = finalizeUser();
