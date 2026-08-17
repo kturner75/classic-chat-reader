@@ -35,6 +35,8 @@ class CuratedCatalogServiceTest {
                 .anyMatch(book -> book.gutenbergId() == 16328));
         assertTrue(curatedCatalogService.search("blue castle").stream()
                 .anyMatch(book -> book.gutenbergId() == 67979));
+        assertTrue(curatedCatalogService.search("gawain").stream()
+                .anyMatch(book -> book.gutenbergId() == 66084 && "Anonymous".equals(book.author())));
     }
 
     @Test

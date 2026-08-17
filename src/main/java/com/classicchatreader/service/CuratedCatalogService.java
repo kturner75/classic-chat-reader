@@ -106,7 +106,7 @@ public class CuratedCatalogService {
                     List.of("Romance")),
             new CuratedCatalogBook(56621, "Aurora Leigh", "Elizabeth Barrett Browning", 28_000, List.of("Novels in verse"), List.of("Poetry")),
             new CuratedCatalogBook(70841, "Robinson Crusoe", "Daniel Defoe", 27_000, List.of("Adventure stories"), List.of("Adventure")),
-            new CuratedCatalogBook(66084, "Sir Gawain and the Green Knight", "Jessie L. Weston", 26_000, List.of("Arthurian romances"), List.of("Mythology")),
+            new CuratedCatalogBook(66084, "Sir Gawain and the Green Knight", "Anonymous", 26_000, List.of("Arthurian romances"), List.of("Mythology")),
             new CuratedCatalogBook(64636, "Rip Van Winkle", "Washington Irving", 25_000, List.of("Fantasy fiction"), List.of("Short Stories")),
             new CuratedCatalogBook(778, "Five Children and It", "E. Nesbit", 24_000, List.of("Wishes -- Fiction"), List.of("Children")),
             // Partner ENGL 1020 Fall 2026 early short fiction / drama (verified PG IDs).
