@@ -3677,9 +3677,9 @@
             void markClassroomAssignmentOpened(assignment.assignmentId);
         }
         const storedActivity = normalizeBookActivity(book, readBookActivityStore()[book.id] || {});
-        const readingComplete = libraryProgressHelpers
-            && typeof libraryProgressHelpers.isReadingCompleteForAssignment === 'function'
-            && libraryProgressHelpers.isReadingCompleteForAssignment(assignment, storedActivity);
+        const snapshot = buildAssignmentProgressSnapshot(assignment, storedActivity);
+        const readingComplete = snapshot.readingComplete === true
+            || assignment.quizStatus === 'COMPLETE';
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);

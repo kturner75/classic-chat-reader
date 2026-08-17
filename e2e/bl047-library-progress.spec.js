@@ -492,6 +492,25 @@ test('Open shows wrap-up immediately when assigned reading is already complete',
   await expect(wrapup.locator('[data-assignment-wrapup="chat"]')).toHaveText('Chat with Character');
 });
 
+test('Open shows wrap-up when quiz is complete even without local reading activity', async ({ page }) => {
+  await installApiMocks(page, {
+    quizStatus: 'COMPLETE',
+    characterChatRequired: true
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment).toContainText('In progress');
+  await assignment.locator('.assignment-open-action').click();
+
+  await expect(page.locator('#reader-view')).toBeVisible();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await expect(wrapup).toContainText('Chat with a character');
+  await expect(wrapup.locator('[data-assignment-wrapup="chat"]')).toHaveText('Chat with Character');
+  await expect(wrapup.locator('[data-assignment-wrapup="quiz"]')).toHaveCount(0);
+});
+
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({
