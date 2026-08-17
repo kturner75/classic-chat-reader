@@ -123,7 +123,7 @@ public class LlmProviderConfig {
     @Value("${ai.chat.xai.api-key:}")
     private String chatXaiApiKey;
 
-    @Value("${ai.chat.xai.model:grok-4.20-0309-non-reasoning}")
+    @Value("${ai.chat.xai.model:grok-4.6}")
     private String chatXaiModel;
 
     @Value("${ai.chat.xai.reasoning-effort:}")

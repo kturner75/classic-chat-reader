@@ -35,17 +35,17 @@ public class XaiLlmProvider implements LlmProvider {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds) {
-        this(apiKey, model, timeoutSeconds, null, WebClient.builder().baseUrl(BASE_URL).build(), null);
+        this(apiKey, model, timeoutSeconds, null, LlmWebClientSupport.xaiWebClient(BASE_URL), null);
     }
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds, XaiOAuthTokenManager oauthTokenManager) {
-        this(apiKey, model, timeoutSeconds, oauthTokenManager, WebClient.builder().baseUrl(BASE_URL).build(), null);
+        this(apiKey, model, timeoutSeconds, oauthTokenManager, LlmWebClientSupport.xaiWebClient(BASE_URL), null);
     }
 
     public XaiLlmProvider(String apiKey, String model, int timeoutSeconds,
                           XaiOAuthTokenManager oauthTokenManager, String reasoningEffort) {
         this(apiKey, model, timeoutSeconds, oauthTokenManager,
-                WebClient.builder().baseUrl(BASE_URL).build(), reasoningEffort);
+                LlmWebClientSupport.xaiWebClient(BASE_URL), reasoningEffort);
     }
 
     // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.

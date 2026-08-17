@@ -49,4 +49,22 @@ public class LlmProviderException extends RuntimeException {
         }
         return false;
     }
+
+    /**
+     * Connection drops that are worth one retry. Reactor {@link TimeoutException}
+     * is transient for logging but must not be retried: the remote already sat
+     * through the full client timeout, and a second wait doubles user-visible
+     * chat failure (60s + 60s).
+     */
+    public static boolean isRetriableConnectionFailure(Throwable throwable) {
+        if (throwable instanceof TimeoutException) {
+            return false;
+        }
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current instanceof TimeoutException) {
+                return false;
+            }
+        }
+        return isTransient(throwable);
+    }
 }

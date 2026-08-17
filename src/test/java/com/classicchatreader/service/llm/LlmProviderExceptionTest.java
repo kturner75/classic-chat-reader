@@ -37,6 +37,21 @@ class LlmProviderExceptionTest {
     }
 
     @Test
+    void isRetriableConnectionFailure_retriesResetButNotClientTimeout() {
+        SocketException reset = new SocketException("Connection reset");
+        WebClientRequestException requestEx = new WebClientRequestException(
+                reset,
+                POST,
+                URI.create("https://api.x.ai/v1/chat/completions"),
+                HttpHeaders.EMPTY);
+
+        assertTrue(LlmProviderException.isRetriableConnectionFailure(requestEx));
+        assertFalse(LlmProviderException.isRetriableConnectionFailure(new TimeoutException("timed out")));
+        assertFalse(LlmProviderException.isRetriableConnectionFailure(
+                new LlmProviderException("Failed", new TimeoutException("timed out"))));
+    }
+
+    @Test
     void isTransient_falseForOrdinaryFailures() {
         assertFalse(LlmProviderException.isTransient(new LlmProviderException("bad response")));
         assertFalse(LlmProviderException.isTransient(new IllegalArgumentException("bad arg")));
