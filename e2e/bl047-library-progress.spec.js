@@ -362,8 +362,6 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
-  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
-  await page.keyboard.press('ArrowRight');
   const wrapup = page.locator('#assignment-wrapup-overlay');
   await expect(wrapup).toBeVisible();
   await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
@@ -408,8 +406,6 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
-  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
-  await page.keyboard.press('ArrowRight');
   const wrapup = page.locator('#assignment-wrapup-overlay');
   await expect(wrapup).toBeVisible();
   await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
@@ -460,6 +456,40 @@ test('Open on the assignment card opens the assignment, not character chat', asy
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toBeVisible();
   await expect(page.locator('#character-chat-modal')).toBeHidden();
+  await expect(page.locator('#assignment-wrapup-overlay')).toBeHidden();
+});
+
+test('Open shows wrap-up immediately when assigned reading is already complete', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 1,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 0,
+    characterChatRequired: true
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
+  await assignment.locator('.assignment-open-action').click();
+
+  await expect(page.locator('#reader-view')).toBeVisible();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await expect(wrapup).toContainText('Take the quiz and chat with a character');
+  await expect(wrapup.locator('[data-assignment-wrapup="quiz"]')).toHaveText('Take Quiz');
+  await expect(wrapup.locator('[data-assignment-wrapup="chat"]')).toHaveText('Chat with Character');
 });
 
 test('secondary-only characters can be chatted with from assignment wrap-up', async ({ page }) => {
@@ -491,8 +521,6 @@ test('secondary-only characters can be chatted with from assignment wrap-up', as
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
-  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
-  await page.keyboard.press('ArrowRight');
   const wrapup = page.locator('#assignment-wrapup-overlay');
   await expect(wrapup).toBeVisible();
   await wrapup.locator('[data-assignment-wrapup="chat"]').click();
@@ -525,8 +553,6 @@ test('end-of-reading wrap-up offers Take Quiz and Chat, not Continue Reading', a
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toBeVisible();
-  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
-  await page.keyboard.press('ArrowRight');
   const wrapup = page.locator('#assignment-wrapup-overlay');
   await expect(wrapup).toBeVisible();
   await expect(wrapup).toContainText('Take the quiz and chat with a character');
@@ -564,15 +590,6 @@ test('Continue Reading exits assignment mode and restores the full chapter list'
   await assignment.locator('.assignment-open-action').click();
   await expect(page.locator('#reader-view')).toBeVisible();
   await expect(page.locator('#assignment-mode-banner')).toHaveText('Assignment · Read chapter one');
-  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
-
-  await page.keyboard.press('c');
-  await expect(page.locator('#chapter-list-overlay')).toBeVisible();
-  await expect(page.locator('#chapter-list .chapter-list-item')).toHaveCount(1);
-  await expect(page.locator('#chapter-list .chapter-list-item')).toContainText('Chapter One');
-  await page.keyboard.press('Escape');
-
-  await page.keyboard.press('ArrowRight');
   const wrapup = page.locator('#assignment-wrapup-overlay');
   await expect(wrapup).toBeVisible();
   await expect(wrapup.locator('[data-assignment-wrapup="continue"]')).toHaveText('Continue Reading');

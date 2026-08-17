@@ -3676,11 +3676,18 @@
             state.assignmentMode = true;
             void markClassroomAssignmentOpened(assignment.assignmentId);
         }
+        const storedActivity = normalizeBookActivity(book, readBookActivityStore()[book.id] || {});
+        const readingComplete = libraryProgressHelpers
+            && typeof libraryProgressHelpers.isReadingCompleteForAssignment === 'function'
+            && libraryProgressHelpers.isReadingCompleteForAssignment(assignment, storedActivity);
         // Assignments must open the teacher-targeted chapter, not the student's resume position.
         const chapterIndex = resolveAssignmentChapterIndex(book, assignment);
         await selectBook(book, chapterIndex, 0);
         updateAssignmentModeBanner();
         startClassroomHeartbeat();
+        if (readingComplete) {
+            showAssignmentWrapup();
+        }
         return true;
     }
 
