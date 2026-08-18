@@ -378,7 +378,10 @@ public class AssignmentQuizService {
                 total,
                 0
         );
-        return Optional.of(new ChapterQuizGradeResponse(
+        if (entityManager != null) {
+            entityManager.flush();
+        }
+        ChapterQuizGradeResponse graded = new ChapterQuizGradeResponse(
                 assignment.getBookId(),
                 chapterId,
                 total,
@@ -388,7 +391,21 @@ public class AssignmentQuizService {
                 progress.newlyUnlocked(),
                 progress.progress(),
                 results
-        ));
+        );
+        if (!shouldRevealAssignmentAnswerKey(assignmentId, userId)) {
+            graded = graded.withoutAnswerKey();
+        }
+        return Optional.of(graded);
+    }
+
+    /**
+     * Reveal the answer key only after retries are exhausted (0 attempts remaining).
+     * With no configured attempt budget, retries are unlimited, so withhold the key.
+     */
+    private boolean shouldRevealAssignmentAnswerKey(String assignmentId, String userId) {
+        Optional<ClassroomQuizPolicyService.AttemptBudget> budget =
+                classroomQuizPolicyService.resolveAssignmentBudget(assignmentId, userId);
+        return budget.isPresent() && budget.get().attemptsRemaining() <= 0;
     }
 
     public boolean isChapterDefaultAvailable(AssignmentEntity assignment) {

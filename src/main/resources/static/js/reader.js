@@ -6705,7 +6705,8 @@
         const remaining = allowed != null ? Math.max(0, allowed - used) : null;
         const canRetry = canRetryAssignmentQuiz(assignment, result);
 
-        const missed = Array.isArray(result.results)
+        const revealAnswerKey = remaining === 0;
+        const missed = revealAnswerKey && Array.isArray(result.results)
             ? result.results.filter(item => item && item.correct === false)
             : [];
         const missedItems = missed.map(item => {

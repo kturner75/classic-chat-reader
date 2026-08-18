@@ -429,8 +429,13 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
   await page.locator('#chapter-quiz-questions input[type="radio"]').first().check();
   await page.locator('#chapter-quiz-submit').click();
   await expect(page.locator('#chapter-quiz-feedback')).toContainText('Not quite');
+  await expect(page.locator('#chapter-quiz-feedback')).not.toContainText('correct answer');
   await expect(page.locator('#assignment-quiz-retry')).toBeVisible();
   await expect(page.locator('#assignment-quiz-retry')).toHaveText('Retry Quiz');
+  await page.locator('#assignment-quiz-retry').click();
+  await expect(page.locator('#chapter-quiz-feedback')).toBeHidden();
+  await expect(page.locator('#chapter-quiz-questions')).toContainText('Who is the narrator?');
+  await expect(page.locator('#assignment-quiz-retry')).toBeHidden();
 });
 
 test('a passing but imperfect assignment quiz can still be retried', async ({ page }) => {
@@ -468,8 +473,46 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
   await page.locator('#chapter-quiz-submit').click();
   await expect(page.locator('#chapter-quiz-feedback')).toContainText('You passed');
   await expect(page.locator('#chapter-quiz-feedback')).toContainText('attempt');
+  await expect(page.locator('#chapter-quiz-feedback')).not.toContainText('correct answer');
   await expect(page.locator('#assignment-quiz-retry')).toBeVisible();
   await expect(page.locator('#assignment-quiz-retry')).toHaveText('Retry Quiz');
+});
+
+test('failed assignment quiz reveals the answer key only after attempts are exhausted', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 1,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 1,
+    quizAttemptsAllowed: 2,
+    quizPassMinCorrect: 1,
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
+  await page.locator('#chapter-quiz-questions input[type="radio"]').first().check();
+  await page.locator('#chapter-quiz-submit').click();
+  await expect(page.locator('#chapter-quiz-feedback')).toContainText('Not quite');
+  await expect(page.locator('#chapter-quiz-feedback')).toContainText('No attempts left');
+  await expect(page.locator('#chapter-quiz-feedback')).toContainText('correct answer: Silver');
+  await expect(page.locator('#assignment-quiz-retry')).toBeHidden();
 });
 
 test('Retry Quiz appears after a failed attempt while retries remain', async ({ page }) => {
