@@ -565,6 +565,47 @@ test('assignment is fully complete only when reading, quiz, and required chat ar
     }, read, true), true);
 });
 
+test('exhausted quiz attempts complete the landing card even when quizStatus stays PENDING', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'Chapter I' },
+            { chapterId: 'ch-2', chapterIndex: 1, chapterTitle: 'Chapter II' }
+        ],
+        quizRequired: true,
+        quizStatus: 'PENDING',
+        quizAttemptsUsed: 2,
+        quizAttemptsAllowed: 2,
+        quizPassed: false,
+        characterChatRequired: true
+    };
+    const activity = {
+        chapterCount: 9,
+        lastChapterIndex: 1,
+        lastPage: 5,
+        totalPages: 6,
+        maxProgressRatio: 2 / 9,
+        lastReadAt: '2026-08-18T13:00:00.000Z',
+        completedChapterIndexes: [0, 1]
+    };
+    const stillOpen = buildAssignmentProgressSnapshot({
+        assignment: { ...assignment, quizAttemptsUsed: 1 },
+        activity,
+        characterChatStarted: true
+    });
+    assert.equal(stillOpen.statusClass, 'in-progress');
+    assert.equal(stillOpen.statusLabel, 'In progress');
+
+    const snapshot = buildAssignmentProgressSnapshot({
+        assignment,
+        activity,
+        characterChatStarted: true
+    });
+    assert.equal(snapshot.statusClass, 'completed');
+    assert.equal(snapshot.statusLabel, 'Complete');
+    assert.equal(snapshot.summaryLabel, '3/3 complete');
+    assert.equal(isAssignmentFullyComplete(assignment, activity, true), true);
+});
+
 test('unionBookActivityStores keeps local completed chapters from a later persist', () => {
     const merged = unionBookActivityStores({
         'book-1': {
