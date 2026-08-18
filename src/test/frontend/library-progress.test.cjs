@@ -289,6 +289,72 @@ test('assignment reading stays complete after student resumes an earlier chapter
     assert.equal(snapshot.statusClass, 'completed');
 });
 
+test('leaked whole-book complete does not finish an unread multi-chapter range', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'Chapter I' },
+            { chapterId: 'ch-2', chapterIndex: 1, chapterTitle: 'Chapter II' }
+        ],
+        quizRequired: true,
+        quizStatus: 'PENDING',
+        characterChatRequired: true
+    };
+    // Prior book-complete / 100% from a stub chapterCount or another read, while
+    // resume is still Chapter I page 1. First open of an unread 1–2 assignment.
+    const leakedComplete = {
+        chapterCount: 9,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 8,
+        maxProgressRatio: 1,
+        progressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-18T12:00:00.000Z'
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, leakedComplete), false);
+    assert.equal(buildAssignmentProgressSnapshot({
+        assignment,
+        activity: leakedComplete
+    }).readingComplete, false);
+
+    const finishedRange = {
+        chapterCount: 9,
+        lastChapterIndex: 1,
+        lastPage: 5,
+        totalPages: 6,
+        maxProgressRatio: 2 / 9,
+        lastReadAt: '2026-08-18T13:00:00.000Z',
+        completedChapterIndexes: [0, 1]
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, finishedRange), true);
+});
+
+test('opening chapter 1 of a range assignment is not reading-complete', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'Chapter I' },
+            { chapterId: 'ch-2', chapterIndex: 1, chapterTitle: 'Chapter II' }
+        ],
+        quizRequired: true,
+        quizStatus: 'PENDING'
+    };
+    const openedChapterOne = {
+        chapterCount: 9,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 8,
+        maxProgressRatio: 1 / 9 / 8,
+        progressRatio: 1 / 9 / 8,
+        lastReadAt: '2026-08-18T12:00:00.000Z',
+        completedChapterIndexes: []
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, openedChapterOne), false);
+    assert.equal(buildAssignmentProgressSnapshot({
+        assignment,
+        activity: openedChapterOne
+    }).readingComplete, false);
+});
+
 test('multi-chapter assignment completes when furthest chapter covers the set', () => {
     const assignment = {
         chapters: [
