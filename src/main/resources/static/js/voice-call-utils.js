@@ -91,12 +91,12 @@
         let userPartial = '';
         let assistantPartial = '';
         let currentUserItemId = null;
-        // Once a user utterance is posted to the text log, late
-        // transcription.completed / updated events for that same spoken turn
-        // must not reopen userPartial. Hangup flush would otherwise POST a
-        // second turnId. speech_started must not lift this guard: a late
-        // corrected caption can arrive after VAD starts the next (or same)
-        // speech window, still carrying a new item_id.
+        // After a user turn is posted, ignore further user captions until
+        // speech_started (the new-turn gate). Corrections of that posted
+        // utterance stay blocked even after speech_started: same finalized
+        // item id, or punctuation-normalized exact equality. Do not treat a
+        // shared prefix ("Yes" / "Yesterday") as a correction.
+        let acceptNewUserTranscription = true;
         let userUtteranceCommitted = false;
         let lastCommittedUserContent = '';
         const finalizedUserItemIds = new Set();
@@ -118,10 +118,7 @@
             if (!userUtteranceCommitted) return false;
             const incoming = normalizeUserCaption(content);
             const committed = normalizeUserCaption(lastCommittedUserContent);
-            if (!incoming || !committed) return false;
-            return incoming === committed
-                || incoming.startsWith(committed)
-                || committed.startsWith(incoming);
+            return !!incoming && incoming === committed;
         }
 
         function finalizeUser() {
@@ -141,6 +138,7 @@
             }
             userUtteranceCommitted = true;
             lastCommittedUserContent = content;
+            acceptNewUserTranscription = false;
             rememberFinalizedUserItem(itemId);
             finalized.push({ role: 'user', content, timestamp: now() });
             return finalized[finalized.length - 1];
@@ -170,8 +168,7 @@
             }
 
             if (type === 'input_audio_buffer.speech_started') {
-                // Do not clear userUtteranceCommitted. Late completed events for
-                // the already-posted utterance often arrive after this signal.
+                acceptNewUserTranscription = true;
                 return [];
             }
 
@@ -190,6 +187,9 @@
                 }
                 if (isCorrectionOfCommittedUtterance(transcript)) {
                     rememberFinalizedUserItem(itemId);
+                    return [];
+                }
+                if (!acceptNewUserTranscription) {
                     return [];
                 }
                 if (transcript) {

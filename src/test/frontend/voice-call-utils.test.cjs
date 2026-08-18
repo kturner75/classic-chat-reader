@@ -338,6 +338,54 @@ test('transcript tracker: speech_started still ignores a late prior completion',
     ]);
 });
 
+test('transcript tracker: a later caption that only shares a prefix is a new turn', () => {
+    const cases = [
+        ['Yes', 'Yesterday'],
+        ['No', 'Nothing of the sort'],
+        ['I', "I've been to Bath"]
+    ];
+    for (const [first, second] of cases) {
+        const tracker = createTranscriptTracker({ now: () => 1 });
+        tracker.consume({
+            type: 'conversation.item.input_audio_transcription.updated',
+            item_id: 'item_1',
+            transcript: first
+        });
+        tracker.consume({ type: 'response.created' });
+        tracker.consume({ type: 'input_audio_buffer.speech_started' });
+        tracker.consume({
+            type: 'conversation.item.input_audio_transcription.updated',
+            item_id: 'item_2',
+            transcript: second
+        });
+        const turns = tracker.consume({ type: 'response.created' });
+        assert.deepEqual(turns.map(turn => turn.content), [second], `${first} -> ${second}`);
+        assert.deepEqual(
+            tracker.getFinalized().map(turn => turn.content),
+            [first, second],
+            `${first} -> ${second}`
+        );
+    }
+});
+
+test('transcript tracker: prefix-sharing text before speech_started is not a new turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_1',
+        transcript: 'Yes'
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_2',
+        transcript: 'Yesterday'
+    });
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.content), ['Yes']);
+});
+
 test('transcript tracker: a new spoken turn after hangup-style late events is still captured', () => {
     const tracker = createTranscriptTracker({ now: () => 1 });
     tracker.consume({
