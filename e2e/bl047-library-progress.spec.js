@@ -49,6 +49,9 @@ async function installApiMocks(page, options = {}) {
   const state = { classroomContextRequests: 0 };
   const book = options.book || TEST_BOOK;
   const character = options.character || TEST_CHARACTER;
+  const characters = Array.isArray(options.characters) && options.characters.length > 0
+    ? options.characters
+    : [character];
   let quizAttemptsUsed = options.quizAttemptsUsed || 0;
   const wholeBook = options.wholeBook === true;
   const assignmentChapters = options.assignmentChapters || (wholeBook ? [] : book.chapters.map((chapter, index) => ({
@@ -191,10 +194,10 @@ async function installApiMocks(page, options = {}) {
       return json(route, 200, options.bookmarks || []);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}/up-to`) {
-      return json(route, 200, [character]);
+      return json(route, 200, characters);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}`) {
-      return json(route, 200, [character]);
+      return json(route, 200, characters);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}/new-since`) {
       return json(route, 200, []);
@@ -436,7 +439,81 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
   await page.locator('#assignment-quiz-retry').click();
   await expect(page.locator('#chapter-quiz-feedback')).toBeHidden();
   await expect(page.locator('#chapter-quiz-questions')).toContainText('Who is the narrator?');
+  const firstRetryOption = page.locator('#chapter-quiz-questions input[type="radio"]').first();
+  await expect(firstRetryOption).toBeEnabled();
+  await firstRetryOption.check();
+  await expect(firstRetryOption).toBeChecked();
   await expect(page.locator('#assignment-quiz-retry')).toBeHidden();
+});
+
+test('assignment quiz retry can choose Q1 after the character browser closes', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 1,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        completedChapterIndexes: [0],
+        lastReadAt: '2026-08-12T12:00:00Z'
+      }
+    }));
+  });
+  const secondCharacter = {
+    ...TEST_CHARACTER,
+    id: 'character-2',
+    name: 'Jay'
+  };
+  await installApiMocks(page, {
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 0,
+    characterChatRequired: true,
+    characters: [TEST_CHARACTER, secondCharacter]
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="chat"]').click();
+
+  const browser = page.locator('#character-browser-modal');
+  await expect(browser).toBeVisible();
+  await page.locator('#character-browser-close').click();
+  await expect(browser).toBeHidden();
+  await expect(browser).toHaveAttribute('aria-hidden', 'true');
+  const focusAfterClose = await page.evaluate(() => {
+    const modal = document.getElementById('character-browser-modal');
+    const active = document.activeElement;
+    return {
+      activeId: active && active.id,
+      insideHiddenDialog: !!(modal && active && modal.contains(active))
+    };
+  });
+  expect(focusAfterClose.insideHiddenDialog).toBe(false);
+  expect(focusAfterClose.activeId).not.toBe('character-browser-close');
+
+  await expect(wrapup).toBeVisible();
+  await wrapup.locator('[data-assignment-wrapup="quiz"]').click();
+  await page.locator('#chapter-quiz-questions input[type="radio"]').first().check();
+  await page.locator('#chapter-quiz-submit').click();
+  await expect(page.locator('#chapter-quiz-feedback')).toContainText('Not quite');
+  await page.locator('#assignment-quiz-retry').click();
+
+  const firstRetryOption = page.locator('#chapter-quiz-questions input[type="radio"]').first();
+  await expect(firstRetryOption).toBeEnabled();
+  await firstRetryOption.check();
+  await expect(firstRetryOption).toBeChecked();
+  const focusAfterRetry = await page.evaluate(() => {
+    const modal = document.getElementById('character-browser-modal');
+    const active = document.activeElement;
+    return !!(modal && active && modal.contains(active));
+  });
+  expect(focusAfterRetry).toBe(false);
 });
 
 test('a passing but imperfect assignment quiz can still be retried', async ({ page }) => {

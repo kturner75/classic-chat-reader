@@ -6325,6 +6325,7 @@
     }
 
     async function openAssignmentQuizOverlay(assignment) {
+        releaseHiddenCharacterBrowserFocus();
         state.quizAssignmentId = assignment.assignmentId;
         applyRecapPreferenceGating();
         state.quizChapterId = assignment.chapterId || assignment.chapters?.[0]?.chapterId || null;
@@ -6343,6 +6344,7 @@
         }
         await refreshAssignmentQuizOverlay(assignment.assignmentId);
         ttsPauseForModal();
+        focusFirstQuizOption();
     }
 
     function enterAssignmentQuizOverlay(assignment) {
@@ -6772,6 +6774,7 @@
         if (!state.quizAssignmentId || !canRetryAssignmentQuiz(assignmentForQuizOverlay(), state.quizResult)) {
             return;
         }
+        releaseHiddenCharacterBrowserFocus();
         state.quizResult = null;
         state.quizSelectedAnswers = (state.quizQuestions || []).map(() => null);
         state.quizQuestionIndex = 0;
@@ -6781,6 +6784,7 @@
         if (elements.chapterQuizStatus) {
             elements.chapterQuizStatus.textContent = 'Try again.';
         }
+        focusFirstQuizOption();
     }
 
     function renderChapterQuizFeedback(result) {
@@ -9410,16 +9414,74 @@
         state.characterBrowserReturnFocus = null;
     }
 
+    function getVisibleDialogFallbacks() {
+        const fallbacks = [];
+        if (isChapterRecapVisible()) {
+            const firstOption = elements.chapterQuizQuestions
+                && elements.chapterQuizQuestions.querySelector('input[type="radio"]:not([disabled])');
+            if (firstOption) {
+                fallbacks.push(firstOption);
+            }
+            fallbacks.push(elements.chapterRecapClose);
+        }
+        if (isAssignmentWrapupVisible()) {
+            const wrapupAction = elements.assignmentWrapupActions
+                && elements.assignmentWrapupActions.querySelector('button');
+            if (wrapupAction) {
+                fallbacks.push(wrapupAction);
+            }
+            fallbacks.push(elements.assignmentWrapupClose);
+        }
+        return fallbacks;
+    }
+
+    function releaseCharacterBrowserFocus(options = {}) {
+        const keyboard = getCharacterBrowserKeyboard();
+        const modal = elements.characterBrowserModal;
+        if (keyboard && typeof keyboard.releaseDialogFocus === 'function') {
+            keyboard.releaseDialogFocus(modal, {
+                remembered: options.remembered,
+                launchers: options.restore === false
+                    ? []
+                    : [...getCharacterBrowserLaunchers(), ...getVisibleDialogFallbacks()]
+            });
+            return;
+        }
+        const active = document.activeElement;
+        if (active && modal && modal.contains(active) && typeof active.blur === 'function') {
+            active.blur();
+        }
+    }
+
     function restoreCharacterBrowserFocus() {
         const remembered = state.characterBrowserReturnFocus;
         state.characterBrowserReturnFocus = null;
+        releaseCharacterBrowserFocus({ remembered, restore: true });
+    }
+
+    function releaseHiddenCharacterBrowserFocus() {
+        const modal = elements.characterBrowserModal;
+        if (!modal) {
+            return;
+        }
+        const hidden = modal.classList.contains('hidden')
+            || modal.getAttribute('aria-hidden') === 'true';
+        if (!hidden) {
+            return;
+        }
+        releaseCharacterBrowserFocus({ restore: false });
+    }
+
+    function focusFirstQuizOption() {
+        const firstOption = elements.chapterQuizQuestions
+            && elements.chapterQuizQuestions.querySelector('input[type="radio"]:not([disabled])');
         const keyboard = getCharacterBrowserKeyboard();
         const target = keyboard
             ? keyboard.pickReturnFocus({
-                remembered,
-                launchers: getCharacterBrowserLaunchers()
+                remembered: firstOption,
+                launchers: [elements.chapterRecapClose]
             })
-            : null;
+            : (firstOption || elements.chapterRecapClose);
         if (target && typeof target.focus === 'function') {
             target.focus();
         }
@@ -9786,17 +9848,21 @@
     }
 
     function closeCharacterBrowser(skipAudioResume = false) {
+        // Move focus out before hiding. Chrome blocks aria-hidden while a
+        // descendant (often #character-browser-close) still has focus, which
+        // leaves quiz options unchoosable on the next overlay.
+        if (skipAudioResume) {
+            releaseCharacterBrowserFocus({ restore: false });
+            state.characterBrowserReturnFocus = null;
+        } else {
+            restoreCharacterBrowserFocus();
+            ttsResumeAfterModal();
+        }
         elements.characterBrowserModal.classList.add('hidden');
         elements.characterBrowserModal.setAttribute('aria-hidden', 'true');
         state.characterBrowserOpen = false;
         state.selectedCharacterId = null;
         state.characterBrowserFocusIndex = 0;
-        if (!skipAudioResume) {
-            ttsResumeAfterModal();
-            restoreCharacterBrowserFocus();
-        } else {
-            state.characterBrowserReturnFocus = null;
-        }
         maybeRestoreAssignmentWrapup();
     }
 
