@@ -9389,6 +9389,14 @@
         });
     }
 
+    function getCharacterBrowserLaunchers() {
+        return [
+            elements.characterToggle,
+            elements.mobileMenuCharacterToggle,
+            elements.mobileHeaderMenuToggle
+        ];
+    }
+
     function rememberCharacterBrowserReturnFocus() {
         const active = document.activeElement;
         if (active
@@ -9398,20 +9406,21 @@
             state.characterBrowserReturnFocus = active;
             return;
         }
-        state.characterBrowserReturnFocus = elements.characterToggle
-            || elements.mobileMenuCharacterToggle
-            || null;
+        state.characterBrowserReturnFocus = null;
     }
 
     function restoreCharacterBrowserFocus() {
-        const target = state.characterBrowserReturnFocus;
+        const remembered = state.characterBrowserReturnFocus;
         state.characterBrowserReturnFocus = null;
-        if (target && typeof target.focus === 'function' && document.contains(target)) {
+        const keyboard = getCharacterBrowserKeyboard();
+        const target = keyboard
+            ? keyboard.pickReturnFocus({
+                remembered,
+                launchers: getCharacterBrowserLaunchers()
+            })
+            : null;
+        if (target && typeof target.focus === 'function') {
             target.focus();
-            return;
-        }
-        if (elements.characterToggle && elements.characterToggle.style.display !== 'none') {
-            elements.characterToggle.focus();
         }
     }
 
@@ -9497,9 +9506,11 @@
                 cardFocused: !!(active && active.classList && active.classList.contains('character-card')),
                 characterCount: cards.length
             })
-            : (event.key === 'Escape'
-                ? { action: 'close', preventDefault: true, stopPropagation: true }
-                : { action: 'consume', preventDefault: false, stopPropagation: true });
+            : ((event.ctrlKey || event.metaKey || event.altKey)
+                ? { action: 'ignore', preventDefault: false, stopPropagation: false }
+                : (event.key === 'Escape'
+                    ? { action: 'close', preventDefault: true, stopPropagation: true }
+                    : { action: 'consume', preventDefault: false, stopPropagation: true }));
 
         if (decision.stopPropagation) {
             event.stopPropagation();
@@ -9802,8 +9813,13 @@
         const iconSize = isLarge ? 32 : 24;
         const characterId = escapeHtml(String(char.id));
         const characterName = escapeHtml(char.name || 'Character');
+        const semantics = getCharacterBrowserKeyboard()?.characterCardSemantics()
+            || { tagName: 'div', role: 'option' };
+        const tagName = semantics.tagName === 'button' ? 'button' : 'div';
+        const roleAttr = semantics.role ? ` role="${escapeHtml(semantics.role)}"` : '';
+        const typeAttr = tagName === 'button' ? ' type="button"' : '';
         return `
-            <button type="button" class="character-card ${sizeClass}" role="option" id="character-option-${characterId}" data-character-id="${characterId}" aria-selected="false" tabindex="-1">
+            <${tagName}${typeAttr} class="character-card ${sizeClass}"${roleAttr} id="character-option-${characterId}" data-character-id="${characterId}" aria-selected="false" tabindex="-1">
                 <div class="character-card-portrait ${char.portraitReady ? '' : 'pending'}">
                     ${char.portraitReady
                         ? `<img src="/api/characters/${characterId}/portrait" alt="" />`
@@ -9814,7 +9830,7 @@
                     }
                 </div>
                 <div class="character-card-name">${characterName}</div>
-            </button>
+            </${tagName}>
         `;
     }
 

@@ -2,13 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    characterCardSemantics,
     clampIndex,
     cycleFocusIndex,
     describeKey,
+    hasButtonOptionDualRole,
     isNavigationKey,
+    isVisibleFocusable,
     moveGridIndex,
     moveIndex,
-    moveLinearIndex
+    moveLinearIndex,
+    pickReturnFocus
 } = require('../../main/resources/static/js/character-browser-keyboard.js');
 
 function twoRowRects() {
@@ -108,4 +112,147 @@ test('describeKey opens a listbox keyboard model and blocks reader shortcuts', (
     });
     assert.equal(detailView.action, 'block-reader');
     assert.equal(detailView.stopPropagation, true);
+});
+
+test('describeKey does not preventDefault Ctrl/Cmd+C/R/S/P or Alt+Arrow, but still traps Shift+Tab', () => {
+    const listContext = { listVisible: true, cardFocused: true, characterCount: 3 };
+    const ignoreChords = [
+        { key: 'c', ctrlKey: true },
+        { key: 'c', metaKey: true },
+        { key: 'r', ctrlKey: true },
+        { key: 'r', metaKey: true },
+        { key: 's', ctrlKey: true },
+        { key: 's', metaKey: true },
+        { key: 'p', ctrlKey: true },
+        { key: 'p', metaKey: true },
+        { key: 'ArrowDown', altKey: true },
+        { key: 'ArrowUp', altKey: true },
+        { key: 'ArrowLeft', altKey: true },
+        { key: 'ArrowRight', altKey: true }
+    ];
+
+    ignoreChords.forEach((event) => {
+        const decision = describeKey(event, listContext);
+        assert.equal(decision.action, 'ignore', `${event.key} chord should be ignored`);
+        assert.equal(decision.preventDefault, false, `${event.key} chord must not preventDefault`);
+        assert.equal(decision.stopPropagation, false);
+    });
+
+    const shiftTab = describeKey({ key: 'Tab', shiftKey: true }, listContext);
+    assert.equal(shiftTab.action, 'trap-tab-backward');
+    assert.equal(shiftTab.preventDefault, true);
+    assert.equal(shiftTab.stopPropagation, true);
+
+    const plainTab = describeKey({ key: 'Tab' }, listContext);
+    assert.equal(plainTab.action, 'trap-tab-forward');
+    assert.equal(plainTab.preventDefault, true);
+
+    const ctrlTab = describeKey({ key: 'Tab', ctrlKey: true }, listContext);
+    assert.equal(ctrlTab.action, 'ignore');
+    assert.equal(ctrlTab.preventDefault, false);
+});
+
+function createFocusableControl(overrides = {}) {
+    const classList = {
+        contains(name) {
+            return (overrides.classes || []).includes(name);
+        }
+    };
+    const attributes = { ...(overrides.attributes || {}) };
+    return {
+        id: overrides.id || 'control',
+        disabled: overrides.disabled === true,
+        hidden: overrides.hidden === true,
+        style: { ...(overrides.style || {}) },
+        classList,
+        offsetParent: Object.prototype.hasOwnProperty.call(overrides, 'offsetParent')
+            ? overrides.offsetParent
+            : {},
+        closest(selector) {
+            if (selector === '.hidden' && (overrides.hiddenAncestor || (overrides.classes || []).includes('hidden'))) {
+                return { className: 'hidden' };
+            }
+            return null;
+        },
+        getAttribute(name) {
+            return attributes[name] ?? null;
+        },
+        focus() {}
+    };
+}
+
+test('isVisibleFocusable rejects hidden and non-focusable controls', () => {
+    const documentMock = {
+        contains() {
+            return true;
+        }
+    };
+    const env = { document: documentMock };
+
+    assert.equal(isVisibleFocusable(createFocusableControl(), env), true);
+    assert.equal(isVisibleFocusable(createFocusableControl({ style: { display: 'none' } }), env), false);
+    assert.equal(isVisibleFocusable(createFocusableControl({ offsetParent: null }), env), false);
+    assert.equal(isVisibleFocusable(createFocusableControl({ hiddenAncestor: true }), env), false);
+    assert.equal(isVisibleFocusable(createFocusableControl({ classes: ['hidden'] }), env), false);
+    assert.equal(isVisibleFocusable(createFocusableControl({ disabled: true }), env), false);
+    assert.equal(isVisibleFocusable(null, env), false);
+
+    const detached = createFocusableControl();
+    assert.equal(isVisibleFocusable(detached, {
+        document: {
+            contains() {
+                return false;
+            }
+        }
+    }), false);
+});
+
+test('pickReturnFocus skips a hidden opener and uses a visible reader fallback', () => {
+    const documentMock = {
+        contains() {
+            return true;
+        }
+    };
+    const env = { document: documentMock };
+    const hiddenMobileCharacters = createFocusableControl({
+        id: 'mobile-menu-character-toggle',
+        hiddenAncestor: true,
+        offsetParent: null
+    });
+    const hiddenDesktopToggle = createFocusableControl({
+        id: 'character-toggle',
+        style: { display: 'none' },
+        offsetParent: null
+    });
+    const visibleMenuToggle = createFocusableControl({
+        id: 'mobile-header-menu-toggle'
+    });
+
+    const fallback = pickReturnFocus({
+        remembered: hiddenMobileCharacters,
+        launchers: [hiddenDesktopToggle, hiddenMobileCharacters, visibleMenuToggle]
+    }, env);
+
+    assert.equal(fallback.id, 'mobile-header-menu-toggle');
+
+    const visibleOpener = createFocusableControl({ id: 'character-toggle' });
+    const remembered = pickReturnFocus({
+        remembered: visibleOpener,
+        launchers: [hiddenDesktopToggle, visibleMenuToggle]
+    }, env);
+    assert.equal(remembered.id, 'character-toggle');
+
+    assert.equal(pickReturnFocus({
+        remembered: hiddenMobileCharacters,
+        launchers: [hiddenDesktopToggle, hiddenMobileCharacters]
+    }, env), null);
+});
+
+test('character cards are option-only, not native buttons inside a listbox', () => {
+    const semantics = characterCardSemantics();
+    assert.equal(semantics.tagName, 'div');
+    assert.equal(semantics.role, 'option');
+    assert.equal(semantics.containerRole, 'listbox');
+    assert.equal(hasButtonOptionDualRole(semantics), false);
+    assert.equal(hasButtonOptionDualRole({ tagName: 'button', role: 'option' }), true);
 });

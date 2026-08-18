@@ -180,6 +180,18 @@
         return moveGridIndex(items, currentIndex, key, options);
     }
 
+    function hasCommandModifier(event) {
+        return !!(event && (event.ctrlKey || event.metaKey));
+    }
+
+    function hasAltModifier(event) {
+        return !!(event && event.altKey);
+    }
+
+    function ignoreDecision() {
+        return { action: 'ignore', preventDefault: false, stopPropagation: false };
+    }
+
     function describeKey(event, context = {}) {
         const key = event && typeof event.key === 'string' ? event.key : '';
         const shiftKey = !!(event && event.shiftKey);
@@ -187,15 +199,22 @@
         const cardFocused = context.cardFocused === true;
         const characterCount = Number.isInteger(context.characterCount) ? context.characterCount : 0;
 
-        if (key === 'Escape') {
-            return { action: 'close', preventDefault: true, stopPropagation: true };
-        }
-        if (key === 'Tab') {
+        // Keep Shift+Tab trapped, but do not steal Ctrl/Cmd+Tab or Alt+Tab.
+        if (key === 'Tab' && !hasCommandModifier(event) && !hasAltModifier(event)) {
             return {
                 action: shiftKey ? 'trap-tab-backward' : 'trap-tab-forward',
                 preventDefault: true,
                 stopPropagation: true
             };
+        }
+
+        // Match the main reader: leave native chords alone (Cmd/Ctrl+C/R/S/P, Alt+Arrow).
+        if (hasCommandModifier(event) || hasAltModifier(event)) {
+            return ignoreDecision();
+        }
+
+        if (key === 'Escape') {
+            return { action: 'close', preventDefault: true, stopPropagation: true };
         }
         if (listVisible && characterCount > 0 && isNavigationKey(key)) {
             return { action: 'move', preventDefault: true, stopPropagation: true };
@@ -209,14 +228,95 @@
         return { action: 'consume', preventDefault: false, stopPropagation: true };
     }
 
+    function characterCardSemantics() {
+        return {
+            tagName: 'div',
+            role: 'option',
+            containerRole: 'listbox'
+        };
+    }
+
+    function hasButtonOptionDualRole(semantics) {
+        const tag = String(semantics?.tagName || '').toLowerCase();
+        return tag === 'button' && semantics?.role === 'option';
+    }
+
+    function isVisibleFocusable(element, env = {}) {
+        if (!element || typeof element.focus !== 'function') {
+            return false;
+        }
+        if (element.disabled === true || element.hidden === true) {
+            return false;
+        }
+        if (typeof element.getAttribute === 'function' && element.getAttribute('aria-hidden') === 'true') {
+            return false;
+        }
+        if (element.classList && typeof element.classList.contains === 'function'
+            && element.classList.contains('hidden')) {
+            return false;
+        }
+        if (typeof element.closest === 'function') {
+            const hiddenAncestor = element.closest('.hidden');
+            if (hiddenAncestor) {
+                return false;
+            }
+        }
+
+        const inlineStyle = element.style || {};
+        if (inlineStyle.display === 'none' || inlineStyle.visibility === 'hidden') {
+            return false;
+        }
+
+        const documentObj = env.document
+            || (typeof document !== 'undefined' ? document : null);
+        if (documentObj && typeof documentObj.contains === 'function' && !documentObj.contains(element)) {
+            return false;
+        }
+
+        const computed = typeof env.getComputedStyle === 'function'
+            ? env.getComputedStyle(element)
+            : (typeof getComputedStyle === 'function' ? getComputedStyle(element) : null);
+        if (computed && (computed.display === 'none' || computed.visibility === 'hidden')) {
+            return false;
+        }
+
+        if ('offsetParent' in element) {
+            const position = (computed && computed.position) || inlineStyle.position;
+            if (position !== 'fixed' && element.offsetParent == null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function pickReturnFocus({ remembered, launchers } = {}, env = {}) {
+        const candidates = [];
+        if (remembered) {
+            candidates.push(remembered);
+        }
+        if (Array.isArray(launchers)) {
+            launchers.forEach((launcher) => {
+                if (launcher) {
+                    candidates.push(launcher);
+                }
+            });
+        }
+        return candidates.find((candidate) => isVisibleFocusable(candidate, env)) || null;
+    }
+
     return {
+        characterCardSemantics,
         clampIndex,
         cycleFocusIndex,
         describeKey,
+        hasButtonOptionDualRole,
         isNavigationKey,
         isSelectKey,
+        isVisibleFocusable,
         moveGridIndex,
         moveIndex,
-        moveLinearIndex
+        moveLinearIndex,
+        pickReturnFocus
     };
 });
