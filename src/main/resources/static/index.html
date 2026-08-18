@@ -714,22 +714,22 @@
         </div>
 
         <!-- Character Browser Modal -->
-        <div id="character-browser-modal" class="character-modal hidden">
-            <div class="character-modal-backdrop"></div>
+        <div id="character-browser-modal" class="character-modal hidden" role="dialog" aria-modal="true" aria-labelledby="character-browser-title" aria-hidden="true">
+            <div class="character-modal-backdrop" aria-hidden="true"></div>
             <div class="character-modal-container">
                 <div class="character-modal-header">
-                    <h3>Characters</h3>
-                    <button id="character-browser-close" class="character-modal-close">&times;</button>
+                    <h3 id="character-browser-title">Characters</h3>
+                    <button id="character-browser-close" class="character-modal-close" type="button" aria-label="Close character browser">&times;</button>
                 </div>
                 <div class="character-modal-body">
                     <!-- List view -->
                     <div id="character-list-view" class="character-list-view">
                         <p id="character-list-empty" class="character-list-empty hidden">No characters discovered yet. Keep reading!</p>
-                        <div id="character-list" class="character-grid"></div>
+                        <div id="character-list" class="character-grid character-flow" role="listbox" aria-label="Characters"></div>
                     </div>
                     <!-- Detail view -->
                     <div id="character-detail-view" class="character-detail-view hidden">
-                        <button id="character-back-btn" class="character-back-btn">
+                        <button id="character-back-btn" class="character-back-btn" type="button">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5M12 19l-7-7 7-7"/>
                             </svg>
@@ -744,7 +744,7 @@
                             <a id="character-detail-link" href="#" class="character-first-appearance">
                                 First appears in: <span id="character-detail-chapter"></span>
                             </a>
-                            <button id="character-chat-btn" class="character-chat-btn">
+                            <button id="character-chat-btn" class="character-chat-btn" type="button">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                 </svg>
@@ -934,6 +934,7 @@
     <script src="/js/library-discover.js"></script>
     <script src="/js/citation-utils.js"></script>
     <script src="/js/character-chat-export.js"></script>
+    <script src="/js/character-browser-keyboard.js"></script>
     <script src="/js/character-chat-sync.js"></script>
     <script src="/js/my-chats-landing.js"></script>
     <script src="/js/voice-call-utils.js"></script>

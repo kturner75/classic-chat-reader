@@ -3977,9 +3977,15 @@ kbd {
     transition: color 0.2s, background-color 0.2s;
 }
 
-.character-modal-close:hover {
+.character-modal-close:hover,
+.character-modal-close:focus-visible {
     color: var(--text-color);
     background-color: var(--highlight-color);
+}
+
+.character-modal-close:focus-visible {
+    outline: 2px solid var(--muted-color);
+    outline-offset: 2px;
 }
 
 .character-modal-body {
@@ -4017,7 +4023,24 @@ kbd {
     transition: background-color 0.2s, border-color 0.2s;
 }
 
-.character-card:hover {
+button.character-card {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    background-color: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.character-card:hover,
+.character-card[aria-selected="true"] {
+    background-color: var(--highlight-color);
+    border-color: var(--muted-color);
+}
+
+.character-card:focus-visible {
+    outline: 2px solid var(--muted-color);
+    outline-offset: 2px;
     background-color: var(--highlight-color);
     border-color: var(--muted-color);
 }
@@ -4056,8 +4079,12 @@ kbd {
 }
 
 /* Flowing character layout - primary large cards first, secondary smaller below */
-.character-grid:has(.character-flow) {
-    display: block;
+.character-grid:has(.character-flow),
+.character-grid.character-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-start;
 }
 
 .character-flow {

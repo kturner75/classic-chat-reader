@@ -120,6 +120,8 @@
         // Character browser modal state
         characterBrowserOpen: false,
         selectedCharacterId: null,
+        characterBrowserFocusIndex: 0,
+        characterBrowserReturnFocus: null,
         // Character chat modal state
         characterChatOpen: false,
         chatCharacterId: null,
@@ -9361,6 +9363,194 @@
         return elements.characterBrowserModal && !elements.characterBrowserModal.classList.contains('hidden');
     }
 
+    function isCharacterDetailVisible() {
+        return elements.characterDetailView && !elements.characterDetailView.classList.contains('hidden');
+    }
+
+    function getCharacterBrowserKeyboard() {
+        return window.CharacterBrowserKeyboard || null;
+    }
+
+    function getCharacterCards() {
+        if (!elements.characterList) return [];
+        return Array.from(elements.characterList.querySelectorAll('.character-card'));
+    }
+
+    function getCharacterCardRects() {
+        return getCharacterCards().map((card, index) => {
+            const rect = card.getBoundingClientRect();
+            return {
+                index,
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height
+            };
+        });
+    }
+
+    function getCharacterBrowserLaunchers() {
+        return [
+            elements.characterToggle,
+            elements.mobileMenuCharacterToggle,
+            elements.mobileHeaderMenuToggle
+        ];
+    }
+
+    function rememberCharacterBrowserReturnFocus() {
+        const active = document.activeElement;
+        if (active
+            && active !== document.body
+            && active !== document.documentElement
+            && !elements.characterBrowserModal?.contains(active)) {
+            state.characterBrowserReturnFocus = active;
+            return;
+        }
+        state.characterBrowserReturnFocus = null;
+    }
+
+    function restoreCharacterBrowserFocus() {
+        const remembered = state.characterBrowserReturnFocus;
+        state.characterBrowserReturnFocus = null;
+        const keyboard = getCharacterBrowserKeyboard();
+        const target = keyboard
+            ? keyboard.pickReturnFocus({
+                remembered,
+                launchers: getCharacterBrowserLaunchers()
+            })
+            : null;
+        if (target && typeof target.focus === 'function') {
+            target.focus();
+        }
+    }
+
+    function syncCharacterCardSelection(focusIndex, { focus = false } = {}) {
+        const keyboard = getCharacterBrowserKeyboard();
+        const cards = getCharacterCards();
+        const index = keyboard
+            ? keyboard.clampIndex(focusIndex, cards.length)
+            : (cards.length === 0 ? -1 : Math.max(0, Math.min(cards.length - 1, focusIndex || 0)));
+        state.characterBrowserFocusIndex = index;
+        cards.forEach((card, cardIndex) => {
+            const selected = cardIndex === index;
+            card.setAttribute('aria-selected', selected ? 'true' : 'false');
+            card.tabIndex = selected ? 0 : -1;
+            if (selected && focus) {
+                card.focus();
+                card.scrollIntoView({ block: 'nearest' });
+            }
+        });
+        return index;
+    }
+
+    function focusCharacterBrowser() {
+        if (!isCharacterBrowserVisible()) return;
+        if (isCharacterDetailVisible()) {
+            const chatVisible = elements.characterChatBtn
+                && !elements.characterChatBtn.classList.contains('hidden');
+            const target = (chatVisible && elements.characterChatBtn)
+                || elements.characterBackBtn
+                || elements.characterBrowserClose;
+            target?.focus();
+            return;
+        }
+        const cards = getCharacterCards();
+        if (cards.length > 0) {
+            let index = state.characterBrowserFocusIndex;
+            if (state.selectedCharacterId) {
+                const selectedIndex = cards.findIndex((card) => card.dataset.characterId === String(state.selectedCharacterId));
+                if (selectedIndex >= 0) {
+                    index = selectedIndex;
+                }
+            }
+            syncCharacterCardSelection(index, { focus: true });
+            return;
+        }
+        elements.characterBrowserClose?.focus();
+    }
+
+    function getCharacterBrowserFocusable() {
+        const root = elements.characterBrowserModal?.querySelector('.character-modal-container');
+        if (!root) return [];
+        return Array.from(root.querySelectorAll(
+            'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        )).filter((el) => {
+            if (el.classList.contains('hidden') || el.closest('.hidden')) {
+                return false;
+            }
+            if (el.tabIndex < 0) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function cycleCharacterBrowserFocus(direction) {
+        const keyboard = getCharacterBrowserKeyboard();
+        const focusable = getCharacterBrowserFocusable();
+        if (focusable.length === 0) return;
+        const currentIndex = focusable.indexOf(document.activeElement);
+        const nextIndex = keyboard
+            ? keyboard.cycleFocusIndex(currentIndex, direction, focusable.length)
+            : (currentIndex + (direction < 0 ? -1 : 1) + focusable.length) % focusable.length;
+        focusable[nextIndex]?.focus();
+    }
+
+    function handleCharacterBrowserKeydown(event) {
+        const keyboard = getCharacterBrowserKeyboard();
+        const cards = getCharacterCards();
+        const active = document.activeElement;
+        const decision = keyboard
+            ? keyboard.describeKey(event, {
+                listVisible: !!(elements.characterListView && !elements.characterListView.classList.contains('hidden')),
+                cardFocused: !!(active && active.classList && active.classList.contains('character-card')),
+                characterCount: cards.length
+            })
+            : ((event.ctrlKey || event.metaKey || event.altKey)
+                ? { action: 'ignore', preventDefault: false, stopPropagation: false }
+                : (event.key === 'Escape'
+                    ? { action: 'close', preventDefault: true, stopPropagation: true }
+                    : { action: 'consume', preventDefault: false, stopPropagation: true }));
+
+        if (decision.stopPropagation) {
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+        }
+        if (decision.preventDefault) {
+            event.preventDefault();
+        }
+
+        switch (decision.action) {
+            case 'close':
+                closeCharacterBrowser();
+                break;
+            case 'select':
+                if (active?.dataset?.characterId) {
+                    showCharacterDetail(active.dataset.characterId);
+                }
+                break;
+            case 'move': {
+                const currentIndex = cards.indexOf(active);
+                const fromIndex = currentIndex >= 0 ? currentIndex : state.characterBrowserFocusIndex;
+                const nextIndex = keyboard
+                    ? keyboard.moveIndex(getCharacterCardRects(), fromIndex, event.key)
+                    : fromIndex;
+                syncCharacterCardSelection(nextIndex, { focus: true });
+                break;
+            }
+            case 'trap-tab-forward':
+                cycleCharacterBrowserFocus(1);
+                break;
+            case 'trap-tab-backward':
+                cycleCharacterBrowserFocus(-1);
+                break;
+            default:
+                break;
+        }
+    }
+
     function isCharacterChatVisible() {
         return elements.characterChatModal && !elements.characterChatModal.classList.contains('hidden');
     }
@@ -9526,8 +9716,10 @@
     async function openCharacterBrowser(options = {}) {
         if (!state.currentBook) return;
 
+        rememberCharacterBrowserReturnFocus();
         ttsPauseForModal();
         state.characterBrowserOpen = true;
+        state.characterBrowserFocusIndex = 0;
 
         // Load characters up to current reading position
         const chapterIndex = state.currentChapterIndex;
@@ -9566,16 +9758,22 @@
 
         showCharacterListView();
         elements.characterBrowserModal.classList.remove('hidden');
+        elements.characterBrowserModal.setAttribute('aria-hidden', 'false');
 
         const preferChat = options.preferChat === true;
         if (preferChat) {
             const chatable = (state.characters || []).filter((item) => canChatWithCharacter(item));
             if (chatable.length === 1) {
                 await openCharacterChat(chatable[0].id);
-            } else if (state.characters.length === 1) {
+                return;
+            }
+            if (state.characters.length === 1) {
                 showCharacterDetail(state.characters[0].id);
+                focusCharacterBrowser();
+                return;
             }
         }
+        focusCharacterBrowser();
     }
 
     function openCharacterBrowserToCharacter(characterId) {
@@ -9588,10 +9786,15 @@
 
     function closeCharacterBrowser(skipAudioResume = false) {
         elements.characterBrowserModal.classList.add('hidden');
+        elements.characterBrowserModal.setAttribute('aria-hidden', 'true');
         state.characterBrowserOpen = false;
         state.selectedCharacterId = null;
+        state.characterBrowserFocusIndex = 0;
         if (!skipAudioResume) {
             ttsResumeAfterModal();
+            restoreCharacterBrowserFocus();
+        } else {
+            state.characterBrowserReturnFocus = null;
         }
         maybeRestoreAssignmentWrapup();
     }
@@ -9600,24 +9803,34 @@
         elements.characterDetailView.classList.add('hidden');
         elements.characterListView.classList.remove('hidden');
         renderCharacterList();
+        if (isCharacterBrowserVisible()) {
+            focusCharacterBrowser();
+        }
     }
 
     function renderCharacterCard(char, isLarge) {
         const sizeClass = isLarge ? 'character-card-large' : 'character-card-small';
         const iconSize = isLarge ? 32 : 24;
+        const characterId = escapeHtml(String(char.id));
+        const characterName = escapeHtml(char.name || 'Character');
+        const semantics = getCharacterBrowserKeyboard()?.characterCardSemantics()
+            || { tagName: 'div', role: 'option' };
+        const tagName = semantics.tagName === 'button' ? 'button' : 'div';
+        const roleAttr = semantics.role ? ` role="${escapeHtml(semantics.role)}"` : '';
+        const typeAttr = tagName === 'button' ? ' type="button"' : '';
         return `
-            <div class="character-card ${sizeClass}" data-character-id="${char.id}">
+            <${tagName}${typeAttr} class="character-card ${sizeClass}"${roleAttr} id="character-option-${characterId}" data-character-id="${characterId}" aria-selected="false" tabindex="-1">
                 <div class="character-card-portrait ${char.portraitReady ? '' : 'pending'}">
                     ${char.portraitReady
-                        ? `<img src="/api/characters/${char.id}/portrait" alt="${char.name}" />`
-                        : `<svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        ? `<img src="/api/characters/${characterId}/portrait" alt="" />`
+                        : `<svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                             <circle cx="12" cy="7" r="4"/>
                           </svg>`
                     }
                 </div>
-                <div class="character-card-name">${char.name}</div>
-            </div>
+                <div class="character-card-name">${characterName}</div>
+            </${tagName}>
         `;
     }
 
@@ -9625,6 +9838,7 @@
         if (state.characters.length === 0) {
             elements.characterListEmpty.classList.remove('hidden');
             elements.characterList.innerHTML = '';
+            elements.characterList.removeAttribute('aria-activedescendant');
             return;
         }
 
@@ -9635,19 +9849,19 @@
         const secondaryCharacters = state.characters.filter(c => c.characterType === 'SECONDARY');
 
         // Single flowing layout: primary (large) cards first, then secondary (small) cards
-        const html = `<div class="character-flow">
-            ${primaryCharacters.map(char => renderCharacterCard(char, true)).join('')}
-            ${secondaryCharacters.map(char => renderCharacterCard(char, false)).join('')}
-        </div>`;
-
-        elements.characterList.innerHTML = html;
+        elements.characterList.innerHTML = [
+            ...primaryCharacters.map(char => renderCharacterCard(char, true)),
+            ...secondaryCharacters.map(char => renderCharacterCard(char, false))
+        ].join('');
 
         // Add click handlers
-        elements.characterList.querySelectorAll('.character-card').forEach(card => {
+        elements.characterList.querySelectorAll('.character-card').forEach((card, index) => {
             card.addEventListener('click', () => {
+                syncCharacterCardSelection(index);
                 showCharacterDetail(card.dataset.characterId);
             });
         });
+        syncCharacterCardSelection(state.characterBrowserFocusIndex);
     }
 
     function showCharacterDetail(characterId) {
@@ -9677,6 +9891,9 @@
 
         elements.characterListView.classList.add('hidden');
         elements.characterDetailView.classList.remove('hidden');
+        if (isCharacterBrowserVisible()) {
+            focusCharacterBrowser();
+        }
     }
 
     function navigateToCharacterAppearance() {
@@ -11830,10 +12047,7 @@
 
             // Handle character browser modal keyboard
             if (isCharacterBrowserVisible()) {
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeCharacterBrowser();
-                }
+                handleCharacterBrowserKeydown(e);
                 return;
             }
 
