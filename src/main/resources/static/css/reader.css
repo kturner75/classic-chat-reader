@@ -968,7 +968,7 @@ a.my-chat-card:focus-visible,
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--muted-color);
+    color: #5c574e;
     font-family: var(--font-serif);
     font-size: 0.72rem;
     font-style: italic;

@@ -32,12 +32,17 @@ test('uses compact visible label and a longer accessible name', () => {
     assert.equal(gutenbergSourceLabel('64317'), 'Gutenberg #64317');
     assert.equal(
         gutenbergSourceAccessibleName('1513', 'Romeo and Juliet'),
-        'Project Gutenberg source for Romeo and Juliet, ebook 1513'
+        'Gutenberg #1513. Project Gutenberg source for Romeo and Juliet.'
+    );
+    assert.equal(
+        gutenbergSourceAccessibleName('64317', 'The Great Gatsby'),
+        'Gutenberg #64317. Project Gutenberg source for The Great Gatsby.'
     );
     assert.equal(
         gutenbergSourceAccessibleName('1513', '  '),
-        'Project Gutenberg source, ebook 1513'
+        'Gutenberg #1513. Project Gutenberg source.'
     );
+    assert.ok(gutenbergSourceAccessibleName('64317', 'The Great Gatsby').includes('Gutenberg #64317'));
 });
 
 test('renders a library-card source link for Gutenberg titles', () => {
@@ -50,7 +55,7 @@ test('renders a library-card source link for Gutenberg titles', () => {
     assert.match(html, /href="https:\/\/www\.gutenberg\.org\/ebooks\/1513"/);
     assert.match(html, /target="_blank"/);
     assert.match(html, /rel="noopener noreferrer"/);
-    assert.match(html, /aria-label="Project Gutenberg source for Romeo and Juliet, ebook 1513"/);
+    assert.match(html, /aria-label="Gutenberg #1513. Project Gutenberg source for Romeo and Juliet."/);
     assert.match(html, />Gutenberg #1513</);
     assert.doesNotMatch(html, /\[Gutenberg /);
 });
@@ -66,6 +71,6 @@ test('escapes title text in the accessible name', () => {
         gutenbergId: 1342
     });
 
-    assert.match(html, /aria-label="Project Gutenberg source for Pride &amp; Prejudice &lt;script&gt;, ebook 1342"/);
+    assert.match(html, /aria-label="Gutenberg #1342. Project Gutenberg source for Pride &amp; Prejudice &lt;script&gt;."/);
     assert.doesNotMatch(html, /<script>/);
 });
