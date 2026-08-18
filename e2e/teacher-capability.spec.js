@@ -35,7 +35,7 @@ async function installTeacherMocks(page, canTeach) {
 }
 
 async function installAssignmentMocks(page, options = {}) {
-  const books = [
+  const books = options.books || [
     { id: 'treasure', title: 'Treasure Island', author: 'Robert Louis Stevenson', chapters: [{ id: 'treasure-1', title: 'The Old Sea-dog' }] },
     { id: 'pride', title: 'Pride and Prejudice', author: 'Jane Austen', chapters: [
       { id: 'pride-1', title: 'Chapter 1' },
@@ -243,6 +243,54 @@ test('teacher can delete a draft assignment but not a published one', async ({ p
   await expect(page.locator('.assignment-card', { hasText: 'Unfinished Pride quiz' })).toHaveCount(0);
   await expect(page.locator('.assignment-card', { hasText: 'Published reading' })).toBeVisible();
   await expect(page.locator('#toast')).toContainText('Draft assignment deleted.');
+});
+
+test('published range assignment cards show chapter labels instead of UUIDs', async ({ page }) => {
+  const chapterOne = '29b20b57-358d-4cb6-bc91-bb7732efb15c';
+  const chapterTwo = '3cc1e8bf-8b8b-4dfc-a73b-82d7c523dde8';
+  await installAssignmentMocks(page, {
+    books: [
+      { id: 'gatsby', title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', chapters: [
+        { id: chapterOne, title: 'Chapter I' },
+        { id: chapterTwo, title: 'Chapter II' }
+      ] },
+      { id: 'northanger', title: 'Northanger Abbey', author: 'Jane Austen', chapters: [{ id: 'na-1', title: 'Chapter 1' }] }
+    ],
+    assignments: [
+      {
+        assignmentId: 'gatsby-range',
+        title: 'The Great Gatsby - Chapters 1-2',
+        bookId: 'gatsby',
+        status: 'PUBLISHED',
+        chapters: [
+          { chapterId: chapterOne, chapterIndex: 0, chapterTitle: null },
+          { chapterId: chapterTwo, chapterIndex: 1, chapterTitle: null }
+        ]
+      },
+      {
+        assignmentId: 'northanger-book',
+        title: 'Northanger Abbey',
+        bookId: 'northanger',
+        status: 'PUBLISHED',
+        characterChatRequired: true,
+        chapters: []
+      }
+    ]
+  });
+  await page.goto('/teacher.html');
+
+  const gatsbyCard = page.locator('.assignment-card', { hasText: 'The Great Gatsby - Chapters 1-2' });
+  await expect(gatsbyCard).toBeVisible();
+  await expect(gatsbyCard.locator('.assignment-meta')).toContainText('The Great Gatsby · Chapters 1–2');
+  await expect(gatsbyCard).not.toContainText(chapterOne);
+  await expect(gatsbyCard).not.toContainText(chapterTwo);
+
+  const northangerCard = page.locator('.assignment-card', { hasText: 'Northanger Abbey' });
+  await expect(northangerCard).toBeVisible();
+  await expect(northangerCard.locator('.assignment-meta')).toContainText('Northanger Abbey');
+  await expect(northangerCard.locator('.assignment-meta')).toContainText('Character chat required');
+  await expect(northangerCard).not.toContainText(chapterOne);
+  await expect(northangerCard).not.toContainText(chapterTwo);
 });
 
 test('assignment book autocomplete sorts titles and narrows the choices', async ({ page }) => {
