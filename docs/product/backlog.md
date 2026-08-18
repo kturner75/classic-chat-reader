@@ -110,7 +110,7 @@ Last updated: 2026-08-18
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -167,6 +167,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Added `BL-061` (My Chats Open Book should skip landing). Kevin: from My Chats, Open Book (e.g. Daisy Buchanan → *The Great Gatsby*) routes through the landing page (10–20s load) and only then opens the book. Chat already knows the book; it should open the reader directly. Slow landing load is `BL-059`; this item is the unnecessary hop, which also makes `BL-059` worse. Docs only.
 - 2026-08-18: Added `BL-062` (character browser detail Esc should return to the list). A11y nit from tonight’s soak after #131 keyboard work. On a character (e.g. Benvolio), Esc closes the whole Characters modal instead of behaving like **← All Characters**. Mouse-only / pressing `m` again are the current workarounds. Docs only.
 - 2026-08-18: Expanded `BL-062` in place (no new BL): list-view `j`/`k` should move the Characters roster the same way they move the chapter list (`c` modal). Esc-on-detail → **← All Characters** stays. Docs only.
+- 2026-08-18: Added `BL-063` (cite Gutenberg-sourced titles on library book cards). Kevin: show a small `[Gutenberg 1513]` corner link back to Project Gutenberg for Gutenberg imports only — license/attribution + teacher trust for the Jessica demo. Library book cards only; not skinny assignment cards; not reader chrome. In Progress in this PR.
+- 2026-08-18: Refined `BL-063` placement (docs only, no new slice): **library page book card only**. Small corner `[Gutenberg 1513]` (ebook number) linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces any reader / page-count / cache-only placement.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1768,6 +1770,50 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-18: A11y nit from tonight’s soak after #131 keyboard work. Character detail (e.g. Benvolio): Esc closes the whole Characters modal instead of returning to the list like **← All Characters**. Mouse-only / pressing `m` again are the current workarounds. Docs only; no reader change in this capture.
 - 2026-08-18: Follow-up soak: `j`/`k` should navigate the Characters **list** the same way they navigate the chapter browser (`c` modal). Expanded this item in place — no new BL. Keep original Esc-on-detail → list. Docs only; no reader change in this capture.
+
+### BL-063 - Cite Gutenberg Source on Library Book Cards
+- Type: Improvement
+- Priority: P2
+- Effort: S
+- Status: In Progress
+- Problem: Gutenberg-sourced titles do not show a visible cite back to Project Gutenberg. Teachers (and students) cannot tell a title is a public-domain Gutenberg ebook or jump to the source page. Needed for license/attribution and teacher trust, including the Jessica demo.
+- Placement (Kevin 2026-08-18): Library page book card only. Small corner text like **`[Gutenberg 1513]`** (ebook number), linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card, not in the reader chrome unless we add that later.
+- Current Direction:
+- Library page **book cards only** (local imported titles in Continue Reading / shelves). Do **not** put this near reader page count / cache-only.
+- Gutenberg-sourced titles only (`source=gutenberg` + numeric ebook id).
+- Small cover-corner text like **`[Gutenberg 1513]`** linking to `https://www.gutenberg.org/ebooks/{id}`.
+- Accessible name must say more than the bracket text (e.g. “Project Gutenberg source for Romeo and Juliet, ebook 1513”).
+- Clicking the cite must open Gutenberg and must **not** open the book.
+- Out of this epic:
+  - Skinny assignment cards (`book-item-assignment` / `BL-057`).
+  - Reader chrome (page count, cache-only, header) unless a later slice adds it.
+  - Catalog / Discover cards (those are already Gutenberg search results).
+  - Non-Gutenberg sources (Standard Ebooks, manual).
+- Scope Buckets:
+- Expose Gutenberg ebook number on the library `Book` DTO.
+- Render a small corner cite on local library book cards only.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-063.1 Library book-card Gutenberg cite | In Progress | `GET /api/library` includes `gutenbergId` for Gutenberg imports; local library cards show `[Gutenberg {id}]` linking to the ebook page with an accessible name; assignment cards and reader chrome stay clean | Romeo and Juliet (1513) library card cites Gutenberg; a non-Gutenberg title does not; skinny assignment cards do not grow a source line |
+- Acceptance Criteria:
+- Gutenberg-sourced library book cards show a small corner `[Gutenberg {ebook id}]` link to `https://www.gutenberg.org/ebooks/{id}`.
+- The control has an accessible name beyond the visible bracket text.
+- Non-Gutenberg titles do not show a Gutenberg cite.
+- Skinny assignment cards do not show the cite.
+- Reader chrome does not show the cite unless a later slice adds it.
+- Activating the cite does not open the book.
+- Dependency Notes:
+- Distinct from `BL-057` / `BL-058` assignment-card density. Do not put attribution on the skinny card.
+- Distinct from MLA citation (`citation-utils` / reader cite copy). This is a visible source stamp, not a formatted citation.
+- Catalog import already stores `source` / `sourceId` on `BookEntity`; this epic surfaces that on library cards.
+- Risks:
+- Putting the cite on the assignment card re-fattens the soak-thinned landing card.
+- Putting it in reader chrome (page count / cache-only) is out unless we add that later; this item is the library-card stamp.
+- A link inside the card `role="button"` that does not stop the card click would open the book instead of (or as well as) Gutenberg.
+- Session Log:
+- 2026-08-18: Kevin: cite the book source back to Project Gutenberg with a link, Gutenberg-sourced titles only. License/attribution plus teacher trust. Do not put it on the skinny assignment card. Prefer a small source line on the library book card (not reader chrome). Captured as `BL-063` and implemented on library cards in this PR.
+- 2026-08-18: Placement refined: library page book card only; small corner `[Gutenberg 1513]` (ebook number) linking to the Gutenberg page; Gutenberg-sourced titles only; not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces reader / page-count / cache-only placement. Docs only.
 
 ## P0
 
