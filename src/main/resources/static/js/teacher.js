@@ -599,22 +599,7 @@
     }
 
     function assignmentTarget(assignment) {
-        const book = bookById(assignment.bookId);
-        if (!book) return 'Book unavailable';
-        const chapters = Array.isArray(assignment.chapters) ? assignment.chapters : [];
-        if (chapters.length === 0 && !assignment.chapterId) {
-            return book.title;
-        }
-        if (chapters.length === 1 || (chapters.length === 0 && assignment.chapterId)) {
-            const chapter = book.chapters?.find(item => item.id === (chapters[0]?.chapterId || assignment.chapterId))
-                || (Number.isInteger(assignment.chapterIndex) ? book.chapters?.[assignment.chapterIndex] : null);
-            return chapter ? `${book.title} · ${chapter.title}` : book.title;
-        }
-        if (chapters.length <= 3) {
-            const titles = chapters.map(item => item.chapterTitle || item.chapterId).filter(Boolean);
-            return `${book.title} · ${titles.join(', ')}`;
-        }
-        return `${book.title} · ${chapters.length} chapters`;
+        return AssignmentCardLabel.assignmentTarget(assignment, bookById(assignment.bookId));
     }
 
     function renderAssignments() {
