@@ -401,6 +401,7 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -448,6 +449,7 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -567,6 +569,7 @@ test('Open shows wrap-up immediately when assigned reading is already complete',
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -891,6 +894,7 @@ test('Continue Reading keeps the saved resume when the open chapter never loaded
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1010,6 +1014,7 @@ test('secondary-only characters can be chatted with from assignment wrap-up', as
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1046,6 +1051,7 @@ test('end-of-reading wrap-up offers Take Quiz and Chat, not Continue Reading', a
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1079,6 +1085,7 @@ test('Continue Reading exits assignment mode and restores the full chapter list'
         lastPage: 0,
         progressRatio: 0.34,
         maxProgressRatio: 0.34,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1107,6 +1114,54 @@ test('Continue Reading exits assignment mode and restores the full chapter list'
   await expect(page.locator('#assignment-mode-banner')).toBeHidden();
   await page.keyboard.press('c');
   await expect(page.locator('#chapter-list .chapter-list-item')).toHaveCount(3);
+});
+
+test('first open of an unread assigned range does not show wrap-up when the book is marked complete', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 3,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 8,
+        progressRatio: 1,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-18T12:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    assignmentTitle: 'The Great Gatsby - Chapters 1-2',
+    assignmentChapters: [
+      { chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'Chapter I' },
+      { chapterId: 'chapter-2', chapterIndex: 1, chapterTitle: 'Chapter II' }
+    ],
+    quizRequired: true,
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 0,
+    characterChatRequired: true
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await assignment.locator('.assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await expect(page.locator('#assignment-mode-banner')).toContainText('The Great Gatsby - Chapters 1-2');
+  await expect(page.locator('#chapter-title')).toContainText('Chapter One');
+  await expect(page.locator('#assignment-wrapup-overlay')).toBeHidden();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#chapter-title')).toContainText('Chapter Two');
+  await expect(page.locator('#assignment-wrapup-overlay')).toBeHidden();
+
+  await page.keyboard.press('ArrowRight');
+  const wrapup = page.locator('#assignment-wrapup-overlay');
+  await expect(wrapup).toBeVisible();
+  await expect(wrapup).toContainText('Take the quiz and chat with a character');
+  await expect(wrapup.locator('[data-assignment-wrapup="quiz"]')).toHaveText('Take Quiz');
+  await expect(wrapup.locator('[data-assignment-wrapup="chat"]')).toHaveText('Chat with Character');
 });
 
 test('multi-chapter assignment wrap-up waits until the last assigned chapter', async ({ page }) => {

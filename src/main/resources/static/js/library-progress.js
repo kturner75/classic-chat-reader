@@ -109,28 +109,25 @@
         return 'Whole book';
     }
 
+    function isWholeBookCompleteSignal(activity) {
+        return Boolean(activity?.completed) || toFiniteNumber(activity?.maxProgressRatio, 0) >= 0.999;
+    }
+
     function isReadingCompleteForAssignment(assignment, activity) {
         if (!activity) {
             return false;
         }
-        if (activity.completed || toFiniteNumber(activity.maxProgressRatio, 0) >= 0.999) {
-            return true;
+
+        const indexes = assignmentChapterIndexes(assignment);
+        // Whole-book assignments: only a finished book counts.
+        if (indexes.length === 0) {
+            return isWholeBookCompleteSignal(activity);
         }
 
         if (!hasBookActivity(activity)) {
             return false;
         }
 
-        const indexes = assignmentChapterIndexes(assignment);
-        if (indexes.length === 0) {
-            return false;
-        }
-
-        const reachedChapterIndex = maxReachedChapterIndex(activity);
-        if (reachedChapterIndex == null) {
-            return false;
-        }
-        const targetIndex = Math.max(...indexes);
         const completed = uniqueCompletedChapterIndexes(activity.completedChapterIndexes);
         if (indexes.every((index) => completed.includes(index))) {
             return true;
@@ -138,7 +135,12 @@
         if (completed.length > 0) {
             return false;
         }
-        return finishedLastAssignedChapter(activity, targetIndex);
+
+        const targetIndex = Math.max(...indexes);
+        // Range assignments ignore whole-book completed / maxProgress 1. Finish only
+        // when every assigned chapter is marked complete, or the student is past /
+        // on the last page of the last assigned chapter.
+        return finishedAssignedChapterByPosition(activity, targetIndex);
     }
 
     function uniqueCompletedChapterIndexes(values) {
@@ -177,16 +179,7 @@
         return result;
     }
 
-    function finishedLastAssignedChapter(activity, targetIndex) {
-        const chapterCount = Math.max(1, clampInteger(activity.chapterCount, 1, Number.MAX_SAFE_INTEGER));
-        const needed = (targetIndex + 1) / chapterCount;
-        const maxProgress = Math.max(
-            toFiniteNumber(activity.maxProgressRatio, 0),
-            toFiniteNumber(activity.progressRatio, 0)
-        );
-        if (maxProgress + 1e-9 >= needed) {
-            return true;
-        }
+    function finishedAssignedChapterByPosition(activity, targetIndex) {
         const last = Number.isFinite(Number(activity.lastChapterIndex))
             ? Number(activity.lastChapterIndex)
             : -1;
