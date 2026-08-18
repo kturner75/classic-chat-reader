@@ -110,7 +110,7 @@ Last updated: 2026-08-17
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -164,6 +164,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-17: Added `BL-058` (assignment Open / persist leftovers). The #121–#125 soak loop shipped the skinny landing card + Open/resume/persist-suppression; Uncle Bob left a Low / not-blocking chapter-hop persist-before-load leftover on #125 (`0a63b90` / merge `cb04f32`). Docs only.
 - 2026-08-17: Added `BL-059` (speed up `GET /api/library`). Kevin E2E / DevTools on prod: ~21.4s total, ~21.2s TTFB — server-side catalog work, not the network. First pass: cache + slim landing DTO + optional public cache headers + timing. Cross-links landing soak / `BL-047` library progress. Docs only.
 - 2026-08-17: Added `BL-060` (arrow keys as j/k paragraph navigation). Kevin soak: desktop paragraph nav is `j`/`k` only (`BL-023` checklist); wants **Down Arrow = j** and **Up Arrow = k** when the reader is the focused surface. Keep j/k; do not steal arrows from search, text fields, chapter list, or overlays. Update `?` overlay + BL-023 checklist when implemented. Docs only.
+- 2026-08-18: Added `BL-061` (My Chats Open Book should skip landing). Kevin: from My Chats, Open Book (e.g. Daisy Buchanan → *The Great Gatsby*) routes through the landing page (10–20s load) and only then opens the book. Chat already knows the book; it should open the reader directly. Slow landing load is `BL-059`; this item is the unnecessary hop, which also makes `BL-059` worse. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1635,6 +1636,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Complements `BL-053` (classroom concurrent capacity): a 21s library TTFB will dominate any same-hour class load, but this epic is a single-request catalog fix, not a droplet soak.
 - Invalidate path should respect `BL-007` admin-only import/delete/feature-toggle.
 - Landing IA stays `BL-018` / `BL-057`; this epic does not change card density or assignment Open.
+- Distinct from `BL-061` (My Chats Open Book hop through landing). This epic is catalog **latency**; `BL-061` is the unnecessary hop that currently pays that latency before the reader opens.
 - Risks:
 - Caching the current full `Book` graph without a slim DTO still ships a heavy payload and may hide N+1 cover/chapter work behind a TTL.
 - HTTP cache on a payload that later grows per-user progress would leak or freeze the wrong student’s assignment state.
@@ -1679,6 +1681,42 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Binding arrows globally would break chapter-list and bookmark-list keyboard nav (already ArrowUp/Down + j/k) and native caret movement in search/notes.
 - Session Log:
 - 2026-08-17: Kevin soak — wants Down Arrow = j and Up Arrow = k as paragraph-nav alternatives. Captured as P2/S. Docs only; no reader change in this capture.
+
+### BL-061 - My Chats Open Book Should Skip Landing
+- Type: Improvement
+- Priority: P2
+- Effort: S
+- Status: Proposed
+- Problem: From **My Chats**, **Open Book** (e.g. Daisy Buchanan → *The Great Gatsby*) navigates to `/?book=…&chapter=…&paragraph=…`. That is the landing SPA. The landing waits for `GET /api/library` (**~10–20s**, measured ~21s TTFB in `BL-059`) and only then `openBookFromUrlIfPresent()` opens the reader. Chat already has `session.book.id` plus chapter/paragraph. The hop is unnecessary.
+- Current code: `buildOpenBookUrl` in `my-chats.js` returns `/?book=&chapter=&paragraph=`. Landing `init` loads the catalog, then `reader.js` `openBookFromUrlIfPresent()` looks up that id in `state.localBooks` before `selectBook`.
+- Current Direction:
+- Open the reader for the known book without first rendering or waiting on the landing catalog.
+- Keep the existing book/chapter/paragraph target (same resume point the chat already has).
+- Do not treat this as a `BL-059` catalog-speed fix; that epic stays the landing `GET /api/library` latency work.
+- Out of this epic:
+  - Speeding up `GET /api/library` (`BL-059`).
+  - Changing My Chats conversation resume (`BL-032` / `BL-039` shipped).
+  - Assignment Open (`BL-057` / `BL-058`).
+- Scope Buckets:
+- Direct reader open from My Chats Open Book using the session's known book id + chapter + paragraph.
+- Avoid the landing catalog wait as a prerequisite for that navigation.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-061.1 Direct reader open from My Chats | Proposed | Open Book should enter the reader for the known book without waiting on landing `GET /api/library` | Daisy → Gatsby (or any chat with book context) opens the reader at the chat's chapter/paragraph without a 10–20s landing dwell |
+- Acceptance Criteria:
+- Open Book from a My Chats conversation that already has book/chapter/paragraph opens the reader without first sitting on the landing catalog load.
+- Resume target stays the chat's book + chapter + paragraph.
+- This epic does not implement `BL-059` cache/slim DTO work.
+- Dependency Notes:
+- Distinct from `BL-059` (landing library load). `BL-059` is the slow catalog; this is the unnecessary hop. The hop also makes `BL-059` worse: every Open Book pays the ~21s TTFB before reading.
+- My Chats surface shipped (`BL-032` / `BL-039`, PR #78). This is a follow-on nav defect, not a reopen of those epics.
+- Distinct from assignment Open leftovers (`BL-058`) and dedicated assignment page (`BL-057`).
+- Browser Back after this change should still have a sensible exit (`BL-051`); do not invent a new history story here unless the direct-open path breaks Back.
+- Risks:
+- If Open Book still goes through `/?…` and `openBookFromUrlIfPresent()` still requires `state.localBooks` from the full catalog, the hop remains even after `BL-059` is faster — and while `BL-059` is open, users wait ~20s for a book the chat already named.
+- Session Log:
+- 2026-08-18: Kevin: From My Chats, Open Book (Daisy Buchanan → The Great Gatsby) routes through the landing page (10–20s load) and only then opens the book. Chat already knows the book; it should open the reader directly. Slow landing load is `BL-059`; this item is the unnecessary hop, which also makes `BL-059` worse. Docs only; no UI in this capture.
 
 ## P0
 
