@@ -260,6 +260,10 @@
             if (hiddenAncestor) {
                 return false;
             }
+            const ariaHiddenAncestor = element.closest('[aria-hidden="true"]');
+            if (ariaHiddenAncestor) {
+                return false;
+            }
         }
 
         const inlineStyle = element.style || {};
@@ -305,18 +309,53 @@
         return candidates.find((candidate) => isVisibleFocusable(candidate, env)) || null;
     }
 
+    function getActiveElement(env = {}) {
+        const documentObj = env.document
+            || (typeof document !== 'undefined' ? document : null);
+        return documentObj && documentObj.activeElement ? documentObj.activeElement : null;
+    }
+
+    function isFocusInside(container, env = {}) {
+        const active = getActiveElement(env);
+        return !!(container && active && typeof container.contains === 'function' && container.contains(active));
+    }
+
+    /**
+     * Move focus out of a dialog before it is hidden / marked aria-hidden.
+     * Chrome blocks aria-hidden when a descendant still has focus, which leaves
+     * the close button focused and later overlays (assignment quiz) unusable.
+     */
+    function releaseDialogFocus(container, options = {}, env = {}) {
+        const focusedInside = isFocusInside(container, env);
+        const target = pickReturnFocus({
+            remembered: options.remembered,
+            launchers: options.launchers
+        }, env);
+        if (target && typeof target.focus === 'function') {
+            target.focus();
+            return target;
+        }
+        const active = getActiveElement(env);
+        if (focusedInside && active && typeof active.blur === 'function') {
+            active.blur();
+        }
+        return null;
+    }
+
     return {
         characterCardSemantics,
         clampIndex,
         cycleFocusIndex,
         describeKey,
         hasButtonOptionDualRole,
+        isFocusInside,
         isNavigationKey,
         isSelectKey,
         isVisibleFocusable,
         moveGridIndex,
         moveIndex,
         moveLinearIndex,
-        pickReturnFocus
+        pickReturnFocus,
+        releaseDialogFocus
     };
 });

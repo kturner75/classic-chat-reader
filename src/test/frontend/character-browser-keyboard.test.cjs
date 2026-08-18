@@ -7,12 +7,14 @@ const {
     cycleFocusIndex,
     describeKey,
     hasButtonOptionDualRole,
+    isFocusInside,
     isNavigationKey,
     isVisibleFocusable,
     moveGridIndex,
     moveIndex,
     moveLinearIndex,
-    pickReturnFocus
+    pickReturnFocus,
+    releaseDialogFocus
 } = require('../../main/resources/static/js/character-browser-keyboard.js');
 
 function twoRowRects() {
@@ -172,12 +174,24 @@ function createFocusableControl(overrides = {}) {
             if (selector === '.hidden' && (overrides.hiddenAncestor || (overrides.classes || []).includes('hidden'))) {
                 return { className: 'hidden' };
             }
+            if (selector === '[aria-hidden="true"]' && overrides.ariaHiddenAncestor) {
+                return { className: 'character-modal hidden', getAttribute: () => 'true' };
+            }
             return null;
         },
         getAttribute(name) {
             return attributes[name] ?? null;
         },
-        focus() {}
+        focus() {
+            if (typeof overrides.onFocus === 'function') {
+                overrides.onFocus();
+            }
+        },
+        blur() {
+            if (typeof overrides.onBlur === 'function') {
+                overrides.onBlur();
+            }
+        }
     };
 }
 
@@ -195,6 +209,7 @@ test('isVisibleFocusable rejects hidden and non-focusable controls', () => {
     assert.equal(isVisibleFocusable(createFocusableControl({ hiddenAncestor: true }), env), false);
     assert.equal(isVisibleFocusable(createFocusableControl({ classes: ['hidden'] }), env), false);
     assert.equal(isVisibleFocusable(createFocusableControl({ disabled: true }), env), false);
+    assert.equal(isVisibleFocusable(createFocusableControl({ ariaHiddenAncestor: true }), env), false);
     assert.equal(isVisibleFocusable(null, env), false);
 
     const detached = createFocusableControl();
@@ -255,4 +270,107 @@ test('character cards are option-only, not native buttons inside a listbox', () 
     assert.equal(semantics.containerRole, 'listbox');
     assert.equal(hasButtonOptionDualRole(semantics), false);
     assert.equal(hasButtonOptionDualRole({ tagName: 'button', role: 'option' }), true);
+});
+
+test('releaseDialogFocus moves focus to a visible control before a dialog is hidden', () => {
+    const closeButton = createFocusableControl({ id: 'character-browser-close' });
+    const launcher = createFocusableControl({ id: 'character-toggle' });
+    let focusedId = closeButton.id;
+    closeButton.focus = () => {
+        focusedId = closeButton.id;
+    };
+    closeButton.blur = () => {
+        focusedId = null;
+    };
+    launcher.focus = () => {
+        focusedId = launcher.id;
+    };
+    const modal = {
+        contains(node) {
+            return node === closeButton;
+        }
+    };
+    const env = {
+        document: {
+            contains() {
+                return true;
+            },
+            get activeElement() {
+                return focusedId === closeButton.id ? closeButton
+                    : focusedId === launcher.id ? launcher
+                    : null;
+            }
+        }
+    };
+
+    assert.equal(isFocusInside(modal, env), true);
+    const moved = releaseDialogFocus(modal, {
+        remembered: null,
+        launchers: [launcher]
+    }, env);
+    assert.equal(moved.id, 'character-toggle');
+    assert.equal(focusedId, 'character-toggle');
+    assert.equal(isFocusInside(modal, env), false);
+});
+
+test('releaseDialogFocus blurs a hidden-dialog close button when no launcher is visible', () => {
+    let blurred = false;
+    const closeButton = createFocusableControl({
+        id: 'character-browser-close',
+        onBlur() {
+            blurred = true;
+        }
+    });
+    const hiddenLauncher = createFocusableControl({
+        id: 'character-toggle',
+        style: { display: 'none' },
+        offsetParent: null
+    });
+    const modal = {
+        contains(node) {
+            return node === closeButton;
+        }
+    };
+    const env = {
+        document: {
+            contains() {
+                return true;
+            },
+            activeElement: closeButton
+        }
+    };
+
+    assert.equal(releaseDialogFocus(modal, {
+        remembered: hiddenLauncher,
+        launchers: [hiddenLauncher]
+    }, env), null);
+    assert.equal(blurred, true);
+});
+
+test('releaseDialogFocus leaves focus alone when it is already outside the dialog', () => {
+    let blurred = false;
+    const outside = createFocusableControl({ id: 'assignment-quiz-retry' });
+    const closeButton = createFocusableControl({
+        id: 'character-browser-close',
+        onBlur() {
+            blurred = true;
+        }
+    });
+    const modal = {
+        contains(node) {
+            return node === closeButton;
+        }
+    };
+    const env = {
+        document: {
+            contains() {
+                return true;
+            },
+            activeElement: outside
+        }
+    };
+
+    assert.equal(isFocusInside(modal, env), false);
+    assert.equal(releaseDialogFocus(modal, {}, env), null);
+    assert.equal(blurred, false);
 });
