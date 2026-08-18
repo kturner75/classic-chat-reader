@@ -171,7 +171,7 @@ test('assignment complete when chapter reached and quiz done (not whole-book %)'
         }
     });
     assert.equal(snapshot.statusClass, 'completed');
-    assert.equal(snapshot.statusLabel, 'Complete');
+    assert.equal(snapshot.statusLabel, 'Completed');
     assert.equal(snapshot.percentLabel, null);
     assert.equal(snapshot.summaryLabel, '2/2 complete');
     assert.equal(snapshot.readingComplete, true);
@@ -601,7 +601,7 @@ test('exhausted quiz attempts complete the landing card even when quizStatus sta
         characterChatStarted: true
     });
     assert.equal(snapshot.statusClass, 'completed');
-    assert.equal(snapshot.statusLabel, 'Complete');
+    assert.equal(snapshot.statusLabel, 'Completed');
     assert.equal(snapshot.summaryLabel, '3/3 complete');
     assert.equal(isAssignmentFullyComplete(assignment, activity, true), true);
 });

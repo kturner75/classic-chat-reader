@@ -392,7 +392,7 @@
         let statusLabel = 'Not started';
         let statusClass = 'not-started';
         if (allDone) {
-            statusLabel = 'Complete';
+            statusLabel = 'Completed';
             statusClass = 'completed';
         } else if (anyStarted) {
             statusLabel = 'In progress';

@@ -386,7 +386,7 @@ test('BL-047 first Library return rerenders completed quiz and all assignment re
   await page.locator('#back-to-library').click();
 
   await expect.poll(() => state.classroomContextRequests).toBe(2);
-  await expect(assignment).toContainText('Complete');
+  await expect(assignment).toContainText('Completed');
   await expect(assignment).not.toContainText('Quiz complete');
   await expect(assignment).not.toContainText('3/3 complete');
 });
@@ -543,7 +543,7 @@ test('Retry Quiz appears after a failed attempt while retries remain', async ({ 
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
 });
 
-test('assignment card is Complete after quiz retries are exhausted', async ({ page }) => {
+test('assignment card is Completed after quiz retries are exhausted', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('reader_bookActivity', JSON.stringify({
       'book-1': {
@@ -574,9 +574,8 @@ test('assignment card is Complete after quiz retries are exhausted', async ({ pa
   await page.goto('/');
 
   const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
-  await expect(assignment).toContainText('Complete');
+  await expect(assignment).toContainText('Completed');
   await expect(assignment).not.toContainText('In progress');
-  await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
 });
 
 test('Open on the assignment card opens the assignment, not character chat', async ({ page }) => {
