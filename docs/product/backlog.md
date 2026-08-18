@@ -168,6 +168,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Added `BL-062` (character browser detail Esc should return to the list). A11y nit from tonight’s soak after #131 keyboard work. On a character (e.g. Benvolio), Esc closes the whole Characters modal instead of behaving like **← All Characters**. Mouse-only / pressing `m` again are the current workarounds. Docs only.
 - 2026-08-18: Expanded `BL-062` in place (no new BL): list-view `j`/`k` should move the Characters roster the same way they move the chapter list (`c` modal). Esc-on-detail → **← All Characters** stays. Docs only.
 - 2026-08-18: Added `BL-063` (cite Gutenberg-sourced titles on library book cards). Kevin: show a small `[Gutenberg 1513]` corner link back to Project Gutenberg for Gutenberg imports only — license/attribution + teacher trust for the Jessica demo. Library book cards only; not skinny assignment cards; not reader chrome. In Progress in this PR.
+- 2026-08-18: Refined `BL-063` placement (docs only, no new slice): **library page book card only**. Small corner `[Gutenberg 1513]` (ebook number) linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces any reader / page-count / cache-only placement.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1776,15 +1777,16 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Effort: S
 - Status: In Progress
 - Problem: Gutenberg-sourced titles do not show a visible cite back to Project Gutenberg. Teachers (and students) cannot tell a title is a public-domain Gutenberg ebook or jump to the source page. Needed for license/attribution and teacher trust, including the Jessica demo.
+- Placement (Kevin 2026-08-18): Library page book card only. Small corner text like **`[Gutenberg 1513]`** (ebook number), linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card, not in the reader chrome unless we add that later.
 - Current Direction:
-- Library page **book cards only** (local imported titles in Continue Reading / shelves).
+- Library page **book cards only** (local imported titles in Continue Reading / shelves). Do **not** put this near reader page count / cache-only.
 - Gutenberg-sourced titles only (`source=gutenberg` + numeric ebook id).
 - Small cover-corner text like **`[Gutenberg 1513]`** linking to `https://www.gutenberg.org/ebooks/{id}`.
 - Accessible name must say more than the bracket text (e.g. “Project Gutenberg source for Romeo and Juliet, ebook 1513”).
 - Clicking the cite must open Gutenberg and must **not** open the book.
 - Out of this epic:
   - Skinny assignment cards (`book-item-assignment` / `BL-057`).
-  - Reader chrome (page count, cache-only, header).
+  - Reader chrome (page count, cache-only, header) unless a later slice adds it.
   - Catalog / Discover cards (those are already Gutenberg search results).
   - Non-Gutenberg sources (Standard Ebooks, manual).
 - Scope Buckets:
@@ -1799,7 +1801,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - The control has an accessible name beyond the visible bracket text.
 - Non-Gutenberg titles do not show a Gutenberg cite.
 - Skinny assignment cards do not show the cite.
-- Reader chrome does not show the cite.
+- Reader chrome does not show the cite unless a later slice adds it.
 - Activating the cite does not open the book.
 - Dependency Notes:
 - Distinct from `BL-057` / `BL-058` assignment-card density. Do not put attribution on the skinny card.
@@ -1807,10 +1809,11 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Catalog import already stores `source` / `sourceId` on `BookEntity`; this epic surfaces that on library cards.
 - Risks:
 - Putting the cite on the assignment card re-fattens the soak-thinned landing card.
-- Putting it in reader chrome mixes attribution with page-count / cache-only status.
+- Putting it in reader chrome (page count / cache-only) is out unless we add that later; this item is the library-card stamp.
 - A link inside the card `role="button"` that does not stop the card click would open the book instead of (or as well as) Gutenberg.
 - Session Log:
 - 2026-08-18: Kevin: cite the book source back to Project Gutenberg with a link, Gutenberg-sourced titles only. License/attribution plus teacher trust. Do not put it on the skinny assignment card. Prefer a small source line on the library book card (not reader chrome). Captured as `BL-063` and implemented on library cards in this PR.
+- 2026-08-18: Placement refined: library page book card only; small corner `[Gutenberg 1513]` (ebook number) linking to the Gutenberg page; Gutenberg-sourced titles only; not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces reader / page-count / cache-only placement. Docs only.
 
 ## P0
 
