@@ -201,6 +201,71 @@ test('transcript tracker: hangup flush does not duplicate the last live user tur
     ]);
 });
 
+test('transcript tracker: late completed after response.created with item_id and corrected text does not add a second user turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    const live = tracker.consume({ type: 'response.created' });
+    assert.deepEqual(live.map(turn => turn.content), ["I've come to hear of your adventures."]);
+
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.equal(tracker.getFinalized().filter(turn => turn.role === 'user').length, 1);
+});
+
+test('transcript tracker: speech_started after commit does not clear the committed-utterance guard', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+
+    // New item_id + slightly corrected text after speech_started used to look
+    // like a fresh utterance because speech_started lifted the guard.
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.role), ['user']);
+});
+
+test('transcript tracker: hangup flush after speech_started and late corrected completed does not post a second turnId', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'response.output_audio_transcript.done',
+        transcript: 'Bath is delightful, I assure you.'
+    });
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => [turn.role, turn.content]), [
+        ['user', "I've come to hear of your adventures."],
+        ['character', 'Bath is delightful, I assure you.']
+    ]);
+});
+
 test('transcript tracker: late completed with item_id and corrected text does not reopen the caption', () => {
     const tracker = createTranscriptTracker({ now: () => 1 });
     tracker.consume({
