@@ -91,19 +91,18 @@
         let userPartial = '';
         let assistantPartial = '';
         let currentUserItemId = null;
-        // Once response.created (or hangup flush) commits a user utterance, late
-        // transcription.completed / updated events for that same item must not
-        // reopen userPartial. Hangup flush would otherwise persist the last
-        // spoken line a second time into My Chats / the character thread.
-        let userUtteranceCommitted = false;
+        // After finalizeUser, ignore user transcription until the next
+        // speech_started. Late completed/updated events (including a corrected
+        // caption with a new item_id) must not reopen userPartial or hangup
+        // flush will POST a second turnId. Finalized item IDs stay ignored
+        // even after speech_started so a late prior completion cannot
+        // overwrite the next utterance.
+        let acceptUserTranscription = true;
         const finalizedUserItemIds = new Set();
         const finalized = [];
 
-        function lastFinalized(role) {
-            for (let i = finalized.length - 1; i >= 0; i--) {
-                if (finalized[i].role === role) return finalized[i];
-            }
-            return null;
+        function rememberFinalizedUserItem(itemId) {
+            if (itemId) finalizedUserItemIds.add(itemId);
         }
 
         function finalizeUser() {
@@ -115,15 +114,11 @@
                 return null;
             }
             if (itemId && finalizedUserItemIds.has(itemId)) {
+                acceptUserTranscription = false;
                 return null;
             }
-            const lastUser = lastFinalized('user');
-            if (userUtteranceCommitted && lastUser && lastUser.content === content) {
-                if (itemId) finalizedUserItemIds.add(itemId);
-                return null;
-            }
-            userUtteranceCommitted = true;
-            if (itemId) finalizedUserItemIds.add(itemId);
+            acceptUserTranscription = false;
+            rememberFinalizedUserItem(itemId);
             finalized.push({ role: 'user', content, timestamp: now() });
             return finalized[finalized.length - 1];
         }
@@ -152,7 +147,11 @@
             }
 
             if (type === 'input_audio_buffer.speech_started') {
-                userUtteranceCommitted = false;
+                if (!acceptUserTranscription) {
+                    userPartial = '';
+                    currentUserItemId = null;
+                }
+                acceptUserTranscription = true;
                 return [];
             }
 
@@ -166,19 +165,12 @@
                     ?? event.item?.content?.[0]?.transcript
                     ?? '';
                 const itemId = eventItemId(event);
-                const content = typeof transcript === 'string' ? transcript.trim() : '';
-                const lastUser = lastFinalized('user');
                 if (itemId && finalizedUserItemIds.has(itemId)) {
                     return [];
                 }
-                if (userUtteranceCommitted) {
-                    if (!itemId || (lastUser && lastUser.content === content)) {
-                        if (itemId && lastUser && lastUser.content === content) {
-                            finalizedUserItemIds.add(itemId);
-                        }
-                        return [];
-                    }
-                    userUtteranceCommitted = false;
+                if (!acceptUserTranscription) {
+                    rememberFinalizedUserItem(itemId);
+                    return [];
                 }
                 if (transcript) {
                     userPartial = transcript;
