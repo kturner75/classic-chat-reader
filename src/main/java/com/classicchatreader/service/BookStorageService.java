@@ -85,6 +85,27 @@ public class BookStorageService {
             .map(this::toBookDto);
     }
 
+    /**
+     * Persist {@code tts_enabled=true} when the stored column is still off.
+     * Must inspect the entity flag, not {@link Book#ttsEnabled()}, because
+     * {@link #toBookDto} reports TTS on for curated titles even when the
+     * column is stale.
+     */
+    @Transactional
+    public boolean persistTtsEnabledIfStoredOff(String bookId) {
+        Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
+        if (bookOpt.isEmpty()) {
+            return false;
+        }
+        BookEntity book = bookOpt.get();
+        if (Boolean.TRUE.equals(book.getTtsEnabled())) {
+            return false;
+        }
+        book.setTtsEnabled(true);
+        bookRepository.save(book);
+        return true;
+    }
+
     @Transactional
     public Optional<Book> updateBookFeatures(String bookId,
                                              Boolean ttsEnabled,

@@ -22,6 +22,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -106,5 +108,34 @@ class BookStorageServiceTest {
         assertTrue(dto.isPresent());
         assertTrue(dto.get().ttsEnabled());
         assertTrue(dto.get().curated());
+    }
+
+    @Test
+    void persistTtsEnabledIfStoredOff_writesWhenColumnIsStaleEvenIfEffectiveTtsIsOn() {
+        BookEntity book = new BookEntity("Romeo and Juliet", "William Shakespeare", "gutenberg");
+        book.setId("romeo-id");
+        book.setSourceId("1513");
+        book.setTtsEnabled(false);
+        when(bookRepository.findById("romeo-id")).thenReturn(Optional.of(book));
+        when(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "1513")).thenReturn(true);
+        assertTrue(service.isTtsEnabled(book));
+
+        assertTrue(service.persistTtsEnabledIfStoredOff("romeo-id"));
+
+        assertTrue(book.getTtsEnabled());
+        verify(bookRepository).save(book);
+    }
+
+    @Test
+    void persistTtsEnabledIfStoredOff_skipsWriteWhenColumnAlreadyTrue() {
+        BookEntity book = new BookEntity("Pride and Prejudice", "Jane Austen", "gutenberg");
+        book.setId("pride-id");
+        book.setSourceId("1342");
+        book.setTtsEnabled(true);
+        when(bookRepository.findById("pride-id")).thenReturn(Optional.of(book));
+
+        assertFalse(service.persistTtsEnabledIfStoredOff("pride-id"));
+
+        verify(bookRepository, never()).save(book);
     }
 }
