@@ -241,6 +241,29 @@ test('transcript tracker: speech_started after commit does not clear the committ
     assert.deepEqual(tracker.getFinalized().map(turn => turn.role), ['user']);
 });
 
+test('transcript tracker: barge-in then late no-id completed of the previous line does not flush a second turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: 'Hello there'
+    });
+    tracker.consume({ type: 'response.created' });
+
+    // Barge-in opens the new-turn gate. A late completed for the previous
+    // line often has no item_id; hangup flush must not POST a second turnId.
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'Hello there'
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    const userTurns = tracker.getFinalized().filter(turn => turn.role === 'user');
+    assert.equal(userTurns.length, 1);
+    assert.equal(userTurns[0].content, 'Hello there');
+});
+
 test('transcript tracker: hangup flush after speech_started and late corrected completed does not post a second turnId', () => {
     const tracker = createTranscriptTracker({ now: () => 1 });
     tracker.consume({

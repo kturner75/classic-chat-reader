@@ -94,8 +94,9 @@
         // After a user turn is posted, ignore further user captions until
         // speech_started (the new-turn gate). Corrections of that posted
         // utterance stay blocked even after speech_started: same finalized
-        // item id, or punctuation-normalized exact equality. Do not treat a
-        // shared prefix ("Yes" / "Yesterday") as a correction.
+        // item id, or punctuation-normalized exact equality (including a late
+        // no-id completed of the previous line after barge-in). Do not treat
+        // a shared prefix ("Yes" / "Yesterday") as a correction.
         let acceptNewUserTranscription = true;
         let userUtteranceCommitted = false;
         let lastCommittedUserContent = '';
