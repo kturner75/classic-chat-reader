@@ -23,5 +23,35 @@ public record ChapterQuizGradeResponse(
             Integer citationParagraphIndex,
             String citationSnippet
     ) {
+        public QuestionResult withoutAnswerKey() {
+            return new QuestionResult(
+                    questionIndex,
+                    question,
+                    selectedOptionIndex,
+                    -1,
+                    correct,
+                    null,
+                    null,
+                    null
+            );
+        }
+    }
+
+    /** Strip the answer key so a retrying student cannot read it from the grade payload. */
+    public ChapterQuizGradeResponse withoutAnswerKey() {
+        if (results == null || results.isEmpty()) {
+            return this;
+        }
+        return new ChapterQuizGradeResponse(
+                bookId,
+                chapterId,
+                totalQuestions,
+                correctAnswers,
+                scorePercent,
+                difficultyLevel,
+                unlockedTrophies,
+                progress,
+                results.stream().map(QuestionResult::withoutAnswerKey).toList()
+        );
     }
 }

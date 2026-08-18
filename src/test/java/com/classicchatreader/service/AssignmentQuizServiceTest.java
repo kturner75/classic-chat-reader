@@ -192,6 +192,77 @@ class AssignmentQuizServiceTest {
     }
 
     @Test
+    void gradeStudentQuiz_hidesAnswerKeyWhileAttemptsRemain() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        stubFailedGrade(assignment);
+        when(classroomQuizPolicyService.resolveAssignmentBudget("asg-1", "user-1"))
+                .thenReturn(Optional.of(new ClassroomQuizPolicyService.AttemptBudget(
+                        assignment, 1, 3, 2, 3, 0)));
+
+        Optional<ChapterQuizGradeResponse> result = service.gradeStudentQuiz(
+                "user-1", "asg-1", List.of(1), List.of("q1"), "v1", null);
+
+        assertTrue(result.isPresent());
+        assertEquals(0, result.get().correctAnswers());
+        assertEquals(1, result.get().results().size());
+        ChapterQuizGradeResponse.QuestionResult question = result.get().results().get(0);
+        assertFalse(question.correct());
+        assertEquals(-1, question.correctOptionIndex());
+        assertEquals(null, question.correctAnswer());
+        assertEquals(null, question.citationSnippet());
+        assertEquals(null, question.citationParagraphIndex());
+    }
+
+    @Test
+    void gradeStudentQuiz_revealsAnswerKeyWhenAttemptsExhausted() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        stubFailedGrade(assignment);
+        when(classroomQuizPolicyService.resolveAssignmentBudget("asg-1", "user-1"))
+                .thenReturn(Optional.of(new ClassroomQuizPolicyService.AttemptBudget(
+                        assignment, 3, 3, 0, 3, 0)));
+
+        Optional<ChapterQuizGradeResponse> result = service.gradeStudentQuiz(
+                "user-1", "asg-1", List.of(1), List.of("q1"), "v1", null);
+
+        assertTrue(result.isPresent());
+        ChapterQuizGradeResponse.QuestionResult question = result.get().results().get(0);
+        assertFalse(question.correct());
+        assertEquals(0, question.correctOptionIndex());
+        assertEquals("A", question.correctAnswer());
+    }
+
+    @Test
+    void gradeStudentQuiz_hidesAnswerKeyWhenNoAttemptBudget() {
+        AssignmentEntity assignment = publishedAssignment("CUSTOM");
+        stubFailedGrade(assignment);
+        when(classroomQuizPolicyService.resolveAssignmentBudget("asg-1", "user-1"))
+                .thenReturn(Optional.empty());
+
+        Optional<ChapterQuizGradeResponse> result = service.gradeStudentQuiz(
+                "user-1", "asg-1", List.of(1), List.of("q1"), "v1", null);
+
+        assertTrue(result.isPresent());
+        assertEquals(null, result.get().results().get(0).correctAnswer());
+        assertEquals(-1, result.get().results().get(0).correctOptionIndex());
+    }
+
+    private void stubFailedGrade(AssignmentEntity assignment) {
+        stubReadingComplete();
+        AssignmentQuizEntity quiz = new AssignmentQuizEntity();
+        quiz.setAssignmentId("asg-1");
+        quiz.setPayloadJson("""
+                {"questions":[{"id":"q1","question":"Who?","options":["A","B"],"correctOptionIndex":0,"citationParagraphIndex":2,"citationSnippet":"Nick said A."}]}
+                """);
+        when(assignmentRepository.findByIdAndDeletedAtIsNull("asg-1")).thenReturn(Optional.of(assignment));
+        when(authorizationService.isActiveStudentOnTerm("user-1", "term-1")).thenReturn(true);
+        when(assignmentQuizRepository.findByAssignmentId("asg-1")).thenReturn(Optional.of(quiz));
+        when(quizProgressService.recordAttemptAndEvaluate(
+                isNull(), eq("book-1"), eq("asg-1"), isNull(), eq("user-1"), eq(0), eq(0), eq(1), eq(0)))
+                .thenReturn(new QuizProgressService.ProgressUpdate(List.of(), new QuizProgress(1, 0, 0)));
+        when(chapterQuizService.contentVersion(any())).thenReturn("v1");
+    }
+
+    @Test
     void saveCustomQuiz_setsQuizSourceCustom() {
         AssignmentEntity assignment = publishedAssignment(null);
         assignment.setStatus("DRAFT");
