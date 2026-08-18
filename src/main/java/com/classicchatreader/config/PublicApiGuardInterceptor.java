@@ -2,6 +2,7 @@ package com.classicchatreader.config;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.PublicSessionAuthService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +24,7 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
 
     private final PublicApiRateLimiter rateLimiter;
     private final PublicSessionAuthService sessionAuthService;
+    private final AccountAuthService accountAuthService;
     private final String deploymentMode;
     private final String publicApiKey;
     private final int generationLimit;
@@ -47,9 +49,11 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
             @Value("${security.public.rate-limit.authenticated-chat-requests:0}")
             int authenticatedChatLimit,
             @Value("${security.public.rate-limit.authenticated-buddy-check-requests:0}")
-            int authenticatedBuddyCheckLimit) {
+            int authenticatedBuddyCheckLimit,
+            @Nullable AccountAuthService accountAuthService) {
         this.rateLimiter = rateLimiter != null ? rateLimiter : new InMemoryIpRateLimiter(20000);
         this.sessionAuthService = sessionAuthService;
+        this.accountAuthService = accountAuthService;
         this.deploymentMode = deploymentMode;
         this.publicApiKey = publicApiKey;
         this.generationLimit = Math.max(1, generationLimit);
@@ -80,6 +84,8 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
         if (isPublicMode()) {
             boolean apiKeyConfigured = publicApiKey != null && !publicApiKey.isBlank();
             boolean sessionAuthConfigured = sessionAuthService != null && sessionAuthService.isPasswordConfigured();
+            boolean accountPrincipalAllowed = SensitiveApiRequestMatcher.acceptsAccountPrincipal(method, path)
+                    && accountAuthService != null;
 
             if (endpointType == SensitiveApiRequestMatcher.EndpointType.ADMIN) {
                 if (!apiKeyConfigured) {
@@ -98,7 +104,7 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
                 }
                 principalScope = "api:" + shortHash(providedApiKey);
             } else {
-                if (!apiKeyConfigured && !sessionAuthConfigured) {
+                if (!apiKeyConfigured && !sessionAuthConfigured && !accountPrincipalAllowed) {
                     log.warn("Public mode is enabled but no sensitive endpoint auth is configured; blocking sensitive endpoint {}", path);
                     writeJson(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
                             "{\"error\":\"Public mode security is not configured\"}");
@@ -121,7 +127,12 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
                 if (!apiKeyAuthenticated && sessionAuthenticated) {
                     principalScope = sessionPrincipal;
                 }
-                if (!apiKeyAuthenticated && !sessionAuthenticated) {
+                if (!apiKeyAuthenticated && !sessionAuthenticated && accountPrincipalAllowed) {
+                    principalScope = accountAuthService.resolveAuthenticatedPrincipal(request)
+                            .map(principal -> "account:" + principal.userId())
+                            .orElse(null);
+                }
+                if (principalScope == null || principalScope.isBlank()) {
                     writeJson(response, HttpServletResponse.SC_UNAUTHORIZED,
                             "{\"error\":\"Authentication required\"}");
                     return false;

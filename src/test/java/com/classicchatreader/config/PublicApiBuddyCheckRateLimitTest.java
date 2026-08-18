@@ -55,7 +55,8 @@ class PublicApiBuddyCheckRateLimitTest {
                 30,
                 0,
                 0,
-                0
+                0,
+                null
         );
         responseBody = new StringWriter();
         lenient().when(response.getWriter()).thenReturn(new PrintWriter(responseBody));

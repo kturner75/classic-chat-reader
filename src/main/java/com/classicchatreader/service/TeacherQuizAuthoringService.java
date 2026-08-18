@@ -15,6 +15,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,8 @@ import java.util.Objects;
 import java.util.UUID;
 @Service
 public class TeacherQuizAuthoringService {
+
+    private static final Logger log = LoggerFactory.getLogger(TeacherQuizAuthoringService.class);
 
     private final ClassroomAuthorizationService authorizationService;
     private final QuizQuestionOverrideRepository overrideRepository;
@@ -299,8 +303,13 @@ public class TeacherQuizAuthoringService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
             return parseSuggestedQuestions(raw, count, optionCount);
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions: " + e.getMessage());
+            log.error(
+                    "event=chapter_suggest_questions_failed termId={} chapterId={} errorType={}",
+                    termId,
+                    chapterId,
+                    e.getClass().getSimpleName(),
+                    e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions.", e);
         }
     }
 
@@ -335,8 +344,13 @@ public class TeacherQuizAuthoringService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
             return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest distractors: " + e.getMessage());
+            log.error(
+                    "event=chapter_suggest_distractors_failed termId={} chapterId={} errorType={}",
+                    termId,
+                    chapterId,
+                    e.getClass().getSimpleName(),
+                    e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest distractors.", e);
         }
     }
 
@@ -621,31 +635,44 @@ public class TeacherQuizAuthoringService {
         throw new IllegalArgumentException("No JSON object found");
     }
 
-    static String formatExcludedChoices(List<String> exclude) {
-        if (exclude == null || exclude.isEmpty()) {
-            return "";
-        }
-        String joined = exclude.stream()
-                .filter(value -> value != null && !value.isBlank())
-                .map(String::trim)
-                .distinct()
-                .reduce((left, right) -> left + "; " + right)
-                .orElse("");
-        if (joined.isBlank()) {
-            return "";
-        }
-        return " Do not reuse these existing choices: " + joined + ".";
-    }
+    static final int MAX_EXCLUDED_CHOICES = 20;
+    static final int MAX_EXCLUDED_CHOICE_LENGTH = 200;
 
-    static void addExcludedChoices(java.util.Set<String> seen, List<String> exclude) {
-        if (seen == null || exclude == null) {
-            return;
+    static List<String> sanitizeExcludedChoices(List<String> exclude) {
+        if (exclude == null || exclude.isEmpty()) {
+            return List.of();
         }
+        java.util.LinkedHashSet<String> unique = new java.util.LinkedHashSet<>();
         for (String value : exclude) {
             if (value == null || value.isBlank()) {
                 continue;
             }
-            seen.add(value.trim().toLowerCase(Locale.ROOT));
+            String trimmed = value.trim();
+            if (trimmed.length() > MAX_EXCLUDED_CHOICE_LENGTH) {
+                trimmed = trimmed.substring(0, MAX_EXCLUDED_CHOICE_LENGTH);
+            }
+            unique.add(trimmed);
+            if (unique.size() >= MAX_EXCLUDED_CHOICES) {
+                break;
+            }
+        }
+        return List.copyOf(unique);
+    }
+
+    static String formatExcludedChoices(List<String> exclude) {
+        List<String> sanitized = sanitizeExcludedChoices(exclude);
+        if (sanitized.isEmpty()) {
+            return "";
+        }
+        return " Do not reuse these existing choices: " + String.join("; ", sanitized) + ".";
+    }
+
+    static void addExcludedChoices(java.util.Set<String> seen, List<String> exclude) {
+        if (seen == null) {
+            return;
+        }
+        for (String value : sanitizeExcludedChoices(exclude)) {
+            seen.add(value.toLowerCase(Locale.ROOT));
         }
     }
 

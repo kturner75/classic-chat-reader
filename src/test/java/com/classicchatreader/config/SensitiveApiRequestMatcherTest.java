@@ -8,6 +8,8 @@ import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointTy
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.ADMIN;
 import static com.classicchatreader.config.SensitiveApiRequestMatcher.EndpointType.NONE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SensitiveApiRequestMatcherTest {
 
@@ -22,6 +24,46 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/illustrations/chapter/ch-1/request"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/quizzes/chapter/ch-1/generate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/library/book-1/cover/retry"));
+    }
+
+    @Test
+    void classify_marksClassroomSuggestRoutesAsGeneration() {
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/suggest-distractors"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-questions"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "GET", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
+    }
+
+    @Test
+    void acceptsAccountPrincipal_onlyClassroomSuggestPosts() {
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/assignments/asg-1/suggest-distractors"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-questions"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/pregen/book/book-1"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/quizzes/chapter/ch-1/generate"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "PATCH", "/api/library/book-1/features"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
     }
 
     @Test
@@ -57,6 +99,10 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(NONE, SensitiveApiRequestMatcher.classify(null, "/api/pregen/book/book-1"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/history"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/chat"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify(
+                "POST", "/api/classroom/assignments/asg-1/effective-quiz"));
     }
 
     @Test

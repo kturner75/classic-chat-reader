@@ -23,6 +23,8 @@ import com.classicchatreader.service.llm.LlmProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,8 @@ import java.util.UUID;
 
 @Service
 public class AssignmentQuizService {
+
+    private static final Logger log = LoggerFactory.getLogger(AssignmentQuizService.class);
 
     private final ClassroomAuthorizationService authorizationService;
     private final AssignmentRepository assignmentRepository;
@@ -197,16 +201,12 @@ public class AssignmentQuizService {
         if (!reasoningProvider.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Quiz AI provider is unavailable.");
         }
-        String bookId = request != null && request.bookId() != null && !request.bookId().isBlank()
-                ? request.bookId().trim()
-                : assignment.getBookId();
-        BookEntity book = bookRepository.findById(bookId)
+        BookEntity book = bookRepository.findById(assignment.getBookId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown bookId."));
-        String context = buildAssignmentContext(
-                assignment,
-                request != null ? request.bookId() : null,
-                request != null ? request.chapterIds() : null);
-        String scope = describeProposedScope(assignment, request != null ? request.chapterIds() : null);
+        List<ChapterEntity> chapters = resolveScopedChapters(
+                assignment, request != null ? request.chapterIds() : null);
+        String context = buildChapterText(chapters);
+        String scope = describeVerifiedScope(assignment, request != null ? request.chapterIds() : null, chapters);
         String prompt = """
                 You are helping a teacher author a multiple-choice assignment quiz.
                 Book: %s
@@ -223,8 +223,12 @@ public class AssignmentQuizService {
                     prompt, LlmOptions.full(0.2, 0.9, Math.min(4000, 400 + count * optionCount * 40)));
             return parseSuggestedQuestions(raw, count, optionCount);
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions: " + e.getMessage());
+            log.error(
+                    "event=assignment_suggest_questions_failed assignmentId={} errorType={}",
+                    assignmentId,
+                    e.getClass().getSimpleName(),
+                    e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest quiz questions.", e);
         }
     }
 
@@ -242,10 +246,8 @@ public class AssignmentQuizService {
         if (!reasoningProvider.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Quiz AI provider is unavailable.");
         }
-        String context = buildAssignmentContext(
-                assignment,
-                request != null ? request.bookId() : null,
-                request != null ? request.chapterIds() : null);
+        List<ChapterEntity> chapters = resolveScopedChapters(assignment, request.chapterIds());
+        String context = buildChapterText(chapters);
         String excludeText = TeacherQuizAuthoringService.formatExcludedChoices(request.exclude());
         String prompt = """
                 Generate exactly %d plausible wrong multiple-choice answers (distractors) for this quiz question.
@@ -261,8 +263,12 @@ public class AssignmentQuizService {
             String raw = reasoningProvider.generate(prompt, LlmOptions.full(0.3, 0.9, 500));
             return parseDistractors(raw, request.correctAnswer().trim(), count, request.exclude());
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY, "Failed to suggest distractors: " + e.getMessage());
+            log.error(
+                    "event=assignment_suggest_distractors_failed assignmentId={} errorType={}",
+                    assignmentId,
+                    e.getClass().getSimpleName(),
+                    e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to suggest distractors.", e);
         }
     }
 
@@ -593,34 +599,40 @@ public class AssignmentQuizService {
         return assignment;
     }
 
-    private String buildAssignmentContext(AssignmentEntity assignment) {
-        return buildAssignmentContext(assignment, null, null);
+    /** Assignment book only. Empty proposedChapterIds means that whole book, never a client bookId. */
+    private List<ChapterEntity> resolveScopedChapters(
+            AssignmentEntity assignment, List<String> proposedChapterIds) {
+        String bookId = assignment.getBookId();
+        if (proposedChapterIds == null) {
+            return assignmentDefaultChapters(assignment, bookId);
+        }
+        if (proposedChapterIds.isEmpty()) {
+            return chapterRepository.findByBookIdOrderByChapterIndex(bookId);
+        }
+        return loadProposedChaptersForBook(proposedChapterIds, bookId);
     }
 
-    private String buildAssignmentContext(
-            AssignmentEntity assignment, String proposedBookId, List<String> proposedChapterIds) {
-        String bookId = proposedBookId != null && !proposedBookId.isBlank()
-                ? proposedBookId.trim()
-                : assignment.getBookId();
-        List<ChapterEntity> chapters;
-        if (proposedChapterIds != null) {
-            if (proposedChapterIds.isEmpty()) {
-                chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
-            } else {
-                chapters = proposedChapterIds.stream()
-                        .map(id -> chapterRepository.findById(id).orElse(null))
-                        .filter(Objects::nonNull)
-                        .toList();
-            }
-        } else if (assignment.isWholeBook()) {
-            chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
-        } else {
-            chapters = assignment.getChapters().stream()
-                    .map(AssignmentChapterEntity::getChapterId)
-                    .map(id -> chapterRepository.findById(id).orElse(null))
-                    .filter(Objects::nonNull)
-                    .toList();
+    private List<ChapterEntity> assignmentDefaultChapters(AssignmentEntity assignment, String bookId) {
+        if (assignment.isWholeBook()) {
+            return chapterRepository.findByBookIdOrderByChapterIndex(bookId);
         }
+        return loadProposedChaptersForBook(
+                assignment.getChapters().stream()
+                        .map(AssignmentChapterEntity::getChapterId)
+                        .toList(),
+                bookId);
+    }
+
+    private List<ChapterEntity> loadProposedChaptersForBook(List<String> proposedChapterIds, String bookId) {
+        return proposedChapterIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .map(id -> chapterRepository.findByIdWithBook(id.trim()).orElse(null))
+                .filter(Objects::nonNull)
+                .filter(chapter -> belongsToBook(chapter, bookId))
+                .toList();
+    }
+
+    private String buildChapterText(List<ChapterEntity> chapters) {
         StringBuilder sb = new StringBuilder();
         for (ChapterEntity chapter : chapters) {
             String title = chapter.getTitle() == null
@@ -650,15 +662,22 @@ public class AssignmentQuizService {
         return sb.toString();
     }
 
-    private static String describeProposedScope(AssignmentEntity assignment, List<String> proposedChapterIds) {
-        if (proposedChapterIds != null) {
-            return proposedChapterIds.isEmpty()
-                    ? "the whole book"
-                    : proposedChapterIds.size() + " selected chapter(s)";
+    private static boolean belongsToBook(ChapterEntity chapter, String bookId) {
+        return chapter != null
+                && bookId != null
+                && chapter.getBook() != null
+                && bookId.equals(chapter.getBook().getId());
+    }
+
+    private static String describeVerifiedScope(
+            AssignmentEntity assignment, List<String> proposedChapterIds, List<ChapterEntity> verified) {
+        boolean wholeAssignmentBook = (proposedChapterIds != null && proposedChapterIds.isEmpty())
+                || (proposedChapterIds == null && assignment.isWholeBook());
+        if (wholeAssignmentBook) {
+            return "the whole book";
         }
-        return assignment.isWholeBook()
-                ? "the whole book"
-                : assignment.getChapters().size() + " selected chapter(s)";
+        int count = verified == null ? 0 : verified.size();
+        return count + " selected chapter(s)";
     }
 
     private List<TeacherQuizAuthoringService.TeacherQuestionView> toTeacherQuestions(ChapterQuizPayload payload) {
