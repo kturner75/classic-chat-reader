@@ -4408,7 +4408,6 @@
             >
                 <div class="book-item-cover-wrap">
                     ${renderBookCover(entry.book, coverClass)}
-                    ${gutenbergSource}
                 </div>
                 <div class="book-item-body">
                     <div class="book-item-title-row">
@@ -4431,6 +4430,7 @@
                         <span class="book-progress-chip">${progress.percentLabel}</span>
                     </div>
                     <div class="book-item-meta">${meta}</div>
+                    ${gutenbergSource}
                 </div>
             </div>
         `;

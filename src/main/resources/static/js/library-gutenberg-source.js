@@ -34,7 +34,7 @@
     }
 
     function gutenbergSourceLabel(ebookId) {
-        return ebookId ? `[Gutenberg ${ebookId}]` : '';
+        return ebookId ? `Gutenberg #${ebookId}` : '';
     }
 
     function gutenbergSourceAccessibleName(ebookId, bookTitle) {

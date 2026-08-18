@@ -28,7 +28,8 @@ test('builds the Project Gutenberg ebook URL', () => {
 });
 
 test('uses compact visible label and a longer accessible name', () => {
-    assert.equal(gutenbergSourceLabel('1513'), '[Gutenberg 1513]');
+    assert.equal(gutenbergSourceLabel('1513'), 'Gutenberg #1513');
+    assert.equal(gutenbergSourceLabel('64317'), 'Gutenberg #64317');
     assert.equal(
         gutenbergSourceAccessibleName('1513', 'Romeo and Juliet'),
         'Project Gutenberg source for Romeo and Juliet, ebook 1513'
@@ -50,7 +51,8 @@ test('renders a library-card source link for Gutenberg titles', () => {
     assert.match(html, /target="_blank"/);
     assert.match(html, /rel="noopener noreferrer"/);
     assert.match(html, /aria-label="Project Gutenberg source for Romeo and Juliet, ebook 1513"/);
-    assert.match(html, />\[Gutenberg 1513\]</);
+    assert.match(html, />Gutenberg #1513</);
+    assert.doesNotMatch(html, /\[Gutenberg /);
 });
 
 test('does not render a source link without a Gutenberg ebook id', () => {
