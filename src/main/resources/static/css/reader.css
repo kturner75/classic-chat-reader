@@ -971,7 +971,7 @@ a.my-chat-card:focus-visible,
     color: #5c574e;
     font-family: var(--font-serif);
     font-size: 0.72rem;
-    font-style: italic;
+    font-style: normal;
     font-weight: 400;
     letter-spacing: 0.01em;
     line-height: 1.2;
