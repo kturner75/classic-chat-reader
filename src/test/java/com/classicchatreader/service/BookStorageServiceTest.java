@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -156,6 +157,56 @@ class BookStorageServiceTest {
 
         assertTrue(dto.isPresent());
         assertNull(dto.get().gutenbergId());
+    }
+
+    @Test
+    void getMlaCitation_appendsGutenbergSourceLineForGutenbergTitles() {
+        BookEntity book = new BookEntity("The Great Gatsby", "F. Scott Fitzgerald", "gutenberg");
+        book.setId("gatsby-id");
+        book.setSourceId("64317");
+        when(bookRepository.findById("gatsby-id")).thenReturn(Optional.of(book));
+        String mlaLine = "Fitzgerald, F. Scott (Francis Scott). The Great Gatsby. Project Gutenberg. ClassicChatReader. http://classicchatreader.com/?book=gatsby-id&chapter=ch-1&paragraph=1. Accessed 18 August 2026.";
+        when(mlaCitationFormatter.format(any())).thenReturn(mlaLine);
+
+        Optional<String> citation = service.getMlaCitation(
+                "gatsby-id",
+                "http://classicchatreader.com",
+                "ch-1",
+                0
+        );
+
+        assertEquals(
+                mlaLine + "\nSource text: https://www.gutenberg.org/ebooks/64317",
+                citation.orElseThrow()
+        );
+    }
+
+    @Test
+    void getMlaCitation_leavesNonGutenbergCitationUnchanged() {
+        BookEntity book = new BookEntity("Class Packet", "Teacher", "manual");
+        book.setId("manual-id");
+        book.setSourceId("1513");
+        when(bookRepository.findById("manual-id")).thenReturn(Optional.of(book));
+        String mlaLine = "Teacher. Class Packet. ClassicChatReader. http://classicchatreader.com/?book=manual-id. Accessed 18 August 2026.";
+        when(mlaCitationFormatter.format(any())).thenReturn(mlaLine);
+
+        Optional<String> citation = service.getMlaCitation("manual-id", "http://classicchatreader.com", null, null);
+
+        assertEquals(mlaLine, citation.orElseThrow());
+    }
+
+    @Test
+    void getMlaCitation_leavesCitationUnchangedWhenGutenbergIdIsInvalid() {
+        BookEntity book = new BookEntity("Odd Import", "Unknown", "gutenberg");
+        book.setId("odd-id");
+        book.setSourceId("not-a-number");
+        when(bookRepository.findById("odd-id")).thenReturn(Optional.of(book));
+        String mlaLine = "Unknown. Odd Import. Project Gutenberg. ClassicChatReader.";
+        when(mlaCitationFormatter.format(any())).thenReturn(mlaLine);
+
+        Optional<String> citation = service.getMlaCitation("odd-id", "http://classicchatreader.com", null, null);
+
+        assertEquals(mlaLine, citation.orElseThrow());
     }
 
     @Test

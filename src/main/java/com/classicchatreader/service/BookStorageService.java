@@ -235,16 +235,30 @@ public class BookStorageService {
                                            String chapterId,
                                            Integer paragraphIndex) {
         return bookRepository.findById(bookId)
-                .map(book -> mlaCitationFormatter.format(new MlaCitationFormatter.Metadata(
-                        book.getAuthor(),
-                        book.getTitle(),
-                        null,
-                        null,
-                        toSourceTitle(book),
-                        "ClassicChatReader",
-                        toReaderUrl(siteBaseUrl, bookId, chapterId, paragraphIndex),
-                        java.time.LocalDate.now()
-                )));
+                .map(book -> {
+                    String citation = mlaCitationFormatter.format(new MlaCitationFormatter.Metadata(
+                            book.getAuthor(),
+                            book.getTitle(),
+                            null,
+                            null,
+                            toSourceTitle(book),
+                            "ClassicChatReader",
+                            toReaderUrl(siteBaseUrl, bookId, chapterId, paragraphIndex),
+                            java.time.LocalDate.now()
+                    ));
+                    return withGutenbergSourceLine(citation, gutenbergIdFrom(book));
+                });
+    }
+
+    /**
+     * Keeps the existing CCR/MLA sentence unchanged and appends a Gutenberg
+     * ebook URL only when {@link #gutenbergIdFrom(BookEntity)} resolved one.
+     */
+    private static String withGutenbergSourceLine(String citation, Integer gutenbergId) {
+        if (gutenbergId == null) {
+            return citation;
+        }
+        return citation + "\nSource text: https://www.gutenberg.org/ebooks/" + gutenbergId;
     }
 
     // Index a book and its content in the search index
