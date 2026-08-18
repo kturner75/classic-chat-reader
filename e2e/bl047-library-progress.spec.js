@@ -401,6 +401,7 @@ test('Take Quiz stays hidden until reading is complete and opens the assignment 
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -443,6 +444,7 @@ test('a passing but imperfect assignment quiz can still be retried', async ({ pa
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -524,6 +526,7 @@ test('Open shows wrap-up immediately when assigned reading is already complete',
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -848,6 +851,7 @@ test('Continue Reading keeps the saved resume when the open chapter never loaded
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -967,6 +971,7 @@ test('secondary-only characters can be chatted with from assignment wrap-up', as
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1003,6 +1008,7 @@ test('end-of-reading wrap-up offers Take Quiz and Chat, not Continue Reading', a
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
@@ -1036,6 +1042,7 @@ test('Continue Reading exits assignment mode and restores the full chapter list'
         lastPage: 0,
         progressRatio: 0.34,
         maxProgressRatio: 0.34,
+        completedChapterIndexes: [0],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));

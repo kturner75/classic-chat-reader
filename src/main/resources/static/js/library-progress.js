@@ -137,21 +137,10 @@
         }
 
         const targetIndex = Math.max(...indexes);
-        const last = Number.isFinite(Number(activity.lastChapterIndex))
-            ? Number(activity.lastChapterIndex)
-            : -1;
-        // A leaked whole-book completed / 100% flag must not finish a chapter-range
-        // assignment while the student is still on an earlier chapter (first open of
-        // an unread Gatsby 1–2 range with a stub or prior book-complete flag).
-        if (isWholeBookCompleteSignal(activity) && last < targetIndex) {
-            return false;
-        }
-
-        const reachedChapterIndex = maxReachedChapterIndex(activity);
-        if (reachedChapterIndex == null) {
-            return false;
-        }
-        return finishedLastAssignedChapter(activity, targetIndex);
+        // Range assignments ignore whole-book completed / maxProgress 1. Finish only
+        // when every assigned chapter is marked complete, or the student is past /
+        // on the last page of the last assigned chapter.
+        return finishedAssignedChapterByPosition(activity, targetIndex);
     }
 
     function uniqueCompletedChapterIndexes(values) {
@@ -204,19 +193,6 @@
             && totalPages != null
             && totalPages > 0
             && lastPage >= totalPages - 1;
-    }
-
-    function finishedLastAssignedChapter(activity, targetIndex) {
-        const chapterCount = Math.max(1, clampInteger(activity.chapterCount, 1, Number.MAX_SAFE_INTEGER));
-        const needed = (targetIndex + 1) / chapterCount;
-        const maxProgress = Math.max(
-            toFiniteNumber(activity.maxProgressRatio, 0),
-            toFiniteNumber(activity.progressRatio, 0)
-        );
-        if (maxProgress + 1e-9 >= needed) {
-            return true;
-        }
-        return finishedAssignedChapterByPosition(activity, targetIndex);
     }
 
     function isAssignmentQuizPerfect(assignment, result) {

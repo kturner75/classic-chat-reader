@@ -271,7 +271,7 @@ test('whole-book assignment only completes when book is finished', () => {
 });
 
 test('assignment reading stays complete after student resumes an earlier chapter', () => {
-    // Student reached chapter 5 (maxProgress high), then reopened chapter 1 (lastChapterIndex=0).
+    // Student finished chapter 5, then reopened chapter 1 (lastChapterIndex=0).
     const snapshot = buildAssignmentProgressSnapshot({
         assignment: {
             chapterIndex: 5,
@@ -282,7 +282,8 @@ test('assignment reading stays complete after student resumes an earlier chapter
             chapterCount: 20,
             lastChapterIndex: 0,
             maxProgressRatio: 6 / 20,
-            lastReadAt: '2026-07-18T15:00:00.000Z'
+            lastReadAt: '2026-07-18T15:00:00.000Z',
+            completedChapterIndexes: [5]
         }
     });
     assert.equal(snapshot.readingComplete, true);
@@ -327,6 +328,55 @@ test('leaked whole-book complete does not finish an unread multi-chapter range',
         completedChapterIndexes: [0, 1]
     };
     assert.equal(isReadingCompleteForAssignment(assignment, finishedRange), true);
+});
+
+test('leaked 100% on a 1-chapter range at page 1 of 8 is not reading-complete', () => {
+    const assignment = {
+        chapters: [{ chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'Chapter I' }],
+        quizRequired: true,
+        quizStatus: 'PENDING'
+    };
+    const leakedOnFirstPage = {
+        chapterCount: 9,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 8,
+        maxProgressRatio: 1,
+        progressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-18T12:00:00.000Z'
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, leakedOnFirstPage), false);
+    assert.equal(buildAssignmentProgressSnapshot({
+        assignment,
+        activity: leakedOnFirstPage
+    }).readingComplete, false);
+});
+
+test('leaked 100% on chapter 2 page 1 of a 1-2 range is not reading-complete', () => {
+    const assignment = {
+        chapters: [
+            { chapterId: 'ch-1', chapterIndex: 0, chapterTitle: 'Chapter I' },
+            { chapterId: 'ch-2', chapterIndex: 1, chapterTitle: 'Chapter II' }
+        ],
+        quizRequired: true,
+        quizStatus: 'PENDING'
+    };
+    const leakedOnChapterTwoPageOne = {
+        chapterCount: 9,
+        lastChapterIndex: 1,
+        lastPage: 0,
+        totalPages: 8,
+        maxProgressRatio: 1,
+        progressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-08-18T12:00:00.000Z'
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, leakedOnChapterTwoPageOne), false);
+    assert.equal(buildAssignmentProgressSnapshot({
+        assignment,
+        activity: leakedOnChapterTwoPageOne
+    }).readingComplete, false);
 });
 
 test('opening chapter 1 of a range assignment is not reading-complete', () => {
@@ -374,6 +424,8 @@ test('multi-chapter assignment completes when furthest chapter covers the set', 
 
     const complete = isReadingCompleteForAssignment(assignment, {
         lastChapterIndex: 2,
+        lastPage: 2,
+        totalPages: 3,
         maxProgressRatio: 0.35,
         lastReadAt: '2026-08-12T12:00:00.000Z',
         chapterCount: 10
@@ -499,6 +551,8 @@ test('assignment is fully complete only when reading, quiz, and required chat ar
     };
     const read = {
         lastChapterIndex: 0,
+        lastPage: 4,
+        totalPages: 5,
         maxProgressRatio: 0.2,
         lastReadAt: '2026-08-12T12:00:00.000Z',
         chapterCount: 5
