@@ -208,10 +208,14 @@
     }
 
     function hasAssignmentQuizAttemptsRemaining(assignment) {
+        return !isAssignmentQuizAttemptWindowClosed(assignment);
+    }
+
+    function isAssignmentQuizAttemptWindowClosed(assignment) {
         if (!Number.isInteger(assignment?.quizAttemptsAllowed) || !Number.isInteger(assignment?.quizAttemptsUsed)) {
-            return true;
+            return false;
         }
-        return assignment.quizAttemptsUsed < assignment.quizAttemptsAllowed;
+        return assignment.quizAttemptsUsed >= assignment.quizAttemptsAllowed;
     }
 
     function canTakeAssignmentQuiz(assignment, activity) {
@@ -298,6 +302,11 @@
         if (status === 'NOT_REQUIRED' || status === 'COMPLETE') {
             return true;
         }
+        // Backend keeps quizStatus PENDING after a failed-out quiz. Exhausted
+        // attempts close the window even when the student never passed.
+        if (isAssignmentQuizAttemptWindowClosed(assignment)) {
+            return true;
+        }
         // Explicit false on quizRequired with missing status → treat as not required.
         if (assignment?.quizRequired === false && status !== 'PENDING' && status !== 'UNKNOWN') {
             return true;
@@ -338,16 +347,15 @@
         const quizRequired = isQuizRequired(assignment);
         const characterChatRequired = assignment.characterChatRequired === true;
 
-        // Reading complete: reached assigned chapter (or finished book). Quiz complete also implies
-        // the student finished the reading work for a chapter-targeted assignment.
+        // Reading complete: reached assigned chapter (or finished book). A finished
+        // quiz window (passed or retries exhausted) also implies the reading work.
+        const quizWindowClosed = assignment.quizStatus === 'COMPLETE'
+            || isAssignmentQuizAttemptWindowClosed(assignment);
         let readingComplete = isReadingCompleteForAssignment(assignment, activity);
-        if (!readingComplete && assignment.quizStatus === 'COMPLETE') {
+        if (!readingComplete && quizWindowClosed) {
             readingComplete = true;
         }
 
-        const quizComplete = assignment.quizStatus === 'COMPLETE'
-            || assignment.quizStatus === 'NOT_REQUIRED'
-            || (!quizRequired && assignment.quizStatus !== 'PENDING' && assignment.quizStatus !== 'UNKNOWN');
         const quizSatisfied = isQuizSatisfied(assignment);
         const characterChatSatisfied = !characterChatRequired || characterChatStarted;
 
@@ -361,9 +369,9 @@
         if (quizRequired || assignment.quizStatus === 'COMPLETE' || assignment.quizStatus === 'PENDING') {
             requirements.push({
                 key: 'quiz',
-                label: assignment.quizStatus === 'COMPLETE' ? 'Quiz complete' : 'Quiz',
-                done: assignment.quizStatus === 'COMPLETE' || assignment.quizStatus === 'NOT_REQUIRED',
-                started: assignment.quizStatus === 'COMPLETE' || assignment.quizStatus === 'PENDING'
+                label: quizSatisfied ? 'Quiz complete' : 'Quiz',
+                done: quizSatisfied,
+                started: quizWindowClosed || assignment.quizStatus === 'PENDING'
             });
         }
         if (characterChatRequired) {
@@ -378,13 +386,13 @@
         const allDone = readingComplete && quizSatisfied && characterChatSatisfied;
         // PENDING quiz alone is not "started" — it only means the teacher required a quiz.
         const anyStarted = readingStarted
-            || assignment.quizStatus === 'COMPLETE'
+            || quizWindowClosed
             || characterChatStarted;
 
         let statusLabel = 'Not started';
         let statusClass = 'not-started';
         if (allDone) {
-            statusLabel = 'Complete';
+            statusLabel = 'Completed';
             statusClass = 'completed';
         } else if (anyStarted) {
             statusLabel = 'In progress';

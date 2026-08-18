@@ -386,7 +386,7 @@ test('BL-047 first Library return rerenders completed quiz and all assignment re
   await page.locator('#back-to-library').click();
 
   await expect.poll(() => state.classroomContextRequests).toBe(2);
-  await expect(assignment).toContainText('Complete');
+  await expect(assignment).toContainText('Completed');
   await expect(assignment).not.toContainText('Quiz complete');
   await expect(assignment).not.toContainText('3/3 complete');
 });
@@ -541,6 +541,41 @@ test('Retry Quiz appears after a failed attempt while retries remain', async ({ 
   await expect(assignment).toContainText('In progress');
   await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
+});
+
+test('assignment card is Completed after quiz retries are exhausted', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('reader_bookActivity', JSON.stringify({
+      'book-1': {
+        chapterCount: 2,
+        lastChapterIndex: 1,
+        lastPage: 5,
+        totalPages: 6,
+        progressRatio: 2 / 9,
+        maxProgressRatio: 2 / 9,
+        completedChapterIndexes: [0, 1],
+        lastReadAt: '2026-08-18T13:00:00Z'
+      }
+    }));
+  });
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    assignmentTitle: 'Gatsby 1–2',
+    assignmentChapters: [
+      { chapterId: 'chapter-1', chapterIndex: 0, chapterTitle: 'Chapter One' },
+      { chapterId: 'chapter-2', chapterIndex: 1, chapterTitle: 'Chapter Two' }
+    ],
+    quizStatus: 'PENDING',
+    quizAttemptsUsed: 2,
+    quizAttemptsAllowed: 2,
+    quizPassMinCorrect: 1,
+    characterChatRequired: false
+  });
+  await page.goto('/');
+
+  const assignment = page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"]');
+  await expect(assignment).toContainText('Completed');
+  await expect(assignment).not.toContainText('In progress');
 });
 
 test('Open on the assignment card opens the assignment, not character chat', async ({ page }) => {
