@@ -70,8 +70,23 @@ class LibraryControllerTest {
             .andExpect(jsonPath("$[0].id", is("book-1")))
             .andExpect(jsonPath("$[0].title", is("Pride and Prejudice")))
             .andExpect(jsonPath("$[0].author", is("Jane Austen")))
+            .andExpect(jsonPath("$[0].gutenbergId", is(nullValue())))
             .andExpect(jsonPath("$[1].id", is("book-2")))
             .andExpect(jsonPath("$[1].title", is("Moby Dick")));
+    }
+
+    @Test
+    void listBooks_includesGutenbergIdForGutenbergTitles() throws Exception {
+        List<Book> books = List.of(
+            new Book("book-1", "Romeo and Juliet", "William Shakespeare", null, null, List.of(), false, false, false, true, 1513),
+            new Book("book-2", "Class Packet", "Teacher", null, null, List.of(), false, false, false, false, null)
+        );
+        when(bookStorageService.getAllBooks()).thenReturn(books);
+
+        mockMvc.perform(get("/api/library"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].gutenbergId", is(1513)))
+            .andExpect(jsonPath("$[1].gutenbergId", is(nullValue())));
     }
 
     @Test

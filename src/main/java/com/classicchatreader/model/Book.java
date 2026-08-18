@@ -12,7 +12,8 @@ public record Book(
     boolean ttsEnabled,
     boolean illustrationEnabled,
     boolean characterEnabled,
-    boolean curated
+    boolean curated,
+    Integer gutenbergId
 ) {
     public Book(
             String id,
@@ -24,7 +25,21 @@ public record Book(
             boolean ttsEnabled,
             boolean illustrationEnabled,
             boolean characterEnabled) {
-        this(id, title, author, description, coverUrl, chapters, ttsEnabled, illustrationEnabled, characterEnabled, false);
+        this(id, title, author, description, coverUrl, chapters, ttsEnabled, illustrationEnabled, characterEnabled, false, null);
+    }
+
+    public Book(
+            String id,
+            String title,
+            String author,
+            String description,
+            String coverUrl,
+            List<Chapter> chapters,
+            boolean ttsEnabled,
+            boolean illustrationEnabled,
+            boolean characterEnabled,
+            boolean curated) {
+        this(id, title, author, description, coverUrl, chapters, ttsEnabled, illustrationEnabled, characterEnabled, curated, null);
     }
 
     public record Chapter(String id, String title) {}

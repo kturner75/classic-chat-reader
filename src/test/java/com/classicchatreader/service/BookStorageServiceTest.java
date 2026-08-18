@@ -20,7 +20,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -108,6 +110,52 @@ class BookStorageServiceTest {
         assertTrue(dto.isPresent());
         assertTrue(dto.get().ttsEnabled());
         assertTrue(dto.get().curated());
+        assertEquals(1513, dto.get().gutenbergId());
+    }
+
+    @Test
+    void getBook_includesGutenbergIdForGutenbergSourceOnly() {
+        BookEntity gutenberg = new BookEntity("Romeo and Juliet", "William Shakespeare", "gutenberg");
+        gutenberg.setId("romeo-id");
+        gutenberg.setSourceId("1513");
+        when(bookRepository.findById("romeo-id")).thenReturn(Optional.of(gutenberg));
+        when(bookCoverRepository.findByBookId("romeo-id")).thenReturn(Optional.empty());
+        when(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "1513")).thenReturn(true);
+
+        Optional<Book> dto = service.getBook("romeo-id");
+
+        assertTrue(dto.isPresent());
+        assertEquals(1513, dto.get().gutenbergId());
+    }
+
+    @Test
+    void getBook_omitsGutenbergIdForNonGutenbergSource() {
+        BookEntity manual = new BookEntity("Class Packet", "Teacher", "manual");
+        manual.setId("manual-id");
+        manual.setSourceId("1513");
+        when(bookRepository.findById("manual-id")).thenReturn(Optional.of(manual));
+        when(bookCoverRepository.findByBookId("manual-id")).thenReturn(Optional.empty());
+        when(curatedCatalogService.isCuratedGutenbergSource("manual", "1513")).thenReturn(false);
+
+        Optional<Book> dto = service.getBook("manual-id");
+
+        assertTrue(dto.isPresent());
+        assertNull(dto.get().gutenbergId());
+    }
+
+    @Test
+    void getBook_omitsGutenbergIdWhenSourceIdIsNotANumber() {
+        BookEntity book = new BookEntity("Odd Import", "Unknown", "gutenberg");
+        book.setId("odd-id");
+        book.setSourceId("not-a-number");
+        when(bookRepository.findById("odd-id")).thenReturn(Optional.of(book));
+        when(bookCoverRepository.findByBookId("odd-id")).thenReturn(Optional.empty());
+        when(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "not-a-number")).thenReturn(false);
+
+        Optional<Book> dto = service.getBook("odd-id");
+
+        assertTrue(dto.isPresent());
+        assertNull(dto.get().gutenbergId());
     }
 
     @Test

@@ -888,6 +888,16 @@ a.my-chat-card:focus-visible,
     box-shadow: 0 18px 34px rgba(58, 42, 23, 0.26);
 }
 
+.book-shelf-item:hover .book-item-cover-wrap,
+.book-shelf-item:focus-visible .book-item-cover-wrap {
+    transform: translateY(-4px);
+}
+
+.book-shelf-item:hover .book-item-cover-wrap .book-cover-shelf,
+.book-shelf-item:focus-visible .book-item-cover-wrap .book-cover-shelf {
+    transform: none;
+}
+
 .book-cover-featured {
     width: 6.4rem;
     flex-basis: 6.4rem;
@@ -944,6 +954,41 @@ a.my-chat-card:focus-visible,
 .book-cover.has-image {
     padding: 0;
     background: #2c2c2c;
+}
+
+.book-item-cover-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    transition: transform 0.2s;
+}
+
+.book-item-gutenberg-source {
+    position: absolute;
+    right: 0.28rem;
+    bottom: 0.28rem;
+    z-index: 2;
+    max-width: calc(100% - 0.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0.12rem 0.3rem;
+    border-radius: 3px;
+    background: rgba(255, 248, 236, 0.94);
+    color: #3d3426;
+    font-family: var(--font-serif);
+    font-size: 0.58rem;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.book-item-gutenberg-source:hover,
+.book-item-gutenberg-source:focus-visible {
+    background: #fff8ec;
+    color: #2b2419;
+    text-decoration: underline;
 }
 
 .book-cover-overlay {

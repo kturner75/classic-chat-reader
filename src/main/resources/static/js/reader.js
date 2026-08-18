@@ -761,6 +761,11 @@
         && typeof globalThis.LibraryDiscover.buildRecommendations === 'function')
         ? globalThis.LibraryDiscover
         : null;
+    const libraryGutenbergSourceHelpers = (typeof globalThis !== 'undefined'
+        && globalThis.LibraryGutenbergSource
+        && typeof globalThis.LibraryGutenbergSource.renderGutenbergSourceLink === 'function')
+        ? globalThis.LibraryGutenbergSource
+        : null;
     const citationUtils = (typeof globalThis !== 'undefined'
         && globalThis.CitationUtils
         && typeof globalThis.CitationUtils.citationPreviewText === 'function'
@@ -4390,6 +4395,9 @@
         const coverClass = layout === 'shelf'
             ? 'book-cover-shelf'
             : (layout === 'featured' ? 'book-cover-featured' : '');
+        const gutenbergSource = libraryGutenbergSourceHelpers
+            ? libraryGutenbergSourceHelpers.renderGutenbergSourceLink(entry.book)
+            : '';
         return `
             <div
                 class="${itemClass}"
@@ -4398,7 +4406,10 @@
                 tabindex="0"
                 aria-label="Open ${title}"
             >
-                ${renderBookCover(entry.book, coverClass)}
+                <div class="book-item-cover-wrap">
+                    ${renderBookCover(entry.book, coverClass)}
+                    ${gutenbergSource}
+                </div>
                 <div class="book-item-body">
                     <div class="book-item-title-row">
                         <div class="book-item-title">${title}${badge}</div>
@@ -10989,6 +11000,12 @@
                 if (achievementBook) {
                     await selectBookWithResume(achievementBook);
                 }
+                return;
+            }
+
+            const gutenbergSourceLink = e.target.closest('.book-item-gutenberg-source');
+            if (gutenbergSourceLink && elements.libraryView.contains(gutenbergSourceLink)) {
+                e.stopPropagation();
                 return;
             }
 

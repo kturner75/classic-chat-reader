@@ -301,8 +301,32 @@ public class BookStorageService {
             isTtsEnabled(entity),
             Boolean.TRUE.equals(entity.getIllustrationEnabled()),
             Boolean.TRUE.equals(entity.getCharacterEnabled()),
-            isCuratedBook(entity)
+            isCuratedBook(entity),
+            gutenbergIdFrom(entity)
         );
+    }
+
+    /**
+     * Gutenberg ebook number for library attribution. Null when the title is
+     * not a Gutenberg import or the stored source id is not a positive integer.
+     */
+    private Integer gutenbergIdFrom(BookEntity entity) {
+        if (entity == null || entity.getSource() == null || entity.getSourceId() == null) {
+            return null;
+        }
+        if (!"gutenberg".equalsIgnoreCase(entity.getSource().trim())) {
+            return null;
+        }
+        String raw = entity.getSourceId().trim();
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw);
+            return value > 0 ? value : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     /**
