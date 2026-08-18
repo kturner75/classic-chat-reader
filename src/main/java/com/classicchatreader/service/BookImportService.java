@@ -236,6 +236,13 @@ public class BookImportService {
         String sourceId = String.valueOf(gutenbergId);
         if (bookStorageService.existsBySource(SOURCE_GUTENBERG, sourceId)) {
             Optional<Book> existing = bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId);
+            // Re-import is a no-op for content, but catalog membership may have
+            // been added after the first import. Repair the stored column via
+            // the entity flag — findBySource maps curated rows to ttsEnabled=true
+            // even when tts_enabled is still false.
+            if (curatedCatalogService.isCuratedGutenbergId(gutenbergId) && existing.isPresent()) {
+                bookStorageService.persistTtsEnabledIfStoredOff(existing.get().id());
+            }
             return new ImportResult(
                 false,
                 existing.map(Book::id).orElse(null),

@@ -284,6 +284,26 @@ class BookImportServiceTest {
         assertFalse(result.success());
         assertEquals("existing-id", result.bookId());
         assertEquals("Book already imported", result.message());
+        verify(bookStorageService, never()).persistTtsEnabledIfStoredOff(anyString());
+    }
+
+    @Test
+    void importBookRepairsPersistedTtsFlagForCuratedTitleEvenWhenDtoAlreadyReportsEnabled() {
+        // Real findBySource maps curated + stale column to ttsEnabled=true.
+        // Repair must still run; checking DTO.ttsEnabled() would skip the write.
+        when(bookStorageService.existsBySource("gutenberg", "1513")).thenReturn(true);
+        when(bookStorageService.findBySource("gutenberg", "1513"))
+            .thenReturn(Optional.of(new Book(
+                    "romeo-id", "Romeo and Juliet", "William Shakespeare", "", null, List.of(),
+                    true, false, false, true)));
+        when(curatedCatalogService.isCuratedGutenbergId(1513)).thenReturn(true);
+
+        ImportResult result = bookImportService.importBook(1513);
+
+        assertFalse(result.success());
+        assertEquals("romeo-id", result.bookId());
+        assertEquals("Book already imported", result.message());
+        verify(bookStorageService).persistTtsEnabledIfStoredOff("romeo-id");
     }
 
     @Test

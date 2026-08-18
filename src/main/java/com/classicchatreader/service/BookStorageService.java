@@ -85,6 +85,27 @@ public class BookStorageService {
             .map(this::toBookDto);
     }
 
+    /**
+     * Persist {@code tts_enabled=true} when the stored column is still off.
+     * Must inspect the entity flag, not {@link Book#ttsEnabled()}, because
+     * {@link #toBookDto} reports TTS on for curated titles even when the
+     * column is stale.
+     */
+    @Transactional
+    public boolean persistTtsEnabledIfStoredOff(String bookId) {
+        Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
+        if (bookOpt.isEmpty()) {
+            return false;
+        }
+        BookEntity book = bookOpt.get();
+        if (Boolean.TRUE.equals(book.getTtsEnabled())) {
+            return false;
+        }
+        book.setTtsEnabled(true);
+        bookRepository.save(book);
+        return true;
+    }
+
     @Transactional
     public Optional<Book> updateBookFeatures(String bookId,
                                              Boolean ttsEnabled,
@@ -277,22 +298,24 @@ public class BookStorageService {
             entity.getDescription(),
             resolveCoverUrl(entity),
             chapters,
-            Boolean.TRUE.equals(entity.getTtsEnabled()),
+            isTtsEnabled(entity),
             Boolean.TRUE.equals(entity.getIllustrationEnabled()),
             Boolean.TRUE.equals(entity.getCharacterEnabled()),
             isCuratedBook(entity)
         );
     }
 
+    /**
+     * Read-aloud is on when the stored flag is set, or when the title is in
+     * the curated catalog. Catalog membership is applied only at first import,
+     * so later additions (Romeo and Juliet, Gatsby, …) otherwise stay silent.
+     */
+    public boolean isTtsEnabled(BookEntity entity) {
+        return Boolean.TRUE.equals(entity.getTtsEnabled()) || isCuratedBook(entity);
+    }
+
     private boolean isCuratedBook(BookEntity entity) {
-        if (!"gutenberg".equalsIgnoreCase(entity.getSource()) || entity.getSourceId() == null) {
-            return false;
-        }
-        try {
-            return curatedCatalogService.isCuratedGutenbergId(Integer.parseInt(entity.getSourceId()));
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return curatedCatalogService.isCuratedGutenbergSource(entity.getSource(), entity.getSourceId());
     }
 
     private String resolveCoverUrl(BookEntity entity) {

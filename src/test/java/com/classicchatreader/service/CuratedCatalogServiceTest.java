@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CuratedCatalogServiceTest {
@@ -87,6 +88,16 @@ class CuratedCatalogServiceTest {
                 .filter(book -> book.gutenbergId() == 3189)
                 .anyMatch(book -> book.aliases().stream()
                         .anyMatch(alias -> alias.toLowerCase().contains("jumping frog"))));
+    }
+
+    @Test
+    void isCuratedGutenbergSource_matchesCatalogMembershipNotStoredFlags() {
+        assertTrue(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "1513"));
+        assertTrue(curatedCatalogService.isCuratedGutenbergSource("Gutenberg", "1342"));
+        assertFalse(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "999999"));
+        assertFalse(curatedCatalogService.isCuratedGutenbergSource("manual", "1513"));
+        assertFalse(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "not-a-number"));
+        assertFalse(curatedCatalogService.isCuratedGutenbergSource(null, "1513"));
     }
 
     @Test

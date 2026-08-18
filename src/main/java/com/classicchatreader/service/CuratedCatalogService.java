@@ -161,6 +161,25 @@ public class CuratedCatalogService {
         return CURATED_BOOKS.stream().anyMatch(book -> book.gutenbergId() == gutenbergId);
     }
 
+    /**
+     * True when this stored book row is a curated Gutenberg title.
+     * Used to expose reader features for books imported before they were
+     * added to the curated catalog (flags are only written on first import).
+     */
+    public boolean isCuratedGutenbergSource(String source, String sourceId) {
+        if (source == null || sourceId == null || sourceId.isBlank()) {
+            return false;
+        }
+        if (!"gutenberg".equalsIgnoreCase(source.trim())) {
+            return false;
+        }
+        try {
+            return isCuratedGutenbergId(Integer.parseInt(sourceId.trim()));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     public List<CuratedCatalogBook> search(String query) {
         String normalized = normalize(query);
         if (normalized.isEmpty()) {

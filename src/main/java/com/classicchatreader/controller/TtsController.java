@@ -9,6 +9,7 @@ import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.AssetKeyService;
+import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.PublicSessionAuthService;
 import com.classicchatreader.service.TtsService;
@@ -43,6 +44,7 @@ public class TtsController {
   private final AssetKeyService assetKeyService;
   private final CdnAssetService cdnAssetService;
   private final PublicSessionAuthService sessionAuthService;
+  private final BookStorageService bookStorageService;
   private final String deploymentMode;
   private final String publicApiKey;
 
@@ -52,6 +54,7 @@ public class TtsController {
                        AssetKeyService assetKeyService,
                        CdnAssetService cdnAssetService,
                        PublicSessionAuthService sessionAuthService,
+                       BookStorageService bookStorageService,
                        @Value("${deployment.mode:local}") String deploymentMode,
                        @Value("${security.public.api-key:}") String publicApiKey) {
     this.ttsService = ttsService;
@@ -62,6 +65,7 @@ public class TtsController {
     this.assetKeyService = assetKeyService;
     this.cdnAssetService = cdnAssetService;
     this.sessionAuthService = sessionAuthService;
+    this.bookStorageService = bookStorageService;
     this.deploymentMode = deploymentMode == null ? "local" : deploymentMode;
     this.publicApiKey = publicApiKey == null ? "" : publicApiKey;
   }
@@ -360,7 +364,7 @@ public class TtsController {
   }
 
   private boolean isTtsEnabled(BookEntity book) {
-    return Boolean.TRUE.equals(book.getTtsEnabled());
+    return bookStorageService.isTtsEnabled(book);
   }
 
   private boolean isPublicMode() {
