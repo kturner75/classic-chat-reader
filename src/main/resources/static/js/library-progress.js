@@ -369,7 +369,7 @@
         if (quizRequired || assignment.quizStatus === 'COMPLETE' || assignment.quizStatus === 'PENDING') {
             requirements.push({
                 key: 'quiz',
-                label: assignment.quizStatus === 'COMPLETE' || quizSatisfied ? 'Quiz complete' : 'Quiz',
+                label: quizSatisfied ? 'Quiz complete' : 'Quiz',
                 done: quizSatisfied,
                 started: quizWindowClosed || assignment.quizStatus === 'PENDING'
             });
