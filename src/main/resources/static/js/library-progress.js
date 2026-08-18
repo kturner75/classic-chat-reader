@@ -144,7 +144,7 @@
         // assignment while the student is still on an earlier chapter (first open of
         // an unread Gatsby 1–2 range with a stub or prior book-complete flag).
         if (isWholeBookCompleteSignal(activity) && last < targetIndex) {
-            return finishedAssignedChapterByPosition(activity, targetIndex);
+            return false;
         }
 
         const reachedChapterIndex = maxReachedChapterIndex(activity);
