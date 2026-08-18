@@ -80,30 +80,85 @@
     // xAI semantics: user transcript updates are CUMULATIVE (each event replaces
     // the whole user caption, possibly correcting earlier text); assistant
     // transcript deltas are appended.
+    function eventItemId(event) {
+        if (!event || typeof event !== 'object') return null;
+        const raw = event.item_id ?? event.itemId ?? event.item?.id ?? null;
+        return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    }
+
     function createTranscriptTracker(options = {}) {
         const now = options.now || (() => Date.now());
         let userPartial = '';
         let assistantPartial = '';
+        let currentUserItemId = null;
+        // After a user turn is posted, ignore further user captions until
+        // speech_started (the new-turn gate). Corrections of that posted
+        // utterance stay blocked even after speech_started: same finalized
+        // item id, or punctuation-normalized exact equality (including a late
+        // no-id completed of the previous line after barge-in). Do not treat
+        // a shared prefix ("Yes" / "Yesterday") as a correction.
+        let acceptNewUserTranscription = true;
+        let userUtteranceCommitted = false;
+        let lastCommittedUserContent = '';
+        const finalizedUserItemIds = new Set();
         const finalized = [];
+
+        function rememberFinalizedUserItem(itemId) {
+            if (itemId) finalizedUserItemIds.add(itemId);
+        }
+
+        function normalizeUserCaption(text) {
+            return String(text || '')
+                .trim()
+                .replace(/\s+/g, ' ')
+                .replace(/[\s.?!,:;]+$/g, '')
+                .toLowerCase();
+        }
+
+        function isCorrectionOfCommittedUtterance(content) {
+            if (!userUtteranceCommitted) return false;
+            const incoming = normalizeUserCaption(content);
+            const committed = normalizeUserCaption(lastCommittedUserContent);
+            return !!incoming && incoming === committed;
+        }
 
         function finalizeUser() {
             const content = userPartial.trim();
+            const itemId = currentUserItemId;
             userPartial = '';
-            if (content) {
-                finalized.push({ role: 'user', content, timestamp: now() });
-                return finalized[finalized.length - 1];
+            currentUserItemId = null;
+            if (!content) {
+                return null;
             }
-            return null;
+            if (itemId && finalizedUserItemIds.has(itemId)) {
+                return null;
+            }
+            if (isCorrectionOfCommittedUtterance(content)) {
+                rememberFinalizedUserItem(itemId);
+                return null;
+            }
+            userUtteranceCommitted = true;
+            lastCommittedUserContent = content;
+            acceptNewUserTranscription = false;
+            rememberFinalizedUserItem(itemId);
+            finalized.push({ role: 'user', content, timestamp: now() });
+            return finalized[finalized.length - 1];
         }
 
         function finalizeAssistant() {
             const content = assistantPartial.trim();
             assistantPartial = '';
-            if (content) {
-                finalized.push({ role: 'character', content, timestamp: now() });
-                return finalized[finalized.length - 1];
+            if (!content) {
+                return null;
             }
-            return null;
+            // Both response.output_audio_transcript.done and response.done (or
+            // the audio_transcript.done alias) can carry the same full text.
+            const last = finalized[finalized.length - 1];
+            if (last && last.role === 'character' && last.content === content) {
+                return null;
+            }
+            finalized.push({ role: 'character', content, timestamp: now() });
+            return finalized[finalized.length - 1];
         }
 
         // Consumes one realtime event; returns an array of turns finalized by it.
@@ -113,17 +168,34 @@
                 return [];
             }
 
+            if (type === 'input_audio_buffer.speech_started') {
+                acceptNewUserTranscription = true;
+                return [];
+            }
+
             // Only updates the running caption here; finalization is anchored solely
-            // to input_audio_buffer.committed / response.created below so a turn is
-            // never finalized twice if both a transcription-completed and a
-            // buffer-committed event arrive for the same utterance.
+            // to response.created / hangup flush so a turn is never finalized twice
+            // if both a transcription-completed and a buffer-committed event arrive
+            // for the same utterance.
             if (type === 'conversation.item.input_audio_transcription.updated'
                     || type === 'conversation.item.input_audio_transcription.completed') {
                 const transcript = event.transcript
                     ?? event.item?.content?.[0]?.transcript
                     ?? '';
+                const itemId = eventItemId(event);
+                if (itemId && finalizedUserItemIds.has(itemId)) {
+                    return [];
+                }
+                if (isCorrectionOfCommittedUtterance(transcript)) {
+                    rememberFinalizedUserItem(itemId);
+                    return [];
+                }
+                if (!acceptNewUserTranscription) {
+                    return [];
+                }
                 if (transcript) {
                     userPartial = transcript;
+                    if (itemId) currentUserItemId = itemId;
                 }
                 return [];
             }
@@ -168,6 +240,8 @@
         }
 
         // Flushes both partial captions (e.g. when the call ends mid-turn).
+        // Must not re-emit a turn already finalized live — hangup is the second
+        // writer of the same last utterance when a late caption reopened it.
         function flush() {
             const turns = [];
             const user = finalizeUser();

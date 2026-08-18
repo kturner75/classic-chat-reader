@@ -148,3 +148,322 @@ test('transcript tracker: transcription.completed events only update the caption
     assert.equal(turns.length, 1);
     assert.equal(turns[0].content, 'Hello there, friend');
 });
+
+test('transcript tracker: late completed after response.created does not reopen the user caption', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_user_1',
+        transcript: "I've come to hear of your adventures."
+    });
+    assert.deepEqual(tracker.consume({ type: 'response.created' }), [{
+        role: 'user',
+        content: "I've come to hear of your adventures.",
+        timestamp: 1
+    }]);
+
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1',
+        transcript: "I've come to hear of your adventures."
+    });
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.content), [
+        "I've come to hear of your adventures."
+    ]);
+});
+
+test('transcript tracker: hangup flush does not duplicate the last live user turn after the reply', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'response.output_audio_transcript.done',
+        transcript: 'Bath is delightful, I assure you.'
+    });
+
+    // Late completed (or a close() drain) re-sends the same user caption after
+    // the character reply. Hangup persist used to append it a second time.
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: "I've come to hear of your adventures."
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => [turn.role, turn.content]), [
+        ['user', "I've come to hear of your adventures."],
+        ['character', 'Bath is delightful, I assure you.']
+    ]);
+});
+
+test('transcript tracker: late completed after response.created with item_id and corrected text does not add a second user turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    const live = tracker.consume({ type: 'response.created' });
+    assert.deepEqual(live.map(turn => turn.content), ["I've come to hear of your adventures."]);
+
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.equal(tracker.getFinalized().filter(turn => turn.role === 'user').length, 1);
+});
+
+test('transcript tracker: speech_started after commit does not clear the committed-utterance guard', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+
+    // New item_id + slightly corrected text after speech_started used to look
+    // like a fresh utterance because speech_started lifted the guard.
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.role), ['user']);
+});
+
+test('transcript tracker: barge-in then late no-id completed of the previous line does not flush a second turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: 'Hello there'
+    });
+    tracker.consume({ type: 'response.created' });
+
+    // Barge-in opens the new-turn gate. A late completed for the previous
+    // line often has no item_id; hangup flush must not POST a second turnId.
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'Hello there'
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    const userTurns = tracker.getFinalized().filter(turn => turn.role === 'user');
+    assert.equal(userTurns.length, 1);
+    assert.equal(userTurns[0].content, 'Hello there');
+});
+
+test('transcript tracker: hangup flush after speech_started and late corrected completed does not post a second turnId', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'response.output_audio_transcript.done',
+        transcript: 'Bath is delightful, I assure you.'
+    });
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => [turn.role, turn.content]), [
+        ['user', "I've come to hear of your adventures."],
+        ['character', 'Bath is delightful, I assure you.']
+    ]);
+});
+
+test('transcript tracker: late completed with item_id and corrected text does not reopen the caption', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'response.output_audio_transcript.done',
+        transcript: 'Bath is delightful, I assure you.'
+    });
+
+    // Same utterance, new item_id, slightly corrected text — must not clear
+    // the post-finalize guard or hangup flush will POST a second turnId.
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => [turn.role, turn.content]), [
+        ['user', "I've come to hear of your adventures."],
+        ['character', 'Bath is delightful, I assure you.']
+    ]);
+
+    // Item id was learned only from the late event; speech_started must still
+    // ignore that prior completion so it cannot overwrite the next utterance.
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_user_1_corrected',
+        transcript: "I've come to hear of your adventures"
+    });
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+});
+
+test('transcript tracker: speech_started still ignores a late prior completion', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_1',
+        transcript: "I've come to hear of your adventures."
+    });
+    tracker.consume({ type: 'response.created' });
+
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_1',
+        transcript: "I've come to hear of your adventures"
+    });
+
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_2',
+        transcript: 'And what happened next?'
+    });
+    const turns = tracker.consume({ type: 'response.created' });
+    assert.deepEqual(turns.map(turn => turn.content), ['And what happened next?']);
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.content), [
+        "I've come to hear of your adventures.",
+        'And what happened next?'
+    ]);
+});
+
+test('transcript tracker: a later caption that only shares a prefix is a new turn', () => {
+    const cases = [
+        ['Yes', 'Yesterday'],
+        ['No', 'Nothing of the sort'],
+        ['I', "I've been to Bath"]
+    ];
+    for (const [first, second] of cases) {
+        const tracker = createTranscriptTracker({ now: () => 1 });
+        tracker.consume({
+            type: 'conversation.item.input_audio_transcription.updated',
+            item_id: 'item_1',
+            transcript: first
+        });
+        tracker.consume({ type: 'response.created' });
+        tracker.consume({ type: 'input_audio_buffer.speech_started' });
+        tracker.consume({
+            type: 'conversation.item.input_audio_transcription.updated',
+            item_id: 'item_2',
+            transcript: second
+        });
+        const turns = tracker.consume({ type: 'response.created' });
+        assert.deepEqual(turns.map(turn => turn.content), [second], `${first} -> ${second}`);
+        assert.deepEqual(
+            tracker.getFinalized().map(turn => turn.content),
+            [first, second],
+            `${first} -> ${second}`
+        );
+    }
+});
+
+test('transcript tracker: prefix-sharing text before speech_started is not a new turn', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_1',
+        transcript: 'Yes'
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_2',
+        transcript: 'Yesterday'
+    });
+    assert.equal(tracker.getUserPartial(), '');
+    assert.deepEqual(tracker.flush(), []);
+    assert.deepEqual(tracker.getFinalized().map(turn => turn.content), ['Yes']);
+});
+
+test('transcript tracker: a new spoken turn after hangup-style late events is still captured', () => {
+    const tracker = createTranscriptTracker({ now: () => 1 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_1',
+        transcript: 'First question'
+    });
+    tracker.consume({ type: 'response.created' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item_1',
+        transcript: 'First question'
+    });
+
+    tracker.consume({ type: 'input_audio_buffer.speech_started' });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        item_id: 'item_2',
+        transcript: 'And what happened next?'
+    });
+    const turns = tracker.consume({ type: 'response.created' });
+    assert.deepEqual(turns.map(turn => turn.content), ['And what happened next?']);
+});
+
+test('transcript tracker: duplicate assistant done events finalize the reply once', () => {
+    const tracker = createTranscriptTracker({ now: () => 3 });
+    tracker.consume({ type: 'response.output_audio_transcript.delta', delta: 'Bath is ' });
+    const first = tracker.consume({
+        type: 'response.output_audio_transcript.done',
+        transcript: 'Bath is delightful.'
+    });
+    const second = tracker.consume({
+        type: 'response.audio_transcript.done',
+        transcript: 'Bath is delightful.'
+    });
+    const third = tracker.consume({ type: 'response.done' });
+
+    assert.deepEqual(first.map(turn => turn.content), ['Bath is delightful.']);
+    assert.deepEqual(second, []);
+    assert.deepEqual(third, []);
+    assert.deepEqual(tracker.flush(), []);
+    assert.equal(tracker.getFinalized().length, 1);
+});
+
+test('transcript tracker: hangup still persists a user caption that was never finalized live', () => {
+    const tracker = createTranscriptTracker({ now: () => 4 });
+    tracker.consume({
+        type: 'conversation.item.input_audio_transcription.updated',
+        transcript: 'Wait, one more thing'
+    });
+
+    assert.deepEqual(tracker.flush(), [{
+        role: 'user',
+        content: 'Wait, one more thing',
+        timestamp: 4
+    }]);
+    assert.deepEqual(tracker.flush(), []);
+});
