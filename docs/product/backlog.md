@@ -110,7 +110,7 @@ Last updated: 2026-08-18
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc (`BL-062`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`). (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -166,6 +166,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-17: Added `BL-060` (arrow keys as j/k paragraph navigation). Kevin soak: desktop paragraph nav is `j`/`k` only (`BL-023` checklist); wants **Down Arrow = j** and **Up Arrow = k** when the reader is the focused surface. Keep j/k; do not steal arrows from search, text fields, chapter list, or overlays. Update `?` overlay + BL-023 checklist when implemented. Docs only.
 - 2026-08-18: Added `BL-061` (My Chats Open Book should skip landing). Kevin: from My Chats, Open Book (e.g. Daisy Buchanan → *The Great Gatsby*) routes through the landing page (10–20s load) and only then opens the book. Chat already knows the book; it should open the reader directly. Slow landing load is `BL-059`; this item is the unnecessary hop, which also makes `BL-059` worse. Docs only.
 - 2026-08-18: Added `BL-062` (character browser detail Esc should return to the list). A11y nit from tonight’s soak after #131 keyboard work. On a character (e.g. Benvolio), Esc closes the whole Characters modal instead of behaving like **← All Characters**. Mouse-only / pressing `m` again are the current workarounds. Docs only.
+- 2026-08-18: Expanded `BL-062` in place (no new BL): list-view `j`/`k` should move the Characters roster the same way they move the chapter list (`c` modal). Esc-on-detail → **← All Characters** stays. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1719,42 +1720,53 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-18: Kevin: From My Chats, Open Book (Daisy Buchanan → The Great Gatsby) routes through the landing page (10–20s load) and only then opens the book. Chat already knows the book; it should open the reader directly. Slow landing load is `BL-059`; this item is the unnecessary hop, which also makes `BL-059` worse. Docs only; no UI in this capture.
 
-### BL-062 - Character Browser Detail Escape Should Return to List
+### BL-062 - Character Browser Keyboard: Detail Esc Returns to List; j/k Navigates List
 - Type: Improvement / a11y
 - Priority: P2
 - Effort: S
 - Status: Proposed
-- Problem: After opening a character in the Characters modal (e.g. **Benvolio**), **Esc** closes the whole modal. It should behave like **← All Characters** and return to the list. Keyboard users after #131 can Enter into a character, then Esc dumps them out of the browser. Workarounds today: mouse the back button, or press `m` again to reopen.
-- Current code: `character-browser-keyboard.js` `describeKey` always returns `{ action: 'close' }` for Escape. `handleCharacterBrowserKeydown` maps that to `closeCharacterBrowser()`. Detail view already has `#character-back-btn` (**← All Characters**) calling `showCharacterListView()`. List vs detail is `characterListView` / `characterDetailView` visibility.
+- Problem: Two leftover keyboard nits in the Characters modal after #131. (1) After opening a character (e.g. **Benvolio**), **Esc** closes the whole modal instead of behaving like **← All Characters** and returning to the list. Keyboard users can Enter into a character, then Esc dumps them out of the browser. Workarounds today: mouse the back button, or press `m` again to reopen. (2) On the character **list**, `j`/`k` do not move the roster. The chapter list (`c` modal) already treats `j` as next and `k` as previous (same as ArrowDown / ArrowUp). Characters already move with arrows; `j`/`k` are swallowed as `block-reader` and never call `move`.
+- Current code: `character-browser-keyboard.js` `describeKey` always returns `{ action: 'close' }` for Escape. `handleCharacterBrowserKeydown` maps that to `closeCharacterBrowser()`. Detail view already has `#character-back-btn` (**← All Characters**) calling `showCharacterListView()`. List vs detail is `characterListView` / `characterDetailView` visibility. List movement is `isNavigationKey` → `move` → `moveIndex(...)` for ArrowUp/Down/Left/Right, Home, End only. `j`/`k` sit in `READER_NAV_KEYS` / `READER_SHORTCUT_KEYS` and resolve to `block-reader`. Chapter list (`reader.js` `isChapterListVisible`) maps `j`/`ArrowDown` → `chapterListNavigate(1)` and `k`/`ArrowUp` → `chapterListNavigate(-1)`.
 - Current Direction:
 - When the detail view is visible, Esc should do the same as **← All Characters** (`showCharacterListView`) and restore list focus.
 - When the list view is visible, Esc should still close the modal (existing #131 behavior).
 - Close (×) and backdrop click still close the whole modal from either view.
+- When the list view is visible, `j`/`k` should navigate the character roster the same way they navigate the chapter list: `j` = next, `k` = previous (alias the existing ArrowDown / ArrowUp `move` path; keep the #131 grid/linear `moveIndex` model).
+- On detail view, `j`/`k` stay blocked from reader paragraph nav (do not advance the book behind the modal).
 - Out of this epic:
-  - Reopening #131 listbox / Arrow / Enter / Tab-trap work.
+  - Reopening #131 listbox / Arrow / Enter / Tab-trap work except to alias `j`/`k` onto the existing `move` path.
   - Changing `m` toggle or chat-modal Escape (different overlay).
   - Broader overlay a11y (`BL-013`) or reader browser-Back (`BL-051`).
+  - Reader paragraph `j`/`k` or arrow aliases (`BL-060`) when the character browser is closed.
 - Scope Buckets:
 - Detail-view Esc → list (`showCharacterListView`), with focus back on the cards.
 - List-view Esc unchanged (close modal).
+- List-view `j`/`k` → same `move` path as ArrowDown / ArrowUp (chapter-list parity).
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
 | BL-062.1 Detail Esc returns to list | Proposed | When `characterDetailView` is showing, Escape should call the same path as **← All Characters** and focus the list; list-view Escape still closes | Benvolio (or any character detail): Esc → All Characters list; list Esc / × / backdrop still dismiss the modal |
+| BL-062.2 List j/k navigates like chapter list | Proposed | When `characterListView` is showing, `j`/`k` should `move` like ArrowDown / ArrowUp (chapter list `j` next / `k` previous); detail-view `j`/`k` stay `block-reader` | Characters list: `j`/`k` move the focused card; arrows / Enter / Home / End unchanged; detail `j`/`k` do not paginate the reader |
 - Acceptance Criteria:
 - With a character detail open (e.g. Benvolio), Esc returns to the Characters list like **← All Characters** and does not close the modal.
 - With the list visible, Esc still closes the Characters modal and returns focus to the opener (shipped #131).
 - Close (×) and backdrop click still close the modal from list or detail.
+- With the Characters **list** visible, `j` moves to the next card and `k` to the previous card, same as the chapter list (`c` modal) `j`/`k` (and the existing ArrowDown / ArrowUp move path).
+- Arrow / Home / End / Enter list behavior from #131 is unchanged.
+- On character **detail**, `j`/`k` do not advance reader paragraphs behind the modal.
 - `m` toggle and character-chat Escape are unchanged.
 - Dependency Notes:
-- Follow-on a11y nit from tonight’s soak after shipped #131 (keyboard character browser). Cross-link only; do not reopen that PR.
+- Follow-on a11y nits from soak after shipped #131 (keyboard character browser). Cross-link only; do not reopen that PR.
 - Distinct from `BL-060` (reader arrow paragraph nav) and `BL-013` (broader a11y pass).
-- Overlay Esc-closes-first stays the list-view / other-modal pattern (`BL-051` notes); this epic is nested detail → list inside one modal.
+- Overlay Esc-closes-first stays the list-view / other-modal pattern (`BL-051` notes); this epic is nested detail → list inside one modal, plus chapter-list `j`/`k` parity on the roster.
 - Risks:
 - Treating every Esc as close (current `describeKey`) leaves keyboard users needing the mouse or a second `m` after they open a character.
 - Returning to the list without restoring card focus would drop the #131 roving-tabindex model after Esc-from-detail.
+- Leaving `j`/`k` as `block-reader` on the list keeps a second keyboard split vs the chapter list: arrows work, vim keys do not.
+- Mapping `j`/`k` to `move` on detail (or forgetting `block-reader` there) would either no-op confusingly or leak into reader paragraph nav.
 - Session Log:
 - 2026-08-18: A11y nit from tonight’s soak after #131 keyboard work. Character detail (e.g. Benvolio): Esc closes the whole Characters modal instead of returning to the list like **← All Characters**. Mouse-only / pressing `m` again are the current workarounds. Docs only; no reader change in this capture.
+- 2026-08-18: Follow-up soak: `j`/`k` should navigate the Characters **list** the same way they navigate the chapter browser (`c` modal). Expanded this item in place — no new BL. Keep original Esc-on-detail → list. Docs only; no reader change in this capture.
 
 ## P0
 
