@@ -963,31 +963,26 @@ a.my-chat-card:focus-visible,
 }
 
 .book-item-gutenberg-source {
-    position: absolute;
-    right: 0.28rem;
-    bottom: 0.28rem;
-    z-index: 2;
-    max-width: calc(100% - 0.5rem);
+    display: block;
+    margin-top: 0.4rem;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0.12rem 0.3rem;
-    border-radius: 3px;
-    background: rgba(255, 248, 236, 0.94);
-    color: #3d3426;
+    color: #5c574e;
     font-family: var(--font-serif);
-    font-size: 0.58rem;
+    font-size: 0.72rem;
     font-style: normal;
-    font-weight: 600;
+    font-weight: 400;
     letter-spacing: 0.01em;
-    line-height: 1.15;
+    line-height: 1.2;
+    text-align: right;
     text-decoration: none;
     white-space: nowrap;
 }
 
 .book-item-gutenberg-source:hover,
 .book-item-gutenberg-source:focus-visible {
-    background: #fff8ec;
-    color: #2b2419;
+    color: var(--text-color);
     text-decoration: underline;
 }
 

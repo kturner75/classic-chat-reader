@@ -34,18 +34,19 @@
     }
 
     function gutenbergSourceLabel(ebookId) {
-        return ebookId ? `[Gutenberg ${ebookId}]` : '';
+        return ebookId ? `Gutenberg #${ebookId}` : '';
     }
 
     function gutenbergSourceAccessibleName(ebookId, bookTitle) {
-        if (!ebookId) {
+        const label = gutenbergSourceLabel(ebookId);
+        if (!label) {
             return '';
         }
         const title = typeof bookTitle === 'string' ? bookTitle.replace(/\s+/g, ' ').trim() : '';
         if (title) {
-            return `Project Gutenberg source for ${title}, ebook ${ebookId}`;
+            return `${label}. Project Gutenberg source for ${title}.`;
         }
-        return `Project Gutenberg source, ebook ${ebookId}`;
+        return `${label}. Project Gutenberg source.`;
     }
 
     function renderGutenbergSourceLink(book) {
