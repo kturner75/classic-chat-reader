@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-18
+Last updated: 2026-08-19
 
 ## Implementation handoff (classroom)
 
@@ -110,7 +110,7 @@ Last updated: 2026-08-18
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -169,6 +169,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Expanded `BL-062` in place (no new BL): list-view `j`/`k` should move the Characters roster the same way they move the chapter list (`c` modal). Esc-on-detail → **← All Characters** stays. Docs only.
 - 2026-08-18: Added `BL-063` (cite Gutenberg-sourced titles on library book cards). Kevin: show a small `[Gutenberg 1513]` corner link back to Project Gutenberg for Gutenberg imports only — license/attribution + teacher trust for the Jessica demo. Library book cards only; not skinny assignment cards; not reader chrome. In Progress in this PR.
 - 2026-08-18: Refined `BL-063` placement (docs only, no new slice): **library page book card only**. Small corner `[Gutenberg 1513]` (ebook number) linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces any reader / page-count / cache-only placement.
+- 2026-08-18: Added `BL-064` (character blurbs spoil later plot). Kevin, Columbia State demo prep: live *Frankenstein* (Gutenberg 84) character cards show later-plot facts (Henry Clerval “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body”) before the reader reaches those events. Same stored blurb is injected into the chat/voice persona, so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1814,6 +1815,51 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-18: Kevin: cite the book source back to Project Gutenberg with a link, Gutenberg-sourced titles only. License/attribution plus teacher trust. Do not put it on the skinny assignment card. Prefer a small source line on the library book card (not reader chrome). Captured as `BL-063` and implemented on library cards in this PR.
 - 2026-08-18: Placement refined: library page book card only; small corner `[Gutenberg 1513]` (ebook number) linking to the Gutenberg page; Gutenberg-sourced titles only; not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces reader / page-count / cache-only placement. Docs only.
+
+### BL-064 - Character Blurbs Spoil Later Plot
+- Type: Bug
+- Priority: P1 (Columbia State demo prep; spoiler leak on character cards + chat/voice)
+- Effort: M
+- Status: Proposed
+- Problem: Generated character blurbs include later-plot facts. On live *Frankenstein* (Gutenberg **84**, book `8494cda1-0135-47f0-aaff-6b71c5b2f864`), Kevin (Columbia State demo prep, 2026-08-18) saw:
+  - **Henry Clerval:** “who is murdered by the monster”
+  - **Robert Walton:** “discovers Victor Frankenstein's body”
+  Those strings show on the character card / browser **before** the reader has reached those events. The same stored `description` is injected into the chat/voice persona (`CharacterPersonaPromptBuilder`), so the character can leak spoilers even with chapter-position gating.
+- Current code: Prefetch asks for a 2–3 sentence role description and to “avoid major spoilers” (`CharacterPrefetchService.buildPrefetchPrompt`); chapter analysis also persists `ec.description()`. Cards render the stored field as-is (`reader.js` `characterDetailDesc` / toast). `CharacterPersonaPromptBuilder.buildPersona` puts `character.getDescription()` under **CHARACTER DESCRIPTION**, then separately says the character can only discuss events up to the reader’s chapter/paragraph. Discovery/roster gating (`GET .../up-to`) still hides unreached characters; it does not strip future-plot facts from a reached character’s blurb.
+- Current Direction:
+- Character card / browser blurbs must be spoiler-safe to the reader’s current position, **or** generation-time first-appearance only (no later-plot facts in the stored description).
+- Persona prompt must not include future-plot facts (same stored blurb must not leak through text or voice).
+- Same class of bug on other books — not Frankenstein-only. Fix the generation / display / persona path; do not special-case Gutenberg 84.
+- Keep existing chapter-position gating (`up-to` / story constraints). This epic does not weaken who is discoverable.
+- Out of this epic:
+  - #132 name-identity dedupe / junk secondaries (`Sally` / `name_key`). Related character-quality work; **do not fold this into #132**.
+  - `BL-054` college-appropriate conduct (NSFW/jailbreak). Conduct stays; do not weaken spoiler rules while editing the persona.
+  - `BL-056` discovery/roster empty (Fortunato). This is blurb *content*, not whether the character appears.
+  - Reading Buddy spoiler suite (`BL-017` / buddy chapter window). Different surface.
+- Scope Buckets:
+- Spoiler-safe character card / browser blurbs (position-aware, or first-appearance-only at generation).
+- Persona prompt (text + voice) must not carry future-plot facts from the blurb.
+- Apply across titles; regen or rewrite existing spoiling descriptions (Frankenstein examples + other books).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-064.1 Card/browser blurbs spoiler-safe | Proposed | Stored or rendered character description must not reveal events after the reader’s position (or must be first-appearance-only at generation) | Opening Henry Clerval / Robert Walton on live Frankenstein before those deaths never shows “murdered by the monster” / “discovers Victor Frankenstein's body”; same class holds on another title |
+| BL-064.2 Persona prompt without future-plot facts | Proposed | `CharacterPersonaPromptBuilder` (text + voice) must not include later-plot facts from the blurb; chapter-position gating stays | Chat/voice for a reached character cannot recite later-plot facts from the blurb/persona; existing `up-to` / story-constraint gating still applies |
+- Acceptance Criteria:
+- Opening a reached character’s card never reveals events from later chapters.
+- Chat/voice for that character cannot recite later-plot facts from the blurb/persona.
+- Existing chapter-position gating still applies.
+- Not Frankenstein-only: the same class of spoiling blurb does not appear on other books after the fix.
+- Dependency Notes:
+- Distinct from #132 (character name identity / duplicate Sally / junk secondaries). Do not stack this work on that PR and do not fold spoilers into that epic.
+- Complements `BL-054` (conduct on the same `CharacterPersonaPromptBuilder`). This epic is plot-spoiler content in DESCRIPTION; `BL-054` is classroom conduct.
+- Discovery/roster still uses first-appearance + `up-to` (`BL-056` family). This epic does not change who is listed, only what the blurb/persona may say.
+- Risks:
+- Soft “avoid major spoilers” in the prefetch prompt is already ignored by the model; prompt-only without stored-description rewrite or regen leaves live Frankenstein rows spoiling.
+- Stripping DESCRIPTION from the persona without a spoiler-safe replacement can flatten voice; rewriting only Frankenstein misses the class of bug.
+- Position-aware blurbs that still persist a full-plot description will leak if any client or cache shows `description` unfiltered.
+- Session Log:
+- 2026-08-18: Kevin, Columbia State demo prep. Live *Frankenstein* (Gutenberg 84, book `8494cda1-0135-47f0-aaff-6b71c5b2f864`): Henry Clerval blurb “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body.” Shows on the character card before those events; same text is injected into chat/voice persona so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only; no product code in this capture.
 
 ## P0
 
