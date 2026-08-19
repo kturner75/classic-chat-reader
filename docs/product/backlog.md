@@ -110,7 +110,7 @@ Last updated: 2026-08-19
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -170,6 +170,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Added `BL-063` (cite Gutenberg-sourced titles on library book cards). Kevin: show a small `[Gutenberg 1513]` corner link back to Project Gutenberg for Gutenberg imports only — license/attribution + teacher trust for the Jessica demo. Library book cards only; not skinny assignment cards; not reader chrome. In Progress in this PR.
 - 2026-08-18: Refined `BL-063` placement (docs only, no new slice): **library page book card only**. Small corner `[Gutenberg 1513]` (ebook number) linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces any reader / page-count / cache-only placement.
 - 2026-08-18: Added `BL-064` (character blurbs spoil later plot). Kevin, Columbia State demo prep: live *Frankenstein* (Gutenberg 84) character cards show later-plot facts (Henry Clerval “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body”) before the reader reaches those events. Same stored blurb is injected into the chat/voice persona, so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only.
+- 2026-08-19: Added `BL-065` (regen character discovery with xAI; replace local Ollama pregen). Kevin 2026-08-18 after Jessica dry run: local Ollama casts are messy — junk secondaries (Frankenstein: 5 primaries + ~60 secondaries including “The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, LLM leftovers), name glitches/duplicates (Northanger triple Sally is the #132 example), spoiler-y blurbs. Redo generation with xAI for a tight PRIMARY set and a sane SECONDARY set. Per-book trial first (recommend Frankenstein, Gutenberg 84), then curated catalog. Do **not** start before the Thu Aug 20 noon CT Columbia State demo. Distinct from #132 (name-identity dedupe safety net) and `BL-064` (spoiler-safe blurbs — better model helps; it does not replace the spoiler rule). Do not reuse `BL-064`. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1852,6 +1853,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Not Frankenstein-only: the same class of spoiling blurb does not appear on other books after the fix.
 - Dependency Notes:
 - Distinct from #132 (character name identity / duplicate Sally / junk secondaries). Do not stack this work on that PR and do not fold spoilers into that epic.
+- Distinct from `BL-065` (regen character discovery with xAI). A better model helps blurbs; it does not replace this spoiler rule. Keep both epics.
 - Complements `BL-054` (conduct on the same `CharacterPersonaPromptBuilder`). This epic is plot-spoiler content in DESCRIPTION; `BL-054` is classroom conduct.
 - Discovery/roster still uses first-appearance + `up-to` (`BL-056` family). This epic does not change who is listed, only what the blurb/persona may say.
 - Risks:
@@ -1860,6 +1862,55 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Position-aware blurbs that still persist a full-plot description will leak if any client or cache shows `description` unfiltered.
 - Session Log:
 - 2026-08-18: Kevin, Columbia State demo prep. Live *Frankenstein* (Gutenberg 84, book `8494cda1-0135-47f0-aaff-6b71c5b2f864`): Henry Clerval blurb “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body.” Shows on the character card before those events; same text is injected into chat/voice persona so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only; no product code in this capture.
+
+### BL-065 - Regen Character Discovery with xAI (Replace Local Ollama Pregen)
+- Type: Improvement / content-ops
+- Priority: P2 (post Columbia State demo; do not start before Thu Aug 20 noon CT)
+- Effort: M
+- Status: Proposed
+- Problem: Kevin pre-generated characters with a local Ollama model. The resulting casts are messy: junk secondaries, name glitches/duplicates, and spoiler-y blurbs. He wants to redo generation with xAI for cleaner PRIMARY/SECONDARY casts.
+  - Current generated casts have junk secondaries. *Frankenstein* (Gutenberg **84**): 5 primaries + ~60 secondaries including “The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, and LLM leftovers.
+  - Name glitches / identity splits (Northanger triple Sally is the #132 example).
+  - Blurbs include later-plot facts (see `BL-064`). A better model helps; it does not replace the spoiler rule.
+- Timing (Kevin 2026-08-18, after Jessica dry run): Columbia State demo is **Thu Aug 20 noon CT**. Do **not** start this before the demo. Not a live Thursday change.
+- Current code: `CharacterPrefetchService` now routes through `reasoningLlmProvider` (xAI after `BL-056.5` / PR #112), but existing stored casts were produced under local Ollama. Prod is `generation.cache-only=true`; characters must be pregenerated locally and transferred. Per-book jobs already exist (`POST /api/pregen/jobs/book/{bookId}`, `POST /api/pregen/jobs/gutenberg/{gutenbergId}`). This epic is a documented xAI regen path plus a trial-then-catalog rerun of stored rows — not a reopen of the prefetch-provider fix.
+- Current Direction:
+- Switch character pre-generation from local Ollama to xAI.
+- Regenerated casts should have a tight primary set and a sane secondary set, without duplicate/glitch names.
+- Per-book regen first (trial), then curated catalog.
+- Recommend trial book: *Frankenstein*, Gutenberg 84.
+- Out of this epic:
+  - Shipping or running a regen before the Thu Aug 20 Columbia State demo.
+  - Merging #132 as part of this item. #132 / name-identity dedupe stays a code safety net — keep that epic.
+  - `BL-064` spoiler-safe blurbs + persona injection — keep that epic. Better model helps; it does not replace the spoiler rule.
+  - `BL-056.5` prefetch-provider wiring (already Done). This is stored-cast regen, not that code path.
+  - `BL-056.6` portrait provider / ComfyUI. Portraits stay on that slice unless a trial is blocked for a documented reason.
+- Scope Buckets:
+- Documented regen path: provider/model + per-book action using xAI.
+- Trial book (Frankenstein / Gutenberg 84): clean PRIMARY/SECONDARY split, no duplicate-name cards.
+- After the trial, curated-catalog regen (not Thursday).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-065.1 Documented xAI regen path | Proposed | Record provider/model and the per-book action (job / script) so operators regenerate via xAI, not local Ollama | A documented path exists; a single book can be regenerated against xAI without guessing flags |
+| BL-065.2 Trial book (Frankenstein 84) | Proposed | Regen *Frankenstein* first; expect a tight PRIMARY set and a sane SECONDARY set with no duplicate/glitch name cards | Frankenstein no longer shows ~60 junk secondaries (“The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, LLM leftovers) or duplicate-name cards |
+| BL-065.3 Curated catalog after trial | Proposed | After the trial looks clean, regen the curated catalog the same way. Not a live Thursday change | Curated titles have xAI casts with the same PRIMARY/SECONDARY quality bar; #132 and `BL-064` remain separate |
+- Acceptance Criteria:
+- A documented regen path (provider/model + per-book action) using xAI.
+- Trial book (recommend Frankenstein, Gutenberg 84) has a clean primary/secondary split and no duplicate-name cards.
+- #132 and `BL-064` remain separate follow-ups.
+- No regen ships or runs before the Thu Aug 20 noon CT Columbia State demo.
+- Dependency Notes:
+- Distinct from #132 (name-identity dedupe / junk-secondary safety net). Keep that epic; do not merge it as part of this item and do not stack this PR on #132.
+- Distinct from `BL-064` (spoiler-safe blurbs + persona injection). Regen with a better model is not a substitute for the spoiler rule.
+- Complements `BL-056.5` (prefetch already on `reasoningLlmProvider` / xAI). Existing Ollama-era rows still need a documented regen; do not treat `.5` as this epic being Done.
+- Curated-catalog membership stays `BL-052` **Done**; this is character-cast quality on those titles, not a new catalog.
+- Risks:
+- Running regen before the Thursday demo can replace a known-messy-but-demoed cast with an unreviewed one mid-walkthrough.
+- Treating this as “#132 will clean it up” leaves Ollama junk in the stored rows; the code safety net is not a replacement for a better generation pass.
+- Treating this as “`BL-064` will rewrite blurbs” still leaves junk secondaries and split identities; spoiler-safe copy does not shrink the roster.
+- Session Log:
+- 2026-08-19: Captured from Kevin 2026-08-18 (after Jessica dry run). Local Ollama pregen is messy: Frankenstein 5 primaries + ~60 secondaries (The Moon / The Mule / Elizabeth Lavenza (again) / LLM leftovers); Northanger triple Sally is the #132 example; blurbs spoil later plot (`BL-064`). Redo with xAI; per-book trial then curated catalog. Do not start before Thu Aug 20 noon CT Columbia State demo. Distinct from #132 and `BL-064`; do not reuse `BL-064`. Docs only; no product code and no regen in this capture.
 
 ## P0
 
