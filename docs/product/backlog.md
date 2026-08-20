@@ -110,7 +110,7 @@ Last updated: 2026-08-20
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -173,6 +173,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-19: Added `BL-065` (regen character discovery with xAI; replace local Ollama pregen). Kevin 2026-08-18 after Jessica dry run: local Ollama casts are messy — junk secondaries (Frankenstein: 5 primaries + ~60 secondaries including “The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, LLM leftovers), name glitches/duplicates (Northanger triple Sally is the #132 example), spoiler-y blurbs. Redo generation with xAI for a tight PRIMARY set and a sane SECONDARY set. Per-book trial first (recommend Frankenstein, Gutenberg 84), then curated catalog. Do **not** start before the Thu Aug 20 noon CT Columbia State demo. Distinct from #132 (name-identity dedupe safety net) and `BL-064` (spoiler-safe blurbs — better model helps; it does not replace the spoiler rule). Do not reuse `BL-064`. Docs only.
 - 2026-08-20: Added `BL-066` (open general registration after Columbia State approval). Kevin 2026-08-19 scripted demo test: Register for `demo_user@example.com` fails with **“Account access is currently limited to internal rollout users.”** Expected today (`account.auth.rollout.mode=internal` + allow-list from `BL-021.6`). Go-live switch after **semester start and** written/approval-to-use at Columbia State — not a Thursday demo change. Do not reopen `BL-021`. Distinct from #132. Docs only.
 - 2026-08-20: Added `BL-067` (recap chat misses characters who are in the chapter). Kevin 2026-08-19 scripted demo test; non-critical, will not demo this Thursday. After **Chapter 1** of **The Picture of Dorian Gray**, Chat tab (“Discuss This Chapter”) said Dorian and Basil were not in the chapter (both are). Same overlay: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Quality/regression on Done `BL-017` — do not reopen. Investigate excerpt / Ch-1 mapping / spoiler guard / unavailable stub; keep `BL-017.4`/`.5`. Not Frankenstein / not Thursday demo. Distinct from `BL-064`, `BL-065`, and #132. Do not reuse `BL-066`. Docs only.
+- 2026-08-20: Added `BL-068` (new account inherits Completed books it never opened). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix. He created **`demo_user@example.com`** and cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg **1063**) and *Northanger Abbey* (Gutenberg **121**) — books he has not opened on this account. Do **not** reopen Done `BL-018` (landing shelves / Completed row) or `BL-021.5` (claim-sync). That claim-sync merge is a **likely cause**, not a reason to skip this bug. Clearing localStorage is not enough if an anonymous **`pdr` reader cookie** still claim-syncs prior machine history. Investigate claim-sync on register / leftover cookie / unscoped completed flags; do not prescribe. Out of scope: Thursday demo code/deploy, `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -233,6 +234,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-17: Completed BL-018.6 by adding classroom landing context (`/api/classroom/context`), assignment-first landing sections with required-quiz status chips, and classroom feature-state overrides for quiz/recap/read-aloud/illustration/character/chat controls while preserving consumer flow for non-enrolled readers.
 - 2026-02-18: Marked BL-018 as `Done` now that all planned slices (`BL-018.1` through `BL-018.6`) and discovery deliverables are complete.
 - 2026-08-17: Assignment-rail **card density** is no longer a BL-018.6 follow-on. Landing stays assignment-first; the reduced card + dedicated assignment page is `BL-057`. Soak overflow hotfix (PR #121) is a demo-night CSS bandage, not this IA.
+- 2026-08-20: New-account **Completed** leak (books the signed-in user never opened on that account) is `BL-068`. Do **not** reopen this Done epic. Landing shelves / Completed row already shipped.
 
 ### BL-019 - Gamification and Trophy System
 - Type: Feature
@@ -365,6 +367,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-03-23: Added Google reader account sign-in on top of the existing BL-021 session model by introducing provider-backed identity tables (`user_local_credentials`, `user_auth_identities`), Google OAuth start/callback endpoints, Google-aware account UI, and production/local config support for dedicated Flyway migrator credentials plus Google auth env vars.
 - 2026-08-11: FERPA privacy review notes ADR §6 account hard-delete (24h) and backup retention are **policy-documented but not runtime-complete** (no deleteAccount API; `retention_purge_after` unused). Runtime fulfillment tracked under `BL-043.6` (do not reopen this epic). OAuth silent email auto-link risk tracked under `BL-043.2` / `SECURITY_AUDIT` H-04.
 - 2026-08-20: General / Columbia State registration go-live is `BL-066` (flip or widen `account.auth.rollout.mode` / allow-list after semester start + written approval). Do **not** reopen this Done epic.
+- 2026-08-20: New-account **Completed** leak after register (likely leftover anonymous `pdr` reader cookie / claim-sync into the new user) is `BL-068`. That merge is a **likely cause**, not a reason to skip the bug. Do **not** reopen this Done epic or `BL-021.5`.
 
 ### BL-022 - Reader Chapter Summary Feedback (AI Coach)
 - Type: Feature
@@ -1937,6 +1940,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Anything before the Thu Aug 20 Columbia State demo.
   - Reopening `BL-021` / `BL-021.6`. The lock already shipped; this is the operator switch.
   - Merging #132. Name-identity dedupe stays a separate code PR.
+  - New-account Completed leak (`BL-068`). Opening registration is not that identity/shelf bug.
   - New auth, OAuth providers, password-reset, or classroom entitlement work.
   - Changing `BL-028` rate limits / lockout or `BL-043` FERPA remediations.
 - Scope Buckets:
@@ -1958,6 +1962,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - Distinct from `BL-021` (Done). `.6` shipped the lock that produces this message. Do not reopen that epic.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Distinct from `BL-068` (new account inherits Completed books). The go-live switch is not that claim-sync / shelf-scoping bug.
 - Keep `BL-028` (account auth rate limits / lockout) and `BL-043` (FERPA). This switch must not weaken those gates.
 - Complements ADR §7 Stage 2 (optional production sign-up) in `docs/product/bl-021-auth-architecture-adr.md`. Stage 3 `required` is out unless classroom policy demands it.
 - Risks:
@@ -1990,6 +1995,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Character-card spoiler blurbs (`BL-064`).
   - Character regen with xAI (`BL-065`).
   - Merging #132. Name-identity dedupe stays a separate code PR.
+  - New-account Completed leak (`BL-068`). Recap-chat quality is not that identity/shelf bug.
   - Reopening `BL-017`. The recap + bounded-chat feature already shipped; this is quality/regression.
   - Frankenstein / the Thursday demo path.
 - Scope Buckets:
@@ -2012,6 +2018,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-064` (character-card spoiler blurbs + persona injection). Different surface.
 - Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this chapter-context quality fix.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Distinct from `BL-068` (new account inherits Completed books). Different surface.
 - Not Frankenstein / not the Thursday demo path.
 - Risks:
 - Weakening source-only / chapter-index guards to “fix” Dorian/Basil would reintroduce future-chapter spoilers.
@@ -2019,6 +2026,57 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Treating this as a new recap feature reopens `BL-017` instead of a bounded quality fix.
 - Session Log:
 - 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; non-critical, will not demo this Thursday). After Dorian Gray Chapter 1, Chat tab (“Discuss This Chapter”): Dorian “not mentioned at all”; Basil “excerpt does not mention… I cannot answer yet.” Both false — they are in Chapter 1. Same UI: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Investigate empty/wrong excerpt, Gutenberg preface as Ch 1, over-aggressive spoiler/context guard, or unavailable path serving a stub; do not prescribe a cause. Keep `BL-017.4`/`.5`. Do not reopen `BL-017`; do not start before the demo; not Frankenstein / not Thursday demo; do not fold into `BL-064` / `BL-065` / #132; do not reuse `BL-066`. Docs only; no product code in this capture.
+
+### BL-068 - New Account Inherits Completed Books It Never Opened
+- Type: Bug
+- Priority: P2 (backlog; not a Thursday must-fix)
+- Effort: M
+- Status: Proposed
+- Problem: A brand-new account’s Library **Completed** shelf shows books the signed-in user has never opened on that account. Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix) created **`demo_user@example.com`** and cleared **localStorage**. Completed still listed:
+  - *The Cask of Amontillado* (Gutenberg **1063**)
+  - *Northanger Abbey* (Gutenberg **121**)
+  He has not opened those titles on this account. The same leak likely applies to **In Progress** / **Continue Reading**.
+- Timing (Kevin 2026-08-19, scripted demo test): Columbia State demo is **Thu Aug 20**. Do **not** start this before the demo. Not a live Thursday change. If `demo_user` is used for the general-reader beat, **avoid the Completed shelf** or use a **fresh browser profile**.
+- Current code: `BL-018` is **Done** (landing shelves including **Completed**). `BL-021.5` is **Done**: `POST /api/account/claim-sync` (`AccountClaimSyncService`) claims anonymous `reader_id` rows into the signed-in user and merges `AccountStateSnapshot` (book activity / completed flags) from the client (`reader.js` `collectLocalAccountStateSnapshot` / `applyAccountStateSnapshot`). Anonymous identity lives on the **`pdr_reader_profile`** cookie (`ReaderProfileService`, 5-year TTL) — clearing **localStorage** does not clear that cookie. Landing Completed uses `activity.completed` (`library-progress` / `library-ranking`). This epic is a **scoping/identity bug** on that merge, not a new shelf. Do **not** reopen `BL-018` or `BL-021.5`. The claim-sync merge is a **likely cause**, not a reason to skip this bug.
+- Current Direction:
+- A brand-new account’s **Completed** (and probably **In Progress** / **Continue Reading**) must reflect **that account’s** reading only.
+- Clearing localStorage is not enough if an anonymous **`pdr` reader cookie** (`pdr_reader_profile` / session) still claim-syncs prior machine history into the new user.
+- Investigate (do **not** prescribe a cause): claim-sync on register, leftover reader cookie after localStorage clear, or completed flags that are not user-scoped.
+- Existing users must keep their real Completed history.
+- Out of this epic:
+  - Thursday demo code or deploy. Workaround: skip Completed for `demo_user`, or use a fresh browser profile.
+  - Opening public / general registration (`BL-066`). That go-live switch is separate.
+  - Merging #132. Name-identity dedupe stays a separate code PR.
+  - Reopening `BL-018` (landing shelves / Completed row already shipped).
+  - Reopening `BL-021` / `BL-021.5`. Claim-sync already shipped; this is a leftover-identity leak on that path.
+- Scope Buckets:
+- New-account Completed (and likely In Progress / Continue Reading) is empty until that user actually reads / finishes.
+- Logout / login as that user stays empty until they complete something.
+- Existing users do not lose real Completed history.
+- Investigate claim-sync / leftover `pdr` cookie / unscoped completed flags (do not pick a cause in this capture).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-068.1 New-account shelves account-scoped | Proposed | Brand-new account Completed (and probably In Progress / Continue Reading) must show only that account’s reading | Register a new allow-listed user on a browser that previously completed books (even after localStorage clear): Completed is empty until that user finishes a book |
+| BL-068.2 Empty after logout/login | Proposed | The empty Completed state must survive session recycle for that user | Logout / login as that user still empty until they complete something |
+| BL-068.3 Preserve real Completed history | Proposed | Existing users keep the books they actually finished | Existing accounts still show their real Completed titles after the fix |
+- Acceptance Criteria:
+- Register a new allow-listed user on a browser that previously completed books (even after localStorage clear): Completed is empty until that user actually finishes a book.
+- Logout / login as that user still empty until they complete something.
+- Existing users do not lose their real Completed history.
+- Dependency Notes:
+- Distinct from `BL-018` (Done). Landing shelves / Completed row already shipped. Do **not** reopen that epic.
+- Distinct from `BL-021.5` (Done). Claim-sync of anonymous cookie/local state into a new account already shipped. That merge is a **likely cause**, not a reason to skip this bug. Do **not** reopen `BL-021`.
+- Distinct from `BL-066` (open general registration after Columbia State approval). Do not fold this into the go-live switch.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Distinct from `BL-067` (recap chat claiming reached characters are absent). Different surface. Do not reuse `BL-067`.
+- Not Thursday-demo work. If `demo_user` is used for the general-reader beat, avoid the Completed shelf or use a fresh browser profile.
+- Risks:
+- Treating this as “clear localStorage” leaves the anonymous `pdr_reader_profile` cookie in place and claim-sync still copies prior machine history into the new account.
+- Treating this as “reopen `BL-018`” or “reopen `BL-021.5`” invites a shelf rewrite or a new claim-sync feature instead of scoping the existing merge.
+- A fix that wipes Completed for every account (or that stops claiming on every login) would drop real history for existing users.
+- Session Log:
+- 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix). Created **`demo_user@example.com`**, cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg 1063) and *Northanger Abbey* (Gutenberg 121) — titles he has not opened on this account. Do not reopen `BL-018` or `BL-021.5`; claim-sync merge is a likely cause, not a skip. Investigate claim-sync on register, leftover `pdr` reader cookie after localStorage clear, or unscoped completed flags; do not prescribe a cause. Out of scope: Thursday demo code/deploy (`demo_user` workaround: skip Completed or fresh profile), `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only; no product code in this capture.
 
 ## P0
 
