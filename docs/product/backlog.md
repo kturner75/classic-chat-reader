@@ -110,7 +110,7 @@ Last updated: 2026-08-20
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -172,6 +172,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Added `BL-064` (character blurbs spoil later plot). Kevin, Columbia State demo prep: live *Frankenstein* (Gutenberg 84) character cards show later-plot facts (Henry Clerval “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body”) before the reader reaches those events. Same stored blurb is injected into the chat/voice persona, so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only.
 - 2026-08-19: Added `BL-065` (regen character discovery with xAI; replace local Ollama pregen). Kevin 2026-08-18 after Jessica dry run: local Ollama casts are messy — junk secondaries (Frankenstein: 5 primaries + ~60 secondaries including “The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, LLM leftovers), name glitches/duplicates (Northanger triple Sally is the #132 example), spoiler-y blurbs. Redo generation with xAI for a tight PRIMARY set and a sane SECONDARY set. Per-book trial first (recommend Frankenstein, Gutenberg 84), then curated catalog. Do **not** start before the Thu Aug 20 noon CT Columbia State demo. Distinct from #132 (name-identity dedupe safety net) and `BL-064` (spoiler-safe blurbs — better model helps; it does not replace the spoiler rule). Do not reuse `BL-064`. Docs only.
 - 2026-08-20: Added `BL-066` (open general registration after Columbia State approval). Kevin 2026-08-19 scripted demo test: Register for `demo_user@example.com` fails with **“Account access is currently limited to internal rollout users.”** Expected today (`account.auth.rollout.mode=internal` + allow-list from `BL-021.6`). Go-live switch after **semester start and** written/approval-to-use at Columbia State — not a Thursday demo change. Do not reopen `BL-021`. Distinct from #132. Docs only.
+- 2026-08-20: Added `BL-067` (recap chat misses characters who are in the chapter). Kevin 2026-08-19 scripted demo test; non-critical, will not demo this Thursday. After **Chapter 1** of **The Picture of Dorian Gray**, Chat tab (“Discuss This Chapter”) said Dorian and Basil were not in the chapter (both are). Same overlay: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Quality/regression on Done `BL-017` — do not reopen. Investigate excerpt / Ch-1 mapping / spoiler guard / unavailable stub; keep `BL-017.4`/`.5`. Not Frankenstein / not Thursday demo. Distinct from `BL-064`, `BL-065`, and #132. Do not reuse `BL-066`. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -1839,6 +1840,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - `BL-054` college-appropriate conduct (NSFW/jailbreak). Conduct stays; do not weaken spoiler rules while editing the persona.
   - `BL-056` discovery/roster empty (Fortunato). This is blurb *content*, not whether the character appears.
   - Reading Buddy spoiler suite (`BL-017` / buddy chapter window). Different surface.
+  - `BL-067` recap-chat false “character not in this chapter” (Dorian Gray Ch 1). Different surface (chapter-pause Chat tab, not card blurbs).
 - Scope Buckets:
 - Spoiler-safe character card / browser blurbs (position-aware, or first-appearance-only at generation).
 - Persona prompt (text + voice) must not carry future-plot facts from the blurb.
@@ -1856,6 +1858,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - Distinct from #132 (character name identity / duplicate Sally / junk secondaries). Do not stack this work on that PR and do not fold spoilers into that epic.
 - Distinct from `BL-065` (regen character discovery with xAI). A better model helps blurbs; it does not replace this spoiler rule. Keep both epics.
+- Distinct from `BL-067` (recap chat claiming reached characters are absent). Card/persona spoilers vs chapter-pause Chat quality.
 - Complements `BL-054` (conduct on the same `CharacterPersonaPromptBuilder`). This epic is plot-spoiler content in DESCRIPTION; `BL-054` is classroom conduct.
 - Discovery/roster still uses first-appearance + `up-to` (`BL-056` family). This epic does not change who is listed, only what the blurb/persona may say.
 - Risks:
@@ -1887,6 +1890,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - `BL-064` spoiler-safe blurbs + persona injection — keep that epic. Better model helps; it does not replace the spoiler rule.
   - `BL-056.5` prefetch-provider wiring (already Done). This is stored-cast regen, not that code path.
   - `BL-056.6` portrait provider / ComfyUI. Portraits stay on that slice unless a trial is blocked for a documented reason.
+  - `BL-067` recap-chat false “character not in this chapter.” Regen does not replace that chapter-context quality fix.
 - Scope Buckets:
 - Documented regen path: provider/model + per-book action using xAI.
 - Trial book (Frankenstein / Gutenberg 84): clean PRIMARY/SECONDARY split, no duplicate-name cards.
@@ -1905,6 +1909,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Dependency Notes:
 - Distinct from #132 (name-identity dedupe / junk-secondary safety net). Keep that epic; do not merge it as part of this item and do not stack this PR on #132.
 - Distinct from `BL-064` (spoiler-safe blurbs + persona injection). Regen with a better model is not a substitute for the spoiler rule.
+- Distinct from `BL-067` (recap chat claiming reached characters are absent). Cast regen is not that chapter-pause Chat quality fix.
 - Complements `BL-056.5` (prefetch already on `reasoningLlmProvider` / xAI). Existing Ollama-era rows still need a documented regen; do not treat `.5` as this epic being Done.
 - Curated-catalog membership stays `BL-052` **Done**; this is character-cast quality on those titles, not a new catalog.
 - Risks:
@@ -1961,6 +1966,59 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Treating this as “reopen `BL-021`” invites a new auth system instead of the existing mode switch.
 - Session Log:
 - 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; Columbia State demo Thu Aug 20 noon CT). Sign In modal, email `demo_user@example.com`: **“Account access is currently limited to internal rollout users.”** Expected today (`BL-021.6` internal allow-list). Open Register + Google after semester start **and** written/approval-to-use at Columbia State. Keep `BL-028` / `BL-043`; decide school-scoped vs fully public; demo/internal accounts stay valid. Do not reopen `BL-021`; do not start before the demo; do not merge #132. Docs only; no product code and no rollout-flag change in this capture.
+
+### BL-067 - Recap Chat Misses Characters Who Are in the Chapter
+- Type: Bug
+- Priority: P2 (quality/regression; non-critical; not Thursday-demo work)
+- Effort: M
+- Status: Proposed
+- Problem: After **Chapter 1** of **The Picture of Dorian Gray**, recap chat claims named characters who appear in that chapter are absent. Kevin 2026-08-19 (scripted demo test; non-critical, will not demo this Thursday) used the chapter-pause overlay **Chat** tab (“Discuss This Chapter”) and asked about Dorian and Basil. Replies:
+  - “The current chapter context does not mention Dorian at all, so nothing is established about him yet.”
+  - “The provided Chapter 1 excerpt does not mention Basil at all. I cannot answer yet.”
+  Both are false. Dorian and Basil are in Chapter 1.
+  Related symptom in the same UI: status line **“Recap chat is unavailable for this book.”** while a thread is still shown and the compose box is active.
+- Timing (Kevin 2026-08-19, scripted demo test): Columbia State demo is **Thu Aug 20**. Do **not** start this before the demo. Not Frankenstein / not the Thursday demo path. Not a live Thursday change.
+- Current code: `BL-017` is **Done** (bounded recap discussion + source-only / chapter-scoped guards). `ChapterRecapChatService.chat` builds `SOURCE CONTEXT` from chapter paragraphs (first-N snippets per chapter, `recap.chat.max-source-chars`) and a source-only / chapter-index prompt (`BL-017.4` / `BL-017.5`). Overlay Chat tab is “Discuss This Chapter” (`index.html`). `reader.js` `setRecapChatControls` can show **“Recap chat is unavailable for this book.”** when `!state.recapAvailable` while the compose box is gated on `state.recapChatAvailable`. This epic is a **quality/regression** on that surface, not a new feature. Do **not** reopen `BL-017`.
+- Current Direction:
+- Recap chat must answer from the actual chapter the reader just finished.
+- Named characters who appear in that chapter must be discussable.
+- Investigate (do **not** prescribe a cause): empty/wrong excerpt, Gutenberg preface mapped as Ch 1, over-aggressive spoiler/context guard, or “unavailable” path still serving a stub model.
+- Keep `BL-017.4` / `BL-017.5` future-chapter spoiler guards.
+- “Unavailable” and a live compose box cannot both be true.
+- Out of this epic:
+  - Anything before the Thu Aug 20 Columbia State demo.
+  - Character-card spoiler blurbs (`BL-064`).
+  - Character regen with xAI (`BL-065`).
+  - Merging #132. Name-identity dedupe stays a separate code PR.
+  - Reopening `BL-017`. The recap + bounded-chat feature already shipped; this is quality/regression.
+  - Frankenstein / the Thursday demo path.
+- Scope Buckets:
+- Recap chat answers from the finished chapter (Dorian Gray Ch 1 as the reported case).
+- Named characters who appear in that chapter are discussable.
+- Status “unavailable” vs a live thread + compose box must not contradict.
+- Investigate excerpt / chapter-mapping / guard / unavailable-stub (do not pick a cause in this capture).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-067.1 Finished-chapter characters discussable | Proposed | Recap chat must use the actual chapter just finished; named characters who appear there must be discussable | After Dorian Gray Chapter 1, asking about Dorian or Basil does not get “not mentioned” / “cannot answer yet” for absence |
+| BL-067.2 Unavailable vs live compose | Proposed | Status **“Recap chat is unavailable for this book.”** and an active thread + compose box cannot both be true | Overlay never shows that unavailable line while the thread is shown and compose is active |
+| BL-067.3 Keep spoiler guards | Proposed | Future-chapter spoilers stay blocked (`BL-017.4` / `BL-017.5`) | Recap chat still refuses later-chapter facts after the quality fix |
+- Acceptance Criteria:
+- After Dorian Gray Chapter 1, recap chat can discuss Dorian and Basil from that chapter without claiming they are absent.
+- “Unavailable” and a live compose box cannot both be true.
+- Still no future-chapter spoilers (keep `BL-017.4` / `BL-017.5` guards).
+- Dependency Notes:
+- Distinct from `BL-017` (Done). `.4` / `.5` shipped bounded recap discussion + source-only / chapter-scoped guards. Do **not** reopen that epic; this is quality/regression on that surface.
+- Distinct from `BL-064` (character-card spoiler blurbs + persona injection). Different surface.
+- Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this chapter-context quality fix.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Not Frankenstein / not the Thursday demo path.
+- Risks:
+- Weakening source-only / chapter-index guards to “fix” Dorian/Basil would reintroduce future-chapter spoilers.
+- Treating the unavailable status line as the only bug can leave the false-absence replies in place.
+- Treating this as a new recap feature reopens `BL-017` instead of a bounded quality fix.
+- Session Log:
+- 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; non-critical, will not demo this Thursday). After Dorian Gray Chapter 1, Chat tab (“Discuss This Chapter”): Dorian “not mentioned at all”; Basil “excerpt does not mention… I cannot answer yet.” Both false — they are in Chapter 1. Same UI: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Investigate empty/wrong excerpt, Gutenberg preface as Ch 1, over-aggressive spoiler/context guard, or unavailable path serving a stub; do not prescribe a cause. Keep `BL-017.4`/`.5`. Do not reopen `BL-017`; do not start before the demo; not Frankenstein / not Thursday demo; do not fold into `BL-064` / `BL-065` / #132; do not reuse `BL-066`. Docs only; no product code in this capture.
 
 ## P0
 
@@ -2303,6 +2361,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-11: Completed recap UX polish with persistent modal chrome + scrollable body, recap/chat tab flow polish, and a reader header control to re-enable per-book recap popups after opt-out.
 - 2026-02-11: Hardened recap chat guardrails by enforcing source-only prompt behavior and chapter-scoped local chat history; validated behavior in manual QA on tested books.
 - 2026-02-11: Marked BL-017 as Done; next feature work continues under BL-020 (Post-Chapter Pop Quiz).
+- 2026-08-20: Recap-chat quality/regression (Dorian Gray Ch 1: false “Dorian/Basil not in chapter”; “unavailable” while compose stays live) is `BL-067`. Do **not** reopen this Done epic. Keep `.4` / `.5` spoiler guards.
 
 ### Reading Buddy Mode
 - Type: Feature
