@@ -110,7 +110,7 @@ Last updated: 2026-08-20
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -175,6 +175,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-20: Added `BL-067` (recap chat misses characters who are in the chapter). Kevin 2026-08-19 scripted demo test; non-critical, will not demo this Thursday. After **Chapter 1** of **The Picture of Dorian Gray**, Chat tab (“Discuss This Chapter”) said Dorian and Basil were not in the chapter (both are). Same overlay: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Quality/regression on Done `BL-017` — do not reopen. Investigate excerpt / Ch-1 mapping / spoiler guard / unavailable stub; keep `BL-017.4`/`.5`. Not Frankenstein / not Thursday demo. Distinct from `BL-064`, `BL-065`, and #132. Do not reuse `BL-066`. Docs only.
 - 2026-08-20: Added `BL-068` (new account inherits Completed books it never opened). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix. He created **`demo_user@example.com`** and cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg **1063**) and *Northanger Abbey* (Gutenberg **121**) — books he has not opened on this account. Do **not** reopen Done `BL-018` (landing shelves / Completed row) or `BL-021.5` (claim-sync). That claim-sync merge is a **likely cause**, not a reason to skip this bug. Clearing localStorage is not enough if an anonymous **`pdr` reader cookie** still claim-syncs prior machine history. Investigate claim-sync on register / leftover cookie / unscoped completed flags; do not prescribe. Out of scope: Thursday demo code/deploy, `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only.
 - 2026-08-20: Added `BL-069` (book covers do not load on iPhone). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone. On iPhone (at least **Simulator** — iPhone 17 Pro / iOS at classicchatreader.com), library **book cover images do not load** — dark gray/black rounded placeholders. Same screenshot: **Continue Reading** *Pride and Prejudice* cover blank (text/chips/Gutenberg #1342 fine); **For You** *Alice*, *Dorian Gray*, *Moby Dick* covers blank; Victor Frankenstein **character portrait** on Continue chat loads; desktop covers work (Cask / Northanger Completed earlier tonight). Investigate Safari/iOS format (webp/avif), CORS, srcset, lazy-load intersection, or a different cover vs portrait URL path; do not prescribe. Out of scope: Thursday desktop Frankenstein demo, `BL-068` Completed leak, `BL-067` recap chat, character regen (`BL-065`), #132. Do not reuse `BL-068`. Docs only.
+- 2026-08-20: Added `BL-070` (teacher workspace takes ~10s to open). Kevin 2026-08-20 morning (Columbia State demo day; backlog, not a same-morning fix): opening **Teacher workspace** (`/teacher`) takes several seconds, almost **10 seconds**. Feels really slow. Distinct from `BL-059` (student landing / library catalog TTFB) and `BL-061` (My Chats Open Book hop). This is teacher first paint / first useful UI. Investigate payload size, serial API waterfall, `teacher.js` bundle, classroom context, assignment list, dashboard/overview prefetch; do not prescribe. Out of scope: same-day code/deploy before the noon Columbia State demo, opening public registration (`BL-066`), character regen (`BL-065`), #132. Do not reuse `BL-069`. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -504,6 +505,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-12: **BL-025.10 pilot teacher→student overview** for Jessica 1:1 — roster drill-down covering current/completed assignments, book progress, quiz scores/retries, durable opened state (`assignment_progress`), and approximate time-in-reader via thin heartbeat (`BL-025.6` minimum). Class-scoped teacher authz only; no bulk chat export / school-admin. Demo script at `docs/product/bl-025-10-demo-script.md`. Broad dashboard rollout remains FERPA-gated.
 - 2026-08-13: Classroom character-chat conduct (college-appropriate; refuse NSFW without flattening personality) tracked as `BL-054`, not a BL-025.11 completion-model slice. Cross-link only.
 - 2026-08-17: Student landing assignment cards dump the whole dashboard (scope, late, quiz, character-chat required, progress, Chat CTA) and overflow on mobile. Product direction is `BL-057` (reduced card + dedicated assignment page). CSS wrap PR #121 is the soak/demo-night bandage; the thin landing-card hotfix stays out of `BL-057`.
+- 2026-08-20: Teacher workspace (`/teacher`) first paint / first useful UI taking ~10s is `BL-070`. Do **not** reopen this In Progress epic as a workspace rewrite. Classroom UI already shipped; this is latency on that surface.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -1652,6 +1654,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Invalidate path should respect `BL-007` admin-only import/delete/feature-toggle.
 - Landing IA stays `BL-018` / `BL-057`; this epic does not change card density or assignment Open.
 - Distinct from `BL-061` (My Chats Open Book hop through landing). This epic is catalog **latency**; `BL-061` is the unnecessary hop that currently pays that latency before the reader opens.
+- Distinct from `BL-070` (teacher workspace `/teacher` first paint). Student landing TTFB is a separate measurement from teacher first useful UI, even if `/api/library` appears in both bootstraps. Do not fold.
 - Risks:
 - Caching the current full `Book` graph without a slim DTO still ships a heavy payload and may hide N+1 cover/chapter work behind a TTL.
 - HTTP cache on a payload that later grows per-user progress would leak or freeze the wrong student’s assignment state.
@@ -1727,6 +1730,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-059` (landing library load). `BL-059` is the slow catalog; this is the unnecessary hop. The hop also makes `BL-059` worse: every Open Book pays the ~21s TTFB before reading.
 - My Chats surface shipped (`BL-032` / `BL-039`, PR #78). This is a follow-on nav defect, not a reopen of those epics.
 - Distinct from assignment Open leftovers (`BL-058`) and dedicated assignment page (`BL-057`).
+- Distinct from `BL-070` (teacher workspace `/teacher` first paint). My Chats Open Book hop is a student-reader nav defect, not the teacher workspace load.
 - Browser Back after this change should still have a sensible exit (`BL-051`); do not invent a new history story here unless the direct-open path breaks Back.
 - Risks:
 - If Open Book still goes through `/?…` and `openBookFromUrlIfPresent()` still requires `state.localBooks` from the full catalog, the hop remains even after `BL-059` is faster — and while `BL-059` is open, users wait ~20s for a book the chat already named.
@@ -1897,6 +1901,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - `BL-056.6` portrait provider / ComfyUI. Portraits stay on that slice unless a trial is blocked for a documented reason.
   - `BL-067` recap-chat false “character not in this chapter.” Regen does not replace that chapter-context quality fix.
   - iPhone book covers (`BL-069`). Cast regen is not that cover-load bug.
+  - Teacher workspace first paint (`BL-070`). Cast regen is not that `/teacher` load.
 - Scope Buckets:
 - Documented regen path: provider/model + per-book action using xAI.
 - Trial book (Frankenstein / Gutenberg 84): clean PRIMARY/SECONDARY split, no duplicate-name cards.
@@ -1917,6 +1922,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-064` (spoiler-safe blurbs + persona injection). Regen with a better model is not a substitute for the spoiler rule.
 - Distinct from `BL-067` (recap chat claiming reached characters are absent). Cast regen is not that chapter-pause Chat quality fix.
 - Distinct from `BL-069` (iPhone book covers do not load). Regen is not that Safari/iOS cover-load bug.
+- Distinct from `BL-070` (teacher workspace `/teacher` first paint). Regen is not that workspace-load bug.
 - Complements `BL-056.5` (prefetch already on `reasoningLlmProvider` / xAI). Existing Ollama-era rows still need a documented regen; do not treat `.5` as this epic being Done.
 - Curated-catalog membership stays `BL-052` **Done**; this is character-cast quality on those titles, not a new catalog.
 - Risks:
@@ -1945,6 +1951,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Reopening `BL-021` / `BL-021.6`. The lock already shipped; this is the operator switch.
   - Merging #132. Name-identity dedupe stays a separate code PR.
   - New-account Completed leak (`BL-068`). Opening registration is not that identity/shelf bug.
+  - Teacher workspace first paint (`BL-070`). The go-live switch is not that `/teacher` load.
   - New auth, OAuth providers, password-reset, or classroom entitlement work.
   - Changing `BL-028` rate limits / lockout or `BL-043` FERPA remediations.
 - Scope Buckets:
@@ -1967,6 +1974,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-021` (Done). `.6` shipped the lock that produces this message. Do not reopen that epic.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
 - Distinct from `BL-068` (new account inherits Completed books). The go-live switch is not that claim-sync / shelf-scoping bug.
+- Distinct from `BL-070` (teacher workspace `/teacher` first paint). Opening registration is not that workspace-load bug.
 - Keep `BL-028` (account auth rate limits / lockout) and `BL-043` (FERPA). This switch must not weaken those gates.
 - Complements ADR §7 Stage 2 (optional production sign-up) in `docs/product/bl-021-auth-architecture-adr.md`. Stage 3 `required` is out unless classroom policy demands it.
 - Risks:
@@ -2132,6 +2140,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this Safari/iOS cover-load bug.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
 - Distinct from `BL-056.6` (portrait generation provider). Portraits already load in the reported screenshot; this epic is cover *display* on iOS, not portrait generation.
+- Distinct from `BL-070` (teacher workspace `/teacher` first paint). iPhone cover-load is not that workspace-load bug. Do not reuse `BL-069` for the teacher slowness.
 - Not Thursday-demo work unless someone demos Library on a phone. Thursday path is desktop Frankenstein.
 - Risks:
 - Treating this as “covers were never generated” ignores that desktop covers work and that `.has-image` already has a `coverUrl`.
@@ -2139,6 +2148,57 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - A desktop-only format or CDN change can “fix” Simulator while leaving device Safari broken, or the reverse.
 - Session Log:
 - 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone). iPhone Simulator (iPhone 17 Pro / iOS at classicchatreader.com): book covers do not load — dark gray/black rounded placeholders. Continue Reading *Pride and Prejudice* cover blank (text/chips/Gutenberg #1342 fine); For You Alice / Dorian Gray / Moby Dick covers blank; Victor Frankenstein portrait on Continue chat loads; desktop Cask / Northanger Completed covers worked earlier tonight. Investigate Safari/iOS format (webp/avif), CORS, srcset, lazy-load intersection, or a different cover vs portrait URL path; do not prescribe a cause. Out of scope: Thursday desktop Frankenstein demo, `BL-068` Completed leak, `BL-067` recap chat, character regen (`BL-065`), #132. Do not reuse `BL-068`. Docs only; no product code in this capture.
+
+### BL-070 - Teacher Workspace Takes ~10s to Open
+- Type: Improvement
+- Priority: P2 (backlog; not a same-morning Thursday fix)
+- Effort: M
+- Status: Proposed
+- Problem: Opening **Teacher workspace** (`/teacher`) takes several seconds, almost **10 seconds**. Kevin 2026-08-20 morning (Columbia State demo day; backlog, not a same-morning fix) said it feels really slow. This is the **teacher workspace first paint / first useful UI**, not the student library.
+- Timing (Kevin 2026-08-20 morning, Columbia State demo day): Demo is **Thu Aug 20 noon CT**. Do **not** start a same-morning code/deploy before the demo. Not a live Thursday change.
+- Current code: `teacher.html` shows `#loading-state` (spinner) until `teacher.js` `initialize()` finishes. First wave is `Promise.all` of `/api/account/status`, `/api/classroom/capabilities`, `/api/library`, `/api/reading-buddy/status`. Then serial `/api/classroom/classes`. Then if a class exists, `selectClass` → roster / assignments / features. `teacher.js` is the workspace bundle. `BL-025.10` overview is roster-click `GET .../students/{userId}/overview`. This epic is **teacher first paint / first useful UI** on the shipped `/teacher` surface, not a `BL-025` feature rewrite. Do **not** reopen `BL-025`.
+- Current Direction:
+- `/teacher` should open to a usable workspace without a multi-second blank/spinner.
+- Investigate (do **not** prescribe a cause): payload size, serial API waterfall, `teacher.js` bundle, classroom context, assignment list, dashboard/overview prefetch.
+- Measure p50/p95 on prod as a teacher. Kevin’s current feel is ~10s.
+- Student landing (`BL-059`) is a **separate measurement**, even if `/api/library` appears in both bootstraps.
+- Out of this epic:
+  - Same-day code or deploy before the noon Columbia State demo.
+  - Opening public / general registration (`BL-066`).
+  - Character regen with xAI (`BL-065`).
+  - Merging #132. Name-identity dedupe stays a separate code PR.
+  - Student landing / library catalog TTFB (`BL-059`). Separate measurement.
+  - My Chats Open Book hop (`BL-061`).
+  - Reopening `BL-025` as a workspace rewrite. Classroom UI already shipped.
+- Scope Buckets:
+- First useful `/teacher` UI without a multi-second blank/spinner.
+- Investigate payload size / serial waterfall / `teacher.js` bundle / classroom context / assignment list / dashboard/overview prefetch (do not pick a cause in this capture).
+- Documented smaller time budget with p50/p95 on prod as a teacher.
+- Student landing stays `BL-059`.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-070.1 Measure teacher first useful UI | Proposed | Time `/teacher` on prod as a teacher to first interactive workspace (p50/p95). Kevin’s current feel is ~10s. Keep student landing (`BL-059`) as a separate measurement | A documented before-number exists for teacher first useful UI; student landing TTFB is not reused as this number |
+| BL-070.2 Interactive workspace in a smaller budget | Proposed | Opening `/teacher` as a teacher reaches a usable workspace without a multi-second blank/spinner, against the documented budget from `.1` | Prod teacher open hits the documented smaller p50/p95 budget; first useful UI is interactive |
+- Acceptance Criteria:
+- Opening `/teacher` on prod as a teacher reaches an interactive workspace in a documented, much smaller budget (measure p50/p95; Kevin’s current feel is ~10s).
+- Student landing (`BL-059`) is a separate measurement.
+- This epic does not implement `BL-059` catalog work, `BL-061` Open Book hop, `BL-066` registration go-live, or character regen.
+- Dependency Notes:
+- Distinct from `BL-059` (landing library load / student catalog TTFB). That epic is the ~10–20s student landing `GET /api/library`. This is teacher first paint. Do not fold even if `/api/library` is in the teacher bootstrap.
+- Distinct from `BL-061` (My Chats Open Book hop through landing). That hop is a student-reader nav defect, not `/teacher`.
+- Distinct from `BL-025` (In Progress). Classroom admin / `/teacher` UI already shipped. Do **not** reopen that epic as a workspace rewrite.
+- Distinct from `BL-066` (open general registration after Columbia State approval). The go-live switch is not this load.
+- Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this workspace-load bug.
+- Distinct from `BL-069` (iPhone book covers do not load). Different surface. Do not reuse `BL-069`.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Not same-morning Thursday-demo work. Do not code or deploy this before the noon Columbia State demo.
+- Risks:
+- Treating this as “`BL-059` will fix it” leaves `/teacher` unmeasured if the teacher spinner waits on more than the catalog, or if the catalog is only one slice of the waterfall.
+- Treating this as “reopen `BL-025`” invites a workspace rewrite instead of first-paint / first-useful-UI work on the shipped surface.
+- A student-landing-only cache/slim DTO can improve `BL-059` without making `/teacher` interactive if the blank/spinner still waits on classes, roster, assignments, or the bundle.
+- Session Log:
+- 2026-08-20: Captured from Kevin 2026-08-20 morning (Columbia State demo day; backlog, not a same-morning fix). Opening **Teacher workspace** (`/teacher`) takes several seconds, almost **10 seconds**. Feels really slow. Distinct from `BL-059` (student landing / library catalog TTFB) and `BL-061` (My Chats Open Book hop). This is teacher first paint / first useful UI. Investigate payload size, serial API waterfall, `teacher.js` bundle, classroom context, assignment list, dashboard/overview prefetch; do not prescribe a cause. Out of scope: same-day code/deploy before the noon Columbia State demo, opening public registration (`BL-066`), character regen (`BL-065`), #132. Do not reuse `BL-069`. Docs only; no product code in this capture.
 
 ## P0
 
