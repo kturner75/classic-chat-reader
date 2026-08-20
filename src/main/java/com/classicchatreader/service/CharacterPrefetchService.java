@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
@@ -117,7 +116,7 @@ public class CharacterPrefetchService {
         int created = 0;
         int promoted = 0;
 
-        for (PrefetchedCharacter pc : mainCharacters) {
+        for (PrefetchedCharacter pc : dedupePrefetchedCharacters(mainCharacters)) {
             FirstAppearance appearance = findFirstAppearance(bookId, pc.name());
             ChapterEntity chapter = appearance != null
                     ? appearance.chapter()
@@ -128,37 +127,14 @@ public class CharacterPrefetchService {
             }
             int paragraphIndex = appearance != null ? appearance.paragraphIndex() : 0;
 
-            // Check for existing character with same name (case-insensitive)
-            Optional<CharacterEntity> existing = characterRepository
-                    .findByBookIdAndNameIgnoreCase(bookId, pc.name());
-
-            if (existing.isPresent()) {
-                // Promote existing SECONDARY character to PRIMARY
-                CharacterEntity existingChar = existing.get();
-                if (existingChar.getCharacterType() == CharacterType.SECONDARY) {
-                    existingChar.setCharacterType(CharacterType.PRIMARY);
-                    // Update description if prefetch has a better one
-                    if (pc.description() != null && !pc.description().isBlank() &&
-                            (existingChar.getDescription() == null ||
-                             pc.description().length() > existingChar.getDescription().length())) {
-                        existingChar.setDescription(pc.description());
-                    }
-                    characterRepository.save(existingChar);
-                    log.info("Promoted existing character '{}' to PRIMARY", pc.name());
-                    promoted++;
-                }
-            } else {
-                // Create new PRIMARY character
-                CharacterEntity character = new CharacterEntity(
-                        book, pc.name(), pc.description(), chapter, paragraphIndex
-                );
-                character.setCharacterType(CharacterType.PRIMARY);
-                characterRepository.save(character);
-
-                // Queue portrait generation
-                characterService.queuePortraitGeneration(character.getId());
+            CharacterService.CharacterUpsert upsert = characterService.upsertCharacter(
+                    book, chapter, pc.name(), pc.description(), paragraphIndex, CharacterType.PRIMARY);
+            if (upsert.created() && upsert.character() != null) {
+                characterService.queuePortraitGeneration(upsert.character().getId());
                 log.info("Created PRIMARY character '{}' for book '{}'", pc.name(), book.getTitle());
                 created++;
+            } else if (upsert.promoted()) {
+                promoted++;
             }
         }
 
@@ -276,7 +252,19 @@ public class CharacterPrefetchService {
                 characters.add(new PrefetchedCharacter(name, description, chapterNumber));
             }
         }
-        return characters;
+        return dedupePrefetchedCharacters(characters);
+    }
+
+    private List<PrefetchedCharacter> dedupePrefetchedCharacters(List<PrefetchedCharacter> characters) {
+        List<PrefetchedCharacter> deduped = new ArrayList<>();
+        for (PrefetchedCharacter candidate : characters) {
+            boolean known = deduped.stream()
+                    .anyMatch(existing -> CharacterNameNormalizer.isNameVariant(existing.name(), candidate.name()));
+            if (!known) {
+                deduped.add(candidate);
+            }
+        }
+        return deduped;
     }
 
     private ChapterEntity findChapterByNumber(String bookId, int chapterNumber) {
