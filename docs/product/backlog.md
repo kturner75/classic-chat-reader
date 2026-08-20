@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-19
+Last updated: 2026-08-20
 
 ## Implementation handoff (classroom)
 
@@ -110,7 +110,7 @@ Last updated: 2026-08-19
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -171,6 +171,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-18: Refined `BL-063` placement (docs only, no new slice): **library page book card only**. Small corner `[Gutenberg 1513]` (ebook number) linking to the Project Gutenberg page. Gutenberg-sourced titles only. Not on the skinny assignment card; not in the reader chrome unless we add that later. Replaces any reader / page-count / cache-only placement.
 - 2026-08-18: Added `BL-064` (character blurbs spoil later plot). Kevin, Columbia State demo prep: live *Frankenstein* (Gutenberg 84) character cards show later-plot facts (Henry Clerval “who is murdered by the monster”; Robert Walton “discovers Victor Frankenstein's body”) before the reader reaches those events. Same stored blurb is injected into the chat/voice persona, so chapter gating is not enough. Same class of bug on other books. Related but separate from #132 (name dedupe / junk secondaries) — do not fold. Docs only.
 - 2026-08-19: Added `BL-065` (regen character discovery with xAI; replace local Ollama pregen). Kevin 2026-08-18 after Jessica dry run: local Ollama casts are messy — junk secondaries (Frankenstein: 5 primaries + ~60 secondaries including “The Moon”, “The Mule”, “Elizabeth Lavenza (again)”, LLM leftovers), name glitches/duplicates (Northanger triple Sally is the #132 example), spoiler-y blurbs. Redo generation with xAI for a tight PRIMARY set and a sane SECONDARY set. Per-book trial first (recommend Frankenstein, Gutenberg 84), then curated catalog. Do **not** start before the Thu Aug 20 noon CT Columbia State demo. Distinct from #132 (name-identity dedupe safety net) and `BL-064` (spoiler-safe blurbs — better model helps; it does not replace the spoiler rule). Do not reuse `BL-064`. Docs only.
+- 2026-08-20: Added `BL-066` (open general registration after Columbia State approval). Kevin 2026-08-19 scripted demo test: Register for `demo_user@example.com` fails with **“Account access is currently limited to internal rollout users.”** Expected today (`account.auth.rollout.mode=internal` + allow-list from `BL-021.6`). Go-live switch after **semester start and** written/approval-to-use at Columbia State — not a Thursday demo change. Do not reopen `BL-021`. Distinct from #132. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -362,6 +363,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-19: Completed BL-021.6 by adding staged account rollout controls (`account.auth.rollout.mode` with internal allow-list support), wiring migration/auth telemetry into `/health/details` (`accountMetrics`), extending account status payload with rollout metadata, and adding Playwright E2E coverage for register/login/logout plus anonymous-to-account claim-sync behavior.
 - 2026-03-23: Added Google reader account sign-in on top of the existing BL-021 session model by introducing provider-backed identity tables (`user_local_credentials`, `user_auth_identities`), Google OAuth start/callback endpoints, Google-aware account UI, and production/local config support for dedicated Flyway migrator credentials plus Google auth env vars.
 - 2026-08-11: FERPA privacy review notes ADR §6 account hard-delete (24h) and backup retention are **policy-documented but not runtime-complete** (no deleteAccount API; `retention_purge_after` unused). Runtime fulfillment tracked under `BL-043.6` (do not reopen this epic). OAuth silent email auto-link risk tracked under `BL-043.2` / `SECURITY_AUDIT` H-04.
+- 2026-08-20: General / Columbia State registration go-live is `BL-066` (flip or widen `account.auth.rollout.mode` / allow-list after semester start + written approval). Do **not** reopen this Done epic.
 
 ### BL-022 - Reader Chapter Summary Feedback (AI Coach)
 - Type: Feature
@@ -1911,6 +1913,54 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Treating this as “`BL-064` will rewrite blurbs” still leaves junk secondaries and split identities; spoiler-safe copy does not shrink the roster.
 - Session Log:
 - 2026-08-19: Captured from Kevin 2026-08-18 (after Jessica dry run). Local Ollama pregen is messy: Frankenstein 5 primaries + ~60 secondaries (The Moon / The Mule / Elizabeth Lavenza (again) / LLM leftovers); Northanger triple Sally is the #132 example; blurbs spoil later plot (`BL-064`). Redo with xAI; per-book trial then curated catalog. Do not start before Thu Aug 20 noon CT Columbia State demo. Distinct from #132 and `BL-064`; do not reuse `BL-064`. Docs only; no product code and no regen in this capture.
+
+### BL-066 - Open General Registration after Columbia State Approval
+- Type: Improvement / ops
+- Priority: P1 (semester go-live; gated — not Thursday-demo work)
+- Effort: S
+- Status: Proposed
+- Problem: Registering a new user fails with **“Account access is currently limited to internal rollout users.”** Kevin 2026-08-19 (scripted demo test) reproduced this on the Sign In modal with email `demo_user@example.com`. That message is **expected today**: production is on the `BL-021.6` internal allow-list lock. Columbia State students and teachers will need Register + Google sign-in once the semester begins **and** they have written/approval-to-use at Columbia State Community College.
+- Timing (Kevin 2026-08-19, scripted demo test): Columbia State demo is **Thu Aug 20 noon CT**. Do **not** start this before the demo / semester approval. Not a live Thursday change.
+- Current code: `BL-021` is **Done**. `BL-021.6` shipped `account.auth.rollout.mode` (`disabled` | `internal` | `optional` | `required`) plus `account.auth.rollout.allowed-emails`. Prod defaults to `internal` via `ACCOUNT_AUTH_ROLLOUT_MODE` / `ACCOUNT_AUTH_ROLLOUT_ALLOWED_EMAILS` (`application-prod.properties`). In `internal` mode, `AccountAuthService` returns `ROLLOUT_RESTRICTED` with that error unless the email is on the allow-list. This epic is the **go-live switch**, not a new auth system.
+- Current Direction:
+- Flip or widen `account.auth.rollout.mode` (and the allow-list) so new Columbia State students/teachers can Register and use Google sign-in without the internal-rollout error.
+- Gate: **semester start and** written/approval-to-use at Columbia State. Do not flip for the Thursday demo.
+- Keep existing anti-abuse (`BL-028` register/login rate limits + lockout) and FERPA gates (`BL-043`). Do not weaken those to open signup.
+- Demo / internal accounts (`demo.teacher`, `demo.student`, current allow-list users) stay valid after the switch.
+- **Decision to record before flipping:** school-scoped signup vs fully public register. Do not make the site fully public-anonymous-register if policy still wants school-scoped signup. Existing modes: stay `internal` and widen `allowed-emails` (school-scoped; current code is per-email, not domain), or set `optional` (ADR Stage 2 — anyone can register; anonymous reading remains). `required` is classroom-path-only (ADR Stage 3) and is not the default go-live.
+- Out of this epic:
+  - Anything before the Thu Aug 20 Columbia State demo.
+  - Reopening `BL-021` / `BL-021.6`. The lock already shipped; this is the operator switch.
+  - Merging #132. Name-identity dedupe stays a separate code PR.
+  - New auth, OAuth providers, password-reset, or classroom entitlement work.
+  - Changing `BL-028` rate limits / lockout or `BL-043` FERPA remediations.
+- Scope Buckets:
+- Document the exact property/mode change and who flips it.
+- Execute the go-live switch only after both gates (semester start + written Columbia State approval).
+- Confirm Register + Google sign-in for a user **not** on the internal allow-list.
+- Confirm existing demo.teacher / demo.student / internal users still work.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-066.1 Record flip + school-vs-public decision | Proposed | Write the exact prod change (`ACCOUNT_AUTH_ROLLOUT_MODE` / `ACCOUNT_AUTH_ROLLOUT_ALLOWED_EMAILS`) and who operates it; decide school-scoped (`internal` + widened allow-list) vs `optional` | Decision and operator note exist; no silent Thursday flip |
+| BL-066.2 Go-live switch after both gates | Proposed | Flip/widen only after semester start **and** written Columbia State approval-to-use | A new user not on the prior allow-list can Register + Google sign-in without the internal-rollout error; demo/internal accounts still work |
+- Acceptance Criteria:
+- A new user (not on the internal allow-list) can register and sign in after the go-live switch, without **“Account access is currently limited to internal rollout users.”**
+- The exact property/mode change and who flips it are documented (prod env: `ACCOUNT_AUTH_ROLLOUT_MODE`, optionally `ACCOUNT_AUTH_ROLLOUT_ALLOWED_EMAILS`; operator is Kevin / production ops — not an in-repo properties commit unless a later slice says so).
+- Existing `demo.teacher` / `demo.student` / internal users still work.
+- `BL-028` rate limits / lockout and `BL-043` FERPA gates remain in place.
+- School-scoped vs fully public is an explicit decision, not an accidental `optional` flip.
+- Dependency Notes:
+- Distinct from `BL-021` (Done). `.6` shipped the lock that produces this message. Do not reopen that epic.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Keep `BL-028` (account auth rate limits / lockout) and `BL-043` (FERPA). This switch must not weaken those gates.
+- Complements ADR §7 Stage 2 (optional production sign-up) in `docs/product/bl-021-auth-architecture-adr.md`. Stage 3 `required` is out unless classroom policy demands it.
+- Risks:
+- Flipping before Thursday’s demo or before written approval opens registration while the walkthrough still assumes an internal allow-list.
+- Flipping to `optional` without the school-vs-public decision makes the site fully public-register even if policy wanted Columbia State–scoped signup. Current `internal` allow-list is per-email, not domain — a whole-college roster via allow-list alone is operationally heavy.
+- Treating this as “reopen `BL-021`” invites a new auth system instead of the existing mode switch.
+- Session Log:
+- 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; Columbia State demo Thu Aug 20 noon CT). Sign In modal, email `demo_user@example.com`: **“Account access is currently limited to internal rollout users.”** Expected today (`BL-021.6` internal allow-list). Open Register + Google after semester start **and** written/approval-to-use at Columbia State. Keep `BL-028` / `BL-043`; decide school-scoped vs fully public; demo/internal accounts stay valid. Do not reopen `BL-021`; do not start before the demo; do not merge #132. Docs only; no product code and no rollout-flag change in this capture.
 
 ## P0
 
