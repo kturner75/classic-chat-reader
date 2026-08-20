@@ -110,7 +110,7 @@ Last updated: 2026-08-20
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -174,6 +174,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-20: Added `BL-066` (open general registration after Columbia State approval). Kevin 2026-08-19 scripted demo test: Register for `demo_user@example.com` fails with **“Account access is currently limited to internal rollout users.”** Expected today (`account.auth.rollout.mode=internal` + allow-list from `BL-021.6`). Go-live switch after **semester start and** written/approval-to-use at Columbia State — not a Thursday demo change. Do not reopen `BL-021`. Distinct from #132. Docs only.
 - 2026-08-20: Added `BL-067` (recap chat misses characters who are in the chapter). Kevin 2026-08-19 scripted demo test; non-critical, will not demo this Thursday. After **Chapter 1** of **The Picture of Dorian Gray**, Chat tab (“Discuss This Chapter”) said Dorian and Basil were not in the chapter (both are). Same overlay: **“Recap chat is unavailable for this book.”** while a thread and compose box stayed active. Quality/regression on Done `BL-017` — do not reopen. Investigate excerpt / Ch-1 mapping / spoiler guard / unavailable stub; keep `BL-017.4`/`.5`. Not Frankenstein / not Thursday demo. Distinct from `BL-064`, `BL-065`, and #132. Do not reuse `BL-066`. Docs only.
 - 2026-08-20: Added `BL-068` (new account inherits Completed books it never opened). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix. He created **`demo_user@example.com`** and cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg **1063**) and *Northanger Abbey* (Gutenberg **121**) — books he has not opened on this account. Do **not** reopen Done `BL-018` (landing shelves / Completed row) or `BL-021.5` (claim-sync). That claim-sync merge is a **likely cause**, not a reason to skip this bug. Clearing localStorage is not enough if an anonymous **`pdr` reader cookie** still claim-syncs prior machine history. Investigate claim-sync on register / leftover cookie / unscoped completed flags; do not prescribe. Out of scope: Thursday demo code/deploy, `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only.
+- 2026-08-20: Added `BL-069` (book covers do not load on iPhone). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone. On iPhone (at least **Simulator** — iPhone 17 Pro / iOS at classicchatreader.com), library **book cover images do not load** — dark gray/black rounded placeholders. Same screenshot: **Continue Reading** *Pride and Prejudice* cover blank (text/chips/Gutenberg #1342 fine); **For You** *Alice*, *Dorian Gray*, *Moby Dick* covers blank; Victor Frankenstein **character portrait** on Continue chat loads; desktop covers work (Cask / Northanger Completed earlier tonight). Investigate Safari/iOS format (webp/avif), CORS, srcset, lazy-load intersection, or a different cover vs portrait URL path; do not prescribe. Out of scope: Thursday desktop Frankenstein demo, `BL-068` Completed leak, `BL-067` recap chat, character regen (`BL-065`), #132. Do not reuse `BL-068`. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -235,6 +236,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-02-18: Marked BL-018 as `Done` now that all planned slices (`BL-018.1` through `BL-018.6`) and discovery deliverables are complete.
 - 2026-08-17: Assignment-rail **card density** is no longer a BL-018.6 follow-on. Landing stays assignment-first; the reduced card + dedicated assignment page is `BL-057`. Soak overflow hotfix (PR #121) is a demo-night CSS bandage, not this IA.
 - 2026-08-20: New-account **Completed** leak (books the signed-in user never opened on that account) is `BL-068`. Do **not** reopen this Done epic. Landing shelves / Completed row already shipped.
+- 2026-08-20: iPhone library **book covers** failing to load (dark placeholders; character portraits still work) is `BL-069`. Do **not** reopen this Done epic. Cover-forward shelves already shipped.
 
 ### BL-019 - Gamification and Trophy System
 - Type: Feature
@@ -1894,6 +1896,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - `BL-056.5` prefetch-provider wiring (already Done). This is stored-cast regen, not that code path.
   - `BL-056.6` portrait provider / ComfyUI. Portraits stay on that slice unless a trial is blocked for a documented reason.
   - `BL-067` recap-chat false “character not in this chapter.” Regen does not replace that chapter-context quality fix.
+  - iPhone book covers (`BL-069`). Cast regen is not that cover-load bug.
 - Scope Buckets:
 - Documented regen path: provider/model + per-book action using xAI.
 - Trial book (Frankenstein / Gutenberg 84): clean PRIMARY/SECONDARY split, no duplicate-name cards.
@@ -1913,6 +1916,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from #132 (name-identity dedupe / junk-secondary safety net). Keep that epic; do not merge it as part of this item and do not stack this PR on #132.
 - Distinct from `BL-064` (spoiler-safe blurbs + persona injection). Regen with a better model is not a substitute for the spoiler rule.
 - Distinct from `BL-067` (recap chat claiming reached characters are absent). Cast regen is not that chapter-pause Chat quality fix.
+- Distinct from `BL-069` (iPhone book covers do not load). Regen is not that Safari/iOS cover-load bug.
 - Complements `BL-056.5` (prefetch already on `reasoningLlmProvider` / xAI). Existing Ollama-era rows still need a documented regen; do not treat `.5` as this epic being Done.
 - Curated-catalog membership stays `BL-052` **Done**; this is character-cast quality on those titles, not a new catalog.
 - Risks:
@@ -1996,6 +2000,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Character regen with xAI (`BL-065`).
   - Merging #132. Name-identity dedupe stays a separate code PR.
   - New-account Completed leak (`BL-068`). Recap-chat quality is not that identity/shelf bug.
+  - iPhone book covers (`BL-069`). Recap-chat quality is not that cover-load bug.
   - Reopening `BL-017`. The recap + bounded-chat feature already shipped; this is quality/regression.
   - Frankenstein / the Thursday demo path.
 - Scope Buckets:
@@ -2019,6 +2024,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this chapter-context quality fix.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
 - Distinct from `BL-068` (new account inherits Completed books). Different surface.
+- Distinct from `BL-069` (iPhone book covers do not load). Different surface.
 - Not Frankenstein / not the Thursday demo path.
 - Risks:
 - Weakening source-only / chapter-index guards to “fix” Dorian/Basil would reintroduce future-chapter spoilers.
@@ -2049,6 +2055,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Merging #132. Name-identity dedupe stays a separate code PR.
   - Reopening `BL-018` (landing shelves / Completed row already shipped).
   - Reopening `BL-021` / `BL-021.5`. Claim-sync already shipped; this is a leftover-identity leak on that path.
+  - iPhone book covers (`BL-069`). Shelf identity is not that cover-load bug.
 - Scope Buckets:
 - New-account Completed (and likely In Progress / Continue Reading) is empty until that user actually reads / finishes.
 - Logout / login as that user stays empty until they complete something.
@@ -2070,6 +2077,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-066` (open general registration after Columbia State approval). Do not fold this into the go-live switch.
 - Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
 - Distinct from `BL-067` (recap chat claiming reached characters are absent). Different surface. Do not reuse `BL-067`.
+- Distinct from `BL-069` (iPhone book covers do not load). Different surface. Do not reuse `BL-068` for that cover bug.
 - Not Thursday-demo work. If `demo_user` is used for the general-reader beat, avoid the Completed shelf or use a fresh browser profile.
 - Risks:
 - Treating this as “clear localStorage” leaves the anonymous `pdr_reader_profile` cookie in place and claim-sync still copies prior machine history into the new account.
@@ -2077,6 +2085,60 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - A fix that wipes Completed for every account (or that stops claiming on every login) would drop real history for existing users.
 - Session Log:
 - 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix). Created **`demo_user@example.com`**, cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg 1063) and *Northanger Abbey* (Gutenberg 121) — titles he has not opened on this account. Do not reopen `BL-018` or `BL-021.5`; claim-sync merge is a likely cause, not a skip. Investigate claim-sync on register, leftover `pdr` reader cookie after localStorage clear, or unscoped completed flags; do not prescribe a cause. Out of scope: Thursday demo code/deploy (`demo_user` workaround: skip Completed or fresh profile), `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only; no product code in this capture.
+
+### BL-069 - Book Covers Do Not Load on iPhone
+- Type: Bug
+- Priority: P2 (backlog; not a Thursday must-fix unless someone demos on a phone)
+- Effort: S
+- Status: Proposed
+- Problem: Library **book cover images do not load on iPhone**. Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone) saw this on iPhone (at least **Simulator** — iPhone 17 Pro / iOS shown at classicchatreader.com). Cards show **dark gray/black rounded placeholders** instead of covers. Same screenshot confirmed:
+  - **Continue Reading:** *Pride and Prejudice* cover blank; title/text, chips, and Gutenberg **#1342** cite are fine
+  - **For You:** *Alice*, *The Picture of Dorian Gray*, *Moby Dick* covers blank
+  - **Character portrait loads:** Victor Frankenstein circle on the Continue chat card is fine
+  - Desktop covers work (Cask / Northanger **Completed** cards earlier tonight)
+- Timing (Kevin 2026-08-19, scripted demo test): Columbia State demo is **Thu Aug 20**. Do **not** start this before the demo. Not a live Thursday change unless someone demos Library on a phone. Thursday path is **desktop Frankenstein**.
+- Current code: Cover-forward library shelves already shipped (2026-04-27). Cards use `book.coverUrl` via `renderBookCover` (`reader.js`): when a URL is present, `.book-cover.has-image` + `<img src="…" loading="lazy" decoding="async">`. Empty `.has-image` is `#2c2c2c` (matches the dark rounded placeholders). Cover bytes are `GET /api/library/{bookId}/cover` (`LibraryController`) — local `image/png` or 302 to CDN when `book-cover.cdn.enabled`. Character portraits use a **different** path: `GET /api/characters/{id}/portrait` (`CharacterController`). This epic is an **iOS Safari cover-load** bug on those shelves, not a missing-cover generation gap and not a shelf-IA rewrite. Do **not** reopen `BL-018`.
+- Current Direction:
+- Library covers must render on iPhone Safari (device or current Simulator) for **Continue Reading** and **For You** / **Completed** shelves.
+- Character portraits must keep working.
+- Desktop covers must stay unchanged.
+- Investigate (do **not** prescribe a cause): Safari/iOS image format (webp/avif), CORS, srcset, lazy-load intersection, or a different URL path for covers vs portraits.
+- Out of this epic:
+  - Thursday desktop Frankenstein demo.
+  - New-account Completed leak (`BL-068`).
+  - Recap chat misses chapter characters (`BL-067`).
+  - Character regen with xAI (`BL-065`).
+  - Merging #132. Name-identity dedupe stays a separate code PR.
+  - Reopening `BL-018` (cover-forward landing shelves already shipped).
+- Scope Buckets:
+- Continue Reading + For You / Completed covers render on iPhone Safari (device or current Simulator).
+- Character portraits stay working (Victor Frankenstein circle already does).
+- Desktop covers unchanged.
+- Investigate format / CORS / srcset / lazy-load / cover-vs-portrait URL (do not pick a cause in this capture).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-069.1 iPhone library covers render | Proposed | Continue Reading and For You / Completed covers must load on iPhone Safari (device or current Simulator) | Pride and Prejudice (Continue Reading) and Alice / Dorian Gray / Moby Dick (For You) show real covers, not dark placeholders; Completed covers likewise |
+| BL-069.2 Portraits stay working | Proposed | Character portrait path must not regress while fixing covers | Victor Frankenstein (or any ready portrait) still loads on Continue chat / character surfaces |
+| BL-069.3 Desktop covers unchanged | Proposed | Desktop cover rendering stays as-is | Cask / Northanger (and other) desktop Completed / shelf covers still load |
+- Acceptance Criteria:
+- Library covers render on iPhone Safari (device or current Simulator) for Continue Reading and For You / Completed shelves.
+- Character portraits keep working.
+- Desktop covers unchanged.
+- Dependency Notes:
+- Distinct from `BL-018` (Done). Cover-forward landing shelves already shipped. Do **not** reopen that epic.
+- Distinct from `BL-068` (new account inherits Completed books). Shelf identity is not this cover-load bug. Do not reuse `BL-068`.
+- Distinct from `BL-067` (recap chat claiming reached characters are absent). Different surface.
+- Distinct from `BL-065` (regen character discovery with xAI). Cast regen is not this Safari/iOS cover-load bug.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Distinct from `BL-056.6` (portrait generation provider). Portraits already load in the reported screenshot; this epic is cover *display* on iOS, not portrait generation.
+- Not Thursday-demo work unless someone demos Library on a phone. Thursday path is desktop Frankenstein.
+- Risks:
+- Treating this as “covers were never generated” ignores that desktop covers work and that `.has-image` already has a `coverUrl`.
+- Changing the shared portrait path to “fix” covers can break the Victor Frankenstein circle that already loads.
+- A desktop-only format or CDN change can “fix” Simulator while leaving device Safari broken, or the reverse.
+- Session Log:
+- 2026-08-20: Captured from Kevin 2026-08-19 (scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone). iPhone Simulator (iPhone 17 Pro / iOS at classicchatreader.com): book covers do not load — dark gray/black rounded placeholders. Continue Reading *Pride and Prejudice* cover blank (text/chips/Gutenberg #1342 fine); For You Alice / Dorian Gray / Moby Dick covers blank; Victor Frankenstein portrait on Continue chat loads; desktop Cask / Northanger Completed covers worked earlier tonight. Investigate Safari/iOS format (webp/avif), CORS, srcset, lazy-load intersection, or a different cover vs portrait URL path; do not prescribe a cause. Out of scope: Thursday desktop Frankenstein demo, `BL-068` Completed leak, `BL-067` recap chat, character regen (`BL-065`), #132. Do not reuse `BL-068`. Docs only; no product code in this capture.
 
 ## P0
 
