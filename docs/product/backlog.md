@@ -78,6 +78,20 @@ Last updated: 2026-08-20
 - **Classroom scalability / droplet capacity (`BL-053`):** Kevin concern (also reflected in pricing lean): will the current **1GB-class DO droplet** hold a real classroom concurrent load? Need a measured answer for **how many concurrent users** before performance degrades (and a scale-up path). Complements `BL-042` cost work; this is **capacity/latency**, not token $.
 - **Misc convenience (`BL-051`):** while in the **reader**, override the **browser Back** button so it returns to the **previously accessed in-app page** when available, otherwise **Library** by default (instead of leaving the site / unexpected history).
 
+**Partner schedule (2026-08-18 — Kevin):**
+- **Tue 2026-08-18 evening (America/Chicago):** Jessica 1:1 **dry run**. **Went pretty smoothly.**
+- **Thu 2026-08-20 noon (America/Chicago):** CCR demo with **Columbia State** — **done; Kevin: everything was smooth.** Deck: `ClassicChatReader-Pilot.pptx`.
+
+**Partner feedback (2026-08-20 Columbia State group demo):**
+- **Kevin:** demo went well; no technical snags reported.
+- **Jessica Evans** — collaborator (ENGL 1020). In-chat: OER would be all right **so long as they allow adaptation**.
+- **Aaron Beshears** — AI Director; **grant-money decision maker**. Said a **pilot this semester is unlikely**. Do not treat Fall 2026 as an institutional/grant-funded cohort unless he reverses that.
+- **Thomasanna Hail** (chat display **Hail, Thomasanna Carroll**) — physics. Loved it; asked whether **OER textbooks** (astro/physics) would be OK; later asked whether cost can **slide into student fees** vs “pass a hat”; “definitely interested in thinking about adopting some of this for my classes.”
+- **Jonathan Owen** — AI council. Liked it; called out **reading accommodations** and **ELL**. Stepped out for Copilot for Faculty 2.0.
+- **Amy McDonald** — leadership. Strong on **accessibility**; “this is amazing”; first thing she clicked was **MLA citation** (`BL-029`). Mentioned **OER** licensing in the non-PD discussion.
+- **Alexander Melendez** — AI instructor. Asked whether the reader can take **books outside public domain**. Kevin said he would **research** (no product commitment). Fold under **`BL-071`** Discovery — do not promise copyrighted PDF upload or OpenStax-in-a-paid-app.
+- Chat also: “Free textbooks for students!!” (Thomasanna, on OER). Do not equate OER with “free to host in a $750/section product” — many STEM OER titles are **CC BY-NC** (see `BL-071`).
+
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
 - Empty history keeps Download disabled; helper module + Node frontend unit tests in `character-chat-export.js` / `character-chat-export.test.cjs`.
@@ -100,9 +114,9 @@ Last updated: 2026-08-20
 4. ~~`BL-049` character chat server persistence~~ shipped on `main` (PR #82; cross-device history and database synchronization).
 5. ~~`BL-039` / `BL-032` **My Chats** recent-chat landing slice + dedicated page~~ shipped on `main` (PR #78).
 6. ~~Capture 2026-08-06 partner feedback into backlog~~ recorded (quiz, dashboard/roster, AI cost/`BL-042`, Back/`BL-051`, fall timing, short stories/`BL-052`, capacity/`BL-053`).
-7. ~~`BL-025.5` / `.12` / `.13` teacher quiz authoring + pass rules + defaults~~ shipped locally (2026-08-07): PR-0 question ids, effective-quiz overlays, teacher wizard + AI assist, assignment min-correct/max-retries, teacher quiz defaults. Demo walkthrough before Jessica / Aug 17–21 group.
+7. ~~`BL-025.5` / `.12` / `.13` teacher quiz authoring + pass rules + defaults~~ shipped. Columbia State group demo **2026-08-20 noon** completed (smooth).
 8. ~~Roster **display name** (optional student self + teacher override) on `BL-025.2`; `BL-025.10` v1 teacher→student overview~~ **`BL-025.10` pilot drill-down shipped** (roster→student overview + opened timestamps + thin heartbeat); optional display-name edit UX on `BL-025.2` still open (email / existing override OK for demo).
-9. **`BL-042` (ops/pricing)** + **`BL-053` (capacity):** AI usage metering / cost model and droplet concurrent-load answer before multi-teacher week (**2026-08-17**) and fall start (**2026-08-24**) where practical. This-term cut for the **$750/section** quote is **`BL-042.5`** (chat + voice events, rollup vs **$500** AI envelope, noisy API-key fallback alert) — not a new theme.
+9. **`BL-042` (ops/pricing)** + **`BL-053` (capacity):** still needed for a defendable quote. Room asked **student-fee vs department** path (Thomasanna); Aaron said **grant pilot this semester unlikely**. This-term cut remains **`BL-042.5`**. Do not invent a bursar/fee integration. **`BL-071`:** research-only OER / non-PD ingest (Alexander + Amy + Jessica adaptation caveat) — no build until Kevin decides.
 10. ~~**`BL-052`:** verify PG IDs + curated catalog for early short works~~ **Done** (PR #101): assignable PG short works/poetry curated; Chopin / shepherd pair / Brontë poem deferred (not readily on Gutenberg); prod import/pregen is routine ops outside epic scope.
 11. Invite redeem rate limits (BL-028 pattern) + invite TTL / max uses / revoke (`BL-043.4` / `BL-025.2`)
 12. **`BL-043` FERPA P0 pilot blockers** (2026-08-11 privacy review): prod auth gate, OAuth link consent, LLM DPA/subprocessors, invite lifecycle, access-log writers, account delete + retention purge, server chat-export API — triage from `BL-043` work tracker before fall start (**2026-08-24**)
@@ -110,7 +124,7 @@ Last updated: 2026-08-20
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.)
+**Not started:** **FERPA P0 remediations (`BL-043.1`–`.7`)**, roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065`), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -126,8 +140,9 @@ Last updated: 2026-08-20
 - Pilot note: attempt budget is chapter+user scoped (not assignment-scoped).
 
 **External milestones:**
-- Multi-teacher + AI council demo target window **week of 2026-08-17 – 2026-08-21** (date TBD with Jessica); prep = stable classroom demo path + cost-backed pricing sketch + capacity honesty.
-- **Fall semester starts 2026-08-24.** Partner wants early use if ready; **books mid-semester** — **short stories first** (ENGL 1020 schedule under `BL-052` **Done** on curated catalog; deferred titles + routine prod publish noted on the epic).
+- **Tue 2026-08-18 evening:** Jessica 1:1 dry run — **done, smooth.**
+- **Thu 2026-08-20 noon:** Columbia State group demo — **done, smooth.** Attendees: Jessica Evans, Aaron Beshears (AI Director; grant; **this-semester pilot unlikely**), Thomasanna Hail (physics), Jonathan Owen (AI council), Amy McDonald (leadership / a11y), Alexander Melendez (AI instructor). Open asks: OER/non-PD (`BL-071`), student-fee path (`BL-042`).
+- **Fall semester starts 2026-08-24.** Jessica still may want ENGL 1020 use (short stories first, `BL-052`). **Institutional/grant pilot this term is unlikely** per Aaron — do not plan a funded multi-section rollout for Fall 2026 unless he says otherwise.
 
 Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 
@@ -137,7 +152,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity before multi-teacher week (**2026-08-17**) / fall start (**2026-08-24**). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
+- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity (Columbia State group demo **2026-08-20** completed; Aaron: grant pilot this semester unlikely). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). **`BL-071`** OER/non-PD ingest is Discovery only. General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -176,6 +191,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-20: Added `BL-068` (new account inherits Completed books it never opened). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix. He created **`demo_user@example.com`** and cleared **localStorage**; Library **Completed** still showed *The Cask of Amontillado* (Gutenberg **1063**) and *Northanger Abbey* (Gutenberg **121**) — books he has not opened on this account. Do **not** reopen Done `BL-018` (landing shelves / Completed row) or `BL-021.5` (claim-sync). That claim-sync merge is a **likely cause**, not a reason to skip this bug. Clearing localStorage is not enough if an anonymous **`pdr` reader cookie** still claim-syncs prior machine history. Investigate claim-sync on register / leftover cookie / unscoped completed flags; do not prescribe. Out of scope: Thursday demo code/deploy, `BL-066` opening public registration, #132. Do not reuse `BL-067`. Docs only.
 - 2026-08-20: Added `BL-069` (book covers do not load on iPhone). Kevin 2026-08-19 scripted demo test; backlog, not a Thursday must-fix unless someone demos on a phone. On iPhone (at least **Simulator** — iPhone 17 Pro / iOS at classicchatreader.com), library **book cover images do not load** — dark gray/black rounded placeholders. Same screenshot: **Continue Reading** *Pride and Prejudice* cover blank (text/chips/Gutenberg #1342 fine); **For You** *Alice*, *Dorian Gray*, *Moby Dick* covers blank; Victor Frankenstein **character portrait** on Continue chat loads; desktop covers work (Cask / Northanger Completed earlier tonight). Investigate Safari/iOS format (webp/avif), CORS, srcset, lazy-load intersection, or a different cover vs portrait URL path; do not prescribe. Out of scope: Thursday desktop Frankenstein demo, `BL-068` Completed leak, `BL-067` recap chat, character regen (`BL-065`), #132. Do not reuse `BL-068`. Docs only.
 - 2026-08-20: Added `BL-070` (teacher workspace takes ~10s to open). Kevin 2026-08-20 morning (Columbia State demo day; backlog, not a same-morning fix): opening **Teacher workspace** (`/teacher`) takes several seconds, almost **10 seconds**. Feels really slow. Distinct from `BL-059` (student landing / library catalog TTFB) and `BL-061` (My Chats Open Book hop). This is teacher first paint / first useful UI. Investigate payload size, serial API waterfall, `teacher.js` bundle, classroom context, assignment list, dashboard/overview prefetch; do not prescribe. Out of scope: same-day code/deploy before the noon Columbia State demo, opening public registration (`BL-066`), character regen (`BL-065`), #132. Do not reuse `BL-069`. Docs only.
+- 2026-08-18: Recorded named Columbia State demo — **Thu 2026-08-20 noon** (America/Chicago), with Jessica dry run **Tue evening**. Dry run **went pretty smoothly** (Kevin). Thursday deck: `ClassicChatReader-Pilot.pptx`.
+- 2026-08-20: Columbia State group demo **done, smooth**. Attendees + asks captured in handoff partner block. **Aaron Beshears:** grant/institutional **pilot this semester unlikely**. New Discovery epic **`BL-071`** (OER / non-PD ingest — research only). Student-fee question folded into `BL-042`. Accessibility/ELL praise folded into `BL-044`. `BL-064` remains character-blurb spoilers — do not reuse. Docs only.
 
 ## Discovery Epics (Pending Product Discussion)
 
@@ -926,6 +943,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-06: Expanded after Jessica call — multi-teacher + AI council demo target week of Aug 17–21; need cost-covering pricing; fixed DO costs known; prioritize real AI usage metrics for estimates; keep epic lower than classroom feature priority but time-bound for pricing prep.
 - 2026-08-14: Refined in place (parent already covered usage/cost). Added child **`BL-042.5`** for this-term per-student chat/voice events, rollup vs **$500** AI envelope, and noisy first API-key bill after SuperGrok OAuth fallback. Commercial driver: measure real $/student this term before re-quoting the **$750/section/semester** community-college pilot. Docs only.
 - 2026-08-14: Review nits — mapped `.5` onto V14 `classroom_usage_events` (`estimated_cost_micros`, `duration_ms`, `feature`/`CHAT`/`VOICE`, `model_name`, `AI_TOKEN_USAGE`, `metadata_json` for `billed_via` + cached tokens); slimmed the work-tracker cell to a pointer; full cut lives under Acceptance. Named `VOICE` for Call Character (not in the prior §11 list; no Java enum — `feature` is VARCHAR). `[0, 120_000]` `duration_ms` clamp is `READING_HEARTBEAT` only — do not truncate Call Character.
+- 2026-08-20: Columbia State group demo. Thomasanna Hail asked whether the **$750/section** can **slide into student fees** vs faculty passing the hat; she does not know the college business office path. **No product decision** — do not invent bursar/SIS fee integration. Aaron Beshears (grant decision maker) said a **pilot this semester is unlikely**, so metering (`BL-042.5`) is no longer gated on an Aug 17–21 commercial close; still needed before any paid quote. Do not change the **$750** number on this card.
 
 ### BL-043 - FERPA Compliance for Classroom Data
 - Type: Tech Debt
@@ -1029,6 +1047,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Is WCAG 2.1 AA sufficient for the target partner/pilot, or does the institution require 2.2 or Section 508 alignment?
 - Does the teacher dashboard (new surface from `BL-025.10`) get built accessibility-first, or audited after v1 ships?
 - Who produces/maintains a VPAT if a school procurement process requires one?
+- **2026-08-20 Columbia State:** Jonathan Owen (AI council) called out **reading accommodations** and **ELL**; Amy McDonald (leadership) was strongest on **accessibility** and MLA citation. Does the next partner conversation need an explicit a11y one-pager (font size, TTS, no-scroll paging, keyboard) vs a VPAT, or is live demo enough until procurement?
 - Current Direction (2026-07-09):
 - Raised directly by the educator partner alongside FERPA as a pilot-blocking requirement, not general product polish.
 - Scope this specifically to classroom-facing surfaces first (dashboard, roster/enrollment, assignments) rather than re-auditing the entire reader, since `BL-013` already covers general product accessibility.
@@ -1266,7 +1285,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Curated-catalog membership — **Done** on `main` (PR #101); prod import/pregen/Spaces is routine ops (`ccr-production-ops`), not open epic work.
 - Content readiness: chapter/structure quality for short works, progressive character discovery if chat is used, quiz/pregen only where it makes sense for single-sitting texts.
 - Teaching path: confirm assignments can target a short work / its “chapters” without novel-centric assumptions breaking UX.
-- Out of scope until requested: non-public-domain stories; custom teacher upload of copyrighted PDFs; reopening deferred titles without a non-PG / better source.
+- Out of scope until requested: non-public-domain stories; custom teacher upload of copyrighted PDFs; reopening deferred titles without a non-PG / better source. **2026-08-20:** non-PD / OER **was requested** at the Columbia State demo — captured as **`BL-071`** (Discovery). Do not reopen this short-story epic for OpenStax / STEM textbooks.
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
@@ -2199,6 +2218,43 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - A student-landing-only cache/slim DTO can improve `BL-059` without making `/teacher` interactive if the blank/spinner still waits on classes, roster, assignments, or the bundle.
 - Session Log:
 - 2026-08-20: Captured from Kevin 2026-08-20 morning (Columbia State demo day; backlog, not a same-morning fix). Opening **Teacher workspace** (`/teacher`) takes several seconds, almost **10 seconds**. Feels really slow. Distinct from `BL-059` (student landing / library catalog TTFB) and `BL-061` (My Chats Open Book hop). This is teacher first paint / first useful UI. Investigate payload size, serial API waterfall, `teacher.js` bundle, classroom context, assignment list, dashboard/overview prefetch; do not prescribe a cause. Out of scope: same-day code/deploy before the noon Columbia State demo, opening public registration (`BL-066`), character regen (`BL-065`), #132. Do not reuse `BL-069`. Docs only; no product code in this capture.
+
+### BL-071 - Non-Gutenberg / OER / Non-Public-Domain Ingest (Discovery)
+- Type: Feature / Content policy
+- Priority: P2 (asked 2026-08-20; **not** a build commitment)
+- Effort: L if ever built; **S** for the research answer Kevin promised Alexander
+- Status: Discovery
+- Problem: Columbia State group demo (Alexander Melendez, Amy McDonald, Thomasanna Hail, Jessica Evans) asked whether CCR can host **books outside Project Gutenberg / public domain**, including **OER textbooks** (astro/physics). Today the product is a **public-domain literature** reader with Gutenberg ingest + character chat. STEM OER and copyrighted literature are a different rights + ingest + product shape.
+- Context (2026-08-20):
+- Kevin told Alexander he would **research** — this epic is that research bucket, not a roadmap item.
+- Jessica: OER is OK **if adaptation is allowed**.
+- Amy named **OER licensing**. Thomasanna wants **free textbooks** and named astro/physics texts.
+- `BL-052` already deferred Chopin until a rights-cleared **non-PG OER / public-domain** source exists; do not overload `.052` with OpenStax.
+- Scope Buckets:
+- **License taxonomy:** public domain / CC BY / CC BY-SA / CC BY-NC / CC BY-NC-SA / all-rights-reserved. Adaptation ≠ commercial-use permission.
+- **STEM OER vs literature:** OpenStax-style textbooks have no “talk to the character” hook; would be a textbook reader, not CCR’s literary product.
+- **Character chat on non-PD fiction:** even a CC text may not license **character voice / derivative dialogue**; copyrighted novels are out without a publisher deal.
+- **Teacher PDF upload:** still out unless Kevin explicitly opens it (copyright, malware, parse quality, FERPA if student-authored).
+- Discovery Questions:
+- Is CCR a **commercial** use of the text under CC NC clauses if the college pays $750/section?
+- Would a **non-commercial campus-only** mode (no fee, attribution, no remix beyond display) ever be worth it, or does it break the pricing lean?
+- Are there **CC BY** (not NC) literature/OER titles that fit ENGL 1020 leftover gaps (Chopin) without a new ingest stack?
+- Does Alexander mean “upload any PDF” or “support Creative Commons textbooks”?
+- Current Direction (2026-08-20):
+- **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; NC licenses likely block a paid pilot; copyrighted books need rights we do not have.
+- Cheap yes-path if Kevin later wants one: **CC BY / public-domain HTML** that we already know how to parse — not PDF upload, not OpenStax NC.
+- Exit Criteria for Discovery:
+- Written license answer Kevin can send (PD vs CC BY vs CC BY-NC vs all-rights-reserved).
+- Explicit no on copyrighted PDF upload unless Kevin reverses.
+- Decision whether Chopin/HathiTrust-style public-domain non-PG ingest is in or stays deferred on `BL-052`.
+- Dependency Notes:
+- Distinct from `BL-052` (Gutenberg short-story catalog — **Done**).
+- Distinct from `BL-063` (Gutenberg cite on library cards).
+- Distinct from `BL-064` (character blurbs spoil later plot). Do **not** reuse `BL-064` — that ID is taken.
+- Distinct from `BL-065`–`BL-070` (demo-week bugs / regen / registration / recap / Completed leak / iPhone covers / teacher first paint).
+- Character-chat conduct (`BL-054`) does not grant rights to copyrighted characters.
+- Session Log:
+- 2026-08-20: Opened after Columbia State demo. Alexander: books outside public domain? Amy: OER. Jessica: adaptation required. Thomasanna: astro/physics OER + free textbooks. Research only.
 
 ## P0
 
