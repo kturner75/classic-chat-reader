@@ -90,7 +90,7 @@ Last updated: 2026-08-20
 - **Jonathan Owen** — AI council. Liked it; called out **reading accommodations** and **ELL**. Stepped out for Copilot for Faculty 2.0.
 - **Amy McDonald** — leadership. Strong on **accessibility**; “this is amazing”; first thing she clicked was **MLA citation** (`BL-029`). Mentioned **OER** licensing in the non-PD discussion.
 - **Alexander Melendez** — AI instructor. Asked whether the reader can take **books outside public domain**. Kevin said he would **research** (no product commitment). Fold under **`BL-071`** Discovery — do not promise copyrighted PDF upload or OpenStax-in-a-paid-app.
-- Chat also: “Free textbooks for students!!” (Thomasanna, on OER). Do not equate OER with “free to host in a $750/section product” — many STEM OER titles are **CC BY-NC** (see `BL-071`).
+- Chat also: “Free textbooks for students!!” (Thomasanna, on OER). Do not equate OER with “free to host in a $750/section product” — license is **per title/edition** (`BL-071`). NC blocks a paid pilot; ND blocks adaptation even when commercial reuse is allowed.
 
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
@@ -2231,8 +2231,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Amy named **OER licensing**. Thomasanna wants **free textbooks** and named astro/physics texts.
 - `BL-052` already deferred Chopin until a rights-cleared **non-PG OER / public-domain** source exists; do not overload `.052` with OpenStax.
 - Scope Buckets:
-- **License taxonomy:** public domain / CC BY / CC BY-SA / CC BY-NC / CC BY-NC-SA / all-rights-reserved. Adaptation ≠ commercial-use permission.
-- **STEM OER vs literature:** OpenStax-style textbooks have no “talk to the character” hook; would be a textbook reader, not CCR’s literary product.
+- **License taxonomy:** public domain / CC BY / CC BY-SA / CC BY-ND / CC BY-NC / CC BY-NC-SA / CC BY-NC-ND / all-rights-reserved. Adaptation ≠ commercial-use permission. **ND / NC-ND** forbid distributing adaptations (Jessica’s “must allow adaptation” fails even if attribution/commercial terms are otherwise OK).
+- **STEM OER vs literature:** textbook-shaped OER (including many OpenStax titles) has no “talk to the character” hook; would be a textbook reader, not CCR’s literary product. **Do not classify OpenStax as NC** — record license **per book/edition** (e.g. Astronomy 2e is **CC BY 4.0**).
 - **Character chat on non-PD fiction:** even a CC text may not license **character voice / derivative dialogue**; copyrighted novels are out without a publisher deal.
 - **Teacher PDF upload:** still out unless Kevin explicitly opens it (copyright, malware, parse quality, FERPA if student-authored).
 - Discovery Questions:
@@ -2241,10 +2241,10 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Are there **CC BY** (not NC) literature/OER titles that fit ENGL 1020 leftover gaps (Chopin) without a new ingest stack?
 - Does Alexander mean “upload any PDF” or “support Creative Commons textbooks”?
 - Current Direction (2026-08-20):
-- **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; NC licenses likely block a paid pilot; copyrighted books need rights we do not have.
-- Cheap yes-path if Kevin later wants one: **CC BY / public-domain HTML** that we already know how to parse — not PDF upload, not OpenStax NC.
+- **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; **NC** likely blocks a paid pilot; **ND** blocks adaptation (Jessica’s bar); copyrighted books need rights we do not have.
+- Cheap yes-path if Kevin later wants one: **CC BY / public-domain HTML** we already know how to parse — not PDF upload, not “the publisher is NC.” Check the specific title (OpenStax Astronomy 2e is CC BY, not NC).
 - Exit Criteria for Discovery:
-- Written license answer Kevin can send (PD vs CC BY vs CC BY-NC vs all-rights-reserved).
+- Written license answer Kevin can send (PD vs CC BY vs CC BY-SA vs CC BY-ND vs CC BY-NC vs CC BY-NC-SA vs CC BY-NC-ND vs all-rights-reserved; check **per title/edition**, not publisher).
 - Explicit no on copyrighted PDF upload unless Kevin reverses.
 - Decision whether Chopin/HathiTrust-style public-domain non-PG ingest is in or stays deferred on `BL-052`.
 - Dependency Notes:
