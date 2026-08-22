@@ -1,5 +1,6 @@
 package com.classicchatreader.cli;
 
+import com.classicchatreader.service.CharacterNameNormalizer;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -1597,10 +1598,17 @@ public class CacheTransferRunner {
     }
 
     private static Optional<String> findCharacterIdByBookAndName(Connection connection, String bookId, String name) throws SQLException {
-        String sql = "select id from characters where book_id = ? and name = ?";
+        String nameKey = CharacterNameNormalizer.identityKey(name);
+        String sql = """
+                select id from characters
+                where book_id = ?
+                  and (name = ? or lower(name) = lower(?) or name_key = ?)
+                """;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, bookId);
             statement.setString(2, name);
+            statement.setString(3, name);
+            statement.setString(4, nameKey.isBlank() ? name : nameKey);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
                     return Optional.ofNullable(rs.getString(1));
@@ -1771,31 +1779,37 @@ public class CacheTransferRunner {
 
     private static void insertPortrait(Connection connection, String bookId, String firstChapterId, TransferPortrait portrait,
                                        LocalDateTime createdAt, LocalDateTime completedAt) throws SQLException {
+        String displayName = CharacterNameNormalizer.displayName(portrait.name());
+        String nameKey = CharacterNameNormalizer.identityKey(displayName);
+        if (nameKey.isBlank()) {
+            nameKey = CharacterNameNormalizer.fallbackKey(null);
+        }
         String sql = """
                 insert into characters (
-                    id, book_id, name, description, first_chapter_id, first_paragraph_index,
+                    id, book_id, name, name_key, description, first_chapter_id, first_paragraph_index,
                     portrait_filename, portrait_prompt, status, character_type,
                     created_at, completed_at, retry_count
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, UUID.randomUUID().toString());
             statement.setString(2, bookId);
-            statement.setString(3, portrait.name().trim());
-            statement.setString(4, blankToNull(portrait.description()));
-            statement.setString(5, firstChapterId);
-            statement.setInt(6, Math.max(0, portrait.firstParagraphIndex()));
-            statement.setString(7, portrait.portraitFilename().trim());
-            statement.setString(8, blankToNull(portrait.portraitPrompt()));
-            statement.setString(9, ChapterStatus.COMPLETED.value());
-            statement.setString(10, resolveCharacterType(portrait.characterType()));
-            statement.setTimestamp(11, Timestamp.valueOf(createdAt));
+            statement.setString(3, displayName);
+            statement.setString(4, nameKey);
+            statement.setString(5, blankToNull(portrait.description()));
+            statement.setString(6, firstChapterId);
+            statement.setInt(7, Math.max(0, portrait.firstParagraphIndex()));
+            statement.setString(8, portrait.portraitFilename().trim());
+            statement.setString(9, blankToNull(portrait.portraitPrompt()));
+            statement.setString(10, ChapterStatus.COMPLETED.value());
+            statement.setString(11, resolveCharacterType(portrait.characterType()));
+            statement.setTimestamp(12, Timestamp.valueOf(createdAt));
             if (completedAt == null) {
-                statement.setTimestamp(12, null);
+                statement.setTimestamp(13, null);
             } else {
-                statement.setTimestamp(12, Timestamp.valueOf(completedAt));
+                statement.setTimestamp(13, Timestamp.valueOf(completedAt));
             }
-            statement.setInt(13, 0);
+            statement.setInt(14, 0);
             statement.executeUpdate();
         }
     }

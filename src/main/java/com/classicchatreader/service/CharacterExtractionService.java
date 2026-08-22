@@ -12,20 +12,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class CharacterExtractionService {
 
     private static final Logger log = LoggerFactory.getLogger(CharacterExtractionService.class);
-    private static final Set<String> NAME_TITLES = Set.of(
-            "mr", "mrs", "ms", "miss", "lady", "lord", "sir", "madam", "madame",
-            "mme", "mlle", "dr", "doctor", "prof", "professor", "rev", "reverend",
-            "capt", "captain", "col", "colonel", "major"
-    );
 
     private final LlmProvider reasoningProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -92,10 +84,7 @@ public class CharacterExtractionService {
             String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.3));
             JsonNode charactersArray = parseCharactersArray(generatedText, chapterTitle);
 
-            Set<String> normalizedExisting = existingCharacterNames.stream()
-                    .map(this::normalizeName)
-                    .filter(normalized -> !normalized.isBlank())
-                    .collect(Collectors.toSet());
+            List<String> knownNames = new ArrayList<>(existingCharacterNames);
 
             List<ExtractedCharacter> characters = new ArrayList<>();
             for (JsonNode charNode : charactersArray) {
@@ -107,11 +96,14 @@ public class CharacterExtractionService {
                         ? charNode.get("approximateParagraphIndex").asInt(0)
                         : 0;
 
-                // Skip if name matches existing character (case-insensitive)
-                String normalizedName = normalizeName(name);
-                boolean isDuplicate = normalizedName.isBlank() || normalizedExisting.contains(normalizedName);
-                if (!isDuplicate && !name.isBlank()) {
+                if (name == null || name.isBlank() || CharacterNameNormalizer.identityKey(name).isBlank()) {
+                    continue;
+                }
+                boolean isDuplicate = knownNames.stream()
+                        .anyMatch(existing -> CharacterNameNormalizer.isNameVariant(existing, name));
+                if (!isDuplicate) {
                     characters.add(new ExtractedCharacter(name, description, paragraphIndex));
+                    knownNames.add(name);
                 }
             }
 
@@ -247,24 +239,4 @@ public class CharacterExtractionService {
         return "[]";
     }
 
-    private String normalizeName(String name) {
-        if (name == null) {
-            return "";
-        }
-        String cleaned = name.toLowerCase()
-                .replaceAll("[^a-z\\s-]", " ")
-                .replace("-", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isEmpty()) {
-            return "";
-        }
-        List<String> parts = Arrays.stream(cleaned.split(" "))
-                .filter(part -> !part.isBlank())
-                .collect(Collectors.toList());
-        while (!parts.isEmpty() && NAME_TITLES.contains(parts.get(0))) {
-            parts.remove(0);
-        }
-        return String.join(" ", parts).trim();
-    }
 }

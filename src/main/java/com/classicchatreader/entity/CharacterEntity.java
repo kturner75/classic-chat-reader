@@ -1,11 +1,13 @@
 package com.classicchatreader.entity;
 
+import com.classicchatreader.service.CharacterNameNormalizer;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "characters", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"book_id", "name"})
+    @UniqueConstraint(name = "uk_characters_book_name", columnNames = {"book_id", "name"}),
+    @UniqueConstraint(name = "uk_characters_book_name_key", columnNames = {"book_id", "name_key"})
 })
 public class CharacterEntity {
 
@@ -19,6 +21,9 @@ public class CharacterEntity {
 
     @Column(nullable = false)
     private String name;
+
+    @Column(name = "name_key", nullable = false, length = 255)
+    private String nameKey;
 
     @Column(length = 2000)
     private String description;
@@ -74,7 +79,7 @@ public class CharacterEntity {
     public CharacterEntity(BookEntity book, String name, String description,
                           ChapterEntity firstChapter, int firstParagraphIndex) {
         this.book = book;
-        this.name = name;
+        setName(name);
         this.description = description;
         this.firstChapter = firstChapter;
         this.firstParagraphIndex = firstParagraphIndex;
@@ -91,7 +96,22 @@ public class CharacterEntity {
     public void setBook(BookEntity book) { this.book = book; }
 
     public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setName(String name) {
+        this.name = name;
+        syncNameKey();
+    }
+
+    public String getNameKey() { return nameKey; }
+    public void setNameKey(String nameKey) { this.nameKey = nameKey; }
+
+    @PrePersist
+    @PreUpdate
+    void syncNameKey() {
+        String key = CharacterNameNormalizer.identityKey(name);
+        this.nameKey = key.isBlank()
+                ? CharacterNameNormalizer.fallbackKey(id)
+                : key;
+    }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

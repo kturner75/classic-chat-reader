@@ -611,6 +611,7 @@ class CacheTransferRunnerTest {
                         id varchar(64) primary key,
                         book_id varchar(64) not null,
                         name varchar(255) not null,
+                        name_key varchar(255),
                         description varchar(2000),
                         first_chapter_id varchar(64) not null,
                         first_paragraph_index int not null,
