@@ -2235,6 +2235,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - **STEM OER vs literature:** textbook-shaped OER (including many OpenStax titles) has no “talk to the character” hook; would be a textbook reader, not CCR’s literary product. **Do not classify OpenStax as NC** — record license **per book/edition** (e.g. Astronomy 2e is **CC BY 4.0**).
 - **Character chat on non-PD fiction:** even a CC text may not license **character voice / derivative dialogue**; copyrighted novels are out without a publisher deal.
 - **Teacher PDF upload:** still out unless Kevin explicitly opens it (copyright, malware, parse quality, FERPA if student-authored).
+- **Attribution / provenance (gate on any yes-path):** today’s `BookEntity` stores title/author/source/sourceId only; `BookStorageService` attribution is **Gutenberg-specific**. A CC BY / CC BY-SA title cannot ship on that stack without stored license + creator + license URI + modification notice, and **user-visible** attribution (plus share-alike notice when SA applies). Distinct from `BL-063` Gutenberg cite.
 - Discovery Questions:
 - Is CCR a **commercial** use of the text under CC NC clauses if the college pays $750/section? Keep this **open** — do not screen out all NC titles until the operating/payment model is reviewed.
 - Would a **non-commercial campus-only** mode (no fee, attribution, no remix beyond display) ever be worth it, or does it break the pricing lean?
@@ -2243,11 +2244,12 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Does Alexander mean “upload any PDF” or “support Creative Commons textbooks”?
 - Current Direction (2026-08-20):
 - **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; **ND** blocks adaptation (Jessica’s bar); **NC** stays a Discovery Question (not a categorical reject); copyrighted books need rights we do not have.
-- Cheap yes-path if Kevin later wants one: **public-domain / CC BY / CC BY-SA HTML** we already know how to parse — not PDF upload, not “the publisher is NC.” Check the specific title (OpenStax Astronomy 2e is CC BY, not NC). BY-SA stays on this path unless Discovery concludes share-alike is incompatible with character chat.
+- Cheap yes-path if Kevin later wants one: **public-domain / CC BY / CC BY-SA HTML** we already know how to parse — not PDF upload, not “the publisher is NC.” Check the specific title (OpenStax Astronomy 2e is CC BY, not NC). BY-SA stays on this path unless Discovery concludes share-alike is incompatible with character chat. **Do not implement the yes-path** until license/provenance is stored and shown (see Exit Criteria).
 - Exit Criteria for Discovery:
 - Written license answer Kevin can send (PD vs CC BY vs CC BY-SA vs CC BY-ND vs CC BY-NC vs CC BY-NC-SA vs CC BY-NC-ND vs all-rights-reserved; check **per title/edition**, not publisher).
 - Explicit no on copyrighted PDF upload unless Kevin reverses.
 - Decision whether Chopin/HathiTrust-style public-domain non-PG ingest is in or stays deferred on `BL-052`.
+- If any CC yes-path is accepted: required **license/provenance fields** (creator, license URI, modification notice, SA terms when applicable) plus a **user-visible attribution** surface. Gutenberg-only cite (`BL-063`) is not enough.
 - Dependency Notes:
 - Distinct from `BL-052` (Gutenberg short-story catalog — **Done**).
 - Distinct from `BL-063` (Gutenberg cite on library cards).
