@@ -90,7 +90,7 @@ Last updated: 2026-08-20
 - **Jonathan Owen** — AI council. Liked it; called out **reading accommodations** and **ELL**. Stepped out for Copilot for Faculty 2.0.
 - **Amy McDonald** — leadership. Strong on **accessibility**; “this is amazing”; first thing she clicked was **MLA citation** (`BL-029`). Mentioned **OER** licensing in the non-PD discussion.
 - **Alexander Melendez** — AI instructor. Asked whether the reader can take **books outside public domain**. Kevin said he would **research** (no product commitment). Fold under **`BL-071`** Discovery — do not promise copyrighted PDF upload or OpenStax-in-a-paid-app.
-- Chat also: “Free textbooks for students!!” (Thomasanna, on OER). Do not equate OER with “free to host in a $750/section product” — license is **per title/edition** (`BL-071`). NC blocks a paid pilot; ND blocks adaptation even when commercial reuse is allowed.
+- Chat also: “Free textbooks for students!!” (Thomasanna, on OER). Do not equate OER with “free to host in a $750/section product” — license is **per title/edition** (`BL-071`). **NC** is still a Discovery Question (college payment is relevant, not an automatic commercial-use finding). **ND / NC-ND** block distributing adaptations even when commercial reuse is otherwise allowed.
 
 **Done (2026-07-17 / BL-025.11 Slice A — student character-chat download):**
 - Character chat modal **Download** button exports the current conversation as Markdown from localStorage (client-only Blob download).
@@ -2236,13 +2236,14 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - **Character chat on non-PD fiction:** even a CC text may not license **character voice / derivative dialogue**; copyrighted novels are out without a publisher deal.
 - **Teacher PDF upload:** still out unless Kevin explicitly opens it (copyright, malware, parse quality, FERPA if student-authored).
 - Discovery Questions:
-- Is CCR a **commercial** use of the text under CC NC clauses if the college pays $750/section?
+- Is CCR a **commercial** use of the text under CC NC clauses if the college pays $750/section? Keep this **open** — do not screen out all NC titles until the operating/payment model is reviewed.
 - Would a **non-commercial campus-only** mode (no fee, attribution, no remix beyond display) ever be worth it, or does it break the pricing lean?
-- Are there **CC BY** (not NC) literature/OER titles that fit ENGL 1020 leftover gaps (Chopin) without a new ingest stack?
+- Are there **CC BY / CC BY-SA** (not NC, not ND) literature/OER titles that fit ENGL 1020 leftover gaps (Chopin) without a new ingest stack?
+- Is **CC BY-SA** share-alike compatible with CCR character chat (a derivative)? If not, say so explicitly; do not silently drop BY-SA from the yes-path.
 - Does Alexander mean “upload any PDF” or “support Creative Commons textbooks”?
 - Current Direction (2026-08-20):
-- **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; **NC** likely blocks a paid pilot; **ND** blocks adaptation (Jessica’s bar); copyrighted books need rights we do not have.
-- Cheap yes-path if Kevin later wants one: **CC BY / public-domain HTML** we already know how to parse — not PDF upload, not “the publisher is NC.” Check the specific title (OpenStax Astronomy 2e is CC BY, not NC).
+- **Do not build.** Answer Alexander with: Gutenberg/public-domain remains the v1 corpus; OER is **not automatically OK**; **ND** blocks adaptation (Jessica’s bar); **NC** stays a Discovery Question (not a categorical reject); copyrighted books need rights we do not have.
+- Cheap yes-path if Kevin later wants one: **public-domain / CC BY / CC BY-SA HTML** we already know how to parse — not PDF upload, not “the publisher is NC.” Check the specific title (OpenStax Astronomy 2e is CC BY, not NC). BY-SA stays on this path unless Discovery concludes share-alike is incompatible with character chat.
 - Exit Criteria for Discovery:
 - Written license answer Kevin can send (PD vs CC BY vs CC BY-SA vs CC BY-ND vs CC BY-NC vs CC BY-NC-SA vs CC BY-NC-ND vs all-rights-reserved; check **per title/edition**, not publisher).
 - Explicit no on copyrighted PDF upload unless Kevin reverses.
