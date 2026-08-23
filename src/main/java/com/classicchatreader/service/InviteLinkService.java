@@ -141,7 +141,7 @@ public class InviteLinkService {
         if (link.getRevokedAt() != null) {
             return new RedeemResult(RedeemStatus.REVOKED, null, null);
         }
-        if (link.getExpiresAt() != null && !link.getExpiresAt().isAfter(now)) {
+        if (link.getExpiresAt() == null || !link.getExpiresAt().isAfter(now)) {
             return new RedeemResult(RedeemStatus.EXPIRED, null, null);
         }
 
@@ -188,7 +188,7 @@ public class InviteLinkService {
             if (!reactivatable) {
                 return new RedeemResult(RedeemStatus.NOT_ELIGIBLE, enrollment.getId(), link.getTermId());
             }
-            if (link.getMaxUses() != null && link.getUseCount() >= link.getMaxUses()) {
+            if (usesExhausted(link)) {
                 return new RedeemResult(RedeemStatus.MAX_USES, null, null);
             }
             enrollment.setStatus("ACTIVE");
@@ -202,7 +202,7 @@ public class InviteLinkService {
             return new RedeemResult(RedeemStatus.SUCCESS, enrollment.getId(), link.getTermId());
         }
 
-        if (link.getMaxUses() != null && link.getUseCount() >= link.getMaxUses()) {
+        if (usesExhausted(link)) {
             return new RedeemResult(RedeemStatus.MAX_USES, null, null);
         }
 
@@ -231,6 +231,11 @@ public class InviteLinkService {
         inviteLinkRepository.save(link);
 
         return new RedeemResult(RedeemStatus.SUCCESS, enrollment.getId(), link.getTermId());
+    }
+
+    /** Historical rows with null max_uses are unrestricted; treat them as exhausted. */
+    private static boolean usesExhausted(InviteLinkEntity link) {
+        return link.getMaxUses() == null || link.getUseCount() >= link.getMaxUses();
     }
 
     public static String hashCode(String rawCode) {

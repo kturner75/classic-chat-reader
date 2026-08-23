@@ -61,6 +61,11 @@ class InviteLinkServiceTest {
                 classRoleMembershipRepository);
     }
 
+    private static void boundInvite(InviteLinkEntity link) {
+        link.setMaxUses(40);
+        link.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(30));
+    }
+
     private void stubLiveTerm(String termId, String sectionId) {
         TermEntity term = new TermEntity();
         term.setId(termId);
@@ -100,6 +105,7 @@ class InviteLinkServiceTest {
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(0);
+        boundInvite(link);
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
@@ -128,6 +134,7 @@ class InviteLinkServiceTest {
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(3);
+        boundInvite(link);
 
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
@@ -155,6 +162,7 @@ class InviteLinkServiceTest {
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(1);
+        boundInvite(link);
 
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
@@ -180,6 +188,7 @@ class InviteLinkServiceTest {
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(0);
+        boundInvite(link);
 
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
@@ -210,6 +219,7 @@ class InviteLinkServiceTest {
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setUseCount(2);
+        boundInvite(link);
 
         EnrollmentEntity enrollment = new EnrollmentEntity();
         enrollment.setId("enr-1");
@@ -237,6 +247,7 @@ class InviteLinkServiceTest {
         link.setId("link-1");
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
+        boundInvite(link);
 
         TermEntity term = new TermEntity();
         term.setId("term-1");
@@ -261,6 +272,7 @@ class InviteLinkServiceTest {
         link.setId("link-1");
         link.setTermId("term-1");
         link.setCodeHash(InviteLinkService.hashCode(raw));
+        boundInvite(link);
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
@@ -330,6 +342,7 @@ class InviteLinkServiceTest {
         link.setCodeHash(InviteLinkService.hashCode(raw));
         link.setMaxUses(2);
         link.setUseCount(2);
+        link.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(30));
 
         when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
                 .thenReturn(Optional.of(link));
@@ -340,6 +353,71 @@ class InviteLinkServiceTest {
         InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
 
         assertEquals(InviteLinkService.RedeemStatus.MAX_USES, result.status());
+        verify(enrollmentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void redeemRejectsUnrestrictedExpiry() {
+        String raw = "legacy-no-expiry";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setMaxUses(40);
+        link.setUseCount(0);
+        link.setExpiresAt(null);
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.EXPIRED, result.status());
+        verify(enrollmentRepository, never()).save(any());
+        verify(enrollmentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void redeemRejectsUnrestrictedMaxUses() {
+        String raw = "legacy-no-max";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setMaxUses(null);
+        link.setUseCount(0);
+        link.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(30));
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+        stubLiveTerm("term-1", "sec-1");
+        when(enrollmentRepository.findByTermIdAndUserId("term-1", "user-1"))
+                .thenReturn(Optional.empty());
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.MAX_USES, result.status());
+        verify(enrollmentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void redeemRejectsHistoricalUnrestrictedInvite() {
+        String raw = "legacy-unbounded";
+        InviteLinkEntity link = new InviteLinkEntity();
+        link.setId("link-1");
+        link.setTermId("term-1");
+        link.setCodeHash(InviteLinkService.hashCode(raw));
+        link.setMaxUses(null);
+        link.setExpiresAt(null);
+        link.setUseCount(0);
+
+        when(inviteLinkRepository.findByCodeHashForUpdate(InviteLinkService.hashCode(raw)))
+                .thenReturn(Optional.of(link));
+
+        InviteLinkService.RedeemResult result = inviteLinkService.redeem(raw, "user-1");
+
+        assertEquals(InviteLinkService.RedeemStatus.EXPIRED, result.status());
+        verify(enrollmentRepository, never()).save(any());
         verify(enrollmentRepository, never()).saveAndFlush(any());
     }
 
