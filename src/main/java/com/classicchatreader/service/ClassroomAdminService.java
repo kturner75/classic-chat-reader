@@ -5,6 +5,7 @@ import com.classicchatreader.entity.AssignmentEntity;
 import com.classicchatreader.entity.ClassFeatureSettingsEntity;
 import com.classicchatreader.entity.ClassRoleMembershipEntity;
 import com.classicchatreader.entity.ClassSectionEntity;
+import com.classicchatreader.entity.InviteLinkEntity;
 import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.ChapterEntity;
@@ -127,12 +128,10 @@ public class ClassroomAdminService {
         ClassFeatureSettingsEntity features = defaultFeatures(term.getId(), ownerUserId, request.features());
         classFeatureSettingsRepository.save(features);
 
-        InviteLinkService.IssuedInvite invite = inviteLinkService.issue(
+        InviteLinkService.IssuedInvite invite = issueDefaultInvite(
                 term.getId(),
                 ownerUserId,
-                "Default invite",
-                null,
-                null
+                "Default invite"
         );
 
         return new CreateClassResult(
@@ -142,7 +141,9 @@ public class ClassroomAdminService {
                 term.getName(),
                 invite.inviteLinkId(),
                 invite.code(),
-                invite.codeHint()
+                invite.codeHint(),
+                invite.maxUses(),
+                invite.expiresAt()
         );
     }
 
@@ -171,7 +172,43 @@ public class ClassroomAdminService {
     @Transactional
     public InviteLinkService.IssuedInvite createInvite(String userId, String termId, String label) {
         requireTeacher(userId, termId);
-        return inviteLinkService.issue(termId, userId, label, null, null);
+        return issueDefaultInvite(termId, userId, label);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InviteSummary> listInvites(String userId, String termId) {
+        requireTeacher(userId, termId);
+        return inviteLinkService.listActive(termId).stream()
+                .map(link -> new InviteSummary(
+                        link.getId(),
+                        link.getCodeHint(),
+                        link.getLabel(),
+                        link.getMaxUses(),
+                        link.getUseCount(),
+                        link.getExpiresAt(),
+                        link.getCreatedAt()
+                ))
+                .toList();
+    }
+
+    @Transactional
+    public void revokeInvite(String userId, String inviteLinkId) {
+        requireUser(userId);
+        InviteLinkEntity link = inviteLinkService.findById(inviteLinkId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite not found."));
+        if (!authorizationService.canManageTerm(userId, link.getTermId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite not found.");
+        }
+        inviteLinkService.revoke(link);
+    }
+
+    private InviteLinkService.IssuedInvite issueDefaultInvite(String termId, String userId, String label) {
+        return inviteLinkService.issueReplacingActive(
+                termId,
+                userId,
+                label,
+                classroomProperties.inviteDefaultMaxUses(),
+                classroomProperties.inviteDefaultExpiresAt());
     }
 
     @Transactional
@@ -1203,7 +1240,20 @@ public class ClassroomAdminService {
             String termName,
             String inviteLinkId,
             String inviteCode,
-            String inviteCodeHint
+            String inviteCodeHint,
+            Integer inviteMaxUses,
+            LocalDateTime inviteExpiresAt
+    ) {
+    }
+
+    public record InviteSummary(
+            String inviteLinkId,
+            String codeHint,
+            String label,
+            Integer maxUses,
+            int useCount,
+            LocalDateTime expiresAt,
+            LocalDateTime createdAt
     ) {
     }
 

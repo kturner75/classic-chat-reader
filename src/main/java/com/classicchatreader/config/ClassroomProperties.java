@@ -6,7 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Set;
 
 /**
@@ -34,6 +36,11 @@ public class ClassroomProperties {
      * Empty → JVM default zone (aligns better with local school deployments than hard-coded UTC).
      */
     private String calendarZone = "";
+
+    /**
+     * Default classroom invite TTL and use cap (BL-043.4 / SECURITY_AUDIT M-03).
+     */
+    private Invite invite = new Invite();
 
     public String getMode() {
         return mode;
@@ -96,5 +103,56 @@ public class ClassroomProperties {
 
     public boolean allowsDemoFallback() {
         return isDemoMode() || isHybridMode();
+    }
+
+    public Invite getInvite() {
+        return invite;
+    }
+
+    public void setInvite(Invite invite) {
+        this.invite = invite == null ? new Invite() : invite;
+    }
+
+    public int inviteDefaultMaxUses() {
+        return invite.getDefaultMaxUses();
+    }
+
+    public int inviteDefaultTtlDays() {
+        return invite.getDefaultTtlDays();
+    }
+
+    public LocalDateTime inviteDefaultExpiresAt() {
+        return LocalDateTime.now(ZoneOffset.UTC).plusDays(invite.getDefaultTtlDays());
+    }
+
+    public static class Invite {
+        private int defaultTtlDays = 30;
+        private int defaultMaxUses = 40;
+
+        public int getDefaultTtlDays() {
+            return defaultTtlDays;
+        }
+
+        public void setDefaultTtlDays(int defaultTtlDays) {
+            if (defaultTtlDays < 1) {
+                log.warn("Invalid classroom.invite.default-ttl-days={}; using 30", defaultTtlDays);
+                this.defaultTtlDays = 30;
+                return;
+            }
+            this.defaultTtlDays = defaultTtlDays;
+        }
+
+        public int getDefaultMaxUses() {
+            return defaultMaxUses;
+        }
+
+        public void setDefaultMaxUses(int defaultMaxUses) {
+            if (defaultMaxUses < 1) {
+                log.warn("Invalid classroom.invite.default-max-uses={}; using 40", defaultMaxUses);
+                this.defaultMaxUses = 40;
+                return;
+            }
+            this.defaultMaxUses = defaultMaxUses;
+        }
     }
 }

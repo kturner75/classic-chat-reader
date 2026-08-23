@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -74,7 +75,50 @@ public class InviteLinkService {
         link.setExpiresAt(expiresAt);
         link.setCreatedByUserId(createdByUserId);
         inviteLinkRepository.save(link);
-        return new IssuedInvite(link.getId(), rawCode, link.getCodeHint(), link.getTermId());
+        return new IssuedInvite(
+                link.getId(),
+                rawCode,
+                link.getCodeHint(),
+                link.getTermId(),
+                link.getMaxUses(),
+                link.getExpiresAt());
+    }
+
+    @Transactional
+    public IssuedInvite issueReplacingActive(
+            String termId, String createdByUserId, String label, Integer maxUses, LocalDateTime expiresAt) {
+        List<InviteLinkEntity> previous =
+                inviteLinkRepository.findByTermIdAndRevokedAtIsNullOrderByCreatedAtDesc(termId);
+        IssuedInvite issued = issue(termId, createdByUserId, label, maxUses, expiresAt);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        for (InviteLinkEntity old : previous) {
+            if (issued.inviteLinkId().equals(old.getId())) {
+                continue;
+            }
+            old.setRevokedAt(now);
+            old.setReplacedByLinkId(issued.inviteLinkId());
+            inviteLinkRepository.save(old);
+        }
+        return issued;
+    }
+
+    public Optional<InviteLinkEntity> findById(String inviteLinkId) {
+        if (inviteLinkId == null || inviteLinkId.isBlank()) {
+            return Optional.empty();
+        }
+        return inviteLinkRepository.findById(inviteLinkId);
+    }
+
+    public List<InviteLinkEntity> listActive(String termId) {
+        return inviteLinkRepository.findByTermIdAndRevokedAtIsNullOrderByCreatedAtDesc(termId);
+    }
+
+    @Transactional
+    public void revoke(InviteLinkEntity link) {
+        if (link.getRevokedAt() == null) {
+            link.setRevokedAt(LocalDateTime.now(ZoneOffset.UTC));
+            inviteLinkRepository.save(link);
+        }
     }
 
     @Transactional
@@ -97,7 +141,7 @@ public class InviteLinkService {
         if (link.getRevokedAt() != null) {
             return new RedeemResult(RedeemStatus.REVOKED, null, null);
         }
-        if (link.getExpiresAt() != null && !link.getExpiresAt().isAfter(now)) {
+        if (link.getExpiresAt() == null || !link.getExpiresAt().isAfter(now)) {
             return new RedeemResult(RedeemStatus.EXPIRED, null, null);
         }
 
@@ -144,7 +188,7 @@ public class InviteLinkService {
             if (!reactivatable) {
                 return new RedeemResult(RedeemStatus.NOT_ELIGIBLE, enrollment.getId(), link.getTermId());
             }
-            if (link.getMaxUses() != null && link.getUseCount() >= link.getMaxUses()) {
+            if (usesExhausted(link)) {
                 return new RedeemResult(RedeemStatus.MAX_USES, null, null);
             }
             enrollment.setStatus("ACTIVE");
@@ -158,7 +202,7 @@ public class InviteLinkService {
             return new RedeemResult(RedeemStatus.SUCCESS, enrollment.getId(), link.getTermId());
         }
 
-        if (link.getMaxUses() != null && link.getUseCount() >= link.getMaxUses()) {
+        if (usesExhausted(link)) {
             return new RedeemResult(RedeemStatus.MAX_USES, null, null);
         }
 
@@ -189,6 +233,11 @@ public class InviteLinkService {
         return new RedeemResult(RedeemStatus.SUCCESS, enrollment.getId(), link.getTermId());
     }
 
+    /** Historical rows with null max_uses are unrestricted; treat them as exhausted. */
+    private static boolean usesExhausted(InviteLinkEntity link) {
+        return link.getMaxUses() == null || link.getUseCount() >= link.getMaxUses();
+    }
+
     public static String hashCode(String rawCode) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -212,7 +261,13 @@ public class InviteLinkService {
         return rawCode.substring(rawCode.length() - 4);
     }
 
-    public record IssuedInvite(String inviteLinkId, String code, String codeHint, String termId) {
+    public record IssuedInvite(
+            String inviteLinkId,
+            String code,
+            String codeHint,
+            String termId,
+            Integer maxUses,
+            LocalDateTime expiresAt) {
     }
 
     public record RedeemResult(RedeemStatus status, String enrollmentId, String termId) {

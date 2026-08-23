@@ -38,7 +38,8 @@
         activeQuizBookOption: -1,
         activeQuizChapterOption: -1,
         studentOverviewUserId: null,
-        studentOverviewReturnFocus: null
+        studentOverviewReturnFocus: null,
+        currentInvite: null
     };
 
     const el = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(node => [node.id, node]));
@@ -217,10 +218,11 @@
         const termId = state.selectedClass.activeTermId;
         setClassroomBusy(true);
         try {
-            const [roster, assignments, features] = await Promise.all([
+            const [roster, assignments, features, invites] = await Promise.all([
                 api(`/api/classroom/terms/${encodeURIComponent(termId)}/roster`),
                 api(`/api/classroom/terms/${encodeURIComponent(termId)}/assignments`),
-                api(`/api/classroom/terms/${encodeURIComponent(termId)}/features`)
+                api(`/api/classroom/terms/${encodeURIComponent(termId)}/features`),
+                api(`/api/classroom/terms/${encodeURIComponent(termId)}/invites`).catch(() => [])
             ]);
             state.roster = Array.isArray(roster) ? roster : [];
             state.assignments = Array.isArray(assignments) ? assignments : [];
@@ -228,6 +230,9 @@
             renderRoster();
             renderAssignments();
             renderFeatures();
+            if (!state.currentInvite?.code) {
+                applyInviteSummaries(invites);
+            }
         } catch (error) {
             toast(error.message || 'Unable to load this classroom.');
         } finally {
@@ -671,34 +676,110 @@
     }
 
     function resetInvite() {
+        state.currentInvite = null;
         el['invite-link'].value = '';
         show(el['invite-value-row'], false);
+        show(el['copy-invite'], true);
         show(el['generate-invite'], true);
-        el['invite-help'].textContent = 'Generate a link for students to join this term with their reader accounts.';
+        el['generate-invite'].textContent = 'Generate join link';
+        el['invite-help'].textContent = 'Generate a link for students to join this term with their reader accounts. New links expire after 30 days or 40 joins, and generating another disables the previous code.';
     }
 
-    function displayInvite(code) {
-        const url = new URL('/', window.location.origin);
-        url.searchParams.set('join', code);
-        el['invite-link'].value = url.toString();
+    function applyInviteSummaries(invites) {
+        const active = Array.isArray(invites) ? invites[0] : null;
+        if (!active?.inviteLinkId) {
+            resetInvite();
+            return;
+        }
+        state.currentInvite = {
+            inviteLinkId: active.inviteLinkId,
+            code: null,
+            codeHint: active.codeHint,
+            maxUses: active.maxUses,
+            expiresAt: active.expiresAt,
+            useCount: active.useCount
+        };
+        renderInvite();
+    }
+
+    function displayIssuedInvite(payload) {
+        if (!payload) return;
+        const code = payload.code || payload.inviteCode;
+        state.currentInvite = {
+            inviteLinkId: payload.inviteLinkId,
+            code,
+            codeHint: payload.codeHint || payload.inviteCodeHint,
+            maxUses: payload.maxUses ?? payload.inviteMaxUses,
+            expiresAt: payload.expiresAt || payload.inviteExpiresAt,
+            useCount: payload.useCount || 0
+        };
+        renderInvite();
+    }
+
+    function renderInvite() {
+        const invite = state.currentInvite;
+        if (!invite?.inviteLinkId && !invite?.code) {
+            resetInvite();
+            return;
+        }
+        if (invite.code) {
+            const url = new URL('/', window.location.origin);
+            url.searchParams.set('join', invite.code);
+            el['invite-link'].value = url.toString();
+            show(el['copy-invite'], true);
+        } else {
+            el['invite-link'].value = invite.codeHint
+                ? `Active join link · ends ${invite.codeHint}`
+                : 'Active join link';
+            show(el['copy-invite'], false);
+        }
         show(el['invite-value-row'], true);
-        show(el['generate-invite'], false);
-        el['invite-help'].textContent = 'Anyone with this link can request enrollment in this active term.';
+        show(el['generate-invite'], true);
+        el['generate-invite'].textContent = 'Replace join link';
+        el['invite-help'].textContent = inviteHelpText(invite);
+    }
+
+    function inviteHelpText(invite) {
+        const expiry = invite.expiresAt ? formatDateTime(invite.expiresAt) : 'its expiry time';
+        if (invite.maxUses != null) {
+            const remaining = Math.max(0, Number(invite.maxUses) - Number(invite.useCount || 0));
+            return `This link expires ${expiry} or after ${invite.maxUses} joins (${remaining} remaining). Replacing or revoking it disables the current code.`;
+        }
+        return `This link expires ${expiry}. Replacing or revoking it disables the current code.`;
     }
 
     async function generateInvite() {
         if (!state.selectedClass) return;
+        const replacing = Boolean(state.currentInvite?.inviteLinkId);
         el['generate-invite'].disabled = true;
         try {
             const result = await api(`/api/classroom/terms/${encodeURIComponent(state.selectedClass.activeTermId)}/invites`, {
                 method: 'POST', body: JSON.stringify({ label: 'Teacher workspace invite' })
             });
-            displayInvite(result.code);
-            toast('Student join link generated.');
+            displayIssuedInvite(result);
+            toast(replacing
+                ? 'Student join link generated. The previous code no longer works.'
+                : 'Student join link generated.');
         } catch (error) {
             toast(error.message);
         } finally {
             el['generate-invite'].disabled = false;
+        }
+    }
+
+    async function revokeInvite() {
+        if (!state.currentInvite?.inviteLinkId) return;
+        el['revoke-invite'].disabled = true;
+        try {
+            await api(`/api/classroom/invites/${encodeURIComponent(state.currentInvite.inviteLinkId)}/revoke`, {
+                method: 'POST'
+            });
+            resetInvite();
+            toast('Join link revoked. That code can no longer enroll students.');
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            el['revoke-invite'].disabled = false;
         }
     }
 
@@ -762,7 +843,7 @@
             closeClassModal();
             renderClassPicker();
             await selectClass(summary.classId);
-            displayInvite(created.inviteCode);
+            displayIssuedInvite(created);
             toast('Classroom created. Your student join link is ready.');
         } catch (error) {
             el['class-form-error'].textContent = error.message;
@@ -2527,9 +2608,10 @@
         el['class-form'].addEventListener('submit', createClass);
         document.querySelectorAll('[data-close-modal]').forEach(node => node.addEventListener('click', closeClassModal));
         el['generate-invite'].addEventListener('click', generateInvite);
+        el['revoke-invite'].addEventListener('click', revokeInvite);
         el['roster-invite-button'].addEventListener('click', () => {
             document.getElementById('overview').scrollIntoView({ behavior: 'smooth' });
-            if (el['invite-link'].value) copyInvite(); else generateInvite();
+            if (state.currentInvite?.code) copyInvite(); else generateInvite();
         });
         el['roster-body'].addEventListener('click', event => {
             const button = event.target.closest('[data-open-student]');
