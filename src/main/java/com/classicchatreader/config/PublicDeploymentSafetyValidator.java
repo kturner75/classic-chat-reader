@@ -26,18 +26,21 @@ public class PublicDeploymentSafetyValidator {
     private final String publicApiKey;
     private final String collaboratorPassword;
     private final boolean secureCookie;
+    private final boolean accountSecureCookie;
 
     public PublicDeploymentSafetyValidator(
             Environment environment,
             @Value("${deployment.mode:local}") String deploymentMode,
             @Value("${security.public.api-key:}") String publicApiKey,
             @Value("${security.public.collaborator.password:}") String collaboratorPassword,
-            @Value("${security.public.session.secure-cookie:false}") boolean secureCookie) {
+            @Value("${security.public.session.secure-cookie:false}") boolean secureCookie,
+            @Value("${account.auth.secure-cookie:false}") boolean accountSecureCookie) {
         this.environment = environment;
         this.deploymentMode = deploymentMode;
         this.publicApiKey = publicApiKey;
         this.collaboratorPassword = collaboratorPassword;
         this.secureCookie = secureCookie;
+        this.accountSecureCookie = accountSecureCookie;
     }
 
     @PostConstruct
@@ -47,7 +50,8 @@ public class PublicDeploymentSafetyValidator {
                 deploymentMode,
                 publicApiKey,
                 collaboratorPassword,
-                secureCookie);
+                secureCookie,
+                accountSecureCookie);
         if (isProdLike(environment.getActiveProfiles())) {
             log.info("Production public-mode safety checks passed (auth gate + Secure cookies)");
         }
@@ -58,7 +62,8 @@ public class PublicDeploymentSafetyValidator {
             String deploymentMode,
             String publicApiKey,
             String collaboratorPassword,
-            boolean secureCookie) {
+            boolean secureCookie,
+            boolean accountSecureCookie) {
         if (!isProdLike(activeProfiles)) {
             return;
         }
@@ -70,6 +75,11 @@ public class PublicDeploymentSafetyValidator {
         if (!secureCookie) {
             throw new IllegalStateException(
                     "production profile requires security.public.session.secure-cookie=true "
+                            + "(BL-043.12 / SECURITY_AUDIT H-07)");
+        }
+        if (!accountSecureCookie) {
+            throw new IllegalStateException(
+                    "production profile requires account.auth.secure-cookie=true "
                             + "(BL-043.12 / SECURITY_AUDIT H-07)");
         }
         boolean apiKeyConfigured = !isBlank(publicApiKey);

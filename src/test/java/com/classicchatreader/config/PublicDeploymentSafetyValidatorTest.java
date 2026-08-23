@@ -19,6 +19,7 @@ class PublicDeploymentSafetyValidatorTest {
                 "local",
                 "",
                 "",
+                false,
                 false));
     }
 
@@ -29,6 +30,7 @@ class PublicDeploymentSafetyValidatorTest {
                 "public",
                 "",
                 "",
+                false,
                 false));
     }
 
@@ -40,20 +42,35 @@ class PublicDeploymentSafetyValidatorTest {
                         "local",
                         "api-key",
                         "",
+                        true,
                         true));
         assertTrue(error.getMessage().contains("deployment.mode=public"));
     }
 
     @Test
-    void prodProfile_insecureCookies_refusesToBoot() {
+    void prodProfile_insecureSessionCookies_refusesToBoot() {
         IllegalStateException error = assertThrows(IllegalStateException.class, () ->
                 PublicDeploymentSafetyValidator.validate(
                         new String[]{"prod"},
                         "public",
                         "api-key",
                         "",
+                        false,
+                        true));
+        assertTrue(error.getMessage().contains("security.public.session.secure-cookie=true"));
+    }
+
+    @Test
+    void prodProfile_insecureAccountCookies_refusesToBoot() {
+        IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+                PublicDeploymentSafetyValidator.validate(
+                        new String[]{"prod"},
+                        "public",
+                        "api-key",
+                        "",
+                        true,
                         false));
-        assertTrue(error.getMessage().contains("secure-cookie=true"));
+        assertTrue(error.getMessage().contains("account.auth.secure-cookie=true"));
     }
 
     @Test
@@ -64,6 +81,7 @@ class PublicDeploymentSafetyValidatorTest {
                         "public",
                         "  ",
                         "",
+                        true,
                         true));
         assertTrue(error.getMessage().contains("PUBLIC_API_KEY"));
     }
@@ -75,6 +93,7 @@ class PublicDeploymentSafetyValidatorTest {
                 "public",
                 "",
                 "collaborator-password",
+                true,
                 true));
     }
 
@@ -86,6 +105,7 @@ class PublicDeploymentSafetyValidatorTest {
                         "local",
                         "",
                         "",
+                        false,
                         false));
         assertTrue(error.getMessage().contains("deployment.mode=public"));
     }
@@ -95,6 +115,7 @@ class PublicDeploymentSafetyValidatorTest {
         Properties properties = loadClasspathProperties("/application-prod.properties");
         assertEquals("public", properties.getProperty("deployment.mode"));
         assertEquals("true", properties.getProperty("security.public.session.secure-cookie"));
+        assertEquals("true", properties.getProperty("account.auth.secure-cookie"));
     }
 
     @Test
@@ -102,6 +123,7 @@ class PublicDeploymentSafetyValidatorTest {
         Properties properties = loadClasspathProperties("/application-mariadb.properties");
         assertEquals("public", properties.getProperty("deployment.mode"));
         assertEquals("true", properties.getProperty("security.public.session.secure-cookie"));
+        assertEquals("true", properties.getProperty("account.auth.secure-cookie"));
     }
 
     private static Properties loadClasspathProperties(String path) throws Exception {
