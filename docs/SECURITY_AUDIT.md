@@ -20,14 +20,14 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 
 | ID | Severity | Title | Backlog |
 |----|----------|-------|---------|
-| C-01 | Critical | Production runs with `deployment.mode=local` (auth gate disabled) | P0 |
+| C-01 | Critical | Production runs with `deployment.mode=local` (auth gate disabled) | P0 — **code remediated** (`prod`/`mariadb` pin + boot fail-closed; confirm live `/api/auth/status` after deploy) |
 | H-01 | High | Sensitive allowlist gaps: import + character admin routes ungated even in public mode | P0 |
 | H-02 | High | SSRF via Gutendex HTML URL fetch with unrestricted redirects | P0 |
 | H-03 | High | Stored/DOM XSS: book paragraphs, character names, chapter titles via `innerHTML` | P0 |
 | H-04 | High | Google OAuth silently links to existing password accounts by email | P0 |
 | H-05 | High | Client-controlled `X-Forwarded-For` / `X-Real-IP` bypasses rate limits | P0 |
 | H-06 | High | Collaborator password login has no rate limiting / lockout | P0 |
-| H-07 | High | Session cookies default to `Secure=false` | P0 |
+| H-07 | High | Session cookies default to `Secure=false` | P0 — **code remediated** (`prod`/`mariadb` pin Secure=true + boot fail-closed) |
 | M-01 | Medium | Unauthenticated `/health/details` information disclosure | P1 |
 | M-02 | Medium | Missing security headers (CSP, frame denial, nosniff, HSTS) | P1 |
 | M-03 | Medium | Classroom invites have no expiry, max uses, or revoke API | P1 |
@@ -52,7 +52,8 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **OWASP / CWE:** A01 Broken Access Control, A05 Security Misconfiguration / CWE-1188, CWE-306  
 - **Location:**
   - `src/main/resources/application.properties` (~253–259): default `deployment.mode=local`, `secure-cookie=false`
-  - `src/main/resources/application-prod.properties`: sets cache-only flags and account rollout, **does not** set `deployment.mode=public` or Secure cookies
+  - `src/main/resources/application-prod.properties` / `application-mariadb.properties`: now pin `deployment.mode=public` and Secure cookies
+  - `src/main/java/com/classicchatreader/config/PublicDeploymentSafetyValidator.java`: refuse to boot prod-like profiles in local mode or without auth material
   - `src/main/java/com/classicchatreader/config/PublicApiGuardInterceptor.java` (~80–150): auth only when `isPublicMode()`
 - **Evidence (live, 2026-08-11):**
   - `GET https://classicchatreader.com/api/auth/status` →  
@@ -65,6 +66,7 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **Remediation:**
   1. **Immediate ops:** set `deployment.mode=public`, configure `PUBLIC_API_KEY` / collaborator password, set `security.public.session.secure-cookie=true` in `/opt/public-domain-reader/app.env` (or equivalent), restart, re-verify `/api/auth/status`.
   2. **Code fail-closed:** put `deployment.mode=public` and `security.public.session.secure-cookie=true` in `application-prod.properties`; refuse to boot public HTTPS without auth material configured.
+- **Status (2026-08-23):** Code fail-closed landed (`BL-043.1`). Live `/api/auth/status` still needs a post-deploy re-probe. Do not treat this finding as production-closed until that probe shows `publicMode:true` / `canAccessSensitive:false` for anonymous callers.
 - **Backlog priority:** P0
 
 ---
@@ -162,9 +164,10 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **Location:**
   - Defaults: `application.properties` (~259, ~283)
   - Writers: `AccountAuthService`, `PublicSessionAuthService`, `GoogleAccountOAuthService`, `ReaderProfileService` cookie builders (`secure(secureCookie)` with default false)
-- **Evidence:** HttpOnly + SameSite=Lax are set correctly; Secure depends on config defaulting to false. Prod profile does not override.
+- **Evidence:** HttpOnly + SameSite=Lax are set correctly; Secure depends on config defaulting to false. Prod profile historically did not override.
 - **Impact:** Session/profile cookies may be issued without the Secure flag on HTTPS deployments that forget the env override, enabling interception on any HTTP downgrade/mixed path.
 - **Remediation:** Default Secure to true in prod; or set Secure dynamically when `request.isSecure()` / `X-Forwarded-Proto=https`.
+- **Status (2026-08-23):** `prod`/`mariadb` pin `security.public.session.secure-cookie=true` (account cookies inherit it). Boot fails if overridden off. Local defaults stay `false` so HTTP `local-dev` still works. TTL/rotation remains a separate L-02 / `BL-043.12` product decision (keep 43200 classroom sessions).
 - **Backlog priority:** P0 (with C-01)
 
 ---
@@ -369,7 +372,7 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 | Password storage | **OK** — BCrypt strength clamped; account login lockout present. |
 | OAuth redirect / state / PKCE / nonce | **OK** — state compare, PKCE S256, nonce, issuer/audience/expiry; `returnTo` sanitized to relative paths. |
 | Invite code storage | **OK** — SHA-256 hashed, 128-bit SecureRandom. |
-| Cookie HttpOnly / SameSite | **OK** — HttpOnly + SameSite=Lax on auth/profile cookies (Secure is the gap: H-07). |
+| Cookie HttpOnly / SameSite | **OK** — HttpOnly + SameSite=Lax. Prod Secure pin is code-remediated (H-07); confirm live Set-Cookie after deploy. |
 | SQL / command / template injection | **Not confirmed** — parameterized Spring Data / static SQL; no user-influenced `Runtime.exec`; no server HTML templates. |
 | Path traversal on asset reads | **Not confirmed** — `ComfyUIService.safeResolve` / `AssetKeyService` normalization. |
 | Open redirect (OAuth / CDN) | **Not confirmed** — `sanitizeReturnTo`; CDN URLs from configured base + sanitized keys. |
@@ -404,10 +407,10 @@ Performed against https://classicchatreader.com on 2026-08-11:
 
 | Control | Mechanism | Gap |
 |---------|-----------|-----|
-| Public API auth | `PublicApiGuardInterceptor` + `SensitiveApiRequestMatcher` | Opt-in via `deployment.mode=public`; allowlist incomplete |
+| Public API auth | `PublicApiGuardInterceptor` + `SensitiveApiRequestMatcher` + `PublicDeploymentSafetyValidator` | Prod/mariadb fail-closed to public mode; allowlist still incomplete (H-01) |
 | Account auth | Cookie sessions (hashed), BCrypt, Google OAuth | OAuth auto-link; Secure default; long TTL |
 | Collaborator auth | Shared password → in-memory session | No rate limit; raw token storage |
 | Rate limits | In-memory / DB fixed windows | Trust spoofable XFF |
 | Classroom authz | Capability + membership checks | Invite lifetime |
 | XSS | Ad-hoc `escapeHtml` in many UI paths | Reader surface / character cards / chapter list |
-| Secrets | Env placeholders + gitignore | Prod fail-open defaults |
+| Secrets | Env placeholders + gitignore | Prod refuse-to-boot without API key or collaborator password |
