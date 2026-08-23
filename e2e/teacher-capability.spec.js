@@ -179,6 +179,21 @@ async function installAssignmentMocks(page, options = {}) {
       if (typeof options.onQuizOverrides === 'function') options.onQuizOverrides(request.postDataJSON());
       return json(route, { contentVersion: 'v2' });
     }
+    if (request.method() === 'POST' && path === '/api/classroom/terms/term-1/invites') {
+      if (typeof options.onCreateInvite === 'function') options.onCreateInvite(request.postDataJSON());
+      return json(route, {
+        inviteLinkId: 'link-1',
+        code: 'fresh-code',
+        codeHint: 'code',
+        termId: 'term-1',
+        maxUses: 40,
+        expiresAt: '2026-09-22T12:00:00Z'
+      });
+    }
+    if (request.method() === 'POST' && path === '/api/classroom/invites/link-1/revoke') {
+      if (typeof options.onRevokeInvite === 'function') options.onRevokeInvite();
+      return route.fulfill({ status: 204, body: '' });
+    }
     if (request.method() === 'POST' && path.endsWith('/suggest-distractors')) {
       const delayMs = Number(options.suggestDelayMs) || 0;
       if (delayMs > 0) {
@@ -735,6 +750,29 @@ test('multi-chapter assignment hides the default quiz and requires a custom quiz
   await expect(page.locator('[data-quiz-mode="default"]')).toHaveCount(0);
   await expect(page.locator('#assignment-quiz-author-body [data-field="stem"]')).toBeVisible();
   await expect(page.locator('#assignment-quiz-author-progress')).toContainText('Question 1 of 3');
+});
+
+test('teacher can generate, replace, and revoke a classroom join link', async ({ page }) => {
+  let created = 0;
+  let revoked = 0;
+  await installAssignmentMocks(page, {
+    onCreateInvite: () => { created += 1; },
+    onRevokeInvite: () => { revoked += 1; }
+  });
+  await page.goto('/teacher.html');
+  await expect(page.locator('#generate-invite')).toBeVisible();
+  await expect(page.locator('#invite-help')).toContainText('expire after 30 days or 40 joins');
+  await page.locator('#generate-invite').click();
+  await expect(page.locator('#invite-link')).toHaveValue(/[?&]join=fresh-code/);
+  await expect(page.locator('#revoke-invite')).toBeVisible();
+  await expect(page.locator('#generate-invite')).toHaveText('Replace join link');
+  await expect(page.locator('#invite-help')).toContainText('40 joins');
+  await page.locator('#generate-invite').click();
+  await expect.poll(() => created).toBe(2);
+  await page.locator('#revoke-invite').click();
+  await expect.poll(() => revoked).toBe(1);
+  await expect(page.locator('#invite-value-row')).toBeHidden();
+  await expect(page.locator('#generate-invite')).toHaveText('Generate join link');
 });
 
 test('multi-chapter custom quiz publishes on the assignment quiz endpoint', async ({ page }) => {

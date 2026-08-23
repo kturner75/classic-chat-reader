@@ -412,7 +412,7 @@ public class ClassroomController {
     }
 
     private static String formatUtc(LocalDateTime value) {
-        return value == null ? null : value.atOffset(ZoneOffset.UTC).toString();
+        return value == null ? null : value.toInstant(ZoneOffset.UTC).toString();
     }
 
     public record InviteCreateRequest(String label) {
