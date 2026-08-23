@@ -115,6 +115,7 @@ Notes:
 - When `deployment.mode=public`, sensitive generation/chat APIs require authentication:
   - `X-API-Key` matching `security.public.api-key` (or env `PUBLIC_API_KEY`), or
   - collaborator session login via `/api/auth/login` using `security.public.collaborator.password` (or env `PUBLIC_COLLABORATOR_PASSWORD`).
+- The `prod` and `mariadb` profiles **force** `deployment.mode=public` and Secure session cookies. Boot fails if those are overridden off or if neither `PUBLIC_API_KEY` nor `PUBLIC_COLLABORATOR_PASSWORD` is set. Local/dev stays `deployment.mode=local`.
 - Public-mode rate limits are controlled by `security.public.rate-limit.window-seconds`, `security.public.rate-limit.generation-requests`, and `security.public.rate-limit.chat-requests`; authenticated requests can use separate limits via `security.public.rate-limit.authenticated-generation-requests` and `security.public.rate-limit.authenticated-chat-requests`.
 - Queue-backed generation services can recover persisted pending/stuck work on startup when `generation.queue.recovery.enabled=true`.
 - Recap, illustration, and character workers use DB lease claims for cross-instance coordination; tune with `recap.generation.lease-minutes`, `illustration.generation.lease-minutes`, `character.analysis.lease-minutes`, `character.portrait.lease-minutes`, and optional worker IDs (`recap.generation.worker-id`, `illustration.generation.worker-id`, `character.generation.worker-id`).

@@ -2,6 +2,7 @@ package com.classicchatreader.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.classicchatreader.config.DeploymentMode;
 import com.classicchatreader.service.PublicSessionAuthService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -86,7 +87,7 @@ public class AuthController {
     }
 
     private boolean isPublicMode() {
-        return "public".equalsIgnoreCase(deploymentMode);
+        return DeploymentMode.isPublic(deploymentMode);
     }
 
     public record LoginRequest(String password) {

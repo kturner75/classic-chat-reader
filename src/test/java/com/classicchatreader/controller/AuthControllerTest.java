@@ -24,7 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "deployment.mode=public",
         "security.public.collaborator.password=secret-password",
         "security.public.session.cookie-name=pdr_collab_session",
-        "security.public.session.ttl-minutes=60"
+        "security.public.session.ttl-minutes=60",
+        "security.public.session.secure-cookie=true"
 })
 class AuthControllerTest {
 
@@ -50,6 +51,7 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Set-Cookie", containsString("pdr_collab_session=")))
+                .andExpect(header().string("Set-Cookie", containsString("Secure")))
                 .andReturn();
 
         String token = loginResult.getResponse().getHeader("Set-Cookie")
