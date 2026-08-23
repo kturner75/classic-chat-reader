@@ -25,7 +25,7 @@ class AssignmentQuizMigrationTest {
         flyway.clean();
         flyway.migrate();
         flyway.validate();
-        assertEquals("30", flyway.info().current().getVersion().getVersion());
+        assertEquals("31", flyway.info().current().getVersion().getVersion());
 
         try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
             try (ResultSet columns = connection.getMetaData().getColumns(null, null, "QUIZ_ATTEMPTS", "CHAPTER_ID")) {
@@ -40,6 +40,9 @@ class AssignmentQuizMigrationTest {
             }
             try (ResultSet columns = connection.getMetaData().getColumns(null, null, "BOOKS", "ILLUSTRATION_COVER_FOCUS")) {
                 assertTrue(columns.next());
+            }
+            try (ResultSet tables = connection.getMetaData().getTables(null, null, "PENDING_EXTERNAL_IDENTITY_LINKS", null)) {
+                assertTrue(tables.next());
             }
         }
     }
