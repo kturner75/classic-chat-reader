@@ -67,7 +67,7 @@ public class PublicDeploymentSafetyValidator {
         if (!isProdLike(activeProfiles)) {
             return;
         }
-        if (!"public".equalsIgnoreCase(trim(deploymentMode))) {
+        if (!DeploymentMode.isPublic(deploymentMode)) {
             throw new IllegalStateException(
                     "production profile requires deployment.mode=public so student-data and "
                             + "generation paths stay gated (BL-043.1 / SECURITY_AUDIT C-01)");
@@ -102,10 +102,6 @@ public class PublicDeploymentSafetyValidator {
             }
         }
         return false;
-    }
-
-    private static String trim(String value) {
-        return value == null ? "" : value.trim();
     }
 
     private static boolean isBlank(String value) {

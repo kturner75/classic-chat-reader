@@ -98,6 +98,17 @@ class PublicDeploymentSafetyValidatorTest {
     }
 
     @Test
+    void prodProfile_paddedPublicMode_isStillPublic() {
+        assertDoesNotThrow(() -> PublicDeploymentSafetyValidator.validate(
+                new String[]{"prod"},
+                " public \r",
+                "api-key",
+                "",
+                true,
+                true));
+    }
+
+    @Test
     void mariadbProfile_isTreatedAsProduction() {
         IllegalStateException error = assertThrows(IllegalStateException.class, () ->
                 PublicDeploymentSafetyValidator.validate(

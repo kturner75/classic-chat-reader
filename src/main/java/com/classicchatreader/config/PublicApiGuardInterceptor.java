@@ -157,7 +157,7 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
     }
 
     private boolean isPublicMode() {
-        return "public".equalsIgnoreCase(deploymentMode);
+        return DeploymentMode.isPublic(deploymentMode);
     }
 
     private String stripContextPath(HttpServletRequest request) {

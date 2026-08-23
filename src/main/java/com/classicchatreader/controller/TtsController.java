@@ -1,6 +1,7 @@
 package com.classicchatreader.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.classicchatreader.config.DeploymentMode;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
@@ -368,7 +369,7 @@ public class TtsController {
   }
 
   private boolean isPublicMode() {
-    return "public".equalsIgnoreCase(deploymentMode);
+    return DeploymentMode.isPublic(deploymentMode);
   }
 
   private boolean isSensitiveTtsAuthorized(HttpServletRequest request, String providedApiKey) {
