@@ -38,4 +38,15 @@ class ClassroomPropertiesTest {
         properties.setCalendarZone("Not/AZone");
         assertEquals(java.time.ZoneId.systemDefault(), properties.calendarZoneId());
     }
+
+    @Test
+    void inviteDefaultsAreThirtyDaysAndFortyUses() {
+        ClassroomProperties properties = new ClassroomProperties();
+        assertEquals(30, properties.inviteDefaultTtlDays());
+        assertEquals(40, properties.inviteDefaultMaxUses());
+        properties.getInvite().setDefaultTtlDays(0);
+        properties.getInvite().setDefaultMaxUses(0);
+        assertEquals(30, properties.inviteDefaultTtlDays());
+        assertEquals(40, properties.inviteDefaultMaxUses());
+    }
 }

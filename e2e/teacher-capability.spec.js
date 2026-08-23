@@ -81,6 +81,9 @@ async function installAssignmentMocks(page, options = {}) {
     if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/roster') {
       return json(route, []);
     }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/invites') {
+      return json(route, []);
+    }
     if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/assignments') {
       return json(route, options.assignments || []);
     }
@@ -371,6 +374,9 @@ test('BL-025.10 roster Overview uses activeTermId (ClassSummary has no termId)',
         status: 'ACTIVE'
       }]);
     }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/invites') {
+      return json(route, []);
+    }
     if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/assignments') {
       return json(route, []);
     }
@@ -480,6 +486,9 @@ test('student overview collapses completed work and highlights progress and quiz
         { userId: 'student-1', email: 'alex@example.com', displayNameOverride: 'Alex Student', joinedDate: '2026-08-01', status: 'ACTIVE' },
         { userId: 'student-2', email: 'jordan@example.com', displayNameOverride: 'Jordan Student', joinedDate: '2026-08-01', status: 'ACTIVE' }
       ]);
+    }
+    if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/invites') {
+      return json(route, []);
     }
     if (request.method() === 'GET' && path === '/api/classroom/terms/term-1/assignments') {
       return json(route, []);

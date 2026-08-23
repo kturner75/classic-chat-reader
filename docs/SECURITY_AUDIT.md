@@ -30,7 +30,7 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 | H-07 | High | Session cookies default to `Secure=false` | P0 — **code remediated** (`prod`/`mariadb` pin Secure=true + boot fail-closed) |
 | M-01 | Medium | Unauthenticated `/health/details` information disclosure | P1 |
 | M-02 | Medium | Missing security headers (CSP, frame denial, nosniff, HSTS) | P1 |
-| M-03 | Medium | Classroom invites have no expiry, max uses, or revoke API | P1 |
+| M-03 | Medium | Classroom invites have no expiry, max uses, or revoke API | P1 — **code remediated** (30-day TTL / 40 max uses; revoke API/UI; rotate on create) |
 | M-04 | Medium | Client-supplied character chat history / reading position (prompt injection) | P1 |
 | M-05 | Medium | Costly generation/TTS paths depend entirely on deployment mode + cache flags | P1 |
 | M-06 | Medium | Public collaborator sessions store raw tokens in memory | P2 |
@@ -202,12 +202,13 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **Severity:** Medium  
 - **OWASP / CWE:** A01 / CWE-613  
 - **Location:**
-  - `ClassroomAdminService` invite issue calls with `null` maxUses/expiresAt
+  - `ClassroomAdminService` invite issue calls (previously `null` maxUses/expiresAt)
   - `InviteLinkService` supports expiry/maxUses/revocation in the model
-  - `ClassroomController` exposes create/redeem only
-- **Evidence:** Codes are 128-bit and stored hashed (good), but issued unbounded and never revocable via API.
+  - `ClassroomController` create/list/revoke + redeem
+- **Evidence:** Codes are 128-bit and stored hashed (good). Before this remediation they were issued unbounded and never revocable via API.
 - **Impact:** Leaked invite codes remain valid indefinitely for enrollment.
 - **Remediation:** Default TTL + optional maxUses; teacher revoke endpoint; rotate links.
+- **Status (2026-08-23):** Code remediated (`BL-043.4`). Create applies a 30-day TTL and 40 max uses; a new invite revokes the previous active code; teachers can revoke from `/teacher`. Redeem already rejects expired/revoked/maxed codes.
 - **Backlog priority:** P1
 
 ---

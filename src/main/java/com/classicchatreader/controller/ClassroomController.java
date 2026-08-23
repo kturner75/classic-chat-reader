@@ -16,6 +16,7 @@ import com.classicchatreader.service.ClassroomAdminService.CreateClassRequest;
 import com.classicchatreader.service.ClassroomAdminService.CreateClassResult;
 import com.classicchatreader.service.ClassroomAdminService.EnrollmentRow;
 import com.classicchatreader.service.ClassroomAdminService.FeatureUpdateRequest;
+import com.classicchatreader.service.ClassroomAdminService.InviteSummary;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCapabilities;
@@ -49,6 +50,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -113,19 +117,27 @@ public class ClassroomController {
     }
 
     @PostMapping("/terms/{termId}/invites")
-    public Map<String, String> createInvite(
+    public Map<String, Object> createInvite(
             @PathVariable String termId,
             @RequestBody(required = false) InviteCreateRequest body,
             HttpServletRequest request) {
         String label = body != null ? body.label() : null;
         InviteLinkService.IssuedInvite invite =
                 classroomAdminService.createInvite(requireUserId(request), termId, label);
-        return Map.of(
-                "inviteLinkId", invite.inviteLinkId(),
-                "code", invite.code(),
-                "codeHint", invite.codeHint() != null ? invite.codeHint() : "",
-                "termId", invite.termId()
-        );
+        return toIssuedInviteResponse(invite);
+    }
+
+    @GetMapping("/terms/{termId}/invites")
+    public List<InviteResponse> listInvites(@PathVariable String termId, HttpServletRequest request) {
+        return classroomAdminService.listInvites(requireUserId(request), termId).stream()
+                .map(this::toInviteResponse)
+                .toList();
+    }
+
+    @PostMapping("/invites/{inviteLinkId}/revoke")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeInvite(@PathVariable String inviteLinkId, HttpServletRequest request) {
+        classroomAdminService.revokeInvite(requireUserId(request), inviteLinkId);
     }
 
     @PostMapping("/invites/redeem")
@@ -376,7 +388,45 @@ public class ClassroomController {
         return userId;
     }
 
+    private Map<String, Object> toIssuedInviteResponse(InviteLinkService.IssuedInvite invite) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("inviteLinkId", invite.inviteLinkId());
+        body.put("code", invite.code());
+        body.put("codeHint", invite.codeHint() != null ? invite.codeHint() : "");
+        body.put("termId", invite.termId());
+        body.put("maxUses", invite.maxUses());
+        body.put("expiresAt", formatUtc(invite.expiresAt()));
+        return body;
+    }
+
+    private InviteResponse toInviteResponse(InviteSummary invite) {
+        return new InviteResponse(
+                invite.inviteLinkId(),
+                invite.codeHint(),
+                invite.label(),
+                invite.maxUses(),
+                invite.useCount(),
+                formatUtc(invite.expiresAt()),
+                formatUtc(invite.createdAt())
+        );
+    }
+
+    private static String formatUtc(LocalDateTime value) {
+        return value == null ? null : value.atOffset(ZoneOffset.UTC).toString();
+    }
+
     public record InviteCreateRequest(String label) {
+    }
+
+    public record InviteResponse(
+            String inviteLinkId,
+            String codeHint,
+            String label,
+            Integer maxUses,
+            int useCount,
+            String expiresAt,
+            String createdAt
+    ) {
     }
 
     public record RedeemRequest(String code) {

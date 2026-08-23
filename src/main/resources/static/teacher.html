@@ -98,10 +98,11 @@
                         <article class="summary-card invite-card">
                             <span class="card-label">Student invitation</span>
                             <strong>Share a secure join link</strong>
-                            <p id="invite-help">Generate a link for students to join this term with their reader accounts.</p>
+                            <p id="invite-help">Generate a link for students to join this term with their reader accounts. New links expire after 30 days or 40 joins, and generating another disables the previous code.</p>
                             <div id="invite-value-row" class="copy-row hidden">
                                 <input id="invite-link" type="text" readonly aria-label="Student join link" />
                                 <button id="copy-invite" class="secondary-button" type="button">Copy</button>
+                                <button id="revoke-invite" class="secondary-button" type="button">Revoke</button>
                             </div>
                             <button id="generate-invite" class="primary-button compact" type="button">Generate join link</button>
                         </article>

@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -294,6 +295,64 @@ class ClassroomControllerTest {
 
         mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createInviteReturnsExpiryAndMaxUses() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(classroomAdminService.createInvite("teacher-1", "term-1", "Teacher workspace invite"))
+                .thenReturn(new InviteLinkService.IssuedInvite(
+                        "link-1",
+                        "fresh-code",
+                        "code",
+                        "term-1",
+                        40,
+                        LocalDateTime.of(2026, 9, 22, 12, 0)));
+
+        mockMvc.perform(post("/api/classroom/terms/term-1/invites")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Teacher workspace invite\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inviteLinkId").value("link-1"))
+                .andExpect(jsonPath("$.code").value("fresh-code"))
+                .andExpect(jsonPath("$.maxUses").value(40))
+                .andExpect(jsonPath("$.expiresAt").value("2026-09-22T12:00:00Z"));
+    }
+
+    @Test
+    void listInvitesReturnsActiveMetadata() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(classroomAdminService.listInvites("teacher-1", "term-1")).thenReturn(List.of(
+                new ClassroomAdminService.InviteSummary(
+                        "link-1",
+                        "abcd",
+                        "Default invite",
+                        40,
+                        2,
+                        LocalDateTime.of(2026, 9, 22, 12, 0),
+                        LocalDateTime.of(2026, 8, 23, 12, 0))
+        ));
+
+        mockMvc.perform(get("/api/classroom/terms/term-1/invites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].inviteLinkId").value("link-1"))
+                .andExpect(jsonPath("$[0].codeHint").value("abcd"))
+                .andExpect(jsonPath("$[0].maxUses").value(40))
+                .andExpect(jsonPath("$[0].useCount").value(2))
+                .andExpect(jsonPath("$[0].expiresAt").value("2026-09-22T12:00:00Z"));
+    }
+
+    @Test
+    void revokeInviteReturnsNoContent() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+
+        mockMvc.perform(post("/api/classroom/invites/link-1/revoke"))
+                .andExpect(status().isNoContent());
+
+        verify(classroomAdminService).revokeInvite("teacher-1", "link-1");
     }
 
     @Test
