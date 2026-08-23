@@ -51,7 +51,7 @@ public class AccountController {
     @GetMapping("/status")
     public AccountStatusResponse status(HttpServletRequest request) {
         accountMetricsService.recordStatusRead();
-        return toResponse(accountAuthService.status(request));
+        return toResponse(accountAuthService.status(request), request);
     }
 
     @PostMapping("/register")
@@ -131,7 +131,50 @@ public class AccountController {
                 result.retryAfterSeconds(),
                 null
         );
-        return toEntity(result);
+        return toEntity(result, httpRequest);
+    }
+
+    @PostMapping("/google/link")
+    public ResponseEntity<AccountStatusResponse> googleLink(
+            @RequestBody CredentialsRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response) {
+        if (request == null || isBlank(request.password())) {
+            accountAuthAuditService.record("google_link", "invalid_request", httpRequest, null, null, null, null);
+            return ResponseEntity.badRequest()
+                    .body(buildStatusResponse(false, null, "Password is required to link Google.", httpRequest));
+        }
+
+        String pendingEmail = accountAuthService.pendingExternalIdentityLinkEmail(httpRequest)
+                .orElse(request.email());
+        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkLogin(httpRequest, pendingEmail);
+        if (!rateLimit.allowed()) {
+            accountMetricsService.recordLoginRateLimited();
+            accountAuthAuditService.record(
+                    "google_link",
+                    "rate_limited",
+                    httpRequest,
+                    pendingEmail,
+                    null,
+                    rateLimit.retryAfterSeconds(),
+                    rateLimit.scope()
+            );
+            return rateLimitedResponse(rateLimit.retryAfterSeconds(), httpRequest);
+        }
+
+        AccountAuthService.AuthResult result =
+                accountAuthService.confirmExternalIdentityLink(request.password(), httpRequest, response);
+        accountMetricsService.recordGoogleLoginResult(result.status());
+        accountAuthAuditService.record(
+                "google_link",
+                outcomeFor(result.status()),
+                httpRequest,
+                result.email() != null ? result.email() : request.email(),
+                null,
+                result.retryAfterSeconds(),
+                null
+        );
+        return toEntity(result, httpRequest);
     }
 
     @PostMapping("/logout")
@@ -193,7 +236,7 @@ public class AccountController {
 
         accountAuthAuditService.record(
                 "google_callback",
-                result.authenticated() ? "success" : "failure",
+                googleCallbackOutcome(result),
                 request,
                 result.email(),
                 null,
@@ -244,6 +287,12 @@ public class AccountController {
     }
 
     private ResponseEntity<AccountStatusResponse> toEntity(AccountAuthService.AuthResult result) {
+        return toEntity(result, null);
+    }
+
+    private ResponseEntity<AccountStatusResponse> toEntity(
+            AccountAuthService.AuthResult result,
+            HttpServletRequest request) {
         HttpStatus status = switch (result.status()) {
             case SUCCESS -> HttpStatus.OK;
             case DISABLED -> HttpStatus.SERVICE_UNAVAILABLE;
@@ -251,21 +300,32 @@ public class AccountController {
             case INVALID_EMAIL, INVALID_PASSWORD, EXTERNAL_IDENTITY_ERROR -> HttpStatus.BAD_REQUEST;
             case INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
             case ACCOUNT_LOCKED -> HttpStatus.TOO_MANY_REQUESTS;
-            case EMAIL_ALREADY_EXISTS -> HttpStatus.CONFLICT;
+            case EMAIL_ALREADY_EXISTS, EXTERNAL_IDENTITY_LINK_REQUIRED -> HttpStatus.CONFLICT;
         };
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
         if (status == HttpStatus.TOO_MANY_REQUESTS && result.retryAfterSeconds() != null && result.retryAfterSeconds() > 0) {
             builder.header("Retry-After", String.valueOf(result.retryAfterSeconds()));
         }
-        return builder.body(toResponse(result));
+        return builder.body(toResponse(result, request));
     }
 
     private ResponseEntity<AccountStatusResponse> rateLimitedResponse(Integer retryAfterSeconds) {
+        return rateLimitedResponse(retryAfterSeconds, null);
+    }
+
+    private ResponseEntity<AccountStatusResponse> rateLimitedResponse(
+            Integer retryAfterSeconds,
+            HttpServletRequest request) {
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS);
         if (retryAfterSeconds != null && retryAfterSeconds > 0) {
             builder.header("Retry-After", String.valueOf(retryAfterSeconds));
         }
-        return builder.body(buildStatusResponse(false, null, "Too many account auth attempts. Please retry shortly."));
+        return builder.body(buildStatusResponse(
+                false,
+                null,
+                "Too many account auth attempts. Please retry shortly.",
+                request
+        ));
     }
 
     private String outcomeFor(AccountAuthService.ResultStatus status) {
@@ -279,15 +339,31 @@ public class AccountController {
             case ACCOUNT_LOCKED -> "account_locked";
             case EMAIL_ALREADY_EXISTS -> "email_exists";
             case EXTERNAL_IDENTITY_ERROR -> "external_identity_error";
+            case EXTERNAL_IDENTITY_LINK_REQUIRED -> "link_required";
         };
     }
 
+    private String googleCallbackOutcome(GoogleAccountOAuthService.AuthorizationCallbackResult result) {
+        if (result.authenticated()) {
+            return "success";
+        }
+        if (result.accountStatus() == AccountAuthService.ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED) {
+            return "link_required";
+        }
+        return "failure";
+    }
+
     private AccountStatusResponse toResponse(AccountAuthService.AuthResult result) {
+        return toResponse(result, null);
+    }
+
+    private AccountStatusResponse toResponse(AccountAuthService.AuthResult result, HttpServletRequest request) {
         return buildStatusResponse(
                 result.accountAuthEnabled(),
                 result.authenticated(),
                 result.email(),
-                result.message()
+                result.message(),
+                request
         );
     }
 
@@ -296,6 +372,15 @@ public class AccountController {
             boolean authenticated,
             String email,
             String message) {
+        return buildStatusResponse(accountAuthEnabled, authenticated, email, message, null);
+    }
+
+    private AccountStatusResponse buildStatusResponse(
+            boolean accountAuthEnabled,
+            boolean authenticated,
+            String email,
+            String message,
+            HttpServletRequest request) {
         return new AccountStatusResponse(
                 accountAuthEnabled,
                 authenticated,
@@ -303,16 +388,26 @@ public class AccountController {
                 message,
                 googleAccountOAuthService.isAvailable(),
                 accountAuthService.getRolloutMode(),
-                accountAuthService.isAccountRequired()
+                accountAuthService.isAccountRequired(),
+                request != null && accountAuthService.hasPendingExternalIdentityLink(request)
         );
     }
 
     private AccountStatusResponse buildStatusResponse(boolean authenticated, String email, String message) {
+        return buildStatusResponse(authenticated, email, message, null);
+    }
+
+    private AccountStatusResponse buildStatusResponse(
+            boolean authenticated,
+            String email,
+            String message,
+            HttpServletRequest request) {
         return buildStatusResponse(
                 accountAuthService.isAccountAuthEnabled(),
                 authenticated,
                 email,
-                message
+                message,
+                request
         );
     }
 
@@ -330,7 +425,8 @@ public class AccountController {
             String message,
             boolean googleAuthEnabled,
             String rolloutMode,
-            boolean accountRequired
+            boolean accountRequired,
+            boolean pendingGoogleLink
     ) {
     }
 

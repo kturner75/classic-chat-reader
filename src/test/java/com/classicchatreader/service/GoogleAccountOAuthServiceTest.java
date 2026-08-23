@@ -130,6 +130,56 @@ class GoogleAccountOAuthServiceTest {
         assertEquals("state_mismatch", result.failureReason());
     }
 
+    @Test
+    void completeAuthorization_passwordAccountRequiresLinkConsent() {
+        GoogleAccountOAuthService service = new GoogleAccountOAuthService(
+                accountAuthService,
+                properties,
+                buildWebClient("""
+                        {
+                          "access_token":"access-token",
+                          "id_token":"id-token",
+                          "token_type":"Bearer",
+                          "expires_in":3600,
+                          "scope":"openid email profile"
+                        }
+                        """),
+                jwtDecoder,
+                false
+        );
+
+        MockHttpServletResponse startResponse = new MockHttpServletResponse();
+        GoogleAccountOAuthService.AuthorizationStartResult start =
+                service.beginAuthorization("/reader", startResponse);
+        String returnedState = UriComponentsBuilder.fromUri(start.redirectUri())
+                .build()
+                .getQueryParams()
+                .getFirst("state");
+        String nonce = findCookieValue(startResponse, "pdr_account_google_nonce");
+
+        when(jwtDecoder.decode("id-token")).thenReturn(validJwt(nonce));
+        when(accountAuthService.signInWithExternalIdentity(any(), any()))
+                .thenReturn(new AccountAuthService.AuthResult(
+                        AccountAuthService.ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED,
+                        true,
+                        false,
+                        "reader@example.com",
+                        "This Google email already has a password account. Enter that password to link Google."
+                ));
+
+        MockHttpServletRequest callbackRequest = new MockHttpServletRequest();
+        callbackRequest.setCookies(extractCookies(startResponse));
+        MockHttpServletResponse callbackResponse = new MockHttpServletResponse();
+
+        GoogleAccountOAuthService.AuthorizationCallbackResult result =
+                service.completeAuthorization("auth-code", returnedState, null, callbackRequest, callbackResponse);
+
+        assertFalse(result.authenticated());
+        assertEquals("/reader?account_notice=google_link_required", result.redirectUri().toString());
+        assertEquals("link_required", result.failureReason());
+        assertEquals(AccountAuthService.ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED, result.accountStatus());
+    }
+
     private WebClient buildWebClient(String jsonBody) {
         ExchangeFunction exchangeFunction = request -> Mono.just(
                 ClientResponse.create(HttpStatus.OK)

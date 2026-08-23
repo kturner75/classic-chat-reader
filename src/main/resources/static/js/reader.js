@@ -168,6 +168,7 @@
         accountEmail: null,
         accountRolloutMode: 'optional',
         accountRequired: false,
+        pendingGoogleLink: false,
         accountClaimSyncedFor: null,
         accountSyncInFlight: false,
         accountSyncPromise: null,
@@ -1900,6 +1901,11 @@
                 return { tone: 'error', message: 'This account is not in the current reader-account rollout.' };
             case 'google_signin_failed':
                 return { tone: 'error', message: 'Google sign-in could not be completed.' };
+            case 'google_link_required':
+                return {
+                    tone: 'error',
+                    message: 'This Google email already has a password account. Enter that password to link Google.'
+                };
             default:
                 return null;
         }
@@ -1914,6 +1920,10 @@
 
         url.searchParams.delete('account_notice');
         window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+
+        if (notice === 'google_link_required') {
+            state.pendingGoogleLink = true;
+        }
 
         const config = accountNoticeConfig(notice);
         if (!config) {
@@ -1945,9 +1955,11 @@
         if (elements.accountModalHelp) {
             elements.accountModalHelp.textContent = authenticated
                 ? 'Your reader account is active in this browser.'
-                : (state.accountGoogleAuthEnabled
-                    ? 'Use Google for the quickest sign-in, or use email and password below.'
-                    : 'Use email and password to sign in and sync progress across devices.');
+                : (state.pendingGoogleLink
+                    ? 'This Google email already has a password account. Enter that password to link Google and sign in.'
+                    : (state.accountGoogleAuthEnabled
+                        ? 'Use Google for the quickest sign-in, or use email and password below.'
+                        : 'Use email and password to sign in and sync progress across devices.'));
         }
         if (elements.accountModalEmail) {
             elements.accountModalEmail.classList.toggle('hidden', !authenticated);
@@ -1973,10 +1985,10 @@
         if (elements.accountSignIn) {
             elements.accountSignIn.classList.toggle('hidden', authenticated);
             elements.accountSignIn.disabled = false;
-            elements.accountSignIn.textContent = 'Sign In';
+            elements.accountSignIn.textContent = state.pendingGoogleLink ? 'Link Google' : 'Sign In';
         }
         if (elements.accountRegister) {
-            elements.accountRegister.classList.toggle('hidden', authenticated);
+            elements.accountRegister.classList.toggle('hidden', authenticated || state.pendingGoogleLink);
             elements.accountRegister.disabled = false;
             elements.accountRegister.textContent = 'Register';
         }
@@ -2265,6 +2277,7 @@
                 ? status.rolloutMode
                 : 'optional';
             state.accountRequired = status.accountRequired === true;
+            state.pendingGoogleLink = status.pendingGoogleLink === true;
 
             if (!state.accountAuthenticated) {
                 resetAccountClaimSyncGate();
@@ -2415,14 +2428,22 @@
         if (!elements.accountEmail || !elements.accountPassword) return;
         const email = (elements.accountEmail.value || '').trim();
         const password = elements.accountPassword.value || '';
-        if (!email || !password) {
+        const linkingGoogle = state.pendingGoogleLink === true && mode === 'login';
+        if (linkingGoogle) {
+            if (!password) {
+                setAccountStatusMessage('Password is required to link Google.', 'error');
+                return;
+            }
+        } else if (!email || !password) {
             setAccountStatusMessage('Email and password are required.', 'error');
             return;
         }
 
         if (elements.accountSignIn) {
             elements.accountSignIn.disabled = true;
-            elements.accountSignIn.textContent = mode === 'login' ? 'Signing In...' : 'Sign In';
+            elements.accountSignIn.textContent = linkingGoogle
+                ? 'Linking...'
+                : (mode === 'login' ? 'Signing In...' : 'Sign In');
         }
         if (elements.accountRegister) {
             elements.accountRegister.disabled = true;
@@ -2430,10 +2451,10 @@
         }
 
         try {
-            const response = await nativeFetch(`/api/account/${mode}`, {
+            const response = await nativeFetch(linkingGoogle ? '/api/account/google/link' : `/api/account/${mode}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
+                body: JSON.stringify(linkingGoogle ? { password } : { email, password })
             });
             const payload = await readErrorPayload(response);
             if (!response.ok) {
@@ -2451,7 +2472,7 @@
         } finally {
             if (elements.accountSignIn) {
                 elements.accountSignIn.disabled = false;
-                elements.accountSignIn.textContent = 'Sign In';
+                elements.accountSignIn.textContent = state.pendingGoogleLink ? 'Link Google' : 'Sign In';
             }
             if (elements.accountRegister) {
                 elements.accountRegister.disabled = false;

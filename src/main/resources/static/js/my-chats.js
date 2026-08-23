@@ -1405,6 +1405,7 @@
         const register = documentRef.getElementById('my-chats-register');
         const authRetry = documentRef.getElementById('my-chats-auth-retry');
         let statusPayload = null;
+        let pendingGoogleLink = false;
 
         async function checkAuth() {
             authShell.classList.remove('hidden');
@@ -1423,7 +1424,15 @@
                 }
                 signIn.classList.remove('hidden');
                 googleButton.classList.toggle('hidden', payload.googleAuthEnabled !== true);
-                email.focus();
+                pendingGoogleLink = consumeGoogleLinkNotice() || payload.pendingGoogleLink === true;
+                if (pendingGoogleLink) {
+                    signInStatus.textContent = 'This Google email already has a password account. Enter that password to link Google.';
+                    register.classList.add('hidden');
+                    login.textContent = 'Link Google';
+                    password.focus();
+                } else {
+                    email.focus();
+                }
             } catch (error) {
                 authLoading.classList.add('hidden');
                 authError.classList.remove('hidden');
@@ -1431,22 +1440,41 @@
             }
         }
 
+        function consumeGoogleLinkNotice() {
+            const url = new URL(windowRef.location.href);
+            const notice = url.searchParams.get('account_notice');
+            if (notice !== 'google_link_required') {
+                return false;
+            }
+            url.searchParams.delete('account_notice');
+            windowRef.history.replaceState({}, documentRef.title, `${url.pathname}${url.search}${url.hash}`);
+            return true;
+        }
+
         async function submitAuth(mode) {
             const emailValue = normalizedSearch(email.value);
             const passwordValue = password.value || '';
-            if (!emailValue || !passwordValue) {
+            const linkingGoogle = pendingGoogleLink && mode === 'login';
+            if (linkingGoogle) {
+                if (!passwordValue) {
+                    signInStatus.textContent = 'Password is required to link Google.';
+                    return;
+                }
+            } else if (!emailValue || !passwordValue) {
                 signInStatus.textContent = 'Email and password are required.';
                 return;
             }
             login.disabled = true;
             register.disabled = true;
-            signInStatus.textContent = mode === 'login' ? 'Signing in…' : 'Creating account…';
+            signInStatus.textContent = linkingGoogle
+                ? 'Linking Google…'
+                : (mode === 'login' ? 'Signing in…' : 'Creating account…');
             try {
-                const response = await fetchRef(`/api/account/${mode}`, {
+                const response = await fetchRef(linkingGoogle ? '/api/account/google/link' : `/api/account/${mode}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ email: emailValue, password: passwordValue })
+                    body: JSON.stringify(linkingGoogle ? { password: passwordValue } : { email: emailValue, password: passwordValue })
                 });
                 const payload = await readJson(response);
                 if (!response.ok) throw new Error(readErrorMessage(payload, 'Account sign-in failed.'));

@@ -24,7 +24,7 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 | H-01 | High | Sensitive allowlist gaps: import + character admin routes ungated even in public mode | P0 |
 | H-02 | High | SSRF via Gutendex HTML URL fetch with unrestricted redirects | P0 |
 | H-03 | High | Stored/DOM XSS: book paragraphs, character names, chapter titles via `innerHTML` | P0 |
-| H-04 | High | Google OAuth silently links to existing password accounts by email | P0 |
+| H-04 | High | Google OAuth silently links to existing password accounts by email | P0 — **code remediated** (password re-auth before link; sessions deleted on link) |
 | H-05 | High | Client-controlled `X-Forwarded-For` / `X-Real-IP` bypasses rate limits | P0 |
 | H-06 | High | Collaborator password login has no rate limiting / lockout | P0 |
 | H-07 | High | Session cookies default to `Secure=false` | P0 — **code remediated** (`prod`/`mariadb` pin Secure=true + boot fail-closed) |
@@ -122,9 +122,10 @@ The highest-priority issue is **confirmed on production**: https://classicchatre
 - **Severity:** High  
 - **OWASP / CWE:** A07 Identification and Authentication Failures / CWE-287  
 - **Location:** `src/main/java/com/classicchatreader/service/AccountAuthService.java` (~214–241, ~389–422)  
-- **Evidence:** `resolveUserForExternalIdentity` finds-or-creates user by email and attaches a new Google identity with no password re-auth / consent step when a local credential already exists. Covered by test `signInWithExternalIdentity_existingEmail_linksIdentityAndCreatesSession`.
+- **Evidence:** Previously, `resolveUserForExternalIdentity` found-or-created a user by email and attached a new Google identity with no password re-auth / consent step when a local credential already existed. Covered by the former test `signInWithExternalIdentity_existingEmail_linksIdentityAndCreatesSession`.
 - **Impact:** Account takeover of any password-registered email for which an attacker can complete Google sign-in with a verified email claim (classroom teacher/student data, chats, claims).
 - **Remediation:** If local credentials exist and no Google identity is linked, require password confirmation (or email magic-link) before linking. Log/alert on unexpected link creation. Consider blocking auto-link in `internal`/`optional` rollout until explicit linking UX exists.
+- **Status (2026-08-23):** Code remediated (`BL-043.2`). Google sign-in no longer attaches a new identity to a password account. Linking requires password confirmation via `POST /api/account/google/link`; all existing sessions for that user are deleted on link. Regression: `signInWithExternalIdentity_existingPasswordAccount_doesNotSilentlyLinkOrCreateSession`.
 - **Backlog priority:** P0
 
 ---
@@ -408,7 +409,7 @@ Performed against https://classicchatreader.com on 2026-08-11:
 | Control | Mechanism | Gap |
 |---------|-----------|-----|
 | Public API auth | `PublicApiGuardInterceptor` + `SensitiveApiRequestMatcher` + `PublicDeploymentSafetyValidator` | Prod/mariadb fail-closed to public mode; allowlist still incomplete (H-01) |
-| Account auth | Cookie sessions (hashed), BCrypt, Google OAuth | OAuth auto-link; Secure default; long TTL |
+| Account auth | Cookie sessions (hashed), BCrypt, Google OAuth | Secure default; long TTL; Google link requires password re-auth |
 | Collaborator auth | Shared password → in-memory session | No rate limit; raw token storage |
 | Rate limits | In-memory / DB fixed windows | Trust spoofable XFF |
 | Classroom authz | Capability + membership checks | Invite lifetime |

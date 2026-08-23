@@ -187,6 +187,14 @@ public class GoogleAccountOAuthService {
                 ),
                 response
         );
+        if (signInResult.status() == AccountAuthService.ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED) {
+            return AuthorizationCallbackResult.failure(
+                    withNotice(returnTo, "google_link_required"),
+                    "link_required",
+                    signInResult.email(),
+                    signInResult.status()
+            );
+        }
         if (signInResult.status() != AccountAuthService.ResultStatus.SUCCESS) {
             return AuthorizationCallbackResult.failure(
                     withNotice(returnTo, mapFailureNotice(signInResult.status())),
@@ -363,6 +371,7 @@ public class GoogleAccountOAuthService {
             case DISABLED -> "google_unavailable";
             case ROLLOUT_RESTRICTED -> "google_rollout_restricted";
             case EXTERNAL_IDENTITY_ERROR, INVALID_EMAIL -> "google_email_unverified";
+            case EXTERNAL_IDENTITY_LINK_REQUIRED -> "google_link_required";
             default -> "google_signin_failed";
         };
     }
@@ -372,6 +381,7 @@ public class GoogleAccountOAuthService {
             case DISABLED -> "unavailable";
             case ROLLOUT_RESTRICTED -> "rollout_restricted";
             case EXTERNAL_IDENTITY_ERROR, INVALID_EMAIL -> "invalid_identity";
+            case EXTERNAL_IDENTITY_LINK_REQUIRED -> "link_required";
             default -> "signin_failed";
         };
     }

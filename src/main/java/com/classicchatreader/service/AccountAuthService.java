@@ -3,10 +3,12 @@ package com.classicchatreader.service;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.classicchatreader.entity.PendingExternalIdentityLinkEntity;
 import com.classicchatreader.entity.UserAuthIdentityEntity;
 import com.classicchatreader.entity.UserEntity;
 import com.classicchatreader.entity.UserLocalCredentialEntity;
 import com.classicchatreader.entity.UserSessionEntity;
+import com.classicchatreader.repository.PendingExternalIdentityLinkRepository;
 import com.classicchatreader.repository.UserAuthIdentityRepository;
 import com.classicchatreader.repository.UserLocalCredentialRepository;
 import com.classicchatreader.repository.UserRepository;
@@ -40,11 +42,14 @@ public class AccountAuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountAuthService.class);
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    private static final String PENDING_LINK_COOKIE = "pdr_account_google_link";
+    private static final int PENDING_LINK_TTL_MINUTES = 10;
 
     private final UserRepository userRepository;
     private final UserLocalCredentialRepository userLocalCredentialRepository;
     private final UserAuthIdentityRepository userAuthIdentityRepository;
     private final UserSessionRepository userSessionRepository;
+    private final PendingExternalIdentityLinkRepository pendingExternalIdentityLinkRepository;
     private final boolean enabled;
     private final RolloutMode rolloutMode;
     private final Set<String> rolloutAllowedEmails;
@@ -64,6 +69,7 @@ public class AccountAuthService {
             UserLocalCredentialRepository userLocalCredentialRepository,
             UserAuthIdentityRepository userAuthIdentityRepository,
             UserSessionRepository userSessionRepository,
+            PendingExternalIdentityLinkRepository pendingExternalIdentityLinkRepository,
             boolean enabled,
             String rolloutModeRaw,
             String rolloutAllowedEmailsRaw,
@@ -77,6 +83,7 @@ public class AccountAuthService {
                 userLocalCredentialRepository,
                 userAuthIdentityRepository,
                 userSessionRepository,
+                pendingExternalIdentityLinkRepository,
                 enabled,
                 rolloutModeRaw,
                 rolloutAllowedEmailsRaw,
@@ -97,6 +104,7 @@ public class AccountAuthService {
             UserLocalCredentialRepository userLocalCredentialRepository,
             UserAuthIdentityRepository userAuthIdentityRepository,
             UserSessionRepository userSessionRepository,
+            PendingExternalIdentityLinkRepository pendingExternalIdentityLinkRepository,
             @Value("${account.auth.enabled:false}") boolean enabled,
             @Value("${account.auth.rollout.mode:optional}") String rolloutModeRaw,
             @Value("${account.auth.rollout.allowed-emails:}") String rolloutAllowedEmailsRaw,
@@ -112,6 +120,7 @@ public class AccountAuthService {
         this.userLocalCredentialRepository = userLocalCredentialRepository;
         this.userAuthIdentityRepository = userAuthIdentityRepository;
         this.userSessionRepository = userSessionRepository;
+        this.pendingExternalIdentityLinkRepository = pendingExternalIdentityLinkRepository;
         this.enabled = enabled;
         this.rolloutMode = RolloutMode.fromConfig(rolloutModeRaw);
         this.rolloutAllowedEmails = parseAllowedEmails(rolloutAllowedEmailsRaw);
@@ -234,10 +243,130 @@ public class AccountAuthService {
             return rolloutRestrictedResult();
         }
 
-        UserEntity user = resolveUserForExternalIdentity(provider, providerSubject, normalizedEmail, true);
+        Optional<UserAuthIdentityEntity> existingIdentity =
+                userAuthIdentityRepository.findByProviderAndProviderSubject(provider, providerSubject);
+        if (existingIdentity.isPresent()) {
+            UserAuthIdentityEntity identity = existingIdentity.get();
+            syncExternalIdentity(identity, normalizedEmail, true);
+            createSession(identity.getUser(), response);
+            cleanupIfNeeded();
+            return AuthResult.success(enabled, identity.getUser().getEmail(), "Signed in.");
+        }
+
+        Optional<UserEntity> existingUser = userRepository.findByEmail(normalizedEmail);
+        if (existingUser.isEmpty()) {
+            UserEntity user = createUser(normalizedEmail);
+            attachExternalIdentity(user, provider, providerSubject, normalizedEmail, true);
+            createSession(user, response);
+            cleanupIfNeeded();
+            return AuthResult.success(enabled, user.getEmail(), "Signed in.");
+        }
+
+        UserEntity user = existingUser.get();
+        if (userLocalCredentialRepository.findByUserId(user.getId()).isEmpty()) {
+            attachExternalIdentity(user, provider, providerSubject, normalizedEmail, true);
+            createSession(user, response);
+            cleanupIfNeeded();
+            return AuthResult.success(enabled, user.getEmail(), "Signed in.");
+        }
+
+        createPendingExternalIdentityLink(user, provider, providerSubject, normalizedEmail, response);
+        cleanupIfNeeded();
+        log.info("Refused silent {} identity link for an existing password account", provider);
+        return new AuthResult(
+                ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED,
+                enabled,
+                false,
+                user.getEmail(),
+                "This Google email already has a password account. Enter that password to link Google.",
+                null
+        );
+    }
+
+    @Transactional
+    public AuthResult confirmExternalIdentityLink(
+            String password,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        if (!isRolloutEnabled()) {
+            return disabledResult();
+        }
+        if (password == null || password.isBlank()) {
+            return AuthResult.error(ResultStatus.INVALID_CREDENTIALS, enabled, "Invalid email or password.");
+        }
+
+        Optional<PendingExternalIdentityLinkEntity> pendingOptional = resolvePendingExternalIdentityLink(request);
+        if (pendingOptional.isEmpty()) {
+            return AuthResult.error(
+                    ResultStatus.EXTERNAL_IDENTITY_ERROR,
+                    enabled,
+                    "Google link confirmation expired. Sign in with Google again."
+            );
+        }
+
+        PendingExternalIdentityLinkEntity pending = pendingOptional.get();
+        if (!isEmailAllowedForRollout(pending.getEmail())) {
+            clearPendingExternalIdentityLink(pending, response);
+            return rolloutRestrictedResult();
+        }
+
+        Optional<UserEntity> userOptional = userRepository.findById(pending.getUserId());
+        if (userOptional.isEmpty()) {
+            clearPendingExternalIdentityLink(pending, response);
+            return AuthResult.error(
+                    ResultStatus.EXTERNAL_IDENTITY_ERROR,
+                    enabled,
+                    "Google link confirmation expired. Sign in with Google again."
+            );
+        }
+
+        UserEntity user = userOptional.get();
+        Optional<UserLocalCredentialEntity> credentialOptional = userLocalCredentialRepository.findByUserId(user.getId());
+        if (credentialOptional.isEmpty()) {
+            clearPendingExternalIdentityLink(pending, response);
+            return AuthResult.error(ResultStatus.INVALID_CREDENTIALS, enabled, "Invalid email or password.");
+        }
+
+        UserLocalCredentialEntity credential = credentialOptional.get();
+        LocalDateTime now = LocalDateTime.now();
+        AuthResult lockedResult = lockoutResultIfLocked(credential, now);
+        if (lockedResult != null) {
+            return lockedResult;
+        }
+
+        if (!BCrypt.checkpw(password, credential.getPasswordHash())) {
+            return recordInvalidCredentials(credential, now);
+        }
+
+        clearLockoutStateIfNeeded(credential);
+        AuthResult linked = attachExternalIdentity(
+                user,
+                pending.getProvider(),
+                pending.getProviderSubject(),
+                pending.getEmail(),
+                true
+        );
+        if (linked != null) {
+            clearPendingExternalIdentityLink(pending, response);
+            return linked;
+        }
+
+        invalidateSessions(user);
+        clearPendingExternalIdentityLink(pending, response);
         createSession(user, response);
         cleanupIfNeeded();
-        return AuthResult.success(enabled, user.getEmail(), "Signed in.");
+        log.info("Linked {} identity after password confirmation", pending.getProvider());
+        return AuthResult.success(enabled, user.getEmail(), "Google is linked to your account.");
+    }
+
+    @Transactional
+    public boolean hasPendingExternalIdentityLink(HttpServletRequest request) {
+        return pendingExternalIdentityLinkEmail(request).isPresent();
+    }
+
+    @Transactional
+    public Optional<String> pendingExternalIdentityLinkEmail(HttpServletRequest request) {
+        return resolvePendingExternalIdentityLink(request).map(PendingExternalIdentityLinkEntity::getEmail);
     }
 
     @Transactional
@@ -386,22 +515,12 @@ public class AccountAuthService {
         return (int) seconds;
     }
 
-    private UserEntity resolveUserForExternalIdentity(
+    private AuthResult attachExternalIdentity(
+            UserEntity user,
             String provider,
             String providerSubject,
             String normalizedEmail,
             boolean emailVerified) {
-        Optional<UserAuthIdentityEntity> existingIdentity =
-                userAuthIdentityRepository.findByProviderAndProviderSubject(provider, providerSubject);
-        if (existingIdentity.isPresent()) {
-            UserAuthIdentityEntity identity = existingIdentity.get();
-            syncExternalIdentity(identity, normalizedEmail, emailVerified);
-            return identity.getUser();
-        }
-
-        UserEntity user = userRepository.findByEmail(normalizedEmail)
-                .orElseGet(() -> createUser(normalizedEmail));
-
         UserAuthIdentityEntity identity = new UserAuthIdentityEntity();
         identity.setUser(user);
         identity.setProvider(provider);
@@ -411,15 +530,84 @@ public class AccountAuthService {
 
         try {
             userAuthIdentityRepository.save(identity);
-            return user;
+            return null;
         } catch (DataIntegrityViolationException e) {
-            return userAuthIdentityRepository.findByProviderAndProviderSubject(provider, providerSubject)
-                    .map(existing -> {
-                        syncExternalIdentity(existing, normalizedEmail, emailVerified);
-                        return existing.getUser();
-                    })
-                    .orElseThrow(() -> e);
+            Optional<UserAuthIdentityEntity> existing =
+                    userAuthIdentityRepository.findByProviderAndProviderSubject(provider, providerSubject);
+            if (existing.isPresent() && user.getId().equals(existing.get().getUser().getId())) {
+                syncExternalIdentity(existing.get(), normalizedEmail, emailVerified);
+                return null;
+            }
+            return AuthResult.error(
+                    ResultStatus.EXTERNAL_IDENTITY_ERROR,
+                    enabled,
+                    "This Google account is already linked to a different reader account."
+            );
         }
+    }
+
+    private void createPendingExternalIdentityLink(
+            UserEntity user,
+            String provider,
+            String providerSubject,
+            String normalizedEmail,
+            HttpServletResponse response) {
+        pendingExternalIdentityLinkRepository.deleteByUserId(user.getId());
+
+        String token = newToken();
+        LocalDateTime now = LocalDateTime.now();
+        PendingExternalIdentityLinkEntity pending = new PendingExternalIdentityLinkEntity();
+        pending.setTokenHash(hashToken(token));
+        pending.setUserId(user.getId());
+        pending.setProvider(provider);
+        pending.setProviderSubject(providerSubject);
+        pending.setEmail(normalizedEmail);
+        pending.setCreatedAt(now);
+        pending.setExpiresAt(now.plusMinutes(PENDING_LINK_TTL_MINUTES));
+        pendingExternalIdentityLinkRepository.save(pending);
+
+        writeNamedCookie(
+                response,
+                PENDING_LINK_COOKIE,
+                token,
+                Math.toIntExact(Duration.ofMinutes(PENDING_LINK_TTL_MINUTES).getSeconds())
+        );
+    }
+
+    private Optional<PendingExternalIdentityLinkEntity> resolvePendingExternalIdentityLink(HttpServletRequest request) {
+        String token = readNamedCookie(request, PENDING_LINK_COOKIE);
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<PendingExternalIdentityLinkEntity> pendingOptional =
+                pendingExternalIdentityLinkRepository.findByTokenHash(hashToken(token));
+        if (pendingOptional.isEmpty()) {
+            return Optional.empty();
+        }
+
+        PendingExternalIdentityLinkEntity pending = pendingOptional.get();
+        if (pending.getExpiresAt() == null || pending.getExpiresAt().isBefore(LocalDateTime.now())) {
+            pendingExternalIdentityLinkRepository.deleteByTokenHash(pending.getTokenHash());
+            return Optional.empty();
+        }
+        return Optional.of(pending);
+    }
+
+    private void clearPendingExternalIdentityLink(
+            PendingExternalIdentityLinkEntity pending,
+            HttpServletResponse response) {
+        if (pending != null && pending.getTokenHash() != null) {
+            pendingExternalIdentityLinkRepository.deleteByTokenHash(pending.getTokenHash());
+        }
+        writeNamedCookie(response, PENDING_LINK_COOKIE, "", 0);
+    }
+
+    private void invalidateSessions(UserEntity user) {
+        if (user == null || user.getId() == null) {
+            return;
+        }
+        userSessionRepository.deleteByUser_Id(user.getId());
     }
 
     private void syncExternalIdentity(UserAuthIdentityEntity identity, String normalizedEmail, boolean emailVerified) {
@@ -475,11 +663,15 @@ public class AccountAuthService {
         userSessionRepository.save(session);
 
         int maxAgeSeconds = Math.toIntExact(Duration.ofMinutes(sessionTtlMinutes).getSeconds());
-        writeSessionCookie(response, token, maxAgeSeconds);
+        writeNamedCookie(response, cookieName, token, maxAgeSeconds);
     }
 
     private void writeSessionCookie(HttpServletResponse response, String value, int maxAgeSeconds) {
-        ResponseCookie cookie = ResponseCookie.from(cookieName, value)
+        writeNamedCookie(response, cookieName, value, maxAgeSeconds);
+    }
+
+    private void writeNamedCookie(HttpServletResponse response, String name, String value, int maxAgeSeconds) {
+        ResponseCookie cookie = ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(secureCookie)
                 .sameSite("Lax")
@@ -490,6 +682,10 @@ public class AccountAuthService {
     }
 
     private String readToken(HttpServletRequest request) {
+        return readNamedCookie(request, cookieName);
+    }
+
+    private String readNamedCookie(HttpServletRequest request, String name) {
         if (request == null) {
             return null;
         }
@@ -498,7 +694,7 @@ public class AccountAuthService {
             return null;
         }
         for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
+            if (name.equals(cookie.getName())) {
                 return cookie.getValue();
             }
         }
@@ -602,6 +798,7 @@ public class AccountAuthService {
             return;
         }
         userSessionRepository.deleteByExpiresAtBefore(LocalDateTime.now());
+        pendingExternalIdentityLinkRepository.deleteByExpiresAtBefore(LocalDateTime.now());
     }
 
     public enum ResultStatus {
@@ -613,7 +810,8 @@ public class AccountAuthService {
         INVALID_CREDENTIALS,
         ACCOUNT_LOCKED,
         EMAIL_ALREADY_EXISTS,
-        EXTERNAL_IDENTITY_ERROR
+        EXTERNAL_IDENTITY_ERROR,
+        EXTERNAL_IDENTITY_LINK_REQUIRED
     }
 
     enum RolloutMode {
