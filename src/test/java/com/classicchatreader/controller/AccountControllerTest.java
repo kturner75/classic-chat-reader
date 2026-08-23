@@ -248,6 +248,81 @@ class AccountControllerTest {
     }
 
     @Test
+    void googleLink_missingPassword_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/account/google/link")
+                        .contentType("application/json")
+                        .content("""
+                                {"password":""}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Password is required to link Google.")));
+
+        verify(accountAuthAuditService).record(eq("google_link"), eq("invalid_request"), any(), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void googleLink_passwordReAuth_returnsSuccess() throws Exception {
+        allowRegisterAndLoginRateLimits();
+        when(accountAuthService.pendingExternalIdentityLinkEmail(any()))
+                .thenReturn(java.util.Optional.of("reader@example.com"));
+        when(accountAuthService.confirmExternalIdentityLink(eq("password123"), any(), any()))
+                .thenReturn(new AccountAuthService.AuthResult(
+                        AccountAuthService.ResultStatus.SUCCESS,
+                        true,
+                        true,
+                        "reader@example.com",
+                        "Google is linked to your account."
+                ));
+
+        mockMvc.perform(post("/api/account/google/link")
+                        .contentType("application/json")
+                        .content("""
+                                {"password":"password123"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.authenticated", is(true)))
+                .andExpect(jsonPath("$.email", is("reader@example.com")));
+
+        verify(accountAuthAuditService).record(
+                eq("google_link"),
+                eq("success"),
+                any(),
+                eq("reader@example.com"),
+                isNull(),
+                isNull(),
+                isNull()
+        );
+    }
+
+    @Test
+    void googleCallback_linkRequired_recordsLinkRequiredOutcome() throws Exception {
+        when(googleAccountOAuthService.completeAuthorization(eq("code"), eq("state"), isNull(), any(), any()))
+                .thenReturn(new GoogleAccountOAuthService.AuthorizationCallbackResult(
+                        URI.create("/?account_notice=google_link_required"),
+                        false,
+                        "link_required",
+                        "reader@example.com",
+                        AccountAuthService.ResultStatus.EXTERNAL_IDENTITY_LINK_REQUIRED
+                ));
+
+        mockMvc.perform(get("/api/account/google/callback")
+                        .param("code", "code")
+                        .param("state", "state"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/?account_notice=google_link_required"));
+
+        verify(accountAuthAuditService).record(
+                eq("google_callback"),
+                eq("link_required"),
+                any(),
+                eq("reader@example.com"),
+                isNull(),
+                isNull(),
+                eq("link_required")
+        );
+    }
+
+    @Test
     void claimSync_requiresAuthenticatedAccount() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
 

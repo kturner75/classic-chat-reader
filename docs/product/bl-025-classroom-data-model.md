@@ -713,7 +713,7 @@ Policy / Discovery (still open — keep `BL-025.6` / `.7` teacher bulk / `.10` g
 Runtime gaps vs this schema (2026-08-11 FERPA / student-PII privacy review — triage in `docs/product/backlog.md` → `BL-043` work tracker):
 
 - [x] Prod auth gate fail-closed (`deployment.mode=public` + Secure cookies) — `BL-043.1` (overlaps `SECURITY_AUDIT` C-01 / H-07). **Code landed 2026-08-23; live status re-probe still required after deploy.**
-- [ ] Google OAuth email auto-link requires re-auth/consent — `BL-043.2` (overlaps H-04)
+- [x] Google OAuth email auto-link requires re-auth/consent — `BL-043.2` (overlaps H-04). **Code landed 2026-08-23; password re-auth before link, sessions deleted on link.**
 - [ ] Invite default TTL + max uses + revoke API wired through `ClassroomAdminService` — `BL-043.4` / `BL-025.2` (overlaps M-03)
 - [ ] Java writers for `education_record_access_logs` (incl. `VIEW_ROSTER`) — `BL-043.5` (**schema-only today**)
 - [ ] Account delete API + term purge job honoring `retention_purge_after` — `BL-043.6` (**hooks unused today**)
