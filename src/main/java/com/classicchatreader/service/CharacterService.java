@@ -42,22 +42,6 @@ public class CharacterService {
             "mme", "mlle", "dr", "doctor", "prof", "professor", "rev", "reverend",
             "capt", "captain", "col", "colonel", "major"
     );
-    private static final Set<String> GENERIC_DESCRIPTORS = Set.of(
-            "man", "woman", "boy", "girl", "child", "stranger", "servant", "maid",
-            "butler", "sailor", "soldier", "officer", "guard", "driver", "porter",
-            "passerby", "gentleman", "lady", "visitor", "neighbor"
-    );
-    private static final Set<String> GENERIC_DESCRIPTOR_TOKENS = Set.of(
-            "man", "men", "woman", "women", "boy", "boys", "girl", "girls", "child", "children",
-            "stranger", "strangers", "servant", "servants", "maid", "maids", "butler", "butlers",
-            "sailor", "sailors", "soldier", "soldiers", "officer", "officers", "guard", "guards",
-            "driver", "drivers", "porter", "porters", "passerby", "passersby", "gentleman",
-            "gentlemen", "lady", "ladies", "visitor", "visitors", "neighbor", "neighbors",
-            "people", "folk"
-    );
-    private static final Set<String> LEADING_ARTICLES = Set.of(
-            "the ", "a ", "an ", "some ", "another ", "any "
-    );
 
     private final CharacterRepository characterRepository;
     private final ChapterAnalysisRepository chapterAnalysisRepository;
@@ -413,7 +397,7 @@ public class CharacterService {
             int createdCount = 0;
             for (ExtractedCharacter ec : extracted) {
                 try {
-                    if (!isClearlyNamed(ec.name())) {
+                    if (!CharacterRosterNameFilter.isClearlyNamed(ec.name())) {
                         log.debug("Skipping '{}' - name not clearly defined", ec.name());
                         continue;
                     }
@@ -596,71 +580,6 @@ public class CharacterService {
         }
         return Arrays.stream(normalizedNew.split(" "))
                 .anyMatch(primaryTokenIndex::contains);
-    }
-
-    private boolean isClearlyNamed(String name) {
-        if (name == null || name.isBlank()) {
-            return false;
-        }
-        String trimmed = name.trim();
-        String lower = trimmed.toLowerCase();
-        for (String article : LEADING_ARTICLES) {
-            if (lower.startsWith(article)) {
-                return false;
-            }
-        }
-        if (isGenericDescriptorPhrase(trimmed)) {
-            return false;
-        }
-        String normalized = normalizeName(name);
-        if (normalized.isBlank()) {
-            return false;
-        }
-        if (normalized.split(" ").length == 1 && GENERIC_DESCRIPTORS.contains(normalized)) {
-            return false;
-        }
-        return true;
-    }
-
-    private boolean isGenericDescriptorPhrase(String name) {
-        String normalized = normalizeName(name);
-        if (normalized.isBlank()) {
-            return true;
-        }
-        String[] normalizedTokens = normalized.split(" ");
-        String lastToken = normalizedTokens[normalizedTokens.length - 1];
-        if (!GENERIC_DESCRIPTOR_TOKENS.contains(lastToken)) {
-            return false;
-        }
-
-        String[] originalTokens = name.trim().split("\\s+");
-        int uppercaseTokens = 0;
-        int uppercaseNonGenericTokens = 0;
-        boolean firstTokenHasUppercase = false;
-        for (int i = 0; i < originalTokens.length; i++) {
-            String token = originalTokens[i];
-            boolean hasUppercase = token.chars().anyMatch(Character::isUpperCase);
-            if (!hasUppercase) {
-                continue;
-            }
-            uppercaseTokens++;
-            if (i == 0) {
-                firstTokenHasUppercase = true;
-            }
-            String normalizedToken = normalizeName(token);
-            if (!normalizedToken.isBlank() && !GENERIC_DESCRIPTOR_TOKENS.contains(normalizedToken)) {
-                uppercaseNonGenericTokens++;
-            }
-        }
-
-        if (uppercaseNonGenericTokens >= 2) {
-            return false;
-        }
-        if (uppercaseNonGenericTokens == 1 && !(uppercaseTokens == 1 && firstTokenHasUppercase)) {
-            return false;
-        }
-
-        return true;
     }
 
     @Transactional
@@ -860,7 +779,8 @@ public class CharacterService {
 
     /**
      * Delete all characters for a book and clean up portrait files.
-     * Also clears chapter analysis records so they can be re-analyzed.
+     * Also clears chapter analysis records so they can be re-analyzed,
+     * and resets {@code character_prefetch_completed} so PRIMARY prefetch runs again.
      *
      * @param bookId the book to clear characters for
      * @return number of characters deleted
@@ -888,6 +808,14 @@ public class CharacterService {
         int characterCount = characters.size();
         characterRepository.deleteByBookId(bookId);
         log.info("Deleted {} characters for book {}", characterCount, bookId);
+
+        // Prefetch latches completed=true even for an empty usable answer. Leave the flag
+        // set and a later DELETE + pregen no-ops PRIMARY prefetch, recreating SECONDARY junk.
+        bookRepository.findById(bookId).ifPresent(book -> {
+            book.setCharacterPrefetchCompleted(false);
+            bookRepository.save(book);
+            log.info("Cleared character prefetch latch for book {}", bookId);
+        });
 
         return characterCount;
     }

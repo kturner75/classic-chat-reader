@@ -663,6 +663,22 @@ public class ComfyUIService {
   }
 
   /**
+   * Writes illustration bytes produced outside a ComfyUI workflow (for example by Grok Imagine)
+   * into the same cache the ComfyUI path uses, so readers and transfers stay provider-agnostic.
+   */
+  public String saveIllustrationImage(String cacheKey, byte[] imageData) throws IOException {
+    if (imageData == null || imageData.length == 0) {
+      throw new IOException("Illustration image is empty");
+    }
+    String cachedFilename = resolveCacheFilename(cacheKey, "manual-" + System.currentTimeMillis());
+    Path cachedPath = safeResolve(cacheDir, cachedFilename);
+    Files.createDirectories(cachedPath.getParent());
+    Files.write(cachedPath, imageData);
+    log.info("Saved illustration image: {}", cachedPath);
+    return cachedFilename;
+  }
+
+  /**
    * Writes portrait bytes produced outside a ComfyUI workflow (for example by Grok Imagine)
    * into the same cache the ComfyUI path uses, so readers and transfers stay provider-agnostic.
    */

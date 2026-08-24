@@ -24,7 +24,7 @@ public class BookCoverImageGeneratorService {
     private final ImageGenerationHttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${book-cover.generation.provider:comfyui}")
+    @Value("${book-cover.generation.provider:xai}")
     private String provider;
 
     @Value("${book-cover.generation.timeout-seconds:180}")

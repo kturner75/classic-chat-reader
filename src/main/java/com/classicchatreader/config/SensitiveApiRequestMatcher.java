@@ -16,6 +16,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern CHARACTER_CHAPTER_ACTION_PATH =
             Pattern.compile("^/api/characters/chapter/[^/]+/(analyze|prefetch-next)$");
     private static final Pattern CHARACTER_BOOK_PREFETCH_PATH = Pattern.compile("^/api/characters/book/[^/]+/prefetch$");
+    private static final Pattern CHARACTER_BOOK_DELETE_PATH = Pattern.compile("^/api/characters/book/[^/]+$");
     private static final Pattern CHARACTER_CHAT_PATH = Pattern.compile("^/api/characters/[^/]+/chat$");
     private static final Pattern CHARACTER_CALL_SESSION_PATH = Pattern.compile("^/api/characters/[^/]+/call-session$");
 
@@ -133,6 +134,10 @@ public final class SensitiveApiRequestMatcher {
 
         if ("DELETE".equals(method)
                 && ("/api/library".equals(path) || LIBRARY_DELETE_BOOK_PATH.matcher(path).matches())) {
+            return EndpointType.ADMIN;
+        }
+
+        if ("DELETE".equals(method) && CHARACTER_BOOK_DELETE_PATH.matcher(path).matches()) {
             return EndpointType.ADMIN;
         }
 

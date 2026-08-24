@@ -88,6 +88,9 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/library/book-1/cover"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library/book-1"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/characters/book/book-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/book/book-1"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/book/book-1/prefetch"));
     }
 
     @Test

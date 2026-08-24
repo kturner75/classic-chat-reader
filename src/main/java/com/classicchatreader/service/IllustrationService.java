@@ -45,6 +45,7 @@ public class IllustrationService {
     private final IllustrationPromptService promptService;
     private final IllustrationStyleAnalysisService styleAnalysisService;
     private final ComfyUIService comfyUIService;
+    private final IllustrationImageGeneratorService illustrationImageGenerator;
     private final AssetKeyService assetKeyService;
     private final CdnAssetService cdnAssetService;
 
@@ -84,6 +85,7 @@ public class IllustrationService {
             IllustrationPromptService promptService,
             IllustrationStyleAnalysisService styleAnalysisService,
             ComfyUIService comfyUIService,
+            IllustrationImageGeneratorService illustrationImageGenerator,
             AssetKeyService assetKeyService,
             CdnAssetService cdnAssetService) {
         this.illustrationRepository = illustrationRepository;
@@ -93,6 +95,7 @@ public class IllustrationService {
         this.promptService = promptService;
         this.styleAnalysisService = styleAnalysisService;
         this.comfyUIService = comfyUIService;
+        this.illustrationImageGenerator = illustrationImageGenerator;
         this.assetKeyService = assetKeyService;
         this.cdnAssetService = cdnAssetService;
     }
@@ -460,20 +463,11 @@ public class IllustrationService {
                 self.updateIllustrationPrompt(chapterId, imagePrompt);
             }
 
-            // Submit to ComfyUI
             String outputPrefix = "illustration_" + chapterId;
-            String promptId = comfyUIService.submitWorkflow(imagePrompt, outputPrefix, cacheKey);
-
-            // Poll for completion
-            ComfyUIService.IllustrationResult result = comfyUIService.pollForCompletion(promptId);
-
-            if (result.success()) {
-                self.updateIllustrationStatus(chapterId, IllustrationStatus.COMPLETED, cacheKey, null);
-                log.info("Illustration completed for chapter: {}", chapterId);
-            } else {
-                self.handleGenerationFailure(chapterId, result.errorMessage(), customPrompt, true);
-                log.warn("Illustration generation failed for chapter {}: {}", chapterId, result.errorMessage());
-            }
+            String filename = illustrationImageGenerator.generateIllustration(imagePrompt, outputPrefix, cacheKey);
+            self.updateIllustrationStatus(chapterId, IllustrationStatus.COMPLETED, filename, null);
+            log.info("Illustration completed for chapter: {} via {}",
+                    chapterId, illustrationImageGenerator.getProviderName());
 
         } catch (Exception e) {
             log.error("Failed to generate illustration for chapter: {}", chapterId, e);
