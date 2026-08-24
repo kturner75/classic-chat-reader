@@ -105,18 +105,14 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
-    void secondaryCharacterIsChatEligibleWhenBookHasNoPrimary() {
+    void secondaryCharacterIsNotChatEligibleWhenBookHasNoPrimary() {
         character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
-        when(characterRepository.countByBookIdAndCharacterType(
-                "book-1", com.classicchatreader.entity.CharacterType.PRIMARY)).thenReturn(0L);
-        assertEquals(true, service.isChatEligible(character));
+        assertEquals(false, service.isChatEligible(character));
     }
 
     @Test
     void secondaryCharacterIsNotChatEligibleWhenPrimaryExists() {
         character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
-        when(characterRepository.countByBookIdAndCharacterType(
-                "book-1", com.classicchatreader.entity.CharacterType.PRIMARY)).thenReturn(1L);
         assertEquals(false, service.isChatEligible(character));
     }
 

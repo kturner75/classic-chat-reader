@@ -143,9 +143,11 @@ class CharacterExtractionServiceTest {
                   {"name":"bees","description":"insects","approximateParagraphIndex":0},
                   {"name":"The Moon","description":"celestial","approximateParagraphIndex":1},
                   {"name":"The Mule","description":"animal","approximateParagraphIndex":2},
-                  {"name":"Dorian","description":"a young man in the studio","approximateParagraphIndex":3},
-                  {"name":"Fortunato","description":"a wine connoisseur","approximateParagraphIndex":4},
-                  {"name":"Elizabeth Bennet","description":"the second Bennet daughter","approximateParagraphIndex":5}
+                  {"name":"The Monster","description":"the being villagers fear","approximateParagraphIndex":3},
+                  {"name":"The Creature","description":"Victor's unnamed creation","approximateParagraphIndex":4},
+                  {"name":"The Turk","description":"a prize swordsman","approximateParagraphIndex":5},
+                  {"name":"maid","description":"a household servant","approximateParagraphIndex":6},
+                  {"name":"Elizabeth Lavenza (again)","description":"duplicate leftover","approximateParagraphIndex":7}
                 ]
                 """);
 
@@ -158,8 +160,8 @@ class CharacterExtractionServiceTest {
         );
 
         assertEquals(3, result.size());
-        assertEquals("Dorian", result.get(0).name());
-        assertEquals("Fortunato", result.get(1).name());
-        assertEquals("Elizabeth Bennet", result.get(2).name());
+        assertEquals("The Monster", result.get(0).name());
+        assertEquals("The Creature", result.get(1).name());
+        assertEquals("The Turk", result.get(2).name());
     }
 }

@@ -264,27 +264,21 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
-    void soleSecondaryCharacterCanContinueWhenBookHasNoPrimary() {
+    void soleSecondaryCharacterCannotContinueWhenBookHasNoPrimary() {
         Fixture fixture = createSession("owner", "Book", "Author", "Fortunato", BASE);
         fixture.character().setCharacterType(CharacterType.SECONDARY);
         entityManager.merge(fixture.character());
         flushAndClear();
 
-        when(characterChatService.chat(
-                org.mockito.ArgumentMatchers.eq(fixture.character().getId()),
-                org.mockito.ArgumentMatchers.eq("Who are you?"),
-                org.mockito.ArgumentMatchers.anyList(),
-                org.mockito.ArgumentMatchers.eq(0),
-                org.mockito.ArgumentMatchers.eq(3)))
-                .thenReturn("I am Fortunato.");
-
-        var response = service.sendToCharacter(
+        assertThatThrownBy(() -> service.sendToCharacter(
                 "owner",
                 fixture.character().getId(),
                 new com.classicchatreader.model.AccountChatModels.ContinueRequest("Who are you?", null),
-                "request-fortunato");
-
-        assertThat(response.characterMessage().content()).isEqualTo("I am Fortunato.");
+                "request-fortunato"))
+                .isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(characterChatService);
     }
 
     @Test

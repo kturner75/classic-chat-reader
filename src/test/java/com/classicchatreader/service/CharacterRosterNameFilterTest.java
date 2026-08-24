@@ -15,6 +15,9 @@ class CharacterRosterNameFilterTest {
             "The Mule",
             "Moon",
             "Mule",
+            "maid",
+            "the maid",
+            "The Maid",
             "Elizabeth Lavenza (again)"
     })
     void rejectsNonPersonAndGlitchNames(String name) {
@@ -25,7 +28,10 @@ class CharacterRosterNameFilterTest {
     @ValueSource(strings = {
             "Dorian",
             "Fortunato",
-            "Elizabeth Bennet"
+            "Elizabeth Bennet",
+            "The Monster",
+            "The Creature",
+            "The Turk"
     })
     void keepsNamedPeople(String name) {
         assertTrue(CharacterRosterNameFilter.isClearlyNamed(name), name);

@@ -828,18 +828,11 @@ public class AccountChatHistoryService {
     }
 
     /**
-     * Matches {@link CharacterService#isChatEligible}: PRIMARY always, SECONDARY when the
-     * book has no PRIMARY characters (typical for short stories).
+     * Matches {@link CharacterService#isChatEligible}: PRIMARY only.
+     * Empty PRIMARY means nobody to call; SECONDARY is never a fallback.
      */
     private boolean isChatEligibleCharacter(CharacterEntity character) {
-        if (character.getCharacterType() == CharacterType.PRIMARY) {
-            return true;
-        }
-        if (character.getBook() == null || character.getBook().getId() == null) {
-            return false;
-        }
-        return characterRepository.countByBookIdAndCharacterType(
-                character.getBook().getId(), CharacterType.PRIMARY) == 0;
+        return character.getCharacterType() == CharacterType.PRIMARY;
     }
 
     private String preview(String content) {

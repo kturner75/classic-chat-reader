@@ -302,7 +302,7 @@ public class CharacterController {
             ));
         }
 
-        // PRIMARY characters can always chat; SECONDARY only when the book has no PRIMARY.
+        // Chat is PRIMARY only. Empty PRIMARY means nobody to call.
         Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
         if (characterOpt.isEmpty()) {
             return ResponseEntity.notFound().build();

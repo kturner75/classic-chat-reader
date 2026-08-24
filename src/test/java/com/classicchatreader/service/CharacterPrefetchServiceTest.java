@@ -197,5 +197,40 @@ class CharacterPrefetchServiceTest {
         assertThat(saved.getAllValues())
                 .extracting(CharacterEntity::getName)
                 .containsExactlyInAnyOrder("Dorian", "Fortunato", "Elizabeth Bennet");
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getCharacterType)
+                .containsOnly(CharacterType.PRIMARY);
+    }
+
+    @Test
+    void prefetch_typesKnowledgeNamesPrimaryIncludingArticleEpithets() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"Victor Frankenstein","description":"A Genevese student","firstChapterNumber":1},
+                  {"name":"The Creature","description":"The being Victor animates","firstChapterNumber":5},
+                  {"name":"The Monster","description":"How frightened villagers name him","firstChapterNumber":5},
+                  {"name":"The Turk","description":"A prize-winning swordsman","firstChapterNumber":1},
+                  {"characterName":"Dorian Gray","description":"A young man in Basil's studio","firstChapterNumber":1}
+                ]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(5)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getName)
+                .containsExactlyInAnyOrder(
+                        "Victor Frankenstein", "The Creature", "The Monster", "The Turk", "Dorian Gray");
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getCharacterType)
+                .containsOnly(CharacterType.PRIMARY);
     }
 }

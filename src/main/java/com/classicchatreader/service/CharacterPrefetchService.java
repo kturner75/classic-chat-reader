@@ -24,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Service
 public class CharacterPrefetchService {
@@ -148,11 +147,12 @@ public class CharacterPrefetchService {
                     promoted++;
                 }
             } else {
-                // Create new PRIMARY character
+                // Knowledge prefetch is the PRIMARY list. Type at construction so the
+                // entity default (SECONDARY) cannot leak if a later save forgets setType.
                 CharacterEntity character = new CharacterEntity(
-                        book, pc.name(), pc.description(), chapter, paragraphIndex
+                        book, pc.name(), pc.description(), chapter, paragraphIndex,
+                        CharacterType.PRIMARY
                 );
-                character.setCharacterType(CharacterType.PRIMARY);
                 characterRepository.save(character);
 
                 // Queue portrait generation
@@ -281,8 +281,17 @@ public class CharacterPrefetchService {
                     ? charNode.get("firstChapterNumber").asInt(1)
                     : 1;
 
+            if (name.isBlank()) {
+                name = charNode.has("characterName") ? charNode.get("characterName").asText() : "";
+            }
+            if (name.isBlank()) {
+                name = charNode.has("fullName") ? charNode.get("fullName").asText() : "";
+            }
+
             if (!name.isBlank() && CharacterRosterNameFilter.isClearlyNamed(name)) {
-                characters.add(new PrefetchedCharacter(name, description, chapterNumber));
+                characters.add(new PrefetchedCharacter(name.trim(), description, chapterNumber));
+            } else if (!name.isBlank()) {
+                log.info("Dropping prefetch name '{}' — failed roster gate", name);
             }
         }
         return characters;
@@ -307,34 +316,16 @@ public class CharacterPrefetchService {
             return null;
         }
 
-        Pattern pattern = buildNamePattern(characterName);
         List<ChapterEntity> chapters = chapterRepository.findByBookIdOrderByChapterIndex(bookId);
         for (ChapterEntity chapter : chapters) {
             List<ParagraphEntity> paragraphs = paragraphRepository.findByChapterIdOrderByParagraphIndex(chapter.getId());
             for (ParagraphEntity paragraph : paragraphs) {
-                String content = paragraph.getContent();
-                if (content != null && pattern.matcher(content).find()) {
+                if (CharacterRosterNameFilter.appearsInText(characterName, paragraph.getContent())) {
                     return new FirstAppearance(chapter, paragraph.getParagraphIndex());
                 }
             }
         }
         return null;
-    }
-
-    private Pattern buildNamePattern(String name) {
-        String trimmed = name.trim();
-        String[] parts = trimmed.split("\\s+");
-        if (parts.length == 1) {
-            return Pattern.compile("\\b" + Pattern.quote(trimmed) + "\\b", Pattern.CASE_INSENSITIVE);
-        }
-        StringBuilder regex = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            if (i > 0) {
-                regex.append("\\s+");
-            }
-            regex.append(Pattern.quote(parts[i]));
-        }
-        return Pattern.compile("\\b" + regex + "\\b", Pattern.CASE_INSENSITIVE);
     }
 
     private String extractJsonArray(String text) {

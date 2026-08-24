@@ -149,7 +149,7 @@ class CharacterControllerTest {
     }
 
     @Test
-    void chat_secondaryCharacter_allowedWhenBookHasNoPrimary() throws Exception {
+    void chat_secondaryCharacter_notEligibleWhenBookHasNoPrimary() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setCharacterEnabled(true);
 
@@ -159,14 +159,7 @@ class CharacterControllerTest {
         character.setCharacterType(CharacterType.SECONDARY);
 
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
-        when(characterService.isChatEligible(character)).thenReturn(true);
-        when(chatService.chat(
-                org.mockito.ArgumentMatchers.eq("character-1"),
-                org.mockito.ArgumentMatchers.eq("Who are you?"),
-                org.mockito.ArgumentMatchers.anyList(),
-                org.mockito.ArgumentMatchers.eq(0),
-                org.mockito.ArgumentMatchers.eq(0)))
-                .thenReturn("I am Fortunato.");
+        when(characterService.isChatEligible(character)).thenReturn(false);
 
         mockMvc.perform(post("/api/characters/character-1/chat")
                         .contentType("application/json")
@@ -179,7 +172,14 @@ class CharacterControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.response", is("I am Fortunato.")));
+                .andExpect(jsonPath("$.response", is("Chat is only available for main characters.")));
+
+        verify(chatService, never()).chat(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test

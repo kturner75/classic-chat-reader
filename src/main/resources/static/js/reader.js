@@ -9798,14 +9798,14 @@
         if (!state.characterChatAvailable || !character) {
             return false;
         }
-        if (character.chatEligible === true || character.characterType === 'PRIMARY') {
-            return true;
+        // Chat and call are PRIMARY only. Empty PRIMARY means nobody to call.
+        if (character.characterType !== 'PRIMARY') {
+            return false;
         }
         if (character.chatEligible === false) {
             return false;
         }
-        const hasPrimary = (state.characters || []).some((item) => item && item.characterType === 'PRIMARY');
-        return !hasPrimary;
+        return true;
     }
 
     async function openCharacterBrowser(options = {}) {
@@ -9979,7 +9979,7 @@
             elements.characterDetailPortrait.src = '';
         }
 
-        // Show/hide chat button: PRIMARY characters, or SECONDARY when the book has no PRIMARY.
+        // Show/hide chat button: PRIMARY only. Empty PRIMARY means nobody to call.
         if (elements.characterChatBtn) {
             if (canChatWithCharacter(character)) {
                 elements.characterChatBtn.classList.remove('hidden');

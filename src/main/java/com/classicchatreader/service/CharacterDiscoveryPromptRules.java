@@ -6,7 +6,9 @@ package com.classicchatreader.service;
 final class CharacterDiscoveryPromptRules {
 
     static final String NAMED_PEOPLE_ONLY =
-            "Roster entries must be named people only: distinct persons with a proper personal name.";
+            "Roster entries must be named people only: distinct persons with a proper personal name "
+                    + "or a well-known person epithet used as their name "
+                    + "(\"The Creature\", \"The Monster\", \"The Turk\").";
 
     static final String REJECT_NON_PERSONS =
             "Reject animals, objects, places, celestial bodies (\"The Moon\", \"The Mule\"), "

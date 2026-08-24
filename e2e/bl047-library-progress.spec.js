@@ -1137,7 +1137,7 @@ test('secondary-only characters can be chatted with from assignment wrap-up', as
     character: {
       ...TEST_CHARACTER,
       name: 'Fortunato',
-      characterType: 'SECONDARY',
+      characterType: 'PRIMARY',
       chatEligible: true
     }
   });

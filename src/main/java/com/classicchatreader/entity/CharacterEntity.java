@@ -73,6 +73,12 @@ public class CharacterEntity {
 
     public CharacterEntity(BookEntity book, String name, String description,
                           ChapterEntity firstChapter, int firstParagraphIndex) {
+        this(book, name, description, firstChapter, firstParagraphIndex, CharacterType.SECONDARY);
+    }
+
+    public CharacterEntity(BookEntity book, String name, String description,
+                          ChapterEntity firstChapter, int firstParagraphIndex,
+                          CharacterType characterType) {
         this.book = book;
         this.name = name;
         this.description = description;
@@ -81,6 +87,7 @@ public class CharacterEntity {
         this.status = CharacterStatus.PENDING;
         this.createdAt = LocalDateTime.now();
         this.retryCount = 0;
+        this.characterType = characterType != null ? characterType : CharacterType.SECONDARY;
     }
 
     // Getters and setters

@@ -6,7 +6,6 @@ import com.classicchatreader.entity.*;
 import com.classicchatreader.model.CharacterInfo;
 import com.classicchatreader.model.IllustrationSettings;
 import com.classicchatreader.repository.*;
-import com.classicchatreader.service.CharacterExtractionService.ExtractedCharacter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,9 +53,6 @@ public class CharacterService {
     private final ComfyUIService comfyUIService;
     private final CharacterPortraitImageGeneratorService portraitImageGenerator;
     private final AssetKeyService assetKeyService;
-
-    @Value("${character.secondary.max-per-book:40}")
-    private int maxSecondaryPerBook;
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
@@ -257,39 +253,21 @@ public class CharacterService {
         if (character == null) {
             return null;
         }
-        String bookId = character.getBook() != null ? character.getBook().getId() : null;
-        return CharacterInfo.from(character).withChatEligible(isChatEligible(character, bookId));
+        return CharacterInfo.from(character).withChatEligible(isChatEligible(character));
     }
 
     /**
-     * Main (PRIMARY) characters can always chat. If a book has no PRIMARY characters
-     * (common for short stories that only received chapter extraction), discovered
-     * SECONDARY characters are chat-eligible so students are not stuck.
+     * Chat and call are PRIMARY only. An empty PRIMARY list means nobody to call —
+     * SECONDARY characters are never a fallback.
      */
     public boolean isChatEligible(CharacterEntity character) {
-        if (character == null) {
-            return false;
-        }
-        String bookId = character.getBook() != null ? character.getBook().getId() : null;
-        return isChatEligible(character, bookId);
-    }
-
-    private boolean isChatEligible(CharacterEntity character, String bookId) {
-        if (character.getCharacterType() == CharacterType.PRIMARY) {
-            return true;
-        }
-        if (bookId == null || bookId.isBlank()) {
-            return false;
-        }
-        return characterRepository.countByBookIdAndCharacterType(bookId, CharacterType.PRIMARY) == 0;
+        return character != null && character.getCharacterType() == CharacterType.PRIMARY;
     }
 
     private List<CharacterInfo> toChatAwareInfos(String bookId, List<CharacterEntity> characters) {
-        boolean bookHasPrimary = bookId != null
-                && characterRepository.countByBookIdAndCharacterType(bookId, CharacterType.PRIMARY) > 0;
         return characters.stream()
                 .map(character -> CharacterInfo.from(character).withChatEligible(
-                        character.getCharacterType() == CharacterType.PRIMARY || !bookHasPrimary))
+                        character.getCharacterType() == CharacterType.PRIMARY))
                 .collect(Collectors.toList());
     }
 
@@ -365,70 +343,64 @@ public class CharacterService {
         }
 
         BookEntity book = chapter.getBook();
-
-        List<String> existingNames = characterRepository.findByBookIdOrderByCreatedAt(book.getId())
-                .stream()
-                .map(CharacterEntity::getName)
-                .collect(Collectors.toList());
-        Set<String> primaryNameIndex = buildPrimaryNameIndex(book.getId());
-        Set<String> primaryTokenIndex = buildPrimaryTokenIndex(primaryNameIndex);
-        long secondaryCount = characterRepository
-                .countByBookIdAndCharacterType(book.getId(), CharacterType.SECONDARY);
-        int remainingSecondarySlots = Math.max(0, maxSecondaryPerBook - (int) secondaryCount);
+        List<CharacterEntity> trusted = characterRepository.findByBookIdOrderByCreatedAt(book.getId());
 
         try {
-            String chapterContent = getChapterText(chapterId);
-
-            List<ExtractedCharacter> extracted = extractionService.extractCharactersFromChapter(
-                    book.getTitle(),
-                    book.getAuthor(),
-                    chapter.getTitle(),
-                    chapterContent,
-                    existingNames
-            );
-
-            if (remainingSecondarySlots <= 0) {
-                log.info("Secondary character limit reached for '{}' (max {}), skipping new characters",
-                        book.getTitle(), maxSecondaryPerBook);
+            // Chapter text is only for first-appearance of names we already trust
+            // (the prefetch PRIMARY list, plus any existing roster row). Never invent
+            // new SECONDARY names from the miner — empty SECONDARY is preferred to animals/objects.
+            if (trusted.isEmpty()) {
+                log.info("No trusted roster for '{}'; chapter miner will not invent names", book.getTitle());
                 self.updateChapterAnalysisCount(chapterId, 0);
                 return;
             }
-
-            int createdCount = 0;
-            for (ExtractedCharacter ec : extracted) {
-                try {
-                    if (!CharacterRosterNameFilter.isClearlyNamed(ec.name())) {
-                        log.debug("Skipping '{}' - name not clearly defined", ec.name());
-                        continue;
-                    }
-                    if (isPossiblyConfusedWithPrimary(primaryNameIndex, primaryTokenIndex, ec.name())) {
-                        log.debug("Skipping '{}' - matches primary character name", ec.name());
-                        continue;
-                    }
-                    CharacterEntity character = self.createCharacter(
-                            book, chapter, ec.name(), ec.description(), ec.approximateParagraphIndex()
-                    );
-                    if (character != null) {
-                        requestQueue.offer(new PortraitRequest(character.getId()));
-                        log.info("Created character '{}' and queued portrait generation", ec.name());
-                        createdCount++;
-                        remainingSecondarySlots--;
-                        if (remainingSecondarySlots <= 0) {
-                            log.info("Secondary character limit reached for '{}' (max {})",
-                                    book.getTitle(), maxSecondaryPerBook);
-                            break;
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to create character '{}'", ec.name(), e);
-                }
-            }
-
-            self.updateChapterAnalysisCount(chapterId, createdCount);
+            int updated = refineTrustedFirstAppearances(chapter, trusted);
+            log.info("Chapter miner refined {} trusted first-appearances in '{}' / '{}'; invented 0 names",
+                    updated, book.getTitle(), chapter.getTitle());
+            self.updateChapterAnalysisCount(chapterId, 0);
         } catch (Exception e) {
             log.error("Failed to analyze chapter {}", chapterId, e);
             self.handleAnalysisFailure(chapterId, true);
         }
+    }
+
+    /**
+     * Scan this chapter for already-trusted roster names and pull first-appearance
+     * earlier when the text shows they appear here first. Does not insert rows.
+     */
+    private int refineTrustedFirstAppearances(ChapterEntity chapter, List<CharacterEntity> trusted) {
+        List<ParagraphEntity> paragraphs = paragraphRepository.findByChapterIdOrderByParagraphIndex(chapter.getId());
+        if (paragraphs.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        int chapterIndex = chapter.getChapterIndex();
+        for (CharacterEntity character : trusted) {
+            int foundParagraph = -1;
+            for (ParagraphEntity paragraph : paragraphs) {
+                if (CharacterRosterNameFilter.appearsInText(character.getName(), paragraph.getContent())) {
+                    foundParagraph = paragraph.getParagraphIndex();
+                    break;
+                }
+            }
+            if (foundParagraph < 0) {
+                continue;
+            }
+            ChapterEntity storedChapter = character.getFirstChapter();
+            int storedChapterIndex = storedChapter != null ? storedChapter.getChapterIndex() : Integer.MAX_VALUE;
+            boolean earlierChapter = chapterIndex < storedChapterIndex;
+            boolean earlierParagraph = storedChapter != null
+                    && storedChapter.getId() != null
+                    && storedChapter.getId().equals(chapter.getId())
+                    && foundParagraph < character.getFirstParagraphIndex();
+            if (earlierChapter || earlierParagraph) {
+                character.setFirstChapter(chapter);
+                character.setFirstParagraphIndex(foundParagraph);
+                characterRepository.save(character);
+                updated++;
+            }
+        }
+        return updated;
     }
 
     @Transactional
@@ -544,42 +516,6 @@ public class CharacterService {
         String lastA = normalizedA.substring(normalizedA.lastIndexOf(' ') + 1);
         String lastB = normalizedB.substring(normalizedB.lastIndexOf(' ') + 1);
         return !lastA.isBlank() && lastA.equals(lastB);
-    }
-
-    private Set<String> buildPrimaryNameIndex(String bookId) {
-        return characterRepository.findByBookIdOrderByCreatedAt(bookId)
-                .stream()
-                .filter(character -> character.getCharacterType() == CharacterType.PRIMARY)
-                .map(CharacterEntity::getName)
-                .map(this::normalizeName)
-                .filter(normalized -> !normalized.isBlank())
-                .collect(Collectors.toSet());
-    }
-
-    private Set<String> buildPrimaryTokenIndex(Set<String> primaryNameIndex) {
-        return primaryNameIndex.stream()
-                .flatMap(primary -> Arrays.stream(primary.split(" ")))
-                .map(String::trim)
-                .filter(token -> token.length() > 1)
-                .collect(Collectors.toSet());
-    }
-
-    private boolean isPossiblyConfusedWithPrimary(Set<String> primaryNameIndex,
-                                                  Set<String> primaryTokenIndex,
-                                                  String name) {
-        String normalizedNew = normalizeName(name);
-        if (normalizedNew.isBlank()) {
-            return true;
-        }
-        if (primaryNameIndex.contains(normalizedNew)) {
-            return true;
-        }
-        if (isLastNameOnly(normalizedNew)) {
-            return primaryNameIndex.stream()
-                    .anyMatch(primary -> lastNameMatches(primary, normalizedNew));
-        }
-        return Arrays.stream(normalizedNew.split(" "))
-                .anyMatch(primaryTokenIndex::contains);
     }
 
     @Transactional
