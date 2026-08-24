@@ -8,6 +8,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 @Service
@@ -38,11 +40,33 @@ public class CdnAssetService {
         return cdnBaseUrl != null && !cdnBaseUrl.isBlank();
     }
 
+    public record VersionedAsset(String key, LocalDateTime completedAt) {}
+
     public Optional<String> buildAssetUrl(String assetKey) {
         return buildAssetUrl(null, assetKey);
     }
 
+    public Optional<String> buildAssetUrl(String assetRoot, VersionedAsset asset) {
+        if (asset == null) {
+            return Optional.empty();
+        }
+        return buildAssetUrl(assetRoot, asset.key(), asset.completedAt());
+    }
+
     public Optional<String> buildAssetUrl(String assetRoot, String assetKey) {
+        return buildCanonicalAssetUrl(assetRoot, assetKey);
+    }
+
+    /**
+     * CDN URL with a stable query so overwriting the same Spaces key busts Cloudflare.
+     * The token is derived from filename + completed_at epoch (UTC).
+     */
+    public Optional<String> buildAssetUrl(String assetRoot, String assetKey, LocalDateTime completedAt) {
+        return buildCanonicalAssetUrl(assetRoot, assetKey)
+                .map(url -> appendCacheBuster(url, assetKey, completedAt));
+    }
+
+    private Optional<String> buildCanonicalAssetUrl(String assetRoot, String assetKey) {
         if (!isEnabled() || assetKey == null || assetKey.isBlank()) {
             return Optional.empty();
         }
@@ -80,8 +104,20 @@ public class CdnAssetService {
         return Optional.of(url);
     }
 
+    static String cacheBuster(String assetKey, LocalDateTime completedAt) {
+        String key = assetKey == null ? "" : assetKey.trim();
+        long epochSecond = completedAt == null ? 0L : completedAt.toEpochSecond(ZoneOffset.UTC);
+        return epochSecond + "-" + Integer.toUnsignedString(key.hashCode(), 36);
+    }
+
+    private static String appendCacheBuster(String url, String assetKey, LocalDateTime completedAt) {
+        String token = cacheBuster(assetKey, completedAt);
+        char separator = url.indexOf('?') >= 0 ? '&' : '?';
+        return url + separator + "v=" + token;
+    }
+
     public boolean assetExists(String assetRoot, String assetKey) {
-        Optional<String> url = buildAssetUrl(assetRoot, assetKey);
+        Optional<String> url = buildCanonicalAssetUrl(assetRoot, assetKey);
         if (url.isEmpty()) {
             return false;
         }

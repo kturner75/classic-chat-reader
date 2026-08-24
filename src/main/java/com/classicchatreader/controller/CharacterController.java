@@ -202,8 +202,10 @@ public class CharacterController {
 
         if (cdnAssetService.isEnabled()) {
             return characterOpt
-                    .flatMap(c -> characterService.getPortraitFilename(c.getId()))
-                    .flatMap(key -> cdnAssetService.buildAssetUrl("character-portraits", key))
+                    .filter(c -> c.getStatus() == CharacterStatus.COMPLETED)
+                    .flatMap(c -> cdnAssetService.buildAssetUrl(
+                            "character-portraits",
+                            new CdnAssetService.VersionedAsset(c.getPortraitFilename(), c.getCompletedAt())))
                     .map(url -> ResponseEntity.status(302)
                             .header(HttpHeaders.LOCATION, url)
                             .body(new byte[0]))

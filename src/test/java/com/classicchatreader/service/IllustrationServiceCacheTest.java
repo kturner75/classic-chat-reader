@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -156,5 +157,20 @@ class IllustrationServiceCacheTest {
         assertNull(illustration.getErrorMessage());
         verify(illustrationRepository).save(illustration);
         verify(comfyUIService, never()).submitWorkflow(any(), any(), any());
+    }
+
+    @Test
+    void getIllustrationAsset_includesFilenameAndCompletedAt() {
+        LocalDateTime completedAt = LocalDateTime.of(2026, 8, 24, 18, 30, 0);
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setImageFilename(cacheKey);
+        illustration.setCompletedAt(completedAt);
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+
+        CdnAssetService.VersionedAsset asset = service.getIllustrationAsset("chapter-1").orElseThrow();
+
+        assertEquals(cacheKey, asset.key());
+        assertEquals(completedAt, asset.completedAt());
+        assertEquals(cacheKey, service.getIllustrationFilename("chapter-1").orElseThrow());
     }
 }

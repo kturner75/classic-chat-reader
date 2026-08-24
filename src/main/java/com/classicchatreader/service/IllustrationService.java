@@ -154,9 +154,14 @@ public class IllustrationService {
     }
 
     public Optional<String> getIllustrationFilename(String chapterId) {
+        return getIllustrationAsset(chapterId).map(CdnAssetService.VersionedAsset::key);
+    }
+
+    public Optional<CdnAssetService.VersionedAsset> getIllustrationAsset(String chapterId) {
         return illustrationRepository.findByChapterId(chapterId)
                 .filter(i -> i.getStatus() == IllustrationStatus.COMPLETED)
-                .map(IllustrationEntity::getImageFilename);
+                .filter(i -> i.getImageFilename() != null && !i.getImageFilename().isBlank())
+                .map(i -> new CdnAssetService.VersionedAsset(i.getImageFilename(), i.getCompletedAt()));
     }
 
     /**
