@@ -92,7 +92,7 @@ class CharacterServiceMinerTest {
                 eq(ChapterAnalysisStatus.PENDING), eq(ChapterAnalysisStatus.GENERATING)))
                 .thenReturn(1);
         when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
-        when(characterRepository.findByBookIdOrderByCreatedAt("book-84")).thenReturn(List.of(victor));
+        when(characterRepository.findByBookIdWithFirstChapterOrderByCreatedAt("book-84")).thenReturn(List.of(victor));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1"))
                 .thenReturn(List.of(paragraph(0, "Justine Moritz entered the cottage.")));
         when(chapterAnalysisRepository.findByChapterId("chapter-1"))
@@ -115,7 +115,7 @@ class CharacterServiceMinerTest {
                 eq(ChapterAnalysisStatus.PENDING), eq(ChapterAnalysisStatus.GENERATING)))
                 .thenReturn(1);
         when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
-        when(characterRepository.findByBookIdOrderByCreatedAt("book-84")).thenReturn(List.of());
+        when(characterRepository.findByBookIdWithFirstChapterOrderByCreatedAt("book-84")).thenReturn(List.of());
         when(chapterAnalysisRepository.findByChapterId("chapter-1"))
                 .thenReturn(Optional.of(new ChapterAnalysisEntity(chapter)));
 
@@ -125,6 +125,66 @@ class CharacterServiceMinerTest {
                 anyString(), anyString(), anyString(), anyString(), any());
         verify(characterRepository, never()).save(any(CharacterEntity.class));
         verify(paragraphRepository, never()).findByChapterIdOrderByParagraphIndex(any());
+    }
+
+    @Test
+    void refineTrustedFirstAppearancesWorksWithoutOpenSessionOrLazyProxy() {
+        // Join-fetch initializes firstChapter before the queue thread's session closes.
+        // Refine must use that detached association — never a lazy proxy.
+        ChapterEntity laterChapter = new ChapterEntity();
+        laterChapter.setId("chapter-5");
+        laterChapter.setChapterIndex(4);
+        laterChapter.setTitle("Chapter V");
+
+        CharacterEntity victor = new CharacterEntity(
+                book, "Victor Frankenstein", "A Genevese student", laterChapter, 0, CharacterType.PRIMARY);
+        victor.setId("character-victor");
+
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1"))
+                .thenReturn(List.of(paragraph(2, "Victor Frankenstein was born in Naples.")));
+        when(characterRepository.save(victor)).thenReturn(victor);
+
+        int updated = ReflectionTestUtils.invokeMethod(
+                service, "refineTrustedFirstAppearances", chapter, List.of(victor));
+
+        assertThat(updated).isEqualTo(1);
+        assertThat(victor.getFirstChapter()).isSameAs(chapter);
+        assertThat(victor.getFirstParagraphIndex()).isEqualTo(2);
+        verify(characterRepository).save(victor);
+        verify(characterRepository, never()).findByBookIdOrderByCreatedAt(any());
+    }
+
+    @Test
+    void processChapterAnalysisRefinesFromJoinFetchedRoster() {
+        ChapterEntity laterChapter = new ChapterEntity();
+        laterChapter.setId("chapter-5");
+        laterChapter.setChapterIndex(4);
+        laterChapter.setTitle("Chapter V");
+
+        CharacterEntity victor = new CharacterEntity(
+                book, "Victor Frankenstein", "A Genevese student", laterChapter, 0, CharacterType.PRIMARY);
+        victor.setId("character-victor");
+
+        when(chapterAnalysisRepository.claimAnalysisLease(
+                eq("chapter-1"), any(), any(), eq("test-worker"),
+                eq(ChapterAnalysisStatus.PENDING), eq(ChapterAnalysisStatus.GENERATING)))
+                .thenReturn(1);
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(characterRepository.findByBookIdWithFirstChapterOrderByCreatedAt("book-84"))
+                .thenReturn(List.of(victor));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1"))
+                .thenReturn(List.of(paragraph(2, "Victor Frankenstein was born in Naples.")));
+        when(characterRepository.save(victor)).thenReturn(victor);
+        when(chapterAnalysisRepository.findByChapterId("chapter-1"))
+                .thenReturn(Optional.of(new ChapterAnalysisEntity(chapter)));
+
+        ReflectionTestUtils.invokeMethod(service, "processChapterAnalysis", "chapter-1");
+
+        verify(characterRepository).findByBookIdWithFirstChapterOrderByCreatedAt("book-84");
+        verify(characterRepository, never()).findByBookIdOrderByCreatedAt(any());
+        verify(characterRepository).save(victor);
+        assertThat(victor.getFirstChapter()).isSameAs(chapter);
+        assertThat(victor.getFirstParagraphIndex()).isEqualTo(2);
     }
 
     private static ParagraphEntity paragraph(int index, String content) {
