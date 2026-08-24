@@ -32,8 +32,8 @@ public final class CharacterRosterNameFilter {
             "gentlemen", "lady", "ladies", "visitor", "visitors", "neighbor", "neighbors",
             "people", "folk"
     );
-    private static final Set<String> LEADING_ARTICLES = Set.of(
-            "the ", "a ", "an ", "some ", "another ", "any "
+    private static final Set<String> ARTICLE_TOKENS = Set.of(
+            "the", "a", "an", "some", "another", "any"
     );
     /**
      * Exact names (after normalize) that are not people: Moon/Mule class, mass nouns,
@@ -67,12 +67,6 @@ public final class CharacterRosterNameFilter {
         String trimmed = name.trim();
         if (GLITCH_LEFTOVER.matcher(trimmed).find()) {
             return false;
-        }
-        String lower = trimmed.toLowerCase();
-        for (String article : LEADING_ARTICLES) {
-            if (lower.startsWith(article)) {
-                return false;
-            }
         }
         if (isGenericDescriptorPhrase(trimmed)) {
             return false;
@@ -149,9 +143,36 @@ public final class CharacterRosterNameFilter {
         List<String> parts = Arrays.stream(cleaned.split(" "))
                 .filter(part -> !part.isBlank())
                 .collect(Collectors.toList());
-        while (!parts.isEmpty() && NAME_TITLES.contains(parts.get(0))) {
+        while (!parts.isEmpty() && (NAME_TITLES.contains(parts.get(0)) || ARTICLE_TOKENS.contains(parts.get(0)))) {
             parts.remove(0);
         }
         return String.join(" ", parts).trim();
+    }
+
+    /**
+     * True when {@code text} contains the roster name as a whole-word phrase.
+     * Used to locate first appearance of names we already trust.
+     */
+    public static boolean appearsInText(String name, String text) {
+        if (name == null || name.isBlank() || text == null || text.isBlank()) {
+            return false;
+        }
+        return appearancePattern(name).matcher(text).find();
+    }
+
+    static Pattern appearancePattern(String name) {
+        String trimmed = name.trim();
+        String[] parts = trimmed.split("\\s+");
+        if (parts.length == 1) {
+            return Pattern.compile("\\b" + Pattern.quote(trimmed) + "\\b", Pattern.CASE_INSENSITIVE);
+        }
+        StringBuilder regex = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                regex.append("\\s+");
+            }
+            regex.append(Pattern.quote(parts[i]));
+        }
+        return Pattern.compile("\\b" + regex + "\\b", Pattern.CASE_INSENSITIVE);
     }
 }
