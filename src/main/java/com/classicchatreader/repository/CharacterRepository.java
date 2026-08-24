@@ -22,6 +22,13 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
 
     List<CharacterEntity> findByBookIdOrderByCreatedAt(String bookId);
 
+    /**
+     * Trusted roster for first-appearance refine. {@code firstChapter} is join-fetched
+     * so the queue processor can compare chapter index after the repository session closes.
+     */
+    @Query("SELECT c FROM CharacterEntity c JOIN FETCH c.firstChapter WHERE c.book.id = :bookId ORDER BY c.createdAt")
+    List<CharacterEntity> findByBookIdWithFirstChapterOrderByCreatedAt(@Param("bookId") String bookId);
+
     Optional<CharacterEntity> findByBookIdAndNameIgnoreCase(String bookId, String name);
 
     List<CharacterEntity> findByBookIdAndStatus(String bookId, CharacterStatus status);

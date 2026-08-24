@@ -343,7 +343,7 @@ public class CharacterService {
         }
 
         BookEntity book = chapter.getBook();
-        List<CharacterEntity> trusted = characterRepository.findByBookIdOrderByCreatedAt(book.getId());
+        List<CharacterEntity> trusted = characterRepository.findByBookIdWithFirstChapterOrderByCreatedAt(book.getId());
 
         try {
             // Chapter text is only for first-appearance of names we already trust
@@ -386,6 +386,8 @@ public class CharacterService {
             if (foundParagraph < 0) {
                 continue;
             }
+            // firstChapter is initialized by findByBookIdWithFirstChapterOrderByCreatedAt
+            // before this queue-thread method runs; do not lazy-load it here.
             ChapterEntity storedChapter = character.getFirstChapter();
             int storedChapterIndex = storedChapter != null ? storedChapter.getChapterIndex() : Integer.MAX_VALUE;
             boolean earlierChapter = chapterIndex < storedChapterIndex;
