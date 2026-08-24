@@ -17,6 +17,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
@@ -98,15 +99,19 @@ class IllustrationControllerTest {
         chapter.setId("chapter-1");
         chapter.setBook(book);
 
+        LocalDateTime completedAt = LocalDateTime.of(2026, 1, 15, 12, 0, 0);
+        CdnAssetService.VersionedAsset asset =
+                new CdnAssetService.VersionedAsset("chapter-1.png", completedAt);
+
         when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
         when(cdnAssetService.isEnabled()).thenReturn(true);
-        when(illustrationService.getIllustrationFilename("chapter-1")).thenReturn(Optional.of("chapter-1.png"));
-        when(cdnAssetService.buildAssetUrl("illustrations", "chapter-1.png"))
-                .thenReturn(Optional.of("https://cdn.example.com/chapter-1.png"));
+        when(illustrationService.getIllustrationAsset("chapter-1")).thenReturn(Optional.of(asset));
+        when(cdnAssetService.buildAssetUrl("illustrations", asset))
+                .thenReturn(Optional.of("https://cdn.example.com/chapter-1.png?v=1768478400-abc"));
 
         mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://cdn.example.com/chapter-1.png"));
+                .andExpect(header().string("Location", "https://cdn.example.com/chapter-1.png?v=1768478400-abc"));
     }
 
     @Test

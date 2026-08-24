@@ -139,8 +139,8 @@ public class IllustrationController {
         }
 
         if (cdnAssetService.isEnabled()) {
-            return illustrationService.getIllustrationFilename(chapterId)
-                    .flatMap(key -> cdnAssetService.buildAssetUrl("illustrations", key))
+            return illustrationService.getIllustrationAsset(chapterId)
+                    .flatMap(asset -> cdnAssetService.buildAssetUrl("illustrations", asset))
                     .map(url -> ResponseEntity.status(302)
                             .header(HttpHeaders.LOCATION, url)
                             .body(new byte[0]))

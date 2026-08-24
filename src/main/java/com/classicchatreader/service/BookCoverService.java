@@ -123,9 +123,13 @@ public class BookCoverService {
     }
 
     public Optional<String> getCoverFilename(String bookId) {
+        return getCoverAsset(bookId).map(CdnAssetService.VersionedAsset::key);
+    }
+
+    public Optional<CdnAssetService.VersionedAsset> getCoverAsset(String bookId) {
         return bookCoverRepository.findByBookId(bookId)
                 .filter(cover -> cover.getImageFilename() != null && !cover.getImageFilename().isBlank())
-                .map(BookCoverEntity::getImageFilename);
+                .map(cover -> new CdnAssetService.VersionedAsset(cover.getImageFilename(), cover.getCompletedAt()));
     }
 
     public byte[] getCover(String bookId) {

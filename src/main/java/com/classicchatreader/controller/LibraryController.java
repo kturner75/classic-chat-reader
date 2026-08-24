@@ -72,8 +72,8 @@ public class LibraryController {
     @GetMapping("/{bookId}/cover")
     public ResponseEntity<byte[]> getBookCover(@PathVariable String bookId) {
         if (bookCoverCdnEnabled && cdnAssetService.isEnabled()) {
-            return bookCoverService.getCoverFilename(bookId)
-                    .flatMap(key -> cdnAssetService.buildAssetUrl("book-covers", key))
+            return bookCoverService.getCoverAsset(bookId)
+                    .flatMap(asset -> cdnAssetService.buildAssetUrl("book-covers", asset))
                     .map(url -> ResponseEntity.status(302)
                             .header(HttpHeaders.LOCATION, url)
                             .body(new byte[0]))
