@@ -12,6 +12,7 @@ import com.classicchatreader.service.llm.LlmProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -23,7 +24,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -148,5 +151,51 @@ class CharacterPrefetchServiceTest {
 
         assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
         assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetchPrompt_requiresNamedPeopleAndFirstAppearanceBlurbs() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("[]");
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(reasoningProvider).generate(prompt.capture(), any());
+        String text = prompt.getValue();
+        assertThat(text).contains(CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.REJECT_NON_PERSONS);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
+        assertThat(text).contains("tight PRIMARY");
+        assertThat(text).doesNotContain("avoid major spoilers");
+    }
+
+    @Test
+    void prefetch_dropsJunkNamesAndKeepsNamedPeople() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"bees","description":"insects in the garden","firstChapterNumber":1},
+                  {"name":"The Moon","description":"hangs over the ship","firstChapterNumber":1},
+                  {"name":"The Mule","description":"a pack animal","firstChapterNumber":1},
+                  {"name":"Dorian","description":"a young man first seen in the studio","firstChapterNumber":1},
+                  {"name":"Fortunato","description":"a wine connoisseur at carnival","firstChapterNumber":1},
+                  {"name":"Elizabeth Bennet","description":"the second Bennet daughter","firstChapterNumber":1}
+                ]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(3)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getName)
+                .containsExactlyInAnyOrder("Dorian", "Fortunato", "Elizabeth Bennet");
     }
 }

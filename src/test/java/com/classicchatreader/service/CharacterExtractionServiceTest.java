@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
@@ -116,5 +117,49 @@ class CharacterExtractionServiceTest {
         ));
 
         verify(reasoningProvider).generate(contains("Convert the following malformed model output"), any());
+    }
+
+    @Test
+    void extractionPrompt_requiresNamedPeopleAndFirstAppearanceBlurbs() {
+        String prompt = service.buildExtractionPrompt(
+                "Frankenstein",
+                "Mary Wollstonecraft Shelley",
+                "Letter I",
+                "Some chapter text",
+                "(none yet)"
+        );
+
+        assertTrue(prompt.contains(CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY));
+        assertTrue(prompt.contains(CharacterDiscoveryPromptRules.REJECT_NON_PERSONS));
+        assertTrue(prompt.contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES));
+        assertTrue(prompt.contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB));
+        assertTrue(prompt.contains("SECONDARY set sane"));
+    }
+
+    @Test
+    void extractCharactersFromChapter_dropsJunkNamesAndKeepsNamedPeople() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"bees","description":"insects","approximateParagraphIndex":0},
+                  {"name":"The Moon","description":"celestial","approximateParagraphIndex":1},
+                  {"name":"The Mule","description":"animal","approximateParagraphIndex":2},
+                  {"name":"Dorian","description":"a young man in the studio","approximateParagraphIndex":3},
+                  {"name":"Fortunato","description":"a wine connoisseur","approximateParagraphIndex":4},
+                  {"name":"Elizabeth Bennet","description":"the second Bennet daughter","approximateParagraphIndex":5}
+                ]
+                """);
+
+        List<ExtractedCharacter> result = service.extractCharactersFromChapter(
+                "Mixed Cast",
+                "Various",
+                "Chapter 1",
+                "Some chapter text",
+                List.of()
+        );
+
+        assertEquals(3, result.size());
+        assertEquals("Dorian", result.get(0).name());
+        assertEquals("Fortunato", result.get(1).name());
+        assertEquals("Elizabeth Bennet", result.get(2).name());
     }
 }

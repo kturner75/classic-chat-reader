@@ -35,6 +35,7 @@ class IllustrationServiceCacheTest {
     @Mock private IllustrationPromptService promptService;
     @Mock private IllustrationStyleAnalysisService styleAnalysisService;
     @Mock private ComfyUIService comfyUIService;
+    @Mock private IllustrationImageGeneratorService illustrationImageGenerator;
     @Mock private CdnAssetService cdnAssetService;
 
     private IllustrationService service;
@@ -52,6 +53,7 @@ class IllustrationServiceCacheTest {
                 promptService,
                 styleAnalysisService,
                 comfyUIService,
+                illustrationImageGenerator,
                 new AssetKeyService(),
                 cdnAssetService
         );

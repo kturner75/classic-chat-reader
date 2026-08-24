@@ -230,20 +230,23 @@ public class CharacterPrefetchService {
         return parseCharacters(extractJsonArray(generatedText));
     }
 
-    private String buildPrefetchPrompt(String title, String author) {
+    String buildPrefetchPrompt(String title, String author) {
         return String.format("""
             You are analyzing the famous book "%s" by %s.
 
-            List the MAIN CHARACTERS (typically 3-8 characters who are central to the story).
+            List the MAIN CHARACTERS — a tight PRIMARY set of named people who are central to the story (typically 3-8).
+            %s
             For each character, provide:
             1. Their exact name as it appears in the book (use their most common form, e.g., "Elizabeth Bennet" not just "Lizzy")
-            2. A 2-3 sentence description of who they are and their role in the story (avoid major spoilers)
+            2. A 2-3 sentence description. %s
             3. The chapter number where they first appear (use 1 if you're unsure or they appear in chapter 1)
 
             IMPORTANT RULES:
             - Only include major characters who play significant roles throughout the story
             - Do NOT include minor characters who appear briefly
             - Use the character's primary/full name
+            - %s
+            - %s
             - If you don't know this book well, respond with an empty array []
             - Do NOT make up characters - only include characters you're confident about
 
@@ -251,13 +254,19 @@ public class CharacterPrefetchService {
             [
               {
                 "name": "Character Name",
-                "description": "Description of the character and their role",
+                "description": "First-appearance description of the character",
                 "firstChapterNumber": 1
               }
             ]
 
             If you're unfamiliar with this book or unsure about its characters, respond with: []
-            """, title, author);
+            """,
+                title,
+                author,
+                CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY,
+                CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB,
+                CharacterDiscoveryPromptRules.REJECT_NON_PERSONS,
+                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
     }
 
     private List<PrefetchedCharacter> parseCharacters(String json) throws JsonProcessingException {
@@ -272,7 +281,7 @@ public class CharacterPrefetchService {
                     ? charNode.get("firstChapterNumber").asInt(1)
                     : 1;
 
-            if (!name.isBlank()) {
+            if (!name.isBlank() && CharacterRosterNameFilter.isClearlyNamed(name)) {
                 characters.add(new PrefetchedCharacter(name, description, chapterNumber));
             }
         }

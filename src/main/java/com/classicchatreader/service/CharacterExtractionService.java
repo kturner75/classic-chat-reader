@@ -110,7 +110,7 @@ public class CharacterExtractionService {
                 // Skip if name matches existing character (case-insensitive)
                 String normalizedName = normalizeName(name);
                 boolean isDuplicate = normalizedName.isBlank() || normalizedExisting.contains(normalizedName);
-                if (!isDuplicate && !name.isBlank()) {
+                if (!isDuplicate && !name.isBlank() && CharacterRosterNameFilter.isClearlyNamed(name)) {
                     characters.add(new ExtractedCharacter(name, description, paragraphIndex));
                 }
             }
@@ -124,7 +124,7 @@ public class CharacterExtractionService {
         }
     }
 
-    private String buildExtractionPrompt(
+    String buildExtractionPrompt(
             String bookTitle,
             String author,
             String chapterTitle,
@@ -132,8 +132,9 @@ public class CharacterExtractionService {
             String existingCharactersList) {
         return String.format("""
             Analyze this chapter and identify any NEW characters that are introduced.
+            %s
             A character is someone who:
-            - Has a clear, specific name (no generic roles like "the maid" or "a stranger")
+            - Has a clear, specific personal name (no generic roles like "the maid" or "a stranger")
             - Appears as a distinct person in the narrative
             - Engages in non-trivial dialogue (more than a one-line exchange)
             - Is NOT already in the known characters list below
@@ -150,30 +151,38 @@ public class CharacterExtractionService {
             ---
 
             IMPORTANT:
-            - Only include genuinely NEW characters not in the list above
+            - Only include genuinely NEW named people not in the list above
+            - Keep the SECONDARY set sane: supporting named people only, not every noun in the chapter
             - Do not add alternate forms of existing names (e.g., titles, last-name-only variants)
             - If a name could be confused with an existing character, omit it
             - Be conservative: if you're unsure, leave the character out
             - Maximum %d new characters per chapter
             - Do not include historical figures mentioned in passing
-            - Do not include groups of people (e.g., "the crowd") unless one individual stands out
+            - Do not include groups of people (e.g., "the crowd") unless one named individual stands out
+            - %s
+            - %s
+            - %s
             - Estimate which paragraph (0-indexed) the character first appears in
 
             Respond with ONLY valid JSON array, no other text:
             [
               {
                 "name": "Character Name",
-                "description": "2-3 sentence description of who they are, their role, and notable traits",
+                "description": "2-3 sentence first-appearance description of who they are",
                 "approximateParagraphIndex": 5
               }
             ]
 
             If no new characters are introduced, respond with: []
             """,
+                CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY,
                 bookTitle, author, chapterTitle,
                 existingCharactersList,
                 chapterContent,
-                maxCharactersPerChapter);
+                maxCharactersPerChapter,
+                CharacterDiscoveryPromptRules.REJECT_NON_PERSONS,
+                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES,
+                CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
     }
 
     private JsonNode parseCharactersArray(String generatedText, String chapterTitle) throws JsonProcessingException {
