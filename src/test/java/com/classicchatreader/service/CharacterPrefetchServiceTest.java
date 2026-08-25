@@ -171,6 +171,28 @@ class CharacterPrefetchServiceTest {
     }
 
     @Test
+    void buildPrefetchPrompt_includesCollectionInstructionAndInterpolatesTitleAuthor() {
+        String text = service.buildPrefetchPrompt(
+                "The Adventures of Sherlock Holmes", "Arthur Conan Doyle");
+
+        assertThat(text).contains("The Adventures of Sherlock Holmes");
+        assertThat(text).contains("Arthur Conan Doyle");
+        assertThat(text).contains("short-story collection");
+        assertThat(text).contains("linked tales");
+        assertThat(text).contains("8-16");
+        assertThat(text).contains("typically 3-8");
+        assertThat(text).contains("tight PRIMARY");
+        assertThat(text).contains("principal named character");
+        assertThat(text).contains("throughout the book is not required");
+        assertThat(text).contains("White Rabbit");
+        assertThat(text).contains(CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.REJECT_NON_PERSONS);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
+        assertThat(text).doesNotContain("avoid major spoilers");
+    }
+
+    @Test
     void prefetch_dropsJunkNamesAndKeepsNamedPeople() {
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [
