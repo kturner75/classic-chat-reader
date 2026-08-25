@@ -4,6 +4,7 @@ import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterType;
+import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.ChapterRepository;
@@ -24,6 +25,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -166,6 +168,7 @@ class CharacterPrefetchServiceTest {
         assertThat(text).contains(CharacterDiscoveryPromptRules.REJECT_NON_PERSONS);
         assertThat(text).contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
         assertThat(text).contains("tight PRIMARY");
         assertThat(text).doesNotContain("avoid major spoilers");
     }
@@ -188,8 +191,13 @@ class CharacterPrefetchServiceTest {
         assertThat(text).contains(CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY);
         assertThat(text).contains(CharacterDiscoveryPromptRules.REJECT_NON_PERSONS);
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
+        assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
         assertThat(text).contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
         assertThat(text).doesNotContain("avoid major spoilers");
+        assertThat(text).contains("1-based story chapter");
+        assertThat(text).contains("first present as a person");
+        assertThat(text).contains("exact full-name string");
+        assertThat(text).contains("journal");
     }
 
     @Test
@@ -226,6 +234,8 @@ class CharacterPrefetchServiceTest {
 
     @Test
     void prefetch_typesKnowledgeNamesPrimaryIncludingArticleEpithets() {
+        ChapterEntity chapter5 = chapter("chapter-4", 4);
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 4)).thenReturn(Optional.of(chapter5));
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [
                   {"name":"Victor Frankenstein","description":"A Genevese student","firstChapterNumber":1},
@@ -254,5 +264,267 @@ class CharacterPrefetchServiceTest {
         assertThat(saved.getAllValues())
                 .extracting(CharacterEntity::getCharacterType)
                 .containsOnly(CharacterType.PRIMARY);
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "The Creature".equals(character.getName())
+                        || "The Monster".equals(character.getName()))
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsOnly(4);
+    }
+
+    @Test
+    void prefetch_prefersModelChapterWhenScanFindsLaterPhrase() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.empty());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity character = invocation.getArgument(0);
+            character.setId("character-crusoe");
+            return character;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository).save(saved.capture());
+        assertThat(saved.getValue().getName()).isEqualTo("Robinson Crusoe");
+        assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(saved.getValue().getFirstChapter().getChapterIndex()).isZero();
+        assertThat(saved.getValue().getFirstParagraphIndex()).isZero();
+    }
+
+    @Test
+    void prefetch_promoteUsesModelChapterWhenScanFindsLaterPhrase() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setDescription("A castaway.");
+        existing.setCharacterType(CharacterType.SECONDARY);
+        existing.setFirstChapter(chapter8);
+        existing.setFirstParagraphIndex(3);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(existing.getFirstParagraphIndex()).isZero();
+    }
+
+    @Test
+    void prefetch_afterLatchClearMovesExistingPrimaryEarlierWhenModelMapsEarlierChapter() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setDescription("A castaway.");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter8);
+        existing.setFirstParagraphIndex(2);
+
+        // Already prefetched and pinned at the journal chapter; latch-clear
+        // must let prefetch re-ask the model and move him. Do not require delete.
+        book.setCharacterPrefetchCompleted(true);
+        book.setCharacterPrefetchCompleted(false);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(existing.getFirstChapter().getChapterIndex()).isZero();
+        assertThat(existing.getFirstParagraphIndex()).isZero();
+        verify(characterRepository).save(existing);
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_doesNotMoveExistingPrimaryLaterWhenModelOrScanIsLater() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":8}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(existing.getFirstParagraphIndex()).isZero();
+        verify(characterRepository, never()).save(existing);
+    }
+
+    @Test
+    void prefetch_doesNotMoveExistingPrimaryWithLaterScanWhenModelOmitsChapter() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea."}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        verify(characterRepository, never()).save(existing);
+    }
+
+    @Test
+    void prefetch_usesScanWhenModelOmitsChapter() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea."}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.empty());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity character = invocation.getArgument(0);
+            character.setId("character-crusoe");
+            return character;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository).save(saved.capture());
+        assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-7");
+        assertThat(saved.getValue().getFirstParagraphIndex()).isEqualTo(2);
+    }
+
+    @Test
+    void prefetch_usesScanWhenModelChapterDoesNotMap() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":99}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.empty());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity character = invocation.getArgument(0);
+            character.setId("character-crusoe");
+            return character;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository).save(saved.capture());
+        assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-7");
+        assertThat(saved.getValue().getFirstParagraphIndex()).isEqualTo(2);
+    }
+
+    @Test
+    void refresh_doesNotOverwriteModelPlacedChapterWithLaterScan() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+        when(characterRepository.findByBookIdOrderByCreatedAt(BOOK_ID)).thenReturn(List.of(existing));
+
+        int updated = service.refreshPrimaryCharacterPositionsForBook(BOOK_ID);
+
+        assertThat(updated).isZero();
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+    }
+
+    @Test
+    void refresh_usesScanOnlyWhenFirstChapterIsMissing() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(null);
+        when(characterRepository.findByBookIdOrderByCreatedAt(BOOK_ID)).thenReturn(List.of(existing));
+
+        int updated = service.refreshPrimaryCharacterPositionsForBook(BOOK_ID);
+
+        assertThat(updated).isEqualTo(1);
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-7");
+        assertThat(existing.getFirstParagraphIndex()).isEqualTo(2);
+        verify(characterRepository).save(existing);
+    }
+
+    private static ChapterEntity chapter(String id, int chapterIndex) {
+        ChapterEntity chapter = new ChapterEntity();
+        chapter.setId(id);
+        chapter.setChapterIndex(chapterIndex);
+        chapter.setTitle("Chapter " + (chapterIndex + 1));
+        return chapter;
+    }
+
+    private void stubCrusoeChapters(ChapterEntity chapter1, ChapterEntity chapter8) {
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 7)).thenReturn(Optional.of(chapter8));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(chapter1, chapter8));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-0")).thenReturn(List.of(
+                paragraph(0, "My father was a foreigner of Bremen who settled at York. "
+                        + "I was called Robinson Kreutznaer, but by the usual corruption of words "
+                        + "in England we are now called Crusoe.")));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-7")).thenReturn(List.of(
+                paragraph(2, "I, poor miserable Robinson Crusoe, being shipwrecked during a dreadful storm, came on shore.")));
+    }
+
+    private static ParagraphEntity paragraph(int index, String content) {
+        ParagraphEntity paragraph = new ParagraphEntity();
+        paragraph.setParagraphIndex(index);
+        paragraph.setContent(content);
+        return paragraph;
     }
 }

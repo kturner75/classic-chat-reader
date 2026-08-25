@@ -27,6 +27,12 @@ final class CharacterDiscoveryPromptRules {
                     + "Do not include later-plot facts, deaths, marriages, revelations, or outcomes "
                     + "from later chapters.";
 
+    static final String FIRST_CHAPTER_PLACEMENT =
+            "firstChapterNumber is the 1-based story chapter where the character is first present as a person "
+                    + "in the story — who the reader first meets, including under another name or shorter form. "
+                    + "Do not use the first exact full-name string match. Do not use a later journal, diary, "
+                    + "or recap that restates their name.";
+
     private CharacterDiscoveryPromptRules() {
     }
 }
