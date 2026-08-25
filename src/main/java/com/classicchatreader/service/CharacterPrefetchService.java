@@ -61,7 +61,7 @@ public class CharacterPrefetchService {
     public record PrefetchedCharacter(
         String name,
         String description,
-        int firstChapterNumber
+        Integer firstChapterNumber
     ) {}
 
     /**
@@ -117,15 +117,13 @@ public class CharacterPrefetchService {
         int promoted = 0;
 
         for (PrefetchedCharacter pc : mainCharacters) {
-            FirstAppearance appearance = findFirstAppearance(bookId, pc.name());
-            ChapterEntity chapter = appearance != null
-                    ? appearance.chapter()
-                    : findChapterByNumber(bookId, pc.firstChapterNumber());
-            if (chapter == null) {
-                log.warn("Could not find chapter {} for character '{}', skipping", pc.firstChapterNumber(), pc.name());
+            FirstAppearance appearance = resolveFirstAppearance(bookId, pc);
+            if (appearance == null) {
+                log.warn("Could not map first appearance for character '{}', skipping", pc.name());
                 continue;
             }
-            int paragraphIndex = appearance != null ? appearance.paragraphIndex() : 0;
+            ChapterEntity chapter = appearance.chapter();
+            int paragraphIndex = appearance.paragraphIndex();
 
             // Check for existing character with same name (case-insensitive)
             Optional<CharacterEntity> existing = characterRepository
@@ -136,6 +134,8 @@ public class CharacterPrefetchService {
                 CharacterEntity existingChar = existing.get();
                 if (existingChar.getCharacterType() == CharacterType.SECONDARY) {
                     existingChar.setCharacterType(CharacterType.PRIMARY);
+                    existingChar.setFirstChapter(chapter);
+                    existingChar.setFirstParagraphIndex(paragraphIndex);
                     // Update description if prefetch has a better one
                     if (pc.description() != null && !pc.description().isBlank() &&
                             (existingChar.getDescription() == null ||
@@ -194,19 +194,19 @@ public class CharacterPrefetchService {
             if (character.getCharacterType() != CharacterType.PRIMARY) {
                 continue;
             }
-
-            FirstAppearance appearance = findFirstAppearance(book.getId(), character.getName());
-            ChapterEntity foundChapter = appearance != null
-                    ? appearance.chapter()
-                    : findChapterByNumber(book.getId(), 1);
-            int foundParagraph = appearance != null ? appearance.paragraphIndex() : 0;
-            if (character.getFirstChapter().getId().equals(foundChapter.getId()) &&
-                    character.getFirstParagraphIndex() == foundParagraph) {
+            // Model placement is the source of truth. Never overwrite an existing
+            // first chapter with a later exact-phrase scan hit.
+            if (character.getFirstChapter() != null) {
                 continue;
             }
 
-            character.setFirstChapter(foundChapter);
-            character.setFirstParagraphIndex(foundParagraph);
+            FirstAppearance appearance = findFirstAppearance(book.getId(), character.getName());
+            if (appearance == null) {
+                continue;
+            }
+
+            character.setFirstChapter(appearance.chapter());
+            character.setFirstParagraphIndex(appearance.paragraphIndex());
             characterRepository.save(character);
             updated++;
         }
@@ -241,13 +241,14 @@ public class CharacterPrefetchService {
             For each character, provide:
             1. Their exact name as it appears in the book (use their most common form, e.g., "Elizabeth Bennet" not just "Lizzy")
             2. A 2-3 sentence description. %s
-            3. The chapter number where they first appear (use 1 if you're unsure or they appear in chapter 1)
+            3. firstChapterNumber: the 1-based story chapter where they are first present as a person in the story (use 1 if you're unsure or they appear in chapter 1). %s
 
             IMPORTANT RULES:
             - For novels: only include major characters who play significant roles throughout the story
             - For short-story collections / linked tales: include recurring leads plus each story's principal named character(s); "throughout the book" is not required
             - Do NOT include minor walk-ons or unnamed extras
             - Use the character's primary/full name
+            - %s
             - %s
             - %s
             - If you don't know this book well, respond with an empty array []
@@ -268,8 +269,10 @@ public class CharacterPrefetchService {
                 author,
                 CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY,
                 CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB,
+                CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT,
                 CharacterDiscoveryPromptRules.REJECT_NON_PERSONS,
-                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
+                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES,
+                CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
     }
 
     private List<PrefetchedCharacter> parseCharacters(String json) throws JsonProcessingException {
@@ -280,9 +283,7 @@ public class CharacterPrefetchService {
             String description = charNode.has("description")
                     ? charNode.get("description").asText()
                     : "A main character in the story";
-            int chapterNumber = charNode.has("firstChapterNumber")
-                    ? charNode.get("firstChapterNumber").asInt(1)
-                    : 1;
+            Integer chapterNumber = parseFirstChapterNumber(charNode);
 
             if (name.isBlank()) {
                 name = charNode.has("characterName") ? charNode.get("characterName").asText() : "";
@@ -300,16 +301,42 @@ public class CharacterPrefetchService {
         return characters;
     }
 
-    private ChapterEntity findChapterByNumber(String bookId, int chapterNumber) {
-        // Chapter numbers from LLM are 1-indexed, chapterIndex is 0-indexed
-        int chapterIndex = Math.max(0, chapterNumber - 1);
+    private Integer parseFirstChapterNumber(JsonNode charNode) {
+        if (!charNode.hasNonNull("firstChapterNumber")) {
+            return null;
+        }
+        JsonNode node = charNode.get("firstChapterNumber");
+        if (!node.isNumber() && !(node.isTextual() && !node.asText().isBlank())) {
+            return null;
+        }
+        int value = node.asInt(Integer.MIN_VALUE);
+        return value >= 1 ? value : null;
+    }
 
-        return chapterRepository.findByBookIdAndChapterIndex(bookId, chapterIndex)
-                .orElseGet(() -> {
-                    // Fallback to first chapter if specified chapter doesn't exist
-                    log.debug("Chapter {} not found for book {}, falling back to chapter 1", chapterNumber, bookId);
-                    return chapterRepository.findByBookIdAndChapterIndex(bookId, 0).orElse(null);
-                });
+    /**
+     * Prefer the model's 1-based chapter when it maps to a real chapter.
+     * Phrase scan is fallback only if the model omitted a chapter or the number
+     * does not map.
+     */
+    private FirstAppearance resolveFirstAppearance(String bookId, PrefetchedCharacter pc) {
+        ChapterEntity modelChapter = mapModelChapter(bookId, pc.firstChapterNumber());
+        if (modelChapter != null) {
+            return new FirstAppearance(modelChapter, 0);
+        }
+        if (pc.firstChapterNumber() != null) {
+            log.info("Model firstChapterNumber {} does not map for '{}'; using phrase-scan fallback",
+                    pc.firstChapterNumber(), pc.name());
+        } else {
+            log.info("Model omitted firstChapterNumber for '{}'; using phrase-scan fallback", pc.name());
+        }
+        return findFirstAppearance(bookId, pc.name());
+    }
+
+    private ChapterEntity mapModelChapter(String bookId, Integer chapterNumber) {
+        if (chapterNumber == null || chapterNumber < 1) {
+            return null;
+        }
+        return chapterRepository.findByBookIdAndChapterIndex(bookId, chapterNumber - 1).orElse(null);
     }
 
     private record FirstAppearance(ChapterEntity chapter, int paragraphIndex) {}
