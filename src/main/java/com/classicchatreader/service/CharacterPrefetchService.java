@@ -234,7 +234,9 @@ public class CharacterPrefetchService {
         return String.format("""
             You are analyzing the famous book "%s" by %s.
 
-            List the MAIN CHARACTERS — a tight PRIMARY set of named people who are central to the story (typically 3-8).
+            List the MAIN CHARACTERS for a tight PRIMARY set.
+            If this work is a novel, include named people who are central to the story (typically 3-8).
+            If this work is a short-story collection or linked tales (title like "The Adventures of Sherlock Holmes", or several distinct stories under one title): include the recurring leads plus the principal named character(s) of each story. Typical set 8-16, not 3-8. Being central to an included story is enough — appearing throughout the book is not required.
             %s
             For each character, provide:
             1. Their exact name as it appears in the book (use their most common form, e.g., "Elizabeth Bennet" not just "Lizzy")
@@ -242,8 +244,9 @@ public class CharacterPrefetchService {
             3. The chapter number where they first appear (use 1 if you're unsure or they appear in chapter 1)
 
             IMPORTANT RULES:
-            - Only include major characters who play significant roles throughout the story
-            - Do NOT include minor characters who appear briefly
+            - For novels: only include major characters who play significant roles throughout the story
+            - For short-story collections / linked tales: include recurring leads plus each story's principal named character(s); "throughout the book" is not required
+            - Do NOT include minor walk-ons or unnamed extras
             - Use the character's primary/full name
             - %s
             - %s

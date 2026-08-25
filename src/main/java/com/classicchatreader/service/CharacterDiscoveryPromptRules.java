@@ -6,14 +6,17 @@ package com.classicchatreader.service;
 final class CharacterDiscoveryPromptRules {
 
     static final String NAMED_PEOPLE_ONLY =
-            "Roster entries must be named people only: distinct persons with a proper personal name "
+            "Roster entries must be named people or named speaking figures with a proper name "
                     + "or a well-known person epithet used as their name "
-                    + "(\"The Creature\", \"The Monster\", \"The Turk\").";
+                    + "(\"The Creature\", \"The Monster\", \"The Turk\", \"White Rabbit\", "
+                    + "\"Cheshire Cat\", \"The Hatter\"). Non-human speakers with proper names "
+                    + "are allowed; generic descriptors are not.";
 
     static final String REJECT_NON_PERSONS =
-            "Reject animals, objects, places, celestial bodies (\"The Moon\", \"The Mule\"), "
+            "Reject generic animals, objects, places, celestial bodies (\"The Moon\", \"The Mule\"), "
                     + "collective or mass nouns (\"bees\", \"the crowd\"), generic roles "
-                    + "(\"the maid\", \"a stranger\"), and LLM leftovers.";
+                    + "(\"the maid\", \"a stranger\"), and LLM leftovers. Do not reject a named "
+                    + "speaking figure solely because they are not human.";
 
     static final String NO_GLITCH_NAMES =
             "Do not emit duplicate or glitch names such as \"Elizabeth Lavenza (again)\" "
