@@ -325,6 +325,92 @@ class CharacterPrefetchServiceTest {
     }
 
     @Test
+    void prefetch_afterLatchClearMovesExistingPrimaryEarlierWhenModelMapsEarlierChapter() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setDescription("A castaway.");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter8);
+        existing.setFirstParagraphIndex(2);
+
+        // Already prefetched and pinned at the journal chapter; latch-clear
+        // must let prefetch re-ask the model and move him. Do not require delete.
+        book.setCharacterPrefetchCompleted(true);
+        book.setCharacterPrefetchCompleted(false);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(existing.getFirstChapter().getChapterIndex()).isZero();
+        assertThat(existing.getFirstParagraphIndex()).isZero();
+        verify(characterRepository).save(existing);
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_doesNotMoveExistingPrimaryLaterWhenModelOrScanIsLater() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":8}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        assertThat(existing.getFirstParagraphIndex()).isZero();
+        verify(characterRepository, never()).save(existing);
+    }
+
+    @Test
+    void prefetch_doesNotMoveExistingPrimaryWithLaterScanWhenModelOmitsChapter() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        ChapterEntity chapter8 = chapter("chapter-7", 7);
+        stubCrusoeChapters(chapter1, chapter8);
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-crusoe");
+        existing.setName("Robinson Crusoe");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea."}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getFirstChapter().getId()).isEqualTo("chapter-0");
+        verify(characterRepository, never()).save(existing);
+    }
+
+    @Test
     void prefetch_usesScanWhenModelOmitsChapter() {
         ChapterEntity chapter1 = chapter("chapter-0", 0);
         ChapterEntity chapter8 = chapter("chapter-7", 7);

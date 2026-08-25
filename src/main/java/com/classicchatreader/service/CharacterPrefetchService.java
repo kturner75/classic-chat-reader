@@ -115,6 +115,7 @@ public class CharacterPrefetchService {
 
         int created = 0;
         int promoted = 0;
+        int moved = 0;
 
         for (PrefetchedCharacter pc : mainCharacters) {
             FirstAppearance appearance = resolveFirstAppearance(bookId, pc);
@@ -130,7 +131,6 @@ public class CharacterPrefetchService {
                     .findByBookIdAndNameIgnoreCase(bookId, pc.name());
 
             if (existing.isPresent()) {
-                // Promote existing SECONDARY character to PRIMARY
                 CharacterEntity existingChar = existing.get();
                 if (existingChar.getCharacterType() == CharacterType.SECONDARY) {
                     existingChar.setCharacterType(CharacterType.PRIMARY);
@@ -145,6 +145,8 @@ public class CharacterPrefetchService {
                     characterRepository.save(existingChar);
                     log.info("Promoted existing character '{}' to PRIMARY", pc.name());
                     promoted++;
+                } else if (movePrimaryToEarlierModelChapter(existingChar, bookId, pc)) {
+                    moved++;
                 }
             } else {
                 // Knowledge prefetch is the PRIMARY list. Type at construction so the
@@ -164,8 +166,32 @@ public class CharacterPrefetchService {
 
         book.setCharacterPrefetchCompleted(true);
         bookRepository.save(book);
-        log.info("Character prefetch completed for '{}' - {} created, {} promoted",
-                book.getTitle(), created, promoted);
+        log.info("Character prefetch completed for '{}' - {} created, {} promoted, {} moved earlier",
+                book.getTitle(), created, promoted, moved);
+    }
+
+    /**
+     * Latch-clear + prefetch can correct a PRIMARY pinned too late (exact-phrase
+     * scan). Only the model's mapped chapter may move the row, and only earlier.
+     * Never overwrite with a later scan hit.
+     */
+    private boolean movePrimaryToEarlierModelChapter(
+            CharacterEntity existing, String bookId, PrefetchedCharacter pc) {
+        ChapterEntity modelChapter = mapModelChapter(bookId, pc.firstChapterNumber());
+        if (modelChapter == null) {
+            return false;
+        }
+        ChapterEntity stored = existing.getFirstChapter();
+        if (stored != null && modelChapter.getChapterIndex() >= stored.getChapterIndex()) {
+            return false;
+        }
+        int previousIndex = stored == null ? -1 : stored.getChapterIndex();
+        existing.setFirstChapter(modelChapter);
+        existing.setFirstParagraphIndex(0);
+        characterRepository.save(existing);
+        log.info("Moved PRIMARY '{}' first chapter from {} to model chapter {}",
+                pc.name(), previousIndex + 1, pc.firstChapterNumber());
+        return true;
     }
 
     public int refreshPrimaryCharacterPositionsForBook(String bookId) {
