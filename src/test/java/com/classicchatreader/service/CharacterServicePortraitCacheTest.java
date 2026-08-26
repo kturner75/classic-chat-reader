@@ -277,6 +277,7 @@ class CharacterServicePortraitCacheTest {
 
         assertEquals(false, service.regeneratePortraitWithPrompt("character-1", "Mr. Bennet in a dark coat"));
         assertEquals(0, service.getQueueDepth());
+        verify(comfyUIService, never()).deletePortraitFile(any());
     }
 
     @Test
