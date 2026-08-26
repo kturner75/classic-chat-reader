@@ -102,6 +102,8 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
     /**
      * Atomically reserves a custom-prompt regeneration. Returns 0 when another
      * writer already moved the row out of COMPLETED/FAILED.
+     * Writes {@code directedMarker} into {@code portraitFilename} so recovery can
+     * tell a directed job from an auto-generated prompt after the row leaves PENDING.
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
