@@ -22,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -220,9 +222,15 @@ public class CharacterController {
             return ResponseEntity.notFound().build();
         }
 
+        Instant version = characterOpt
+                .map(CharacterEntity::getCompletedAt)
+                .map(completedAt -> completedAt.toInstant(ZoneOffset.UTC))
+                .orElse(Instant.EPOCH);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, "image/png")
-                .header(HttpHeaders.CACHE_CONTROL, "max-age=604800")
+                .cacheControl(CacheControl.noCache().cachePrivate())
+                .eTag(Long.toString(version.getEpochSecond()))
+                .lastModified(version)
                 .body(image);
     }
 

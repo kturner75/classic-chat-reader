@@ -2400,6 +2400,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: Codex follow-up — 409 regenerate while PENDING (second custom job before claim); 400 when prompt exceeds `portrait_prompt` VARCHAR(2000). No Flyway.
 - 2026-08-26: Codex follow-up — `/portrait/request` skips cache restore when a directed prompt is already pending, so the old stable-key image cannot complete over an unclaimed regen.
 - 2026-08-26: Codex follow-up — atomic `claimPortraitRegeneration` from COMPLETED/FAILED only (no Flyway). Directed-prompt guard is PENDING-only so failed auto-portraits stay requestable. GET cache headers left illustration-parity.
+- 2026-08-26: Codex P2 #3 — local `GET .../portrait` revalidates with `no-cache` + ETag/Last-Modified from `completed_at` so a successful regen is not cached for 7 days. CDN `?v=` path unchanged.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap
