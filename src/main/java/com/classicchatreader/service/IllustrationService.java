@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -357,13 +358,57 @@ public class IllustrationService {
      * Get or analyze illustration settings for a book.
      *
      * <p>First-time style creation is single-flight per book so parallel illustration
-     * workers do not each pay for analysis. The per-book lock is held until after
-     * commit so a second reader cannot {@code findById} the pre-commit row and
-     * analyze again. Existing style is a lock-free read. Different books do not
-     * share a lock.
+     * workers do not each pay for analysis. The per-book lock is acquired
+     * <em>outside</em> the style transaction; check/save then runs in a
+     * {@code REQUIRES_NEW} transaction so a second worker cannot re-see a
+     * null-style entity from the first-level cache. The lock is held until that
+     * transaction commits. Existing style is a lock-free read. Different books
+     * do not share a lock.
      */
-    @Transactional
     public IllustrationSettings getOrAnalyzeBookStyle(String bookId, boolean forceReanalyze) {
+        if (!forceReanalyze) {
+            BookEntity book = bookRepository.findById(bookId).orElse(null);
+            if (book == null) {
+                return IllustrationSettings.defaults();
+            }
+            IllustrationSettings existing = existingStyle(book);
+            if (existing != null) {
+                return existing;
+            }
+        }
+        if (cacheOnly) {
+            log.info("Skipping illustration style analysis in cache-only mode for book {}", bookId);
+            return IllustrationSettings.defaults();
+        }
+
+        ReentrantLock lock = styleLockFor(bookId);
+        lock.lock();
+        boolean holdUntilCommit = false;
+        try {
+            IllustrationSettings settings = self.analyzeBookStyleInNewTransaction(bookId, forceReanalyze);
+            // Unit tests call the raw instance (no proxy), so REQUIRES_NEW is a no-op.
+            // Hold the lock until afterCommit so a second reader cannot findById
+            // the pre-commit row. In production, self is the Spring proxy and the
+            // inner transaction has already committed when this returns.
+            if (self == this && TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(unlockStyleAfterCommit(lock));
+                holdUntilCommit = true;
+            }
+            return settings;
+        } finally {
+            if (!holdUntilCommit) {
+                unlockStyleIfHeld(lock);
+            }
+        }
+    }
+
+    /**
+     * Fresh persistence context for the locked style check/save. Invoked via
+     * {@code self} so {@code REQUIRES_NEW} applies. Callers should use
+     * {@link #getOrAnalyzeBookStyle(String, boolean)}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public IllustrationSettings analyzeBookStyleInNewTransaction(String bookId, boolean forceReanalyze) {
         BookEntity book = bookRepository.findById(bookId).orElse(null);
         if (book == null) {
             return IllustrationSettings.defaults();
@@ -379,49 +424,24 @@ public class IllustrationService {
             return IllustrationSettings.defaults();
         }
 
-        ReentrantLock lock = styleLockFor(bookId);
-        lock.lock();
-        boolean holdUntilCommit = false;
-        try {
-            book = bookRepository.findById(bookId).orElse(null);
-            if (book == null) {
-                return IllustrationSettings.defaults();
-            }
-            if (!forceReanalyze) {
-                IllustrationSettings existing = existingStyle(book);
-                if (existing != null) {
-                    return existing;
-                }
-            }
+        String openingText = getBookOpeningText(book);
+        IllustrationSettings settings = styleAnalysisService.analyzeBookForStyle(
+                book.getTitle(),
+                book.getAuthor(),
+                openingText
+        );
 
-            String openingText = getBookOpeningText(book);
-            IllustrationSettings settings = styleAnalysisService.analyzeBookForStyle(
-                    book.getTitle(),
-                    book.getAuthor(),
-                    openingText
-            );
+        book.setIllustrationStyle(settings.style());
+        book.setIllustrationPromptPrefix(settings.promptPrefix());
+        book.setIllustrationSetting(settings.setting());
+        book.setIllustrationStyleReasoning(settings.reasoning());
+        book.setIllustrationCoverSubject(settings.coverSubject());
+        book.setIllustrationCoverFocus(settings.coverFocus());
+        bookRepository.save(book);
 
-            book.setIllustrationStyle(settings.style());
-            book.setIllustrationPromptPrefix(settings.promptPrefix());
-            book.setIllustrationSetting(settings.setting());
-            book.setIllustrationStyleReasoning(settings.reasoning());
-            book.setIllustrationCoverSubject(settings.coverSubject());
-            book.setIllustrationCoverFocus(settings.coverFocus());
-            bookRepository.save(book);
-
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(unlockStyleAfterCommit(lock));
-                holdUntilCommit = true;
-            }
-
-            log.info("Analyzed illustration style for '{}': {} - {}",
-                    book.getTitle(), settings.style(), settings.reasoning());
-            return settings;
-        } finally {
-            if (!holdUntilCommit) {
-                unlockStyleIfHeld(lock);
-            }
-        }
+        log.info("Analyzed illustration style for '{}': {} - {}",
+                book.getTitle(), settings.style(), settings.reasoning());
+        return settings;
     }
 
     private static IllustrationSettings existingStyle(BookEntity book) {
@@ -531,7 +551,6 @@ public class IllustrationService {
                 // Use the custom prompt directly
                 imagePrompt = customPrompt;
             } else {
-                // Get or analyze book style (use self to ensure @Transactional proxy is invoked)
                 IllustrationSettings styleSettings = self.getOrAnalyzeBookStyle(book.getId(), false);
 
                 // Get chapter content

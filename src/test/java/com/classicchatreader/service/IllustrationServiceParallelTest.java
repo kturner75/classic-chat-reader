@@ -18,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronizationUtils;
@@ -153,6 +155,22 @@ class IllustrationServiceParallelTest {
         verify(illustrationRepository, times(2)).claimGenerationLease(
                 eq("chapter-1"), any(), any(), any(),
                 eq(IllustrationStatus.PENDING), eq(IllustrationStatus.GENERATING));
+    }
+
+    @Test
+    void styleLockIsOutsideRequiresNewTransaction() throws Exception {
+        Transactional outer = IllustrationService.class
+                .getMethod("getOrAnalyzeBookStyle", String.class, boolean.class)
+                .getAnnotation(Transactional.class);
+        Transactional inner = IllustrationService.class
+                .getMethod("analyzeBookStyleInNewTransaction", String.class, boolean.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(outer)
+                .as("lock must be acquired outside the style transaction")
+                .isNull();
+        assertThat(inner).isNotNull();
+        assertThat(inner.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 
     @Test
