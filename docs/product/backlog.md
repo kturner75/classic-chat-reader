@@ -2521,6 +2521,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Distinct from #132 (name-identity dedupe). Do not stack.
 - Session Log:
 - 2026-08-26: Opened and implemented off current `main` (includes #163). Shared `ImagineInFlightLimiter` on `ImageGenerationHttpClient`; illustration/portrait workers sized to `generation.imagine.max-in-flight` (default 4); analysis on a dedicated executor; 429 cooldown on the limiter. No Flyway. Overnight `PreGenerationBatchRunner` untouched. Workers > 1, exclusive leases, and cache-only 409 covered by tests. Interrupted workers no longer schedule retries.
+- 2026-08-26: Codex follow-up — interrupting an illustration or portrait worker after lease claim resets the row to PENDING and clears the lease, without charging a retry. Merged `origin/main` (#165/#166/#167) onto this branch.
 
 ## P0
 

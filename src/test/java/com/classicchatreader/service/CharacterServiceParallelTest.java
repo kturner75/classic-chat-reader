@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -163,6 +164,36 @@ class CharacterServiceParallelTest {
         verify(characterRepository, times(2)).claimPortraitLease(
                 eq("character-1"), any(), any(), any(),
                 eq(CharacterStatus.PENDING), eq(CharacterStatus.GENERATING));
+    }
+
+    @Test
+    void interruptAfterPortraitClaimResetsLeaseWithoutRetry() throws Exception {
+        CharacterEntity elizabeth = character("character-1", "Elizabeth Bennet");
+        stubPortraitGeneration(elizabeth);
+        elizabeth.setStatus(CharacterStatus.GENERATING);
+        elizabeth.setLeaseOwner("character-test");
+        elizabeth.setLeaseExpiresAt(LocalDateTime.now().plusMinutes(20));
+        elizabeth.setRetryCount(0);
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(elizabeth));
+        CountDownLatch started = new CountDownLatch(1);
+        when(portraitImageGenerator.generatePortrait(anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    started.countDown();
+                    throw new InterruptedException("imagine wait interrupted");
+                });
+
+        service.init();
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.PENDING))
+                .thenReturn(List.of(elizabeth));
+        service.forceQueuePendingPortraitsForBook("book-1");
+
+        assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
+        verify(characterRepository, timeout(2000).atLeastOnce()).save(elizabeth);
+        assertThat(elizabeth.getStatus()).isEqualTo(CharacterStatus.PENDING);
+        assertThat(elizabeth.getLeaseOwner()).isNull();
+        assertThat(elizabeth.getLeaseExpiresAt()).isNull();
+        assertThat(elizabeth.getRetryCount()).isEqualTo(0);
+        assertThat(elizabeth.getNextRetryAt()).isNull();
     }
 
     @Test

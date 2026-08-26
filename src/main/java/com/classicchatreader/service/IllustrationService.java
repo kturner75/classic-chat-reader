@@ -629,6 +629,7 @@ public class IllustrationService {
             if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
                 log.info("Illustration generation interrupted for chapter {}", chapterId);
+                self.updateIllustrationStatus(chapterId, IllustrationStatus.PENDING, null, null);
                 return;
             }
             log.error("Failed to generate illustration for chapter: {}", chapterId, e);

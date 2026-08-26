@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -155,6 +156,37 @@ class IllustrationServiceParallelTest {
         verify(illustrationRepository, times(2)).claimGenerationLease(
                 eq("chapter-1"), any(), any(), any(),
                 eq(IllustrationStatus.PENDING), eq(IllustrationStatus.GENERATING));
+    }
+
+    @Test
+    void interruptAfterClaimResetsLeaseWithoutRetry() throws Exception {
+        ChapterEntity chapter = chapter("chapter-1", 1);
+        stubChapterGeneration(chapter);
+        IllustrationEntity illustration = new IllustrationEntity(chapter);
+        illustration.setStatus(IllustrationStatus.GENERATING);
+        illustration.setLeaseOwner("illustration-test");
+        illustration.setLeaseExpiresAt(LocalDateTime.now().plusMinutes(20));
+        illustration.setRetryCount(0);
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
+        CountDownLatch started = new CountDownLatch(1);
+        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    started.countDown();
+                    throw new InterruptedException("imagine wait interrupted");
+                });
+
+        service.init();
+        when(illustrationRepository.findByChapterBookIdAndStatus("book-1", IllustrationStatus.PENDING))
+                .thenReturn(List.of(new IllustrationEntity(chapter)));
+        service.forceQueuePendingForBook("book-1");
+
+        assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
+        verify(illustrationRepository, timeout(2000).atLeastOnce()).save(illustration);
+        assertThat(illustration.getStatus()).isEqualTo(IllustrationStatus.PENDING);
+        assertThat(illustration.getLeaseOwner()).isNull();
+        assertThat(illustration.getLeaseExpiresAt()).isNull();
+        assertThat(illustration.getRetryCount()).isEqualTo(0);
+        assertThat(illustration.getNextRetryAt()).isNull();
     }
 
     @Test

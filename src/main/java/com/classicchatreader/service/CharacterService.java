@@ -846,6 +846,7 @@ public class CharacterService {
             if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
                 log.info("Portrait generation interrupted for character {}", characterId);
+                self.updateCharacterStatus(characterId, CharacterStatus.PENDING, null, null);
                 return;
             }
             log.error("Failed to generate portrait for character: {}", character.getName(), e);
