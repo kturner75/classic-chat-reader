@@ -107,6 +107,22 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void requestPortrait_pendingDirectedPrompt_doesNotRestoreCacheOrQueue() {
+        character.setStatus(CharacterStatus.PENDING);
+        character.setPortraitPrompt("Mr. Bennet in a dark coat");
+        character.setPortraitFilename(null);
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+
+        service.requestPortrait("character-1");
+
+        assertEquals(CharacterStatus.PENDING, character.getStatus());
+        assertNull(character.getPortraitFilename());
+        assertEquals(0, service.getQueueDepth());
+        verify(comfyUIService, never()).hasPortraitImage(any());
+        verify(characterRepository, never()).save(character);
+    }
+
+    @Test
     void requestPortrait_queuesOneCharacterWithoutPrefetch() {
         character.setStatus(CharacterStatus.PENDING);
         when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
@@ -157,6 +173,19 @@ class CharacterServicePortraitCacheTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void regeneratePortraitWithPrompt_overlongPrompt_doesNotQueue() {
+        character.setStatus(CharacterStatus.COMPLETED);
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+
+        service.regeneratePortraitWithPrompt(
+                "character-1",
+                "x".repeat(CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH + 1));
+
+        assertEquals(0, service.getQueueDepth());
+        verify(characterRepository, never()).save(character);
     }
 
     @Test

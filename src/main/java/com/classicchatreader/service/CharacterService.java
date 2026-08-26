@@ -464,6 +464,12 @@ public class CharacterService {
             return;
         }
 
+        if (hasPendingDirectedPortraitPrompt(character)) {
+            log.debug("Skipping portrait request for character {} because a custom regeneration is already pending",
+                    characterId);
+            return;
+        }
+
         String cacheKey = buildPortraitCacheKey(character);
         if (restoreCachedPortrait(character, cacheKey)) {
             return;

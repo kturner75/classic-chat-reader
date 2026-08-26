@@ -2398,6 +2398,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: BL-074.1 HTTP seam — `POST /api/characters/{id}/portrait/request` and `.../regenerate { prompt }` for one PRIMARY; same generation-gate + cache-only 409 + `illustration.allow-prompt-editing` as illustrations. No Flyway, upload, PATCH, or /admin.
 - 2026-08-26: Codex P1/P2 — queue request/regen afterCommit; skip cache restore when a stored prompt is pending; 409 regenerate while GENERATING.
 - 2026-08-26: Codex follow-up — 409 regenerate while PENDING (second custom job before claim); 400 when prompt exceeds `portrait_prompt` VARCHAR(2000). No Flyway.
+- 2026-08-26: Codex follow-up — `/portrait/request` skips cache restore when a directed prompt is already pending, so the old stable-key image cannot complete over an unclaimed regen.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap
