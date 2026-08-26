@@ -130,6 +130,42 @@ class CharacterControllerTest {
     }
 
     @Test
+    void uploadPortrait_generating_returnsConflictWithoutEnqueue() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setStatus(CharacterStatus.GENERATING);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.png", "image/png", png);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortraitStatus("character-1")).thenReturn(CharacterStatus.GENERATING);
+        when(characterService.saveUploadedPortrait(
+                "character-1",
+                png,
+                "studio",
+                "elizabeth in a garden",
+                null
+        )).thenReturn(LiveAssetWriteResult.GENERATION_IN_PROGRESS);
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "elizabeth in a garden")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status", is("GENERATING")));
+
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+        verify(characterService, never()).requestChapterAnalysis(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void uploadPortrait_nonPng_returnsUnsupportedMediaType() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setCharacterEnabled(true);

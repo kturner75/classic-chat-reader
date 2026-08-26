@@ -233,7 +233,8 @@ public class IllustrationController {
                     source,
                     generatedPrompt,
                     promptOverride);
-            if (result == LiveAssetWriteResult.CACHE_ONLY) {
+            if (result == LiveAssetWriteResult.CACHE_ONLY
+                    || result == LiveAssetWriteResult.GENERATION_IN_PROGRESS) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(getChapterStatus(chapterId));
             }
             if (result == LiveAssetWriteResult.NOT_FOUND) {

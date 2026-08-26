@@ -213,6 +213,43 @@ class IllustrationControllerTest {
     }
 
     @Test
+    void uploadIllustration_generating_returnsConflictWithoutEnqueue() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "scene.png", "image/png", png);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.saveUploadedIllustration(
+                "chapter-1",
+                png,
+                "studio",
+                "storm over the lake",
+                null
+        )).thenReturn(LiveAssetWriteResult.GENERATION_IN_PROGRESS);
+        when(illustrationService.getStatus("chapter-1")).thenReturn(IllustrationStatus.GENERATING);
+
+        mockMvc.perform(multipart("/api/illustrations/chapter/chapter-1")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "storm over the lake")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status", is("GENERATING")));
+
+        verify(illustrationService, never()).requestIllustration("chapter-1");
+        verify(illustrationService, never()).regenerateWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void uploadIllustration_nonPng_returnsUnsupportedMediaType() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setIllustrationEnabled(true);

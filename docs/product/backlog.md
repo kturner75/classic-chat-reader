@@ -2433,6 +2433,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B2). Kevin chose: HTTP only; ask CCR for portrait/illustration upload. Docs only.
 - 2026-08-25: `claude_02` N1 — cover keep already works, but stamps `manual_upload` and drops prompts. Spec `source` + prompt on BL-075 uploads and back-port to cover PUT. PNG only. Docs only.
 - 2026-08-26: HTTP write-back: `PUT` portrait + illustration (PNG + `source` + prompts, COMPLETED, no Imagine enqueue); cover `PUT` provenance back-port (`studio` vs `manual_upload`). Cache-only 409. No Flyway (studio pointer columns not on main).
+- 2026-08-26: Reject portrait/illustration upload while GENERATING (409) so the in-flight worker cannot overwrite a kept winner. Cover PUT now clears stale prompt/override when those fields are null/blank.
 
 ## P0
 

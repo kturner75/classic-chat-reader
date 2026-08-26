@@ -275,14 +275,8 @@ public class BookCoverService {
         cover.setErrorMessage(null);
         cover.setCompletedAt(LocalDateTime.now());
         cover.setCoverSource(LiveAssetUploads.resolveSource(source));
-        String normalizedGenerated = LiveAssetUploads.normalizePrompt(generatedPrompt);
-        if (normalizedGenerated != null) {
-            cover.setGeneratedPrompt(normalizedGenerated);
-        }
-        String normalizedOverride = LiveAssetUploads.normalizePrompt(promptOverride);
-        if (normalizedOverride != null) {
-            cover.setPromptOverride(normalizedOverride);
-        }
+        cover.setGeneratedPrompt(LiveAssetUploads.normalizePrompt(generatedPrompt));
+        cover.setPromptOverride(LiveAssetUploads.normalizePrompt(promptOverride));
         clearCoverLease(cover);
         bookCoverRepository.save(cover);
         return LiveAssetWriteResult.SAVED;

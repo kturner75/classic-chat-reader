@@ -184,6 +184,11 @@ public class IllustrationService {
         if (chapter == null) {
             return LiveAssetWriteResult.NOT_FOUND;
         }
+        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
+        if (existing.isPresent() && existing.get().getStatus() == IllustrationStatus.GENERATING) {
+            log.info("Rejecting illustration upload for chapter {} while generation is active", chapterId);
+            return LiveAssetWriteResult.GENERATION_IN_PROGRESS;
+        }
         PngImages.requirePng(imageData, "Illustration uploads must be PNG images.");
         String cacheKey = assetKeyService.buildIllustrationKey(chapter);
         String filename;
@@ -193,8 +198,7 @@ public class IllustrationService {
             throw new IllegalArgumentException("Unable to save illustration: " + e.getMessage(), e);
         }
 
-        IllustrationEntity illustration = illustrationRepository.findByChapterId(chapterId)
-                .orElseGet(() -> new IllustrationEntity(chapter));
+        IllustrationEntity illustration = existing.orElseGet(() -> new IllustrationEntity(chapter));
         illustration.setImageFilename(filename);
         illustration.setStatus(IllustrationStatus.COMPLETED);
         illustration.setRetryCount(0);

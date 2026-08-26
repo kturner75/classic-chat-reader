@@ -243,6 +243,43 @@ class LibraryControllerTest {
     }
 
     @Test
+    void uploadBookCover_blankOverride_isForwardedSoServiceCanClearStalePrompt() throws Exception {
+        Book book = new Book("book-1", "Pride and Prejudice", "Jane Austen", null, null, List.of(), false, false, false);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "cover.png", "image/png", png);
+        when(bookStorageService.getBook("book-1")).thenReturn(Optional.of(book));
+        when(bookCoverService.saveUploadedCover("book-1", png, "studio", "new imagine prompt", "  "))
+                .thenReturn(com.classicchatreader.service.LiveAssetWriteResult.SAVED);
+        when(bookCoverService.getCoverStatus("book-1")).thenReturn(Optional.of(new BookCoverService.CoverStatus(
+                "book-1",
+                com.classicchatreader.entity.IllustrationStatus.COMPLETED,
+                "books/gutenberg/1342/covers/cover.png",
+                "new imagine prompt",
+                null,
+                "studio",
+                null,
+                null
+        )));
+
+        mockMvc.perform(multipart("/api/library/book-1/cover")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "new imagine prompt")
+                        .param("prompt_override", "  ")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coverSource", is("studio")))
+                .andExpect(jsonPath("$.generatedPrompt", is("new imagine prompt")))
+                .andExpect(jsonPath("$.promptOverride", is(nullValue())));
+
+        verify(bookCoverService).saveUploadedCover("book-1", png, "studio", "new imagine prompt", "  ");
+        verify(bookCoverService, org.mockito.Mockito.never()).requestCover(anyString());
+    }
+
+    @Test
     void uploadBookCover_nonPng_returnsUnsupportedMediaType() throws Exception {
         Book book = new Book("book-1", "Pride and Prejudice", "Jane Austen", null, null, List.of(), false, false, false);
         byte[] jpeg = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0x00};

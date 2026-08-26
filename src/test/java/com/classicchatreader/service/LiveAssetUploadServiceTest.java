@@ -148,6 +148,31 @@ class LiveAssetUploadServiceTest {
         verify(bookCoverRepository).save(captor.capture());
         assertEquals("manual_upload", captor.getValue().getCoverSource());
         assertNull(captor.getValue().getGeneratedPrompt());
+        assertNull(captor.getValue().getPromptOverride());
+    }
+
+    @Test
+    void saveUploadedCover_blankOrOmittedOverride_clearsStalePromptFields() throws Exception {
+        BookCoverEntity existing = new BookCoverEntity(book);
+        existing.setGeneratedPrompt("old generated prompt");
+        existing.setPromptOverride("old override prompt");
+        existing.setCoverSource("prompt_override");
+        existing.setStatus(IllustrationStatus.COMPLETED);
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(comfyUIService.saveBookCoverImage(any(), any())).thenReturn(
+                "books/gutenberg/1342/covers/cover.png");
+        when(bookCoverRepository.findByBookId("book-1")).thenReturn(Optional.of(existing));
+
+        bookCoverService.saveUploadedCover("book-1", PNG, "studio", "new imagine prompt", "  ");
+
+        ArgumentCaptor<BookCoverEntity> captor = ArgumentCaptor.forClass(BookCoverEntity.class);
+        verify(bookCoverRepository).save(captor.capture());
+        BookCoverEntity saved = captor.getValue();
+        assertEquals("studio", saved.getCoverSource());
+        assertEquals("new imagine prompt", saved.getGeneratedPrompt());
+        assertNull(saved.getPromptOverride());
+        assertEquals(IllustrationStatus.COMPLETED, saved.getStatus());
+        verify(bookCoverImageGeneratorService, never()).generateBookCover(any(), any(), any());
     }
 
     @Test
@@ -198,6 +223,24 @@ class LiveAssetUploadServiceTest {
     }
 
     @Test
+    void saveUploadedIllustration_generating_rejectedWithoutWrite() throws Exception {
+        IllustrationEntity generating = new IllustrationEntity(chapter);
+        generating.setStatus(IllustrationStatus.GENERATING);
+        generating.setImageFilename("books/gutenberg/1342/illustrations/chapters/1.png");
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(generating));
+
+        assertEquals(LiveAssetWriteResult.GENERATION_IN_PROGRESS,
+                illustrationWriteService.saveUploadedIllustration(
+                        "chapter-1", PNG, "studio", "storm over the lake", null));
+
+        verify(illustrationRepository, never()).save(any());
+        verify(comfyUIService, never()).saveIllustrationImage(any(), any());
+        verify(illustrationImageGenerator, never()).generateIllustration(any(), any(), any());
+        assertEquals(0, illustrationWriteService.getQueueDepth());
+    }
+
+    @Test
     void saveUploadedIllustration_cacheOnlyAndNonPng() throws Exception {
         ReflectionTestUtils.setField(illustrationWriteService, "cacheOnly", true);
         assertEquals(LiveAssetWriteResult.CACHE_ONLY,
@@ -237,6 +280,24 @@ class LiveAssetUploadServiceTest {
         assertEquals("books/gutenberg/1342/portraits/characters/mr-bennet.png", saved.getPortraitFilename());
         assertEquals(0, characterService.getQueueDepth());
         verify(portraitImageGenerator, never()).generatePortrait(any(), any(), any());
+    }
+
+    @Test
+    void saveUploadedPortrait_generating_rejectedWithoutWrite() throws Exception {
+        CharacterEntity character = new CharacterEntity(book, "Mr. Bennet", "Elizabeth's father", chapter, 0);
+        character.setId("character-1");
+        character.setStatus(CharacterStatus.GENERATING);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+
+        assertEquals(LiveAssetWriteResult.GENERATION_IN_PROGRESS,
+                characterService.saveUploadedPortrait(
+                        "character-1", PNG, "studio", "elizabeth's father in a study", null));
+
+        verify(characterRepository, never()).save(any());
+        verify(comfyUIService, never()).savePortraitImage(any(), any());
+        verify(portraitImageGenerator, never()).generatePortrait(any(), any(), any());
+        assertEquals(0, characterService.getQueueDepth());
     }
 
     @Test

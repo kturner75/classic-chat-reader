@@ -281,7 +281,8 @@ public class CharacterController {
                     source,
                     generatedPrompt,
                     promptOverride);
-            if (result == LiveAssetWriteResult.CACHE_ONLY) {
+            if (result == LiveAssetWriteResult.CACHE_ONLY
+                    || result == LiveAssetWriteResult.GENERATION_IN_PROGRESS) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(getPortraitStatus(characterId));
             }
             if (result == LiveAssetWriteResult.NOT_FOUND) {

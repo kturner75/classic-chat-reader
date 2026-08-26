@@ -304,6 +304,10 @@ public class CharacterService {
         if (character == null) {
             return LiveAssetWriteResult.NOT_FOUND;
         }
+        if (character.getStatus() == CharacterStatus.GENERATING) {
+            log.info("Rejecting portrait upload for character {} while generation is active", characterId);
+            return LiveAssetWriteResult.GENERATION_IN_PROGRESS;
+        }
         PngImages.requirePng(imageData, "Portrait uploads must be PNG images.");
         String cacheKey = buildPortraitCacheKey(character);
         String filename;
