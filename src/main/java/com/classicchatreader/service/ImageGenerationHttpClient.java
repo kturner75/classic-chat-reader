@@ -17,7 +17,8 @@ import java.util.Base64;
 /**
  * Shared transport for OpenAI-compatible {@code /images/generations} endpoints (xAI Grok
  * Imagine, OpenAI). Callers own the request body and provider selection; this only handles
- * the POST, the b64/url response split, and PNG normalisation.
+ * the POST, the b64/url response split, PNG normalisation, and the process-wide
+ * {@link ImagineInFlightLimiter} cap.
  */
 @Component
 public class ImageGenerationHttpClient {
@@ -25,6 +26,11 @@ public class ImageGenerationHttpClient {
     private static final int MAX_IN_MEMORY_BYTES = 64 * 1024 * 1024;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ImagineInFlightLimiter inFlightLimiter;
+
+    public ImageGenerationHttpClient(ImagineInFlightLimiter inFlightLimiter) {
+        this.inFlightLimiter = inFlightLimiter;
+    }
 
     public WebClient buildClient(String baseUrl, String apiKey) {
         WebClient.Builder builder = WebClient.builder()
@@ -42,7 +48,8 @@ public class ImageGenerationHttpClient {
             String providerName,
             String bearerToken,
             int timeoutSeconds) throws Exception {
-        return ensurePng(postImageGenerationRequest(client, request, providerName, bearerToken, timeoutSeconds));
+        return inFlightLimiter.run(() ->
+                ensurePng(postImageGenerationRequest(client, request, providerName, bearerToken, timeoutSeconds)));
     }
 
     private byte[] postImageGenerationRequest(

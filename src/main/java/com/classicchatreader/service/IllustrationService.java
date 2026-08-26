@@ -30,7 +30,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,12 +52,16 @@ public class IllustrationService {
     private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ExecutorService executor;
     private volatile boolean running = true;
+    private int imagineWorkerCount = ImagineInFlightLimiter.DEFAULT_MAX_IN_FLIGHT;
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    @Value("${generation.imagine.max-in-flight:4}")
+    private int imagineMaxInFlight;
 
     @Value("${illustration.generation.lease-minutes:20}")
     private int illustrationLeaseMinutes;
@@ -111,15 +117,27 @@ public class IllustrationService {
         workerId = (configuredWorkerId != null && !configuredWorkerId.isBlank())
                 ? configuredWorkerId
                 : "illustration-" + UUID.randomUUID();
-        executor.submit(this::processQueue);
-        log.info("Illustration service started with background queue processor (workerId={})", workerId);
+        imagineWorkerCount = Math.max(1, imagineMaxInFlight);
+        executor = Executors.newFixedThreadPool(imagineWorkerCount, workerThreadFactory("illustration"));
+        for (int i = 0; i < imagineWorkerCount; i++) {
+            executor.submit(this::processQueue);
+        }
+        log.info(
+                "Illustration service started with {} Imagine workers (workerId={})",
+                imagineWorkerCount,
+                workerId
+        );
     }
 
     /**
      * Check if the queue processor is running (for debugging).
      */
     public boolean isQueueProcessorRunning() {
-        return !executor.isShutdown() && !executor.isTerminated();
+        return executor != null && !executor.isShutdown() && !executor.isTerminated();
+    }
+
+    public int getImagineWorkerCount() {
+        return imagineWorkerCount;
     }
 
     public int getQueueDepth() {
@@ -129,7 +147,9 @@ public class IllustrationService {
     @PreDestroy
     public void shutdown() {
         running = false;
-        executor.shutdownNow();
+        if (executor != null) {
+            executor.shutdownNow();
+        }
         retryScheduler.shutdownNow();
         log.info("Illustration service shutting down");
     }
@@ -828,5 +848,14 @@ public class IllustrationService {
                 generationQueue.offer(request);
             }
         }, normalizedDelayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private static ThreadFactory workerThreadFactory(String prefix) {
+        AtomicInteger sequence = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 }
