@@ -161,6 +161,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-25: Added `BL-072` (durable curated-catalog membership). Kevin / ccr-studio design: adding a title to the curated landing list must be a table + API with `active`/`inactive` status, not a Java list edit. Unlisting must not wipe covers, portraits, illustrations, or roster. Studio ST-008 onboarding is blocked on this epic. Docs only.
 - 2026-08-25: Added `BL-073` (operator API to grant/revoke `CREATE_CLASSROOM`). Kevin: provision teacher is a studio use case; today `manage_teacher_access.sh` runs SQL. Account must already exist. Studio ST-009 depends on this. Docs only.
 - 2026-08-25: Added `BL-074` (per-character portrait request/regen) and `BL-075` (portrait + illustration multipart upload) from ccr-studio `claude_01` review. Kevin: HTTP-only write-back; ask CCR for both seams. Docs only.
+- 2026-08-25: `BL-075` spec from ccr-studio `claude_02` (N1): uploads accept `source` + prompt metadata; back-port the same fields to cover `PUT`; PNG only. Docs only.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -2404,7 +2405,9 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Current Direction:
   - HTTP only. Studio will **not** write CCR’s filesystem or Postgres directly.
   - Add multipart PUT/POST upload for a character portrait and a chapter illustration, same idea as cover upload: replace live bytes + metadata, leave generation status COMPLETED.
-  - Accept optional `studio_job_id` / `studio_artifact_id` when those pointer columns exist.
+  - Accept **`source`** (studio keep/restore writes `studio`, not `manual_upload`) and prompt fields (`generated_prompt` / `prompt_override`) alongside the bytes. Optional `studio_job_id` / `studio_artifact_id` when those pointer columns exist.
+  - **Content type:** `image/png` only (magic-byte check). Studio history is PNG. Do not inherit JPEG/WebP by accident; add types later if asked.
+  - **Back-port the same `source` + prompt fields to `PUT /api/library/{bookId}/cover`.** Today `saveManualCover` always stamps `cover_source = "manual_upload"` and never writes prompts — provenance noise, and the transfer bundle’s cover prompt is blank. Real operator file picks can still use `manual_upload`.
   - Local/generation-gated; cache-only 409.
 - Out of this epic:
   - Portrait **generation** request/regen (`BL-074`).
@@ -2413,17 +2416,21 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-075.1 Portrait upload | Proposed | Multipart write of PNG + prompt metadata onto the character’s live portrait | Studio keep/restore of `prt-*` is HTTP-only |
+| BL-075.1 Portrait upload | Proposed | Multipart write of PNG + `source` + prompt metadata onto the character’s live portrait | Studio keep/restore of `prt-*` is HTTP-only |
 | BL-075.2 Illustration upload | Proposed | Same for a chapter illustration | Studio keep/restore of `ill-*` is HTTP-only |
+| BL-075.3 Cover PUT provenance | Proposed | Cover upload accepts `source` + prompt fields; studio keep is not stamped `manual_upload` | Kept covers carry the Imagine prompt and a studio source |
 - Acceptance Criteria:
   - Studio can replace the live portrait or illustration without touching CCR disk/SQL itself.
   - Upload does not enqueue a new Imagine job.
   - cache-only still 409s.
+  - Cover / portrait / illustration upload of a studio winner stores `source = studio` and the prompt studio sent, not a blank `manual_upload` row.
+  - Non-PNG bodies are 415 / 400.
 - Dependency Notes:
   - **ccr-studio ST-002** multi-sample for portraits/illustrations is **cover-only until this ships**.
   - Distinct from `BL-074` (generate). This is write-back of bytes studio already has.
 - Session Log:
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B2). Kevin chose: HTTP only; ask CCR for portrait/illustration upload. Docs only.
+- 2026-08-25: `claude_02` N1 — cover keep already works, but stamps `manual_upload` and drops prompts. Spec `source` + prompt on BL-075 uploads and back-port to cover PUT. PNG only. Docs only.
 
 ## P0
 
