@@ -7,10 +7,10 @@ import com.classicchatreader.model.VoiceSettings;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.ParagraphRepository;
+import com.classicchatreader.config.PublicApiRateLimiter;
 import com.classicchatreader.service.AssetKeyService;
 import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
-import com.classicchatreader.service.PublicSessionAuthService;
 import com.classicchatreader.service.TtsService;
 import com.classicchatreader.service.VoiceAnalysisService;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +20,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,7 +72,7 @@ class TtsControllerTest {
     private CdnAssetService cdnAssetService;
 
     @MockitoBean
-    private PublicSessionAuthService sessionAuthService;
+    private PublicApiRateLimiter rateLimiter;
 
     @MockitoBean
     private BookStorageService bookStorageService;
@@ -81,6 +82,7 @@ class TtsControllerTest {
         when(bookStorageService.isTtsEnabled(org.mockito.ArgumentMatchers.any(BookEntity.class)))
                 .thenAnswer(invocation -> Boolean.TRUE.equals(
                         invocation.getArgument(0, BookEntity.class).getTtsEnabled()));
+        when(rateLimiter.tryConsume(anyString(), anyInt(), any(Duration.class))).thenReturn(true);
     }
 
     @Test
@@ -267,6 +269,7 @@ class TtsControllerTest {
                 org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.any());
+        verify(rateLimiter, never()).tryConsume(anyString(), anyInt(), any(Duration.class));
     }
 
     @Test
@@ -287,10 +290,36 @@ class TtsControllerTest {
                 .andExpect(content().bytes(cachedAudio));
 
         verify(ttsService, never()).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
+        verify(rateLimiter, never()).tryConsume(anyString(), anyInt(), any(Duration.class));
     }
 
     @Test
-    void speakParagraph_publicMode_cacheMissWithoutAuth_returnsUnauthorized() throws Exception {
+    void speakParagraph_publicMode_cacheMissWithoutAuth_generatesSharedAudio() throws Exception {
+        BookEntity book = createTtsEnabledBook();
+        ChapterEntity chapter = createChapter(book);
+        ParagraphEntity paragraph = createParagraph("<p>Hello from paragraph.</p>");
+        byte[] generatedAudio = "generated-audio".getBytes();
+
+        stubSpeakParagraphLookup(book, chapter, paragraph);
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
+        when(ttsService.isConfigured()).thenReturn(true);
+        when(ttsService.currentProvider()).thenReturn("xai");
+        when(ttsService.generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any()))
+                .thenReturn(generatedAudio);
+
+        mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "audio/mpeg"))
+                .andExpect(content().bytes(generatedAudio));
+
+        verify(ttsService).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
+        verify(rateLimiter).tryConsume(anyString(), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    void speakParagraph_publicMode_cacheMissWithoutAuth_rateLimited_doesNotGenerate() throws Exception {
         BookEntity book = createTtsEnabledBook();
         ChapterEntity chapter = createChapter(book);
         ParagraphEntity paragraph = createParagraph("<p>Hello from paragraph.</p>");
@@ -299,13 +328,34 @@ class TtsControllerTest {
         when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
         when(ttsService.isCacheOnly()).thenReturn(false);
         when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
-        when(sessionAuthService.isAuthenticated(any())).thenReturn(false);
+        when(ttsService.isConfigured()).thenReturn(true);
+        when(rateLimiter.tryConsume(anyString(), anyInt(), any(Duration.class))).thenReturn(false);
 
         mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().string("Authentication required for uncached TTS generation"));
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "60"))
+                .andExpect(jsonPath("$.error", is("Rate limit exceeded")));
 
         verify(ttsService, never()).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
+    }
+
+    @Test
+    void speakParagraph_cacheOnlyWithoutCdn_cacheMiss_doesNotGenerate() throws Exception {
+        BookEntity book = createTtsEnabledBook();
+        ChapterEntity chapter = createChapter(book);
+        ParagraphEntity paragraph = createParagraph("<p>Hello from paragraph.</p>");
+
+        stubSpeakParagraphLookup(book, chapter, paragraph);
+        when(ttsService.resolvePlaybackVoice("fable", null, null)).thenReturn("orion");
+        when(ttsService.isCacheOnly()).thenReturn(true);
+        when(cdnAssetService.isEnabled()).thenReturn(false);
+        when(ttsService.getCachedSpeechForParagraph("book-one", 2, 0, "fable")).thenReturn(null);
+
+        mockMvc.perform(get("/api/tts/speak/book-1/chapter-1/0").param("voice", "fable"))
+                .andExpect(status().isNotFound());
+
+        verify(ttsService, never()).generateSpeechForParagraph(anyString(), anyInt(), anyInt(), anyString(), any());
+        verify(rateLimiter, never()).tryConsume(anyString(), anyInt(), any(Duration.class));
     }
 
     @Test

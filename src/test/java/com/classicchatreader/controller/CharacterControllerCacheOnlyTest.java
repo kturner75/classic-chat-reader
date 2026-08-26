@@ -40,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = {
         "generation.cache-only=true",
         "character.enabled=true",
-        "ai.chat.enabled=true"
+        "ai.chat.enabled=true",
+        "illustration.allow-prompt-editing=true"
 })
 class CharacterControllerCacheOnlyTest {
 
@@ -79,6 +80,39 @@ class CharacterControllerCacheOnlyTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @Test
+    void requestPortrait_cacheOnlyMode_returnsConflict() throws Exception {
+        BookEntity book = new BookEntity();
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).requestPortrait("character-1");
+    }
+
+    @Test
+    void regeneratePortrait_cacheOnlyMode_returnsConflict() throws Exception {
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "Elizabeth Bennet in a pale muslin gown"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).regeneratePortraitWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
 
     @Test
     void getStatus_cacheOnlyMode_keepsCharacterChatEnabledFlag() throws Exception {

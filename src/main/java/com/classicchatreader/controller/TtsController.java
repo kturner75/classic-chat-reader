@@ -2,6 +2,8 @@ package com.classicchatreader.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import com.classicchatreader.config.DeploymentMode;
+import com.classicchatreader.config.InMemoryIpRateLimiter;
+import com.classicchatreader.config.PublicApiRateLimiter;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
@@ -12,7 +14,6 @@ import com.classicchatreader.repository.ParagraphRepository;
 import com.classicchatreader.service.AssetKeyService;
 import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
-import com.classicchatreader.service.PublicSessionAuthService;
 import com.classicchatreader.service.TtsService;
 import com.classicchatreader.service.VoiceAnalysisService;
 import org.jsoup.Jsoup;
@@ -20,12 +21,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,20 +47,22 @@ public class TtsController {
   private final ParagraphRepository paragraphRepository;
   private final AssetKeyService assetKeyService;
   private final CdnAssetService cdnAssetService;
-  private final PublicSessionAuthService sessionAuthService;
   private final BookStorageService bookStorageService;
+  private final PublicApiRateLimiter rateLimiter;
   private final String deploymentMode;
-  private final String publicApiKey;
+  private final int ttsGenerateLimit;
+  private final int rateLimitWindowSeconds;
 
   public TtsController(TtsService ttsService, VoiceAnalysisService voiceAnalysisService,
                        BookRepository bookRepository, ChapterRepository chapterRepository,
                        ParagraphRepository paragraphRepository,
                        AssetKeyService assetKeyService,
                        CdnAssetService cdnAssetService,
-                       PublicSessionAuthService sessionAuthService,
                        BookStorageService bookStorageService,
+                       @Nullable PublicApiRateLimiter rateLimiter,
                        @Value("${deployment.mode:local}") String deploymentMode,
-                       @Value("${security.public.api-key:}") String publicApiKey) {
+                       @Value("${security.public.rate-limit.window-seconds:60}") int rateLimitWindowSeconds,
+                       @Value("${security.public.rate-limit.tts-generate-requests:12}") int ttsGenerateLimit) {
     this.ttsService = ttsService;
     this.voiceAnalysisService = voiceAnalysisService;
     this.bookRepository = bookRepository;
@@ -65,10 +70,11 @@ public class TtsController {
     this.paragraphRepository = paragraphRepository;
     this.assetKeyService = assetKeyService;
     this.cdnAssetService = cdnAssetService;
-    this.sessionAuthService = sessionAuthService;
     this.bookStorageService = bookStorageService;
+    this.rateLimiter = rateLimiter != null ? rateLimiter : new InMemoryIpRateLimiter(20000);
     this.deploymentMode = deploymentMode == null ? "local" : deploymentMode;
-    this.publicApiKey = publicApiKey == null ? "" : publicApiKey;
+    this.rateLimitWindowSeconds = Math.max(1, rateLimitWindowSeconds);
+    this.ttsGenerateLimit = Math.max(1, ttsGenerateLimit);
   }
 
   @GetMapping("/status")
@@ -208,7 +214,6 @@ public class TtsController {
       @PathVariable String chapterId,
       @PathVariable int paragraphIndex,
       HttpServletRequest request,
-      @RequestHeader(value = "X-API-Key", required = false) String providedApiKey,
       @RequestParam(required = false) String voice,
       @RequestParam(required = false, defaultValue = "1.0") double speed,
       @RequestParam(required = false) String instructions) {
@@ -260,24 +265,30 @@ public class TtsController {
     }
 
     boolean cacheOnly = ttsService.isCacheOnly();
-    if (cacheOnly && cdnAssetService.isEnabled()) {
-      String audioKey = assetKeyService.buildAudioKey(bookOpt.get(), resolvedVoice,
-          chapter.getChapterIndex(), paragraphIndex);
-      return cdnAssetService.buildAssetUrl("audio", audioKey)
-          .map(url -> ResponseEntity.status(HttpStatus.FOUND)
-              .header(HttpHeaders.LOCATION, url)
-              .body(new byte[0]))
-          .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    if (isPublicMode() && !isSensitiveTtsAuthorized(request, providedApiKey)) {
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-          .body("Authentication required for uncached TTS generation".getBytes(StandardCharsets.UTF_8));
+    if (cacheOnly) {
+      if (cdnAssetService.isEnabled()) {
+        String audioKey = assetKeyService.buildAudioKey(bookOpt.get(), resolvedVoice,
+            chapter.getChapterIndex(), paragraphIndex);
+        return cdnAssetService.buildAssetUrl("audio", audioKey)
+            .map(url -> ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, url)
+                .body(new byte[0]))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+      }
+      return ResponseEntity.notFound().build();
     }
 
     if (!ttsService.isConfigured()) {
       return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
           .body("TTS is not configured".getBytes());
+    }
+
+    if (isPublicMode() && !allowPublicTtsGenerate(request)) {
+      return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+          .header(HttpHeaders.RETRY_AFTER, String.valueOf(rateLimitWindowSeconds))
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(("{\"error\":\"Rate limit exceeded\",\"limit\":" + ttsGenerateLimit
+              + ",\"windowSeconds\":" + rateLimitWindowSeconds + "}").getBytes(StandardCharsets.UTF_8));
     }
 
     VoiceSettings settings = new VoiceSettings(
@@ -372,20 +383,31 @@ public class TtsController {
     return DeploymentMode.isPublic(deploymentMode);
   }
 
-  private boolean isSensitiveTtsAuthorized(HttpServletRequest request, String providedApiKey) {
-    boolean apiKeyAuthenticated = constantTimeEquals(publicApiKey, providedApiKey);
-    boolean sessionAuthenticated = sessionAuthService != null && sessionAuthService.isAuthenticated(request);
-    return apiKeyAuthenticated || sessionAuthenticated;
+  /**
+   * Public visitors may seed the shared TTS cache. Rate-limit generate only;
+   * do not require collaborator or API-key auth on this GET path.
+   */
+  private boolean allowPublicTtsGenerate(HttpServletRequest request) {
+    String ip = resolveClientIp(request);
+    String limiterKey = "TTS_GENERATE:ip:" + ip;
+    return rateLimiter.tryConsume(limiterKey, ttsGenerateLimit, Duration.ofSeconds(rateLimitWindowSeconds));
   }
 
-  private boolean constantTimeEquals(String expected, String provided) {
-    if (expected == null || expected.isBlank() || provided == null) {
-      return false;
+  private String resolveClientIp(HttpServletRequest request) {
+    String xForwardedFor = request.getHeader("X-Forwarded-For");
+    if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+      int commaIndex = xForwardedFor.indexOf(',');
+      String candidate = commaIndex >= 0 ? xForwardedFor.substring(0, commaIndex) : xForwardedFor;
+      if (!candidate.isBlank()) {
+        return candidate.trim();
+      }
     }
-    return MessageDigest.isEqual(
-        expected.getBytes(StandardCharsets.UTF_8),
-        provided.getBytes(StandardCharsets.UTF_8)
-    );
+    String xRealIp = request.getHeader("X-Real-IP");
+    if (xRealIp != null && !xRealIp.isBlank()) {
+      return xRealIp.trim();
+    }
+    String remoteAddr = request.getRemoteAddr();
+    return remoteAddr != null ? remoteAddr : "unknown";
   }
 
   public record SpeakRequest(
