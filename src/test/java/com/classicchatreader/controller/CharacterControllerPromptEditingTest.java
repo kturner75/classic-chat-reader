@@ -23,23 +23,20 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
 
-import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(CharacterController.class)
 @TestPropertySource(properties = {
-        "generation.cache-only=true",
+        "generation.cache-only=false",
         "character.enabled=true",
         "ai.chat.enabled=true",
-        "illustration.allow-prompt-editing=true"
+        "illustration.allow-prompt-editing=false"
 })
-class CharacterControllerCacheOnlyTest {
+class CharacterControllerPromptEditingTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -78,24 +75,7 @@ class CharacterControllerCacheOnlyTest {
     private AccountChatHistoryService accountChatHistoryService;
 
     @Test
-    void requestPortrait_cacheOnlyMode_returnsConflict() throws Exception {
-        BookEntity book = new BookEntity();
-        book.setCharacterEnabled(true);
-
-        CharacterEntity character = new CharacterEntity();
-        character.setBook(book);
-        character.setCharacterType(CharacterType.PRIMARY);
-
-        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
-
-        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
-                .andExpect(status().isConflict());
-
-        verify(characterService, never()).requestPortrait("character-1");
-    }
-
-    @Test
-    void regeneratePortrait_cacheOnlyMode_returnsConflict() throws Exception {
+    void regeneratePortrait_promptEditingDisabled_returnsForbidden() throws Exception {
         mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
                         .contentType("application/json")
                         .content("""
@@ -103,7 +83,7 @@ class CharacterControllerCacheOnlyTest {
                                   "prompt": "Elizabeth Bennet in a pale muslin gown"
                                 }
                                 """))
-                .andExpect(status().isConflict());
+                .andExpect(status().isForbidden());
 
         verify(characterService, never()).regeneratePortraitWithPrompt(
                 org.mockito.ArgumentMatchers.anyString(),
@@ -111,41 +91,20 @@ class CharacterControllerCacheOnlyTest {
     }
 
     @Test
-    void getStatus_cacheOnlyMode_keepsCharacterChatEnabledFlag() throws Exception {
-        mockMvc.perform(get("/api/characters/status"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cacheOnly", is(true)))
-                .andExpect(jsonPath("$.chatEnabled", is(true)));
-    }
-
-    @Test
-    void chat_cacheOnlyMode_allowsChatWhenEnabled() throws Exception {
-        BookEntity book = new BookEntity();
+    void requestPortrait_promptEditingDisabled_stillQueuesGeneration() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setCharacterEnabled(true);
 
         CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
         character.setBook(book);
         character.setCharacterType(CharacterType.PRIMARY);
 
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
-        when(characterService.isChatEligible(character)).thenReturn(true);
-        when(chatService.chat("character-1", "Hello there", java.util.List.of(), 0, 0))
-                .thenReturn("Hi there.");
 
-        mockMvc.perform(post("/api/characters/character-1/chat")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "message": "Hello there",
-                                  "conversationHistory": [],
-                                  "readerChapterIndex": 0,
-                                  "readerParagraphIndex": 0
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.response", is("Hi there.")));
+        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
+                .andExpect(status().isAccepted());
 
-        verify(characterService).getCharacter("character-1");
-        verify(chatService).chat("character-1", "Hello there", java.util.List.of(), 0, 0);
+        verify(characterService).requestPortrait("character-1");
     }
 }

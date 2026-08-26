@@ -99,6 +99,137 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             @Param("pendingStatus") CharacterStatus pendingStatus,
             @Param("now") LocalDateTime now);
 
+    /**
+     * Atomically reserves a custom-prompt regeneration. Returns 0 when another
+     * writer already moved the row out of COMPLETED/FAILED.
+     * Writes {@code directedMarker} into {@code portraitFilename} so recovery can
+     * tell a directed job from an auto-generated prompt after the row leaves PENDING.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.portraitPrompt = :prompt,
+                c.errorMessage = NULL,
+                c.portraitFilename = :directedMarker,
+                c.completedAt = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND (c.status = :completedStatus OR c.status = :failedStatus)
+            """)
+    int claimPortraitRegeneration(
+            @Param("characterId") String characterId,
+            @Param("prompt") String prompt,
+            @Param("directedMarker") String directedMarker,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("completedStatus") CharacterStatus completedStatus,
+            @Param("failedStatus") CharacterStatus failedStatus);
+
+    /**
+     * Restores a cached portrait only when a directed regeneration has not claimed
+     * the row. Returns 0 if {@code portraitFilename} is the directed marker.
+     * Does not clear the persistence context: recovery walks multiple candidates
+     * and a later name-collision path still needs lazy {@code firstChapter}.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = false)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :completedStatus,
+                c.portraitFilename = :filename,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.completedAt = :completedAt,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimCachedPortraitRestore(
+            @Param("characterId") String characterId,
+            @Param("filename") String filename,
+            @Param("completedAt") LocalDateTime completedAt,
+            @Param("directedMarker") String directedMarker,
+            @Param("completedStatus") CharacterStatus completedStatus);
+
+    /**
+     * Resets a failed auto-portrait back to PENDING. Returns 0 when a directed
+     * regeneration already claimed the row.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :failedStatus
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimFailedAutoPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("failedStatus") CharacterStatus failedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
+    /**
+     * Requeues a failed directed regeneration while keeping the marker and prompt.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :failedStatus
+              AND c.portraitFilename = :directedMarker
+            """)
+    int claimFailedDirectedPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("failedStatus") CharacterStatus failedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
+    /**
+     * Requeues a COMPLETED row whose portrait file is gone. Returns 0 when a
+     * directed regeneration already claimed the slot.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.portraitFilename = NULL,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.completedAt = NULL,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :completedStatus
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimMissingCompletedPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("completedStatus") CharacterStatus completedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query("""

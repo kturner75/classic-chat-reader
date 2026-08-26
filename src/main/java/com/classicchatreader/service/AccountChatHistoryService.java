@@ -765,7 +765,7 @@ public class AccountChatHistoryService {
     }
 
     private CharacterIdentity characterIdentity(CharacterEntity character) {
-        String portraitUrl = character.getPortraitFilename() != null
+        String portraitUrl = character.hasStoredPortraitImage()
                 ? "/api/characters/" + character.getId() + "/portrait"
                 : null;
         return new CharacterIdentity(

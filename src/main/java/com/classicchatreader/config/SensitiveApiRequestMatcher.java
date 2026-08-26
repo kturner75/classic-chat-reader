@@ -15,6 +15,8 @@ public final class SensitiveApiRequestMatcher {
 
     private static final Pattern CHARACTER_CHAPTER_ACTION_PATH =
             Pattern.compile("^/api/characters/chapter/[^/]+/(analyze|prefetch-next)$");
+    private static final Pattern CHARACTER_PORTRAIT_ACTION_PATH =
+            Pattern.compile("^/api/characters/[^/]+/portrait/(request|regenerate)$");
     private static final Pattern CHARACTER_BOOK_PREFETCH_PATH = Pattern.compile("^/api/characters/book/[^/]+/prefetch$");
     private static final Pattern CHARACTER_BOOK_DELETE_PATH = Pattern.compile("^/api/characters/book/[^/]+$");
     private static final Pattern CHARACTER_CHAT_PATH = Pattern.compile("^/api/characters/[^/]+/chat$");
@@ -76,6 +78,7 @@ public final class SensitiveApiRequestMatcher {
                     || ILLUSTRATION_CHAPTER_ACTION_PATH.matcher(path).matches()
                     || "/api/illustrations/retry-stuck".equals(path)
                     || CHARACTER_CHAPTER_ACTION_PATH.matcher(path).matches()
+                    || CHARACTER_PORTRAIT_ACTION_PATH.matcher(path).matches()
                     || CHARACTER_BOOK_PREFETCH_PATH.matcher(path).matches()
                     || PREGEN_BOOK_PATH.matcher(path).matches()
                     || PREGEN_GUTENBERG_PATH.matcher(path).matches()
