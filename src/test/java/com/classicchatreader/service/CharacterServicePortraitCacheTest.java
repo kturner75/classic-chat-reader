@@ -132,7 +132,7 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
-    void generatePortrait_customPrompt_skipsCacheRestoreAndPromptLlm() {
+    void generatePortrait_customPrompt_skipsCacheRestoreAndPromptLlm() throws Exception {
         String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
         when(characterRepository.claimPortraitLease(
                 eq("character-1"), any(), any(), eq("test-worker"),
