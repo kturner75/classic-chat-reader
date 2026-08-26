@@ -702,4 +702,46 @@ class CharacterServicePortraitCacheTest {
         assertEquals(cachedAlias, character.getPortraitFilename());
         assertNull(character.getErrorMessage());
     }
+
+    @Test
+    void resetAndRequeueStuckPortraitsForBook_restoresSecondCollidingCandidateAfterFirstCacheHit() {
+        String firstKey = "books/gutenberg/1342/portraits/characters/mr-bennet-1-0.png";
+        String secondKey = "books/gutenberg/1342/portraits/characters/mr-bennet-2-1.png";
+        ChapterEntity secondChapter = new ChapterEntity();
+        secondChapter.setId("chapter-2");
+        secondChapter.setBook(character.getBook());
+        secondChapter.setChapterIndex(2);
+        CharacterEntity second = new CharacterEntity(
+                character.getBook(), "Mr Bennet", "Same slug, later chapter", secondChapter, 1);
+        second.setId("character-2");
+        second.setStatus(CharacterStatus.PENDING);
+        character.setStatus(CharacterStatus.PENDING);
+        character.setPortraitFilename(null);
+
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.GENERATING))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.PENDING))
+                .thenReturn(List.of(character, second));
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-1")).thenReturn(List.of(character, second));
+        when(comfyUIService.hasPortraitImage(firstKey)).thenReturn(true);
+        when(comfyUIService.hasPortraitImage(secondKey)).thenReturn(true);
+        when(characterRepository.claimCachedPortraitRestore(
+                eq("character-1"), eq(firstKey), any(),
+                eq(CharacterEntity.DIRECTED_PORTRAIT_MARKER), eq(CharacterStatus.COMPLETED)))
+                .thenReturn(1);
+        when(characterRepository.claimCachedPortraitRestore(
+                eq("character-2"), eq(secondKey), any(),
+                eq(CharacterEntity.DIRECTED_PORTRAIT_MARKER), eq(CharacterStatus.COMPLETED)))
+                .thenReturn(1);
+
+        int recovered = service.resetAndRequeueStuckPortraitsForBook("book-1");
+
+        assertEquals(2, recovered);
+        assertEquals(CharacterStatus.COMPLETED, character.getStatus());
+        assertEquals(firstKey, character.getPortraitFilename());
+        assertEquals(CharacterStatus.COMPLETED, second.getStatus());
+        assertEquals(secondKey, second.getPortraitFilename());
+    }
 }
