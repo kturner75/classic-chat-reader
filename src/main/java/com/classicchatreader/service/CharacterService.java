@@ -497,39 +497,42 @@ public class CharacterService {
      * Reset one character's portrait and regenerate it with a custom prompt.
      */
     @Transactional
-    public void regeneratePortraitWithPrompt(String characterId, String customPrompt) {
+    public boolean regeneratePortraitWithPrompt(String characterId, String customPrompt) {
         if (cacheOnly) {
             log.info("Skipping portrait regeneration in cache-only mode for character {}", characterId);
-            return;
+            return false;
         }
         CharacterEntity character = characterRepository.findById(characterId).orElse(null);
         if (character == null) {
             log.warn("Cannot regenerate portrait: character not found {}", characterId);
-            return;
+            return false;
         }
         if (character.getStatus() == CharacterStatus.GENERATING
                 || character.getStatus() == CharacterStatus.PENDING) {
             log.info("Skipping portrait regeneration for character {} because a job is already in progress",
                     characterId);
-            return;
+            return false;
         }
         if (customPrompt != null && customPrompt.length() > CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH) {
             log.warn("Skipping portrait regeneration for character {}: prompt exceeds {} characters",
                     characterId, CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH);
-            return;
+            return false;
         }
 
-        character.setStatus(CharacterStatus.PENDING);
-        character.setPortraitPrompt(customPrompt);
-        character.setErrorMessage(null);
-        character.setPortraitFilename(null);
-        character.setCompletedAt(null);
-        character.setRetryCount(0);
-        character.setNextRetryAt(null);
-        clearCharacterLease(character);
-        characterRepository.save(character);
+        int claimed = characterRepository.claimPortraitRegeneration(
+                characterId,
+                customPrompt,
+                CharacterStatus.PENDING,
+                CharacterStatus.COMPLETED,
+                CharacterStatus.FAILED);
+        if (claimed == 0) {
+            log.info("Skipping portrait regeneration for character {} because the slot was already claimed",
+                    characterId);
+            return false;
+        }
 
         enqueuePortraitRequest(characterId, customPrompt);
+        return true;
     }
 
     private void enqueuePortraitRequest(String characterId, String customPrompt) {
@@ -740,7 +743,8 @@ public class CharacterService {
     }
 
     private boolean hasPendingDirectedPortraitPrompt(CharacterEntity character) {
-        return character.getPortraitPrompt() != null
+        return character.getStatus() == CharacterStatus.PENDING
+                && character.getPortraitPrompt() != null
                 && !character.getPortraitPrompt().isBlank()
                 && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank());
     }

@@ -99,6 +99,33 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             @Param("pendingStatus") CharacterStatus pendingStatus,
             @Param("now") LocalDateTime now);
 
+    /**
+     * Atomically reserves a custom-prompt regeneration. Returns 0 when another
+     * writer already moved the row out of COMPLETED/FAILED.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.portraitPrompt = :prompt,
+                c.errorMessage = NULL,
+                c.portraitFilename = NULL,
+                c.completedAt = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND (c.status = :completedStatus OR c.status = :failedStatus)
+            """)
+    int claimPortraitRegeneration(
+            @Param("characterId") String characterId,
+            @Param("prompt") String prompt,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("completedStatus") CharacterStatus completedStatus,
+            @Param("failedStatus") CharacterStatus failedStatus);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query("""

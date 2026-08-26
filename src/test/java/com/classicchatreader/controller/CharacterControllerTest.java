@@ -146,6 +146,8 @@ class CharacterControllerTest {
         character.setCharacterType(CharacterType.PRIMARY);
 
         when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.regeneratePortraitWithPrompt(
+                "character-1", "Elizabeth Bennet in a pale muslin gown")).thenReturn(true);
 
         mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
                         .contentType("application/json")
@@ -159,6 +161,31 @@ class CharacterControllerTest {
         verify(characterService).regeneratePortraitWithPrompt(
                 "character-1", "Elizabeth Bennet in a pale muslin gown");
         verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void regeneratePortrait_lostAtomicClaim_returnsConflict() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(com.classicchatreader.entity.CharacterStatus.COMPLETED);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.regeneratePortraitWithPrompt(
+                "character-1", "Elizabeth Bennet in a pale muslin gown")).thenReturn(false);
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "Elizabeth Bennet in a pale muslin gown"
+                                }
+                                """))
+                .andExpect(status().isConflict());
     }
 
     @Test

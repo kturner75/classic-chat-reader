@@ -314,7 +314,9 @@ public class CharacterController {
             return ResponseEntity.badRequest().build();
         }
 
-        characterService.regeneratePortraitWithPrompt(characterId, request.prompt());
+        if (!characterService.regeneratePortraitWithPrompt(characterId, request.prompt())) {
+            return ResponseEntity.status(409).build();
+        }
         return ResponseEntity.accepted().build();
     }
 
