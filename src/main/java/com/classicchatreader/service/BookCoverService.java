@@ -235,17 +235,36 @@ public class BookCoverService {
 
     @Transactional
     public boolean saveManualCover(String bookId, byte[] imageData) {
+        return saveUploadedCover(bookId, imageData, null, null, null) == LiveAssetWriteResult.SAVED;
+    }
+
+    /**
+     * Replace live cover bytes and provenance without enqueueing generation.
+     * {@code source} defaults to {@code manual_upload} when omitted so operator
+     * file picks stay distinct from studio keep ({@code studio}).
+     */
+    @Transactional
+    public LiveAssetWriteResult saveUploadedCover(
+            String bookId,
+            byte[] imageData,
+            String source,
+            String generatedPrompt,
+            String promptOverride) {
+        if (cacheOnly) {
+            log.info("Skipping book cover upload in cache-only mode for book {}", bookId);
+            return LiveAssetWriteResult.CACHE_ONLY;
+        }
         BookEntity book = bookRepository.findById(bookId).orElse(null);
         if (book == null) {
-            return false;
+            return LiveAssetWriteResult.NOT_FOUND;
         }
-        validatePngImage(imageData);
+        PngImages.requirePng(imageData, "Book cover uploads must be PNG images.");
         String cacheKey = assetKeyService.buildBookCoverKey(book);
         String filename;
         try {
             filename = comfyUIService.saveBookCoverImage(cacheKey, imageData);
         } catch (java.io.IOException e) {
-            throw new IllegalArgumentException("Unable to save manual book cover: " + e.getMessage(), e);
+            throw new IllegalArgumentException("Unable to save book cover: " + e.getMessage(), e);
         }
 
         BookCoverEntity cover = bookCoverRepository.findByBookId(bookId).orElseGet(() -> new BookCoverEntity(book));
@@ -255,10 +274,12 @@ public class BookCoverService {
         cover.setNextRetryAt(null);
         cover.setErrorMessage(null);
         cover.setCompletedAt(LocalDateTime.now());
-        cover.setCoverSource("manual_upload");
+        cover.setCoverSource(LiveAssetUploads.resolveSource(source));
+        cover.setGeneratedPrompt(LiveAssetUploads.normalizePrompt(generatedPrompt));
+        cover.setPromptOverride(LiveAssetUploads.normalizePrompt(promptOverride));
         clearCoverLease(cover);
         bookCoverRepository.save(cover);
-        return true;
+        return LiveAssetWriteResult.SAVED;
     }
 
     public CoverGenerationResult generateCoverAndWait(String bookId, Duration timeout) {
@@ -534,19 +555,6 @@ public class BookCoverService {
         return trimmed.length() > 2000 ? trimmed.substring(0, 2000) : trimmed;
     }
 
-    private void validatePngImage(byte[] imageData) {
-        if (imageData == null || imageData.length < 8
-                || (imageData[0] & 0xFF) != 0x89
-                || imageData[1] != 0x50
-                || imageData[2] != 0x4E
-                || imageData[3] != 0x47
-                || imageData[4] != 0x0D
-                || imageData[5] != 0x0A
-                || imageData[6] != 0x1A
-                || imageData[7] != 0x0A) {
-            throw new IllegalArgumentException("Manual book cover uploads must be PNG images.");
-        }
-    }
 
     private record CoverRequest(String bookId) {}
 

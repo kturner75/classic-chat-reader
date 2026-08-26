@@ -18,8 +18,11 @@ import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.llm.LlmProviderException;
 import org.junit.jupiter.api.Test;
+import com.classicchatreader.entity.CharacterStatus;
+import com.classicchatreader.service.LiveAssetWriteResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -36,6 +39,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -85,6 +89,119 @@ class CharacterControllerTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @Test
+    void uploadPortrait_studioPng_replacesLiveBytesWithoutEnqueue() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setPortraitPrompt("elizabeth in a garden");
+        character.setStatus(CharacterStatus.COMPLETED);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.png", "image/png", png);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortraitStatus("character-1")).thenReturn(CharacterStatus.COMPLETED);
+        when(characterService.saveUploadedPortrait(
+                "character-1",
+                png,
+                "studio",
+                "elizabeth in a garden",
+                null
+        )).thenReturn(LiveAssetWriteResult.SAVED);
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "elizabeth in a garden")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("COMPLETED")))
+                .andExpect(jsonPath("$.ready", is(true)))
+                .andExpect(jsonPath("$.source", is("studio")))
+                .andExpect(jsonPath("$.generatedPrompt", is("elizabeth in a garden")));
+
+        verify(characterService).saveUploadedPortrait(
+                "character-1",
+                png,
+                "studio",
+                "elizabeth in a garden",
+                null);
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+        verify(characterService, never()).requestChapterAnalysis(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void uploadPortrait_generating_returnsConflictWithoutEnqueue() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setStatus(CharacterStatus.GENERATING);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.png", "image/png", png);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortraitStatus("character-1")).thenReturn(CharacterStatus.GENERATING);
+        when(characterService.saveUploadedPortrait(
+                "character-1",
+                png,
+                "studio",
+                "elizabeth in a garden",
+                null
+        )).thenReturn(LiveAssetWriteResult.GENERATION_IN_PROGRESS);
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "elizabeth in a garden")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status", is("GENERATING")));
+
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+        verify(characterService, never()).requestChapterAnalysis(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void uploadPortrait_nonPng_returnsUnsupportedMediaType() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        byte[] jpeg = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.jpg", "image/jpeg", jpeg);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.saveUploadedPortrait(
+                "character-1",
+                jpeg,
+                null,
+                null,
+                null
+        )).thenThrow(new com.classicchatreader.service.UnsupportedImageTypeException(
+                "Portrait uploads must be PNG images."));
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isUnsupportedMediaType());
+
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
 
     @Test
     void getCharactersForBook_missingBook_returnsNotFound() throws Exception {

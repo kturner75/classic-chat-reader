@@ -284,6 +284,55 @@ public class CharacterService {
                 .orElse(null);
     }
 
+    /**
+     * Replace live portrait bytes and prompt metadata without enqueueing generation.
+     * {@code source} is accepted for studio keep/restore; portraits have no source
+     * column on main, so only the prompt is persisted.
+     */
+    @Transactional
+    public LiveAssetWriteResult saveUploadedPortrait(
+            String characterId,
+            byte[] imageData,
+            String source,
+            String generatedPrompt,
+            String promptOverride) {
+        if (cacheOnly) {
+            log.info("Skipping portrait upload in cache-only mode for character {}", characterId);
+            return LiveAssetWriteResult.CACHE_ONLY;
+        }
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
+        if (character == null) {
+            return LiveAssetWriteResult.NOT_FOUND;
+        }
+        if (character.getStatus() == CharacterStatus.GENERATING) {
+            log.info("Rejecting portrait upload for character {} while generation is active", characterId);
+            return LiveAssetWriteResult.GENERATION_IN_PROGRESS;
+        }
+        PngImages.requirePng(imageData, "Portrait uploads must be PNG images.");
+        String cacheKey = buildPortraitCacheKey(character);
+        String filename;
+        try {
+            filename = comfyUIService.savePortraitImage(cacheKey, imageData);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Unable to save portrait: " + e.getMessage(), e);
+        }
+
+        character.setPortraitFilename(filename);
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setRetryCount(0);
+        character.setNextRetryAt(null);
+        character.setErrorMessage(null);
+        character.setCompletedAt(LocalDateTime.now());
+        String storedPrompt = LiveAssetUploads.resolveStoredPrompt(generatedPrompt, promptOverride);
+        if (storedPrompt != null) {
+            character.setPortraitPrompt(storedPrompt);
+        }
+        clearCharacterLease(character);
+        characterRepository.save(character);
+        log.info("Saved uploaded portrait for character {} (source={})", characterId, LiveAssetUploads.resolveSource(source));
+        return LiveAssetWriteResult.SAVED;
+    }
+
     public Optional<String> getPortraitFilename(String characterId) {
         return characterRepository.findById(characterId)
                 .filter(c -> c.getStatus() == CharacterStatus.COMPLETED)
