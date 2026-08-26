@@ -39,6 +39,7 @@
         ttsOpenAIAvailable: false,
         ttsOpenAIConfigured: false,
         ttsCachedAvailable: false,
+        ttsCacheOnly: false,
         ttsBrowserAvailable: false,
         ttsUsingBrowser: false,  // true when currently using browser fallback
         ttsPlaybackRate: 1.0,  // 1.0, 1.25, 1.5, 1.75, 2.0
@@ -1760,25 +1761,39 @@
         return '';
     }
 
+    function extractMethodFromFetchInput(resource, options) {
+        if (options && typeof options.method === 'string' && options.method.trim()) {
+            return options.method.trim().toUpperCase();
+        }
+        try {
+            if (resource instanceof Request && resource.method) {
+                return String(resource.method).toUpperCase();
+            }
+        } catch (_error) {
+            return 'GET';
+        }
+        return 'GET';
+    }
+
     function canPostSensitiveGeneration(featureCacheOnly) {
         if (sensitiveRequestGuard) {
             return sensitiveRequestGuard.canPostSensitiveGeneration({
-                cacheOnly: state.cacheOnly === true,
-                featureCacheOnly: featureCacheOnly === true,
+                cacheOnly: featureCacheOnly === true,
                 canAccessSensitive: state.authCanAccessSensitive
             });
         }
-        if (state.cacheOnly === true || featureCacheOnly === true || state.authCanAccessSensitive === false) {
+        if (featureCacheOnly === true || state.authCanAccessSensitive === false) {
             return false;
         }
         return true;
     }
 
-    function shouldPromptCollaboratorOnUnauthorized(path) {
+    function shouldPromptCollaboratorOnUnauthorized(path, method) {
         if (sensitiveRequestGuard) {
             return sensitiveRequestGuard.shouldPromptCollaboratorOnUnauthorized({
                 publicMode: state.authPublicMode,
-                path
+                path,
+                method
             });
         }
         return false;
@@ -1788,7 +1803,8 @@
         window.fetch = async (resource, options = undefined) => {
             const response = await nativeFetch(resource, options);
             const path = extractPathFromFetchInput(resource);
-            if (response.status === 401 && shouldPromptCollaboratorOnUnauthorized(path)) {
+            const method = extractMethodFromFetchInput(resource, options);
+            if (response.status === 401 && shouldPromptCollaboratorOnUnauthorized(path, method)) {
                 handleSensitiveUnauthorized();
             }
             return response;
@@ -7591,6 +7607,7 @@
     // Text-to-Speech functions (using backend xAI TTS with browser fallback)
     async function ttsCheckAvailability() {
         state.cacheOnly = false;
+        state.ttsCacheOnly = false;
         // Check browser speech synthesis support
         state.ttsBrowserAvailable = 'speechSynthesis' in window;
 
@@ -7601,6 +7618,7 @@
             state.ttsOpenAIConfigured = status.configured === true || status.openaiConfigured === true;
             state.ttsCachedAvailable = status.cachedAvailable === true;
             state.ttsOpenAIAvailable = state.ttsOpenAIConfigured || state.ttsCachedAvailable;
+            state.ttsCacheOnly = status.cacheOnly === true;
             state.cacheOnly = status.cacheOnly === true;
             state.ttsProvider = status.provider || null;
             state.ttsDefaultVoice = status.defaultVoice || null;
@@ -7614,6 +7632,7 @@
             state.ttsOpenAIAvailable = false;
             state.ttsOpenAIConfigured = false;
             state.ttsCachedAvailable = false;
+            state.ttsCacheOnly = false;
             state.ttsProvider = null;
             state.ttsDefaultVoice = null;
             state.ttsVoiceIds = new Set();
@@ -7682,7 +7701,7 @@
                 leftoverVoice = typeof saved?.voice === 'string' && saved.voice.trim() ? saved.voice.trim() : null;
                 console.log('Saved voice settings are not served by the current TTS provider; re-analyzing', saved);
             }
-            if (!canPostSensitiveGeneration()) {
+            if (!canPostSensitiveGeneration(state.ttsCacheOnly)) {
                 state.ttsVoiceSettings = {
                     voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
                     speed: 1.0,
