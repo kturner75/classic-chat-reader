@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.time.ZonedDateTime;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 
@@ -109,15 +110,40 @@ public class ImagineInFlightLimiter {
         return Math.max(0L, cooldownUntilMs - System.currentTimeMillis());
     }
 
+    /**
+     * RFC 7231 {@code Retry-After}: {@code delay-seconds} or {@code HTTP-date}.
+     * Returns a delay from now. A past HTTP-date is 0 (do not shorten an existing
+     * cooldown). Unparsable values use the configured default floor.
+     */
     private long parseRetryAfterMillis(WebClientResponseException exception) {
         String retryAfter = exception.getHeaders().getFirst(HttpHeaders.RETRY_AFTER);
-        if (retryAfter != null && !retryAfter.isBlank()) {
-            try {
-                return Math.max(1L, Long.parseLong(retryAfter.trim())) * 1000L;
-            } catch (NumberFormatException ignored) {
-                // HTTP-date Retry-After is rare from Imagine; keep the default floor.
+        if (retryAfter == null || retryAfter.isBlank()) {
+            return defaultCooldownMs;
+        }
+        String trimmed = retryAfter.trim();
+        Long deltaMs = parseDelaySecondsMillis(trimmed);
+        if (deltaMs != null) {
+            return deltaMs;
+        }
+        try {
+            ZonedDateTime retryAt = exception.getHeaders().getFirstZonedDateTime(HttpHeaders.RETRY_AFTER);
+            if (retryAt != null) {
+                return Math.max(0L, retryAt.toInstant().toEpochMilli() - System.currentTimeMillis());
             }
+        } catch (IllegalArgumentException ignored) {
+            // Not an IMF-fixdate / obs-date HTTP-date.
         }
         return defaultCooldownMs;
+    }
+
+    private static Long parseDelaySecondsMillis(String retryAfter) {
+        if (retryAfter.isEmpty() || !retryAfter.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            return Math.max(1L, Long.parseLong(retryAfter) * 1000L);
+        } catch (NumberFormatException overflow) {
+            return null;
+        }
     }
 }

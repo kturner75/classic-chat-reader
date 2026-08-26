@@ -5,6 +5,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -85,6 +88,26 @@ class ImagineInFlightLimiterTest {
         })).isInstanceOf(WebClientResponseException.class);
         assertThat(limiter.remainingCooldownMillis()).isGreaterThanOrEqualTo(2500L);
         assertThat(limiter.availablePermits()).isEqualTo(1);
+    }
+
+    @Test
+    void httpDateRetryAfterLongerThanDefaultFloorIsHonored() {
+        ImagineInFlightLimiter limiter = new ImagineInFlightLimiter(1, 30);
+        String httpDate = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+                ZonedDateTime.now(ZoneOffset.UTC).plusSeconds(90));
+        limiter.noteRateLimited(rateLimited(httpDate));
+        assertThat(limiter.remainingCooldownMillis())
+                .isGreaterThanOrEqualTo(80_000L)
+                .isLessThanOrEqualTo(95_000L);
+    }
+
+    @Test
+    void unparsableRetryAfterFallsBackToDefaultFloor() {
+        ImagineInFlightLimiter limiter = new ImagineInFlightLimiter(1, 2);
+        limiter.noteRateLimited(rateLimited("not-a-retry-after"));
+        assertThat(limiter.remainingCooldownMillis())
+                .isGreaterThanOrEqualTo(1500L)
+                .isLessThanOrEqualTo(2500L);
     }
 
     private static WebClientResponseException rateLimited(String retryAfterSeconds) {
