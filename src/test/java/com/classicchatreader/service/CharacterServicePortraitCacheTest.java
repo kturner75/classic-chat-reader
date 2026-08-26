@@ -15,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -129,6 +131,32 @@ class CharacterServicePortraitCacheTest {
         assertNull(character.getPortraitFilename());
         assertEquals(1, service.getQueueDepth());
         verify(characterRepository).save(character);
+    }
+
+    @Test
+    void regeneratePortraitWithPrompt_queuesOnlyAfterTransactionCommits() {
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.regeneratePortraitWithPrompt("character-1", "Mr. Bennet in a dark coat");
+
+            assertEquals(CharacterStatus.PENDING, character.getStatus());
+            assertEquals("Mr. Bennet in a dark coat", character.getPortraitPrompt());
+            assertNull(character.getPortraitFilename());
+            assertEquals(0, service.getQueueDepth());
+
+            List<TransactionSynchronization> syncs =
+                    List.copyOf(TransactionSynchronizationManager.getSynchronizations());
+            assertEquals(1, syncs.size());
+            syncs.getFirst().afterCommit();
+
+            assertEquals(1, service.getQueueDepth());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
