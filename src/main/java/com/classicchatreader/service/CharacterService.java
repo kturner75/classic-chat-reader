@@ -494,12 +494,30 @@ public class CharacterService {
         }
 
         status = character.getStatus();
-        if (status == CharacterStatus.COMPLETED || status == CharacterStatus.GENERATING) {
+        if (status == CharacterStatus.GENERATING) {
             log.debug("Portrait already {} for character {}", status, characterId);
             return;
         }
 
-        if (status == CharacterStatus.FAILED) {
+        if (status == CharacterStatus.COMPLETED) {
+            if (resolveCachedPortraitKey(character, cacheKey).isPresent()) {
+                log.debug("Portrait already COMPLETED for character {}", characterId);
+                return;
+            }
+            int claimed = characterRepository.claimMissingCompletedPortraitRetry(
+                    characterId,
+                    CharacterStatus.COMPLETED,
+                    CharacterStatus.PENDING,
+                    CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+            if (claimed == 0) {
+                log.debug("Skipping missing-portrait retry for character {} because the slot was already claimed",
+                        characterId);
+                return;
+            }
+            markPortraitPendingForRetry(character);
+            character.setPortraitFilename(null);
+            character.setCompletedAt(null);
+        } else if (status == CharacterStatus.FAILED) {
             int claimed = characterRepository.claimFailedAutoPortraitRetry(
                     characterId,
                     CharacterStatus.FAILED,

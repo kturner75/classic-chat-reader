@@ -2407,6 +2407,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: Codex follow-up — `retryFailedPortraitsForBook` also enqueues from `afterCommit`. Book delete removes the stable cache-key file for directed slots, not the marker.
 - 2026-08-26: Codex follow-up — failed-portrait pregen retry uses the same conditional FAILED→PENDING claims so it cannot overwrite a concurrent regen.
 - 2026-08-26: Codex follow-up — successful regen claim deletes the exact previous portrait file (canonical or legacy alias) so the marker overwrite does not orphan it.
+- 2026-08-26: Codex follow-up — `/portrait/request` atomically resets COMPLETED→PENDING and requeues when the portrait file is gone, without overwriting a concurrent directed claim.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap

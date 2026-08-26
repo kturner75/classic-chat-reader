@@ -353,6 +353,58 @@ class CharacterServicePortraitCacheTest {
         verify(characterRepository).claimCachedPortraitRestore(
                 eq("character-1"), eq(cacheKey), any(),
                 eq(CharacterEntity.DIRECTED_PORTRAIT_MARKER), eq(CharacterStatus.COMPLETED));
+        verify(characterRepository, never()).claimMissingCompletedPortraitRetry(any(), any(), any(), any());
+    }
+
+    @Test
+    void requestPortrait_completedMissingAsset_requeues() {
+        String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename(cacheKey);
+        character.setCompletedAt(java.time.LocalDateTime.now());
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+        when(comfyUIService.hasPortraitImage(any())).thenReturn(false);
+        when(characterRepository.claimMissingCompletedPortraitRetry(
+                "character-1",
+                CharacterStatus.COMPLETED,
+                CharacterStatus.PENDING,
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER))
+                .thenReturn(1);
+
+        service.requestPortrait("character-1");
+
+        assertEquals(CharacterStatus.PENDING, character.getStatus());
+        assertNull(character.getPortraitFilename());
+        assertNull(character.getCompletedAt());
+        assertEquals(1, service.getQueueDepth());
+        verify(characterRepository).claimMissingCompletedPortraitRetry(
+                "character-1",
+                CharacterStatus.COMPLETED,
+                CharacterStatus.PENDING,
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+        verify(characterRepository, never()).save(character);
+    }
+
+    @Test
+    void requestPortrait_completedMissingAsset_lostClaim_doesNotEnqueue() {
+        String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename(cacheKey);
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+        when(comfyUIService.hasPortraitImage(any())).thenReturn(false);
+        when(characterRepository.claimMissingCompletedPortraitRetry(
+                "character-1",
+                CharacterStatus.COMPLETED,
+                CharacterStatus.PENDING,
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER))
+                .thenReturn(0);
+
+        service.requestPortrait("character-1");
+
+        assertEquals(CharacterStatus.COMPLETED, character.getStatus());
+        assertEquals(cacheKey, character.getPortraitFilename());
+        assertEquals(0, service.getQueueDepth());
+        verify(characterRepository, never()).save(character);
     }
 
     @Test

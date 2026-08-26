@@ -202,6 +202,32 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             @Param("pendingStatus") CharacterStatus pendingStatus,
             @Param("directedMarker") String directedMarker);
 
+    /**
+     * Requeues a COMPLETED row whose portrait file is gone. Returns 0 when a
+     * directed regeneration already claimed the slot.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.portraitFilename = NULL,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.completedAt = NULL,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :completedStatus
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimMissingCompletedPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("completedStatus") CharacterStatus completedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query("""
