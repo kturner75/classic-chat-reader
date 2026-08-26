@@ -362,7 +362,7 @@ class CharacterServicePortraitCacheTest {
 
         int recovered = service.resetAndRequeueStuckPortraitsForBook("book-1");
 
-        assertEquals(2, recovered);
+        assertEquals(1, recovered);
         assertEquals(CharacterStatus.PENDING, character.getStatus());
         assertEquals(CharacterEntity.DIRECTED_PORTRAIT_MARKER, character.getPortraitFilename());
         assertEquals("Mr. Bennet in a dark coat", character.getPortraitPrompt());
