@@ -501,9 +501,15 @@ public class CharacterService {
             log.warn("Cannot regenerate portrait: character not found {}", characterId);
             return;
         }
-        if (character.getStatus() == CharacterStatus.GENERATING) {
-            log.info("Skipping portrait regeneration for character {} because generation is already in progress",
+        if (character.getStatus() == CharacterStatus.GENERATING
+                || character.getStatus() == CharacterStatus.PENDING) {
+            log.info("Skipping portrait regeneration for character {} because a job is already in progress",
                     characterId);
+            return;
+        }
+        if (customPrompt != null && customPrompt.length() > CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH) {
+            log.warn("Skipping portrait regeneration for character {}: prompt exceeds {} characters",
+                    characterId, CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH);
             return;
         }
 

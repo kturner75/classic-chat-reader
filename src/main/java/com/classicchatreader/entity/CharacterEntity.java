@@ -32,7 +32,9 @@ public class CharacterEntity {
 
     private String portraitFilename;
 
-    @Column(length = 2000)
+    public static final int PORTRAIT_PROMPT_MAX_LENGTH = 2000;
+
+    @Column(length = PORTRAIT_PROMPT_MAX_LENGTH)
     private String portraitPrompt;
 
     @Enumerated(EnumType.STRING)

@@ -303,10 +303,14 @@ public class CharacterController {
         if (character.getCharacterType() != CharacterType.PRIMARY) {
             return ResponseEntity.status(403).build();
         }
-        if (character.getStatus() == CharacterStatus.GENERATING) {
+        if (character.getStatus() == CharacterStatus.GENERATING
+                || character.getStatus() == CharacterStatus.PENDING) {
             return ResponseEntity.status(409).build();
         }
         if (request.prompt() == null || request.prompt().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (request.prompt().length() > CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH) {
             return ResponseEntity.badRequest().build();
         }
 

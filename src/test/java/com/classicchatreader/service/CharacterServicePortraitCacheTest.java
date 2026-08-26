@@ -160,6 +160,21 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void regeneratePortraitWithPrompt_alreadyPending_doesNotResetOrQueue() {
+        character.setStatus(CharacterStatus.PENDING);
+        character.setPortraitPrompt("first custom prompt");
+        character.setPortraitFilename(null);
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+
+        service.regeneratePortraitWithPrompt("character-1", "second custom prompt");
+
+        assertEquals(CharacterStatus.PENDING, character.getStatus());
+        assertEquals("first custom prompt", character.getPortraitPrompt());
+        assertEquals(0, service.getQueueDepth());
+        verify(characterRepository, never()).save(character);
+    }
+
+    @Test
     void regeneratePortraitWithPrompt_alreadyGenerating_doesNotResetOrQueue() {
         character.setStatus(CharacterStatus.GENERATING);
         character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");

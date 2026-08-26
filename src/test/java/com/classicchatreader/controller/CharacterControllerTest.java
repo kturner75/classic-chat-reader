@@ -188,6 +188,58 @@ class CharacterControllerTest {
     }
 
     @Test
+    void regeneratePortrait_alreadyPending_returnsConflict() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(com.classicchatreader.entity.CharacterStatus.PENDING);
+        character.setPortraitPrompt("first custom prompt");
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "second custom prompt"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).regeneratePortraitWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void regeneratePortrait_promptLongerThanColumn_returnsBadRequest() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(com.classicchatreader.entity.CharacterStatus.COMPLETED);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        String tooLong = "x".repeat(CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH + 1);
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("{\"prompt\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(characterService, never()).regeneratePortraitWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void regeneratePortrait_alreadyGenerating_returnsConflict() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setCharacterEnabled(true);
