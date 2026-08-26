@@ -1069,22 +1069,17 @@ public class CharacterService {
             reset++;
         }
 
-        // Re-queue all pending (including just-reset ones)
+        // Re-queue all pending (including just-reset ones) after the PENDING
+        // status is committed so the worker does not see a stale GENERATING row.
         int queued = 0;
         for (CharacterEntity character : stuckGenerating) {
-            if (character.getStatus() != CharacterStatus.COMPLETED
-                    && !character.hasStoredPortraitImage()) {
-                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
-                    queued++;
-                }
+            if (enqueueRecoveredPortrait(character)) {
+                queued++;
             }
         }
         for (CharacterEntity character : stuckPending) {
-            if (character.getStatus() != CharacterStatus.COMPLETED
-                    && !character.hasStoredPortraitImage()) {
-                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
-                    queued++;
-                }
+            if (enqueueRecoveredPortrait(character)) {
+                queued++;
             }
         }
 
@@ -1158,6 +1153,15 @@ public class CharacterService {
     private PortraitRequest portraitRequestFromCharacter(CharacterEntity character) {
         String storedPrompt = hasDirectedPortraitIntent(character) ? character.getPortraitPrompt() : null;
         return new PortraitRequest(character.getId(), storedPrompt);
+    }
+
+    private boolean enqueueRecoveredPortrait(CharacterEntity character) {
+        if (character.getStatus() == CharacterStatus.COMPLETED || character.hasStoredPortraitImage()) {
+            return false;
+        }
+        PortraitRequest request = portraitRequestFromCharacter(character);
+        enqueuePortraitRequest(request.characterId(), request.customPrompt());
+        return true;
     }
 
     private boolean tryClaimPortraitLease(String characterId) {

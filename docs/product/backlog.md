@@ -2403,6 +2403,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: Codex P2 #3 — local `GET .../portrait` revalidates with `no-cache` + ETag/Last-Modified from `completed_at` so a successful regen is not cached for 7 days. CDN `?v=` path unchanged.
 - 2026-08-26: Codex follow-up — persist directed regen via `portrait_filename = __directed_regen__` (no Flyway) so recovery does not restore cache over a claimed custom job or replay a failed auto prompt as directed.
 - 2026-08-26: Codex follow-up — cache restore and failed-state retry use conditional updates so they cannot overwrite a concurrent regen claim. `/portrait/request` requeues a failed directed job and keeps its prompt.
+- 2026-08-26: Codex follow-up — startup recovery enqueues directed/stuck portraits from `afterCommit` so the worker does not see a still-committed GENERATING row.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap

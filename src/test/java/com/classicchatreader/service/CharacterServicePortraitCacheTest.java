@@ -440,6 +440,41 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void startupRecovery_generatingDirected_enqueuesOnlyAfterCommit() {
+        character.setStatus(CharacterStatus.GENERATING);
+        character.setPortraitPrompt("Mr. Bennet in a dark coat");
+        character.setPortraitFilename(CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.GENERATING))
+                .thenReturn(List.of(character));
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.PENDING))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
+                .thenReturn(List.of());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            int recovered = service.resetAndRequeueStuckPortraitsForBook("book-1");
+
+            assertEquals(1, recovered);
+            assertEquals(CharacterStatus.PENDING, character.getStatus());
+            assertEquals(0, service.getQueueDepth());
+
+            List<TransactionSynchronization> syncs =
+                    List.copyOf(TransactionSynchronizationManager.getSynchronizations());
+            assertEquals(1, syncs.size());
+            syncs.getFirst().afterCommit();
+
+            assertEquals(1, service.getQueueDepth());
+            Object queued = ReflectionTestUtils.getField(service, "requestQueue");
+            Object request = ((java.util.concurrent.BlockingQueue<?>) queued).peek();
+            assertEquals("character-1", ReflectionTestUtils.getField(request, "characterId"));
+            assertEquals("Mr. Bennet in a dark coat", ReflectionTestUtils.getField(request, "customPrompt"));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void startupRecoveryRestoresCacheForPendingAutoPromptWithoutDirectedMarker() {
         String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
         character.setStatus(CharacterStatus.PENDING);
