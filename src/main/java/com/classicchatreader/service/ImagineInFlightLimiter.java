@@ -137,8 +137,14 @@ public class ImagineInFlightLimiter {
     }
 
     private static Long parseDelaySecondsMillis(String retryAfter) {
-        if (retryAfter.isEmpty() || !retryAfter.chars().allMatch(Character::isDigit)) {
+        if (retryAfter.isEmpty()) {
             return null;
+        }
+        for (int i = 0; i < retryAfter.length(); i++) {
+            char c = retryAfter.charAt(i);
+            if (c < '0' || c > '9') {
+                return null;
+            }
         }
         try {
             return Math.max(1L, Long.parseLong(retryAfter) * 1000L);
