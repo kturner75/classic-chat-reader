@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Implementation handoff (classroom)
 
@@ -124,7 +124,7 @@ Last updated: 2026-08-24
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **Proposed** — studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -152,12 +152,15 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity (Columbia State group demo **2026-08-20** completed; Aaron: grant pilot this semester unlikely). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). **`BL-071`** OER/non-PD ingest is Discovery only. General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
+- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity (Columbia State group demo **2026-08-20** completed; Aaron: grant pilot this semester unlikely). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). **`BL-071`** OER/non-PD ingest is Discovery only. **`BL-072`** durable curated membership is Proposed (ccr-studio ST-008 depends on `.3`). **`BL-073`** teacher capability operator API is Proposed / **P3 later** (studio ST-009 stub; flesh out later). General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
 - 2026-08-23: First `BL-043` engineering slice — prod auth gate + Secure cookies (`BL-043.1` / `.12`). See epic session log.
 - 2026-08-23: `BL-043.2` Google OAuth email auto-link consent — password re-auth before link; sessions deleted on link. See epic session log.
 - 2026-08-23: `BL-043.4` classroom invite TTL / max uses / revoke — 30-day default expiry, 40 max uses, revoke API/UI, rotate on create. See epic session log.
 - 2026-08-24: `BL-065.2` trial prompt work (code only). Tightened discovery/prefetch + chapter-extraction prompts (named people only; first-appearance blurbs). Shared `CharacterRosterNameFilter` rejects bees / The Moon / The Mule on extraction **and** prefetch. `DELETE /api/characters/book/{bookId}` now clears `character_prefetch_completed` (ADMIN-gated). Pregen image defaults: covers + illustrations → Grok Imagine (`xai` / `grok-imagine-image`); portraits already xAI; Comfy opt-in. No pregen / Imagine / catalog run. `#132` stays separate. See `BL-065` session log.
 - 2026-08-24: `BL-065.2` follow-up after Kevin’s local trial (Frankenstein 84 / Dorian 174): every name landed SECONDARY (16 / 21), zero PRIMARY, Creature/Monster missing, then chat/call fallback made every secondary callable. Product rules now: chat/call PRIMARY only (empty PRIMARY = nobody to call); Grok-knowledge prefetch is the PRIMARY list and must persist `PRIMARY`; chapter miner text-scans trusted names only and does not invent SECONDARY; article epithets (The Monster / The Creature / The Turk) pass the roster gate while bees / The Moon / The Mule / maid / `(again)` still fail. No Flyway. No pregen/Imagine/catalog spend. `#132` stays separate. Do not mark `BL-065.3` done.
+- 2026-08-25: Added `BL-072` (durable curated-catalog membership). Kevin / ccr-studio design: adding a title to the curated landing list must be a table + API with `active`/`inactive` status, not a Java list edit. Unlisting must not wipe covers, portraits, illustrations, or roster. Studio ST-008 onboarding is blocked on this epic. Docs only.
+- 2026-08-25: Added `BL-073` (operator API to grant/revoke `CREATE_CLASSROOM`). Kevin: provision teacher is a studio use case; today `manage_teacher_access.sh` runs SQL. Account must already exist. Studio ST-009 depends on this. Docs only.
+- 2026-08-25: Added `BL-074` (per-character portrait request/regen) and `BL-075` (portrait + illustration multipart upload) from ccr-studio `claude_01` review. Kevin: HTTP-only write-back; ask CCR for both seams. Docs only.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -2271,6 +2274,156 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Character-chat conduct (`BL-054`) does not grant rights to copyrighted characters.
 - Session Log:
 - 2026-08-20: Opened after Columbia State demo. Alexander: books outside public domain? Amy: OER. Jessica: adaptation required. Thomasanna: astro/physics OER + free textbooks. Research only.
+
+### BL-072 - Durable Curated Catalog Membership (Table + API)
+- Type: Feature / content-ops
+- Priority: P2 (unlocks ccr-studio ST-008; not a student-facing UI rewrite)
+- Effort: M
+- Status: Proposed
+- Problem: The curated landing list is a hardcoded Java list in `CuratedCatalogService`. Adding or removing a Gutenberg title requires a code change and a deploy. ccr-studio needs to curate a new book and later unlist one **without** deleting generated covers, portraits, illustrations, roster, or book text. Today those two concerns are glued together: “curated” is both “show on the landing page” and “this ID lives in source.”
+- Current code:
+  - `CuratedCatalogService.CURATED_BOOKS` is the membership source for `library.catalog.mode=curated` search/popular, `isCuratedGutenbergId`, and first-import feature flags (`tts` / `illustration` / `character` enabled) in `BookImportService`.
+  - `BookStorageService` also treats curated Gutenberg IDs as TTS-capable even when `tts_enabled` is still false.
+  - Membership is **not** a `books` column. The landing list includes titles that may not be imported yet (title/author/subjects/aliases live on the Java record).
+- Current Direction:
+  - Add a CCR table (e.g. `curated_books`) keyed by logical book identity `source` + `source_id` (Gutenberg number). Store the landing metadata that the Java record holds today (title, author, subjects, bookshelves, aliases, sort/popularity hint).
+  - **Status** (`active` | `inactive`) controls landing/search membership only. Inactive means “not on the curated list.” It must **not** delete or regenerate artifacts, and must **not** flip `books` feature flags or wipe `book_covers` / `characters` / `illustrations`.
+  - Seed the table from the current Java list so prod/local behavior is unchanged on migrate.
+  - `CuratedCatalogService` reads **active** rows instead of the constant list. Keep the same search/alias behavior.
+  - Admin/local API (not student UI): list, add-or-reactivate, set status. Studio will call this after `BL-072` ships; do not put the API on an unauthenticated public path.
+  - Transfer later: membership rows should be promotable (export/import) so prod listing does not require a jar change. That can be a follow-on slice; first cut is local DB + API.
+- Out of this epic:
+  - ccr-studio UI / onboard pipeline (studio ST-008). This epic is the CCR store + API only.
+  - Regenerating casts or art (`BL-065.3`). Unlist ≠ regen.
+  - Reopening `BL-052` (short-story catalog content). That epic is Done; this is how membership is stored.
+  - `BL-071` OER / non-PD ingest.
+  - Student `/admin` or teacher catalog editor.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-072.1 Table + seed | Proposed | Flyway `curated_books` (`source`, `source_id`, landing metadata, `status`); unique `(source, source_id)`; seed from today’s Java list as `active` | Local/prod migrate; `GET` of active IDs matches the current hardcoded catalog |
+| BL-072.2 Read path | Proposed | `CuratedCatalogService` (and import feature-flag check) uses active rows only | Landing curated search/popular and `isCuratedGutenbergId` ignore `inactive`; imported artifacts unchanged |
+| BL-072.3 Membership API | Proposed | `GET /api/curated-books`, `POST /api/curated-books`, `PATCH /api/curated-books/{source}/{sourceId}` `{ "status": "active"\|"inactive" }`; local/ADMIN only | Studio (or curl) can list, add, and unlist without a code edit; unlist leaves covers/portraits/illos/roster intact |
+| BL-072.4 Transfer (optional follow-on) | Proposed | Export/import membership rows via CacheTransferRunner (or a documented SQL/JSON path) | A newly curated local title can be listed on prod without editing Java |
+- Acceptance Criteria:
+  - Curated membership lives in the database, not a Java `List.of(...)`.
+  - Setting a title `inactive` removes it from curated landing/search and from `isCuratedGutenbergId`, and does **not** delete book rows or generated artifacts.
+  - Setting a title `active` (new or returning) lists it without regenerating art.
+  - Seeded catalog after migrate matches today’s list.
+  - API is not a student/teacher classroom feature.
+- Dependency Notes:
+  - **ccr-studio ST-008** (curated book onboarding) **depends on `BL-072.3`**. Studio must not edit `CuratedCatalogService` and should not pretend a local onboard job lists the title on the landing page until this API exists.
+  - Distinct from `BL-052` (which titles were added for ENGL 1020). Do not reopen.
+  - Distinct from `BL-065.3` (regen casts on curated titles). Membership ≠ regen.
+  - Distinct from `BL-071` (non-Gutenberg rights). This epic is Gutenberg curated membership only.
+  - Complements later studio pointer columns on `books` / artifacts (ccr-studio data-model). Those are not required for `.1`–`.3`.
+- Risks:
+  - Putting a `curated` boolean on `books` only would drop pre-import landing metadata (aliases/subjects) and could not unlist a title that was never imported.
+  - Tying unlist to `character_enabled=false` or a roster delete would destroy artifacts — that is the failure mode this status exists to avoid.
+  - Dual-read (Java list + table) after migrate will drift; cut over in `.2`, do not leave two sources of truth.
+- Session Log:
+- 2026-08-25: Opened from ccr-studio design. Kevin: pull curated membership into a CCR table + endpoint; status to pull books in/out of the curated list without impacting generated artifacts. Studio ST-008 depends on this. Docs only; no schema or API in this capture.
+
+### BL-073 - Operator API to Grant/Revoke Teacher CREATE_CLASSROOM
+- Type: Feature / ops
+- Priority: P3 (later; studio ST-009 is a stub and needs more design)
+- Effort: S
+- Status: Proposed (not first-cut; do not start ahead of catalog/studio pipeline work)
+- Problem: Provisioning a teacher is “account already registered, then insert/upsert `account_capabilities`.” The operator path is `scripts/manage_teacher_access.sh grant|revoke|status <email>`, which SSHs for prod credentials and runs raw SQL. There is no HTTP API. `GET /api/classroom/capabilities` only reports the **current** user’s own flags. `ClassroomTeacherCapabilityService` can read and forbid create-class; it cannot grant.
+- Current code:
+  - Table `account_capabilities`: unique `(user_id, capability)`; grant upserts `CREATE_CLASSROOM` / `ACTIVE`; revoke sets `REVOKED` and does **not** remove term teacher memberships.
+  - Account must already exist (`users.email`). The script fails if no row.
+  - No student/teacher PII is created by the script; it only flips a capability on an existing account.
+- Current Direction:
+  - Add an **operator/ADMIN** API (not teacher-self-serve, not classroom UI): status / grant / revoke `CREATE_CLASSROOM` by email.
+  - Same semantics as the script: grant upserts ACTIVE; revoke leaves `class_role_memberships` alone; 404 if the account does not exist (do not auto-register).
+  - Point `manage_teacher_access.sh` at the API once it exists (SQL remains a documented emergency fallback only).
+  - Local and prod both use the API. Do not put this on an unauthenticated public path.
+- Out of this epic:
+  - Creating the user account (they Register / Google sign-in first). Opening public registration is `BL-066`.
+  - Student roster, invite links, or teacher-adding-a-co-teacher by email (`BL-025.2` / KD-19).
+  - ccr-studio UI (studio ST-009). This epic is the CCR API (+ script cutover).
+  - FERPA student-record APIs (`BL-043`).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-073.1 Grant/revoke/status API | Proposed | `GET/POST/PATCH` (or DELETE) operator routes by email; ADMIN/local only; same upsert/revoke rules as the script | Curl can grant Jessica (existing account) without SQL; missing email is 404; revoke does not drop term memberships |
+| BL-073.2 Script uses API | Proposed | `manage_teacher_access.sh` calls the API; SQL path only if API unreachable and explicitly forced | README grant path no longer requires operators to think in SQL |
+- Acceptance Criteria:
+  - An existing account can be granted or revoked `CREATE_CLASSROOM` without a SQL file.
+  - Missing account is a clear not-found, not a silent insert of a user.
+  - Revoke does not delete classes or enrollments.
+  - Students cannot call these routes.
+- Dependency Notes:
+  - **ccr-studio ST-009** (provision teacher account) **depends on `BL-073.1`** when we pick this up. Both are lower priority. Keep `manage_teacher_access.sh` until the use case is fleshed out.
+  - Distinct from `BL-025.2` (teacher onboarding UI / roster). This is operator privilege, not class setup.
+  - Distinct from `BL-066` (open registration). Grant does not create the login.
+  - Distinct from `BL-072` (curated books).
+- Risks:
+  - Auto-creating a user from studio would skip Register/Google and FERPA-adjacent account rules — do not do that.
+  - Exposing grant on a public unauthenticated route would let anyone become a teacher.
+  - Treating revoke as “delete the teacher user” would destroy classroom history.
+- Session Log:
+- 2026-08-25: Opened from ccr-studio design. Kevin: provision teacher account is a studio use case; today it is SQL via `manage_teacher_access.sh`. Need an endpoint so studio (and the script) are not raw inserts. Docs only.
+- 2026-08-25: Kevin: lower priority; flesh out later. Do not start ahead of catalog/studio pipeline work. Script remains the path.
+
+### BL-074 - Per-character Portrait Request and Regenerate APIs
+- Type: Feature / engine gap
+- Priority: P2 (unlocks ccr-studio ST-001 per-character portraits and onboard step 4)
+- Effort: S
+- Status: Proposed
+- Problem: Studio needs to generate or regen **one** character’s portrait (PRIMARY first, prompt edit, N samples). Today `CharacterController` only has `GET /{characterId}/portrait` and `GET .../portrait/status`. `CharacterService.generatePortrait()` is private and runs from prefetch / extraction. The only kick paths are `POST /api/characters/book/{bookId}/prefetch` (whole book, no job handle) or whole-book pregen.
+- Current Direction:
+  - Add the pair illustrations already have: `POST /api/characters/{characterId}/portrait/request` and `POST /api/characters/{characterId}/portrait/regenerate` with `{ "prompt" }`.
+  - Gate prompt regen the same way as `illustration.allow-prompt-editing` (local on, not a prod Imagine path).
+  - Keep GET image/status as they are. Do not add a product `/admin` UI.
+- Out of this epic:
+  - Multipart **upload** of a studio-chosen winner (that is `BL-075`).
+  - Character PATCH for name/type/firstChapter (ST-004; still do not add until asked).
+  - ccr-studio UI.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-074.1 Request + regenerate | Proposed | `POST .../portrait/request` and `POST .../portrait/regenerate { prompt }`; local/generation-gated; cache-only 409 | Studio can kick one character without whole-book prefetch |
+- Acceptance Criteria:
+  - A single PRIMARY can be requested or prompt-regenerated without prefetching the whole roster.
+  - Prod `generation.cache-only=true` still 409s these routes.
+- Dependency Notes:
+  - **ccr-studio ST-001 / ST-002 / ST-008 step 4** depend on this for per-character portraits.
+  - Complements `BL-075` (upload/keep). This epic generates into CCR’s live slot; upload is how studio restores a previous winner or pushes a chosen sample.
+  - Distinct from `BL-065` (cast quality). This is an HTTP seam, not a regen campaign.
+- Session Log:
+- 2026-08-25: Opened from ccr-studio design review (`claude_01` B1). Kevin chose: ask CCR for the illustration-shaped portrait request/regen pair. Docs only.
+
+### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
+- Type: Feature / engine gap
+- Priority: P2 (unlocks HTTP-only multi-sample keep/restore)
+- Effort: S
+- Status: Proposed
+- Problem: Studio’s winner-only rule and R3 require writing bytes **into** CCR live storage (keep a sample; restore the previous winner after each sample). Covers already have `PUT /api/library/{bookId}/cover` (multipart). Portraits and illustrations have **no** upload route. Without this, a multi-sample loop leaves the last CCR overwrite live — the failure R3 exists to prevent.
+- Current Direction:
+  - HTTP only. Studio will **not** write CCR’s filesystem or Postgres directly.
+  - Add multipart PUT/POST upload for a character portrait and a chapter illustration, same idea as cover upload: replace live bytes + metadata, leave generation status COMPLETED.
+  - Accept optional `studio_job_id` / `studio_artifact_id` when those pointer columns exist.
+  - Local/generation-gated; cache-only 409.
+- Out of this epic:
+  - Portrait **generation** request/regen (`BL-074`).
+  - CDN/Spaces sync (still `sync_spaces.sh`).
+  - Prod Imagine.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-075.1 Portrait upload | Proposed | Multipart write of PNG + prompt metadata onto the character’s live portrait | Studio keep/restore of `prt-*` is HTTP-only |
+| BL-075.2 Illustration upload | Proposed | Same for a chapter illustration | Studio keep/restore of `ill-*` is HTTP-only |
+- Acceptance Criteria:
+  - Studio can replace the live portrait or illustration without touching CCR disk/SQL itself.
+  - Upload does not enqueue a new Imagine job.
+  - cache-only still 409s.
+- Dependency Notes:
+  - **ccr-studio ST-002** multi-sample for portraits/illustrations is **cover-only until this ships**.
+  - Distinct from `BL-074` (generate). This is write-back of bytes studio already has.
+- Session Log:
+- 2026-08-25: Opened from ccr-studio design review (`claude_01` B2). Kevin chose: HTTP only; ask CCR for portrait/illustration upload. Docs only.
 
 ## P0
 
