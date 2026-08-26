@@ -4,6 +4,7 @@ import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.IllustrationEntity;
 import com.classicchatreader.entity.IllustrationStatus;
+import com.classicchatreader.model.IllustrationSettings;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.IllustrationRepository;
@@ -21,6 +22,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -147,6 +150,90 @@ class IllustrationServiceParallelTest {
     }
 
     @Test
+    void twoChaptersWithNoSavedStyleAnalyzeOnce() throws Exception {
+        BookEntity book = book("book-1", false);
+        ChapterEntity chapter1 = chapter(book, "chapter-1", 1);
+        ChapterEntity chapter2 = chapter(book, "chapter-2", 2);
+        stubChapterGeneration(chapter1);
+        stubChapterGeneration(chapter2);
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of(chapter1, chapter2));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(anyString())).thenReturn(List.of());
+
+        CountDownLatch analyzing = new CountDownLatch(1);
+        CountDownLatch releaseAnalyze = new CountDownLatch(1);
+        AtomicInteger analyzeCalls = new AtomicInteger();
+        when(styleAnalysisService.analyzeBookForStyle(any(), any(), any())).thenAnswer(invocation -> {
+            analyzeCalls.incrementAndGet();
+            analyzing.countDown();
+            if (!releaseAnalyze.await(3, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("style analysis release timed out");
+            }
+            return IllustrationSettings.defaults();
+        });
+        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
+                .thenReturn("books/gutenberg/1342/illustrations/chapters/1.png");
+
+        service.init();
+        when(illustrationRepository.findByChapterBookIdAndStatus("book-1", IllustrationStatus.PENDING))
+                .thenReturn(List.of(new IllustrationEntity(chapter1), new IllustrationEntity(chapter2)));
+        assertThat(service.forceQueuePendingForBook("book-1")).isEqualTo(2);
+
+        assertThat(analyzing.await(3, TimeUnit.SECONDS)).isTrue();
+        Thread.sleep(200);
+        assertThat(analyzeCalls.get()).isEqualTo(1);
+        releaseAnalyze.countDown();
+
+        verify(styleAnalysisService, timeout(2000).times(1))
+                .analyzeBookForStyle(any(), any(), any());
+        verify(illustrationImageGenerator, timeout(2000).times(2))
+                .generateIllustration(anyString(), anyString(), anyString());
+        assertThat(book.getIllustrationStyle()).isEqualTo("vintage book illustration");
+    }
+
+    @Test
+    void existingStyleDoesNotReanalyze() {
+        BookEntity book = book("book-1", true);
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+
+        IllustrationSettings first = service.getOrAnalyzeBookStyle("book-1", false);
+        IllustrationSettings second = service.getOrAnalyzeBookStyle("book-1", false);
+
+        assertThat(first.style()).isEqualTo("vintage book illustration");
+        assertThat(second.style()).isEqualTo("vintage book illustration");
+        verify(styleAnalysisService, never()).analyzeBookForStyle(any(), any(), any());
+    }
+
+    @Test
+    void differentBooksAnalyzeStyleInParallel() throws Exception {
+        BookEntity bookA = book("book-a", false);
+        BookEntity bookB = book("book-b", false);
+        when(bookRepository.findById("book-a")).thenReturn(Optional.of(bookA));
+        when(bookRepository.findById("book-b")).thenReturn(Optional.of(bookB));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(anyString())).thenReturn(List.of());
+
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        when(styleAnalysisService.analyzeBookForStyle(any(), any(), any())).thenAnswer(invocation -> {
+            bothStarted.countDown();
+            if (!release.await(3, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("style analysis release timed out");
+            }
+            return IllustrationSettings.defaults();
+        });
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            pool.submit(() -> service.getOrAnalyzeBookStyle("book-a", false));
+            pool.submit(() -> service.getOrAnalyzeBookStyle("book-b", false));
+            assertThat(bothStarted.await(2, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        verify(styleAnalysisService, timeout(2000).times(2)).analyzeBookForStyle(any(), any(), any());
+    }
+
+    @Test
     void cacheOnlyWorkersDoNotGenerate() throws Exception {
         ReflectionTestUtils.setField(service, "cacheOnly", true);
         ChapterEntity chapter = chapter("chapter-1", 1);
@@ -167,7 +254,7 @@ class IllustrationServiceParallelTest {
                 .thenReturn(1);
         when(chapterRepository.findByIdWithBook(chapterId)).thenReturn(Optional.of(chapter));
         when(comfyUIService.hasImage(anyString())).thenReturn(false);
-        when(bookRepository.findById("book-1")).thenReturn(Optional.of(chapter.getBook()));
+        when(bookRepository.findById(chapter.getBook().getId())).thenReturn(Optional.of(chapter.getBook()));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex(chapterId)).thenReturn(List.of());
         when(promptService.generatePromptForChapter(any(), any(), any(), any(), any()))
                 .thenReturn("a chapter scene");
@@ -176,18 +263,27 @@ class IllustrationServiceParallelTest {
     }
 
     private static ChapterEntity chapter(String chapterId, int index) {
-        BookEntity book = new BookEntity();
-        book.setId("book-1");
-        book.setTitle("Pride and Prejudice");
-        book.setAuthor("Jane Austen");
-        book.setSource("gutenberg");
-        book.setSourceId("1342");
-        book.setIllustrationStyle("vintage book illustration");
-        book.setIllustrationPromptPrefix("vintage,");
+        return chapter(book("book-1", true), chapterId, index);
+    }
 
+    private static ChapterEntity chapter(BookEntity book, String chapterId, int index) {
         ChapterEntity chapter = new ChapterEntity(index, "Chapter " + index);
         chapter.setId(chapterId);
         chapter.setBook(book);
         return chapter;
+    }
+
+    private static BookEntity book(String bookId, boolean withStyle) {
+        BookEntity book = new BookEntity();
+        book.setId(bookId);
+        book.setTitle("Pride and Prejudice");
+        book.setAuthor("Jane Austen");
+        book.setSource("gutenberg");
+        book.setSourceId("1342");
+        if (withStyle) {
+            book.setIllustrationStyle("vintage book illustration");
+            book.setIllustrationPromptPrefix("vintage,");
+        }
+        return book;
     }
 }

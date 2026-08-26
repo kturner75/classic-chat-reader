@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,6 +53,7 @@ public class IllustrationService {
     private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
+    private final ConcurrentHashMap<String, Object> styleAnalysisLocks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
     private ExecutorService executor;
     private volatile boolean running = true;
@@ -352,6 +354,10 @@ public class IllustrationService {
 
     /**
      * Get or analyze illustration settings for a book.
+     *
+     * <p>First-time style creation is single-flight per book so parallel illustration
+     * workers do not each pay for analysis. Existing style is a lock-free read.
+     * Different books do not share a lock.
      */
     @Transactional
     public IllustrationSettings getOrAnalyzeBookStyle(String bookId, boolean forceReanalyze) {
@@ -359,46 +365,66 @@ public class IllustrationService {
         if (book == null) {
             return IllustrationSettings.defaults();
         }
-
-        // Check if already analyzed
-        if (!forceReanalyze && book.getIllustrationStyle() != null) {
-            return new IllustrationSettings(
-                    book.getIllustrationStyle(),
-                    book.getIllustrationPromptPrefix(),
-                    book.getIllustrationSetting(),
-                    book.getIllustrationStyleReasoning(),
-                    book.getIllustrationCoverSubject(),
-                    book.getIllustrationCoverFocus()
-            );
+        if (!forceReanalyze) {
+            IllustrationSettings existing = existingStyle(book);
+            if (existing != null) {
+                return existing;
+            }
         }
         if (cacheOnly) {
             log.info("Skipping illustration style analysis in cache-only mode for book {}", bookId);
             return IllustrationSettings.defaults();
         }
 
-        // Get opening text for analysis
-        String openingText = getBookOpeningText(book);
+        synchronized (styleLockFor(bookId)) {
+            book = bookRepository.findById(bookId).orElse(null);
+            if (book == null) {
+                return IllustrationSettings.defaults();
+            }
+            if (!forceReanalyze) {
+                IllustrationSettings existing = existingStyle(book);
+                if (existing != null) {
+                    return existing;
+                }
+            }
 
-        // Analyze with LLM
-        IllustrationSettings settings = styleAnalysisService.analyzeBookForStyle(
-                book.getTitle(),
-                book.getAuthor(),
-                openingText
+            String openingText = getBookOpeningText(book);
+            IllustrationSettings settings = styleAnalysisService.analyzeBookForStyle(
+                    book.getTitle(),
+                    book.getAuthor(),
+                    openingText
+            );
+
+            book.setIllustrationStyle(settings.style());
+            book.setIllustrationPromptPrefix(settings.promptPrefix());
+            book.setIllustrationSetting(settings.setting());
+            book.setIllustrationStyleReasoning(settings.reasoning());
+            book.setIllustrationCoverSubject(settings.coverSubject());
+            book.setIllustrationCoverFocus(settings.coverFocus());
+            bookRepository.save(book);
+
+            log.info("Analyzed illustration style for '{}': {} - {}",
+                    book.getTitle(), settings.style(), settings.reasoning());
+            return settings;
+        }
+    }
+
+    private static IllustrationSettings existingStyle(BookEntity book) {
+        if (book.getIllustrationStyle() == null) {
+            return null;
+        }
+        return new IllustrationSettings(
+                book.getIllustrationStyle(),
+                book.getIllustrationPromptPrefix(),
+                book.getIllustrationSetting(),
+                book.getIllustrationStyleReasoning(),
+                book.getIllustrationCoverSubject(),
+                book.getIllustrationCoverFocus()
         );
+    }
 
-        // Save to book entity
-        book.setIllustrationStyle(settings.style());
-        book.setIllustrationPromptPrefix(settings.promptPrefix());
-        book.setIllustrationSetting(settings.setting());
-        book.setIllustrationStyleReasoning(settings.reasoning());
-        book.setIllustrationCoverSubject(settings.coverSubject());
-        book.setIllustrationCoverFocus(settings.coverFocus());
-        bookRepository.save(book);
-
-        log.info("Analyzed illustration style for '{}': {} - {}",
-                book.getTitle(), settings.style(), settings.reasoning());
-
-        return settings;
+    private Object styleLockFor(String bookId) {
+        return styleAnalysisLocks.computeIfAbsent(bookId, id -> new Object());
     }
 
     /**
