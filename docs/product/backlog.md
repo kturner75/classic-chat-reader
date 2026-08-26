@@ -124,7 +124,7 @@ Last updated: 2026-08-26
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -162,6 +162,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-25: Added `BL-073` (operator API to grant/revoke `CREATE_CLASSROOM`). Kevin: provision teacher is a studio use case; today `manage_teacher_access.sh` runs SQL. Account must already exist. Studio ST-009 depends on this. Docs only.
 - 2026-08-25: Added `BL-074` (per-character portrait request/regen) and `BL-075` (portrait + illustration multipart upload) from ccr-studio `claude_01` review. Kevin: HTTP-only write-back; ask CCR for both seams. Docs only.
 - 2026-08-25: `BL-075` spec from ccr-studio `claude_02` (N1): uploads accept `source` + prompt metadata; back-port the same fields to cover `PUT`; PNG only. Docs only.
+- 2026-08-26: `BL-077` public shared-cache TTS — unauthenticated play calls GET paragraph speak and may generate into the shared cache; no collaborator modal. `tts.cache-only` still skips generate. See epic session log.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -2446,6 +2447,39 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B2). Kevin chose: HTTP only; ask CCR for portrait/illustration upload. Docs only.
 - 2026-08-25: `claude_02` N1 — cover keep already works, but stamps `manual_upload` and drops prompts. Spec `source` + prompt on BL-075 uploads and back-port to cover PUT. PNG only. Docs only.
+
+### BL-077 - Public Shared-Cache TTS Play (No Collaborator Gate)
+- Type: Bug / product-rule restore
+- Priority: P1
+- Effort: S
+- Status: In Progress
+- Problem: Kevin locked that **all users share cached TTS**. An unauthorized public visitor may initiate xAI TTS; once the mp3 exists (local cache and/or CDN), everyone gets it. Collaborator sign-in must not be required for play. Prod Odyssey first-open currently falls straight to browser `speechSynthesis` because `reader.js` skips `GET /api/tts/speak/{book}/{chapter}/{para}` when `authPublicMode && !authCanAccessSensitive`, and `TtsController.speakParagraph` 401s uncached generate in public mode without session/API key.
+- Current Direction:
+  - Public play always calls the GET paragraph speak path. Do not prompt Collaborator Access for TTS play.
+  - Cache/CDN hits stay public. Uncached generate is allowed so it writes the shared cache.
+  - Rate-limit public generate (`security.public.rate-limit.tts-generate-requests`) inside the controller so spend is bounded. Do **not** classify the GET path as `GENERATION` in `SensitiveApiRequestMatcher` (that would re-auth-gate it).
+  - `POST /api/tts/speak` and `POST /api/tts/analyze/{bookId}` stay gated.
+  - `tts.cache-only` stays as-is: a miss still does not generate. Do not change Imagine / `generation.cache-only`.
+- Out of this epic:
+  - Imagine / `generation.cache-only`.
+  - Flipping prod `tts.cache-only`.
+  - POST free-text speak or voice analyze for anonymous visitors.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-077.1 Public GET generate + no-modal play | Done | Allow unauthenticated cache-miss generate on GET paragraph speak; rate-limit generate only; reader always calls server TTS and never opens Collaborator Access for play | Public cache-miss returns audio (or generates then 200); later plays hit cache/CDN; browser TTS only on real provider failure |
+- Acceptance Criteria:
+  - Public/unauthenticated play on a cache-miss paragraph returns audio (or generates then 200).
+  - Subsequent plays hit cache/CDN.
+  - No collaborator modal on TTS play.
+  - Browser TTS is only a real provider-failure fallback.
+  - `tts.cache-only=true` miss still does not generate.
+  - `POST /api/tts/speak` and `/analyze` remain auth-gated in public mode.
+- Dependency Notes:
+  - Distinct from `BL-075` / `BL-076` (studio upload / Imagine in-flight cap). Do not stack on those PRs.
+  - Builds on `#163` feature cache-only flags (do not use TTS cache-only to skip character prefetch).
+- Session Log:
+- 2026-08-26: Public GET paragraph speak may generate into the shared cache without collaborator/API-key auth; generate-only per-IP rate limit; reader play/prefetch no longer skip server TTS or open the collaborator modal. `tts.cache-only` unchanged.
 
 ## P0
 

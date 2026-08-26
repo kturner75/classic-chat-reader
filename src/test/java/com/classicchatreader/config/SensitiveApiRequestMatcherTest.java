@@ -26,6 +26,8 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/portrait/regenerate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/quizzes/chapter/ch-1/generate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/library/book-1/cover/retry"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/tts/speak"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/tts/analyze/book-1"));
     }
 
     @Test

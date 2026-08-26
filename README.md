@@ -112,6 +112,7 @@ Notes:
 - `generation.cache-only=true` blocks artifact generation workflows (recaps/quizzes/illustrations/character generation pipelines) but does not disable chat.
 - Chat availability is controlled by `ai.chat.enabled` plus chat provider availability/configuration. The default LLM provider is xAI (`grok-4.6` with `reasoning_effort=low` for interactive chat, `grok-4.6` default high reasoning for extraction/quiz/recap jobs) using SuperGrok OAuth when `XAI_OAUTH_REFRESH_TOKEN` / `./data/xai-oauth-refresh-token` is present, otherwise `XAI_API_KEY`. Set `ai.chat.provider=openai` to opt into OpenAI.
 - Read-aloud TTS uses xAI (`POST /v1/tts`) with the same SuperGrok OAuth / `XAI_API_KEY` credentials, and the live voice roster from `GET /v1/tts/voices`. Keep `tts.cache-only=true` on public environments when TTS generation costs should be avoided.
+- Public `GET /api/tts/speak/{book}/{chapter}/{para}` is shared-cache: an unauthenticated visitor may generate on a miss (rate-limited by `security.public.rate-limit.tts-generate-requests`). Collaborator sign-in is not required for play. `POST /api/tts/speak` and `POST /api/tts/analyze/{bookId}` stay gated. `tts.cache-only=true` still does not generate.
 - When `deployment.mode=public`, sensitive generation/chat APIs require authentication:
   - `X-API-Key` matching `security.public.api-key` (or env `PUBLIC_API_KEY`), or
   - collaborator session login via `/api/auth/login` using `security.public.collaborator.password` (or env `PUBLIC_COLLABORATOR_PASSWORD`).
