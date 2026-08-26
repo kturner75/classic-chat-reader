@@ -132,8 +132,10 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
     /**
      * Restores a cached portrait only when a directed regeneration has not claimed
      * the row. Returns 0 if {@code portraitFilename} is the directed marker.
+     * Does not clear the persistence context: recovery walks multiple candidates
+     * and a later name-collision path still needs lazy {@code firstChapter}.
      */
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = false)
     @Transactional
     @Query("""
             UPDATE CharacterEntity c

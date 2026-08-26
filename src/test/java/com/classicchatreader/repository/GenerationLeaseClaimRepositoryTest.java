@@ -13,11 +13,14 @@ import com.classicchatreader.entity.IllustrationStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DataJpaTest
 class GenerationLeaseClaimRepositoryTest {
@@ -33,6 +36,9 @@ class GenerationLeaseClaimRepositoryTest {
 
     @Autowired
     private CharacterRepository characterRepository;
+
+    @Autowired
+    private TestEntityManager entityManager;
 
     @Autowired
     private ChapterAnalysisRepository chapterAnalysisRepository;
@@ -300,6 +306,46 @@ class GenerationLeaseClaimRepositoryTest {
                 ChapterRecapStatus.GENERATING
         );
         assertEquals(1, dueClaim);
+    }
+
+    @Test
+    void cachedPortraitRestore_keepsSiblingRecoveryCandidatesAttached() {
+        ChapterEntity firstChapter = persistChapter("book-restore-detach");
+        BookEntity book = firstChapter.getBook();
+        ChapterEntity secondChapter = new ChapterEntity(2, "Chapter 2");
+        secondChapter.setBook(book);
+        secondChapter = chapterRepository.save(secondChapter);
+
+        CharacterEntity first = characterRepository.save(
+                new CharacterEntity(book, "Mr. Bennet", "Father", firstChapter, 0));
+        CharacterEntity second = characterRepository.save(
+                new CharacterEntity(book, "Mr Bennet", "Same slug, later chapter", secondChapter, 1));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<CharacterEntity> pending = characterRepository.findByBookIdAndStatus(
+                book.getId(), CharacterStatus.PENDING);
+        CharacterEntity loadedFirst = pending.stream()
+                .filter(candidate -> candidate.getId().equals(first.getId()))
+                .findFirst()
+                .orElseThrow();
+        CharacterEntity loadedSecond = pending.stream()
+                .filter(candidate -> candidate.getId().equals(second.getId()))
+                .findFirst()
+                .orElseThrow();
+        loadedFirst.getBook().getId();
+
+        int claimed = characterRepository.claimCachedPortraitRestore(
+                loadedFirst.getId(),
+                "books/manual/book-restore-detach/portraits/characters/mr-bennet.png",
+                LocalDateTime.now(),
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER,
+                CharacterStatus.COMPLETED);
+        assertEquals(1, claimed);
+
+        int chapterIndex = assertDoesNotThrow(() -> loadedSecond.getFirstChapter().getChapterIndex());
+        assertEquals(2, chapterIndex);
     }
 
     private ChapterEntity persistChapter(String sourceId) {
