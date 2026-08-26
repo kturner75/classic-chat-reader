@@ -110,7 +110,7 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             SET c.status = :pendingStatus,
                 c.portraitPrompt = :prompt,
                 c.errorMessage = NULL,
-                c.portraitFilename = NULL,
+                c.portraitFilename = :directedMarker,
                 c.completedAt = NULL,
                 c.retryCount = 0,
                 c.nextRetryAt = NULL,
@@ -122,6 +122,7 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
     int claimPortraitRegeneration(
             @Param("characterId") String characterId,
             @Param("prompt") String prompt,
+            @Param("directedMarker") String directedMarker,
             @Param("pendingStatus") CharacterStatus pendingStatus,
             @Param("completedStatus") CharacterStatus completedStatus,
             @Param("failedStatus") CharacterStatus failedStatus);

@@ -32,6 +32,13 @@ public class CharacterEntity {
 
     private String portraitFilename;
 
+    /**
+     * Stored in {@code portrait_filename} while a custom regeneration is in flight
+     * so recovery can distinguish directed intent from an auto-generated prompt.
+     * Not a real image key.
+     */
+    public static final String DIRECTED_PORTRAIT_MARKER = "__directed_regen__";
+
     public static final int PORTRAIT_PROMPT_MAX_LENGTH = 2000;
 
     @Column(length = PORTRAIT_PROMPT_MAX_LENGTH)
@@ -113,6 +120,16 @@ public class CharacterEntity {
 
     public String getPortraitFilename() { return portraitFilename; }
     public void setPortraitFilename(String portraitFilename) { this.portraitFilename = portraitFilename; }
+
+    public boolean hasDirectedPortraitIntent() {
+        return DIRECTED_PORTRAIT_MARKER.equals(portraitFilename);
+    }
+
+    public boolean hasStoredPortraitImage() {
+        return portraitFilename != null
+                && !portraitFilename.isBlank()
+                && !hasDirectedPortraitIntent();
+    }
 
     public String getPortraitPrompt() { return portraitPrompt; }
     public void setPortraitPrompt(String portraitPrompt) { this.portraitPrompt = portraitPrompt; }
