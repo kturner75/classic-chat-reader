@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 ## Implementation handoff (classroom)
 
@@ -124,7 +124,7 @@ Last updated: 2026-08-25
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **Proposed** — studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -2372,7 +2372,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature / engine gap
 - Priority: P2 (unlocks ccr-studio ST-001 per-character portraits and onboard step 4)
 - Effort: S
-- Status: Proposed
+- Status: In Progress
 - Problem: Studio needs to generate or regen **one** character’s portrait (PRIMARY first, prompt edit, N samples). Today `CharacterController` only has `GET /{characterId}/portrait` and `GET .../portrait/status`. `CharacterService.generatePortrait()` is private and runs from prefetch / extraction. The only kick paths are `POST /api/characters/book/{bookId}/prefetch` (whole book, no job handle) or whole-book pregen.
 - Current Direction:
   - Add the pair illustrations already have: `POST /api/characters/{characterId}/portrait/request` and `POST /api/characters/{characterId}/portrait/regenerate` with `{ "prompt" }`.
@@ -2385,7 +2385,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-074.1 Request + regenerate | Proposed | `POST .../portrait/request` and `POST .../portrait/regenerate { prompt }`; local/generation-gated; cache-only 409 | Studio can kick one character without whole-book prefetch |
+| BL-074.1 Request + regenerate | Done | `POST .../portrait/request` and `POST .../portrait/regenerate { prompt }`; local/generation-gated; cache-only 409 | Studio can kick one character without whole-book prefetch |
 - Acceptance Criteria:
   - A single PRIMARY can be requested or prompt-regenerated without prefetching the whole roster.
   - Prod `generation.cache-only=true` still 409s these routes.
@@ -2395,6 +2395,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Distinct from `BL-065` (cast quality). This is an HTTP seam, not a regen campaign.
 - Session Log:
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B1). Kevin chose: ask CCR for the illustration-shaped portrait request/regen pair. Docs only.
+- 2026-08-26: BL-074.1 HTTP seam — `POST /api/characters/{id}/portrait/request` and `.../regenerate { prompt }` for one PRIMARY; same generation-gate + cache-only 409 + `illustration.allow-prompt-editing` as illustrations. No Flyway, upload, PATCH, or /admin.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap

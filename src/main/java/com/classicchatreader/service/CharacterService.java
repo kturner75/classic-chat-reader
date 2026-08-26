@@ -312,7 +312,7 @@ public class CharacterService {
                     processChapterAnalysis(ar.chapterId());
                 } else if (request instanceof PortraitRequest pr) {
                     log.info("Processing portrait generation #{} for character: {}", processedCount, pr.characterId());
-                    generatePortrait(pr.characterId());
+                    generatePortrait(pr.characterId(), pr.customPrompt());
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -449,6 +449,82 @@ public class CharacterService {
         }
     }
 
+    /**
+     * Request portrait generation for one existing character without prefetching the book roster.
+     */
+    @Transactional
+    public void requestPortrait(String characterId) {
+        if (cacheOnly) {
+            log.info("Skipping portrait request in cache-only mode for character {}", characterId);
+            return;
+        }
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
+        if (character == null) {
+            log.warn("Cannot request portrait: character not found {}", characterId);
+            return;
+        }
+
+        String cacheKey = buildPortraitCacheKey(character);
+        if (restoreCachedPortrait(character, cacheKey)) {
+            return;
+        }
+
+        CharacterStatus status = character.getStatus();
+        if (status == CharacterStatus.COMPLETED || status == CharacterStatus.GENERATING) {
+            log.debug("Portrait already {} for character {}", status, characterId);
+            return;
+        }
+
+        if (status == CharacterStatus.FAILED) {
+            character.setStatus(CharacterStatus.PENDING);
+            character.setErrorMessage(null);
+            character.setRetryCount(0);
+            character.setNextRetryAt(null);
+            clearCharacterLease(character);
+            characterRepository.save(character);
+        }
+
+        boolean queued = requestQueue.offer(new PortraitRequest(characterId));
+        if (queued) {
+            log.info("Queued portrait request for character: {}", characterId);
+        } else {
+            log.error("Failed to queue portrait request for character: {}", characterId);
+        }
+    }
+
+    /**
+     * Reset one character's portrait and regenerate it with a custom prompt.
+     */
+    @Transactional
+    public void regeneratePortraitWithPrompt(String characterId, String customPrompt) {
+        if (cacheOnly) {
+            log.info("Skipping portrait regeneration in cache-only mode for character {}", characterId);
+            return;
+        }
+        CharacterEntity character = characterRepository.findById(characterId).orElse(null);
+        if (character == null) {
+            log.warn("Cannot regenerate portrait: character not found {}", characterId);
+            return;
+        }
+
+        character.setStatus(CharacterStatus.PENDING);
+        character.setPortraitPrompt(customPrompt);
+        character.setErrorMessage(null);
+        character.setPortraitFilename(null);
+        character.setCompletedAt(null);
+        character.setRetryCount(0);
+        character.setNextRetryAt(null);
+        clearCharacterLease(character);
+        characterRepository.save(character);
+
+        boolean queued = requestQueue.offer(new PortraitRequest(characterId, customPrompt));
+        if (queued) {
+            log.info("Queued portrait regeneration for character: {}", characterId);
+        } else {
+            log.error("Failed to queue portrait regeneration for character: {}", characterId);
+        }
+    }
+
     @Transactional
     public void updateChapterAnalysisCount(String chapterId, int count) {
         chapterAnalysisRepository.findByChapterId(chapterId).ifPresent(analysis -> {
@@ -535,20 +611,24 @@ public class CharacterService {
     }
 
     private void generatePortrait(String characterId) {
+        generatePortrait(characterId, null);
+    }
+
+    private void generatePortrait(String characterId, String customPrompt) {
         if (!tryClaimPortraitLease(characterId)) {
             log.debug("Skipping portrait generation for character {} because lease claim failed", characterId);
-            rescheduleDeferredPortraitRetryIfNeeded(characterId);
+            rescheduleDeferredPortraitRetryIfNeeded(characterId, customPrompt);
             return;
         }
         CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
         if (character == null) {
             log.warn("Character not found for portrait generation: {}", characterId);
-            self.handlePortraitFailure(characterId, "Character not found", false);
+            self.handlePortraitFailure(characterId, "Character not found", false, customPrompt);
             return;
         }
 
         String cacheKey = buildPortraitCacheKey(character);
-        if (restoreCachedPortrait(character, cacheKey)) {
+        if (customPrompt == null && restoreCachedPortrait(character, cacheKey)) {
             return;
         }
         if (cacheOnly) {
@@ -558,16 +638,20 @@ public class CharacterService {
         }
 
         try {
-            BookEntity book = character.getBook();
-            IllustrationSettings bookStyle = illustrationService.getOrAnalyzeBookStyle(book.getId(), false);
-
-            String portraitPrompt = portraitService.generatePortraitPrompt(
-                    book.getTitle(),
-                    book.getAuthor(),
-                    character.getName(),
-                    character.getDescription(),
-                    bookStyle
-            );
+            String portraitPrompt;
+            if (customPrompt != null && !customPrompt.isBlank()) {
+                portraitPrompt = customPrompt;
+            } else {
+                BookEntity book = character.getBook();
+                IllustrationSettings bookStyle = illustrationService.getOrAnalyzeBookStyle(book.getId(), false);
+                portraitPrompt = portraitService.generatePortraitPrompt(
+                        book.getTitle(),
+                        book.getAuthor(),
+                        character.getName(),
+                        character.getDescription(),
+                        bookStyle
+                );
+            }
 
             self.updatePortraitPrompt(characterId, portraitPrompt);
 
@@ -580,7 +664,7 @@ public class CharacterService {
 
         } catch (Exception e) {
             log.error("Failed to generate portrait for character: {}", character.getName(), e);
-            self.handlePortraitFailure(characterId, e.getMessage(), true);
+            self.handlePortraitFailure(characterId, e.getMessage(), true, customPrompt);
         }
     }
 
@@ -959,7 +1043,10 @@ public class CharacterService {
     private record AnalysisRequest(String chapterId) implements CharacterRequest {
     }
 
-    private record PortraitRequest(String characterId) implements CharacterRequest {
+    private record PortraitRequest(String characterId, String customPrompt) implements CharacterRequest {
+        PortraitRequest(String characterId) {
+            this(characterId, null);
+        }
     }
 
     private boolean tryClaimPortraitLease(String characterId) {
@@ -1037,6 +1124,11 @@ public class CharacterService {
 
     @Transactional
     public void handlePortraitFailure(String characterId, String errorMessage, boolean retryable) {
+        handlePortraitFailure(characterId, errorMessage, retryable, null);
+    }
+
+    @Transactional
+    public void handlePortraitFailure(String characterId, String errorMessage, boolean retryable, String customPrompt) {
         CharacterEntity character = characterRepository.findById(characterId).orElse(null);
         if (character == null) {
             log.warn("Cannot record portrait failure: character not found {}", characterId);
@@ -1055,7 +1147,7 @@ public class CharacterService {
             character.setStatus(CharacterStatus.PENDING);
             character.setNextRetryAt(nextRetryAt);
             characterRepository.save(character);
-            scheduleRetryRequest(new PortraitRequest(characterId), delayMs);
+            scheduleRetryRequest(new PortraitRequest(characterId, customPrompt), delayMs);
             log.warn(
                     "Retrying portrait generation for character {} in {}s (attempt {}/{})",
                     characterId,
@@ -1087,17 +1179,21 @@ public class CharacterService {
     }
 
     private void rescheduleDeferredPortraitRetryIfNeeded(String characterId) {
+        rescheduleDeferredPortraitRetryIfNeeded(characterId, null);
+    }
+
+    private void rescheduleDeferredPortraitRetryIfNeeded(String characterId, String customPrompt) {
         characterRepository.findById(characterId).ifPresent(character -> {
             if (character.getStatus() != CharacterStatus.PENDING || character.getNextRetryAt() == null) {
                 return;
             }
             LocalDateTime now = LocalDateTime.now();
             if (!character.getNextRetryAt().isAfter(now)) {
-                requestQueue.offer(new PortraitRequest(characterId));
+                requestQueue.offer(new PortraitRequest(characterId, customPrompt));
                 return;
             }
             long delayMs = Duration.between(now, character.getNextRetryAt()).toMillis();
-            scheduleRetryRequest(new PortraitRequest(characterId), delayMs);
+            scheduleRetryRequest(new PortraitRequest(characterId, customPrompt), delayMs);
         });
     }
 

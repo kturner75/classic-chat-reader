@@ -39,7 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = {
         "generation.cache-only=false",
         "character.enabled=true",
-        "ai.chat.enabled=true"
+        "ai.chat.enabled=true",
+        "illustration.allow-prompt-editing=true"
 })
 class CharacterControllerTest {
 
@@ -95,6 +96,95 @@ class CharacterControllerTest {
 
         mockMvc.perform(get("/api/characters/book/book-1"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void requestPortrait_primaryCharacter_queuesGeneration() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
+                .andExpect(status().isAccepted());
+
+        verify(characterService).requestPortrait("character-1");
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void requestPortrait_secondaryCharacter_returnsForbidden() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.SECONDARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
+                .andExpect(status().isForbidden());
+
+        verify(characterService, never()).requestPortrait("character-1");
+    }
+
+    @Test
+    void regeneratePortrait_primaryCharacter_queuesCustomPrompt() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "Elizabeth Bennet in a pale muslin gown"
+                                }
+                                """))
+                .andExpect(status().isAccepted());
+
+        verify(characterService).regeneratePortraitWithPrompt(
+                "character-1", "Elizabeth Bennet in a pale muslin gown");
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void regeneratePortrait_blankPrompt_returnsBadRequest() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "   "
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(characterService, never()).regeneratePortraitWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test

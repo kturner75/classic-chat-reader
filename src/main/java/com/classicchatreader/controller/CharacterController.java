@@ -54,6 +54,9 @@ public class CharacterController {
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
+    @Value("${illustration.allow-prompt-editing:false}")
+    private boolean allowPromptEditing;
+
     private final CharacterService characterService;
     private final CharacterChatService chatService;
     private final CharacterVoiceCallService voiceCallService;
@@ -245,6 +248,69 @@ public class CharacterController {
         return response;
     }
 
+    /**
+     * Request portrait generation for one existing PRIMARY character.
+     */
+    @PostMapping("/{characterId}/portrait/request")
+    public ResponseEntity<Void> requestPortrait(@PathVariable String characterId) {
+        if (!characterEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        CharacterEntity character = characterOpt.get();
+        if (!isCharacterEnabled(character.getBook())) {
+            return ResponseEntity.status(403).build();
+        }
+        if (character.getCharacterType() != CharacterType.PRIMARY) {
+            return ResponseEntity.status(403).build();
+        }
+        characterService.requestPortrait(characterId);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Regenerate a PRIMARY portrait with a custom prompt.
+     * Gated the same way as illustration prompt editing (local on, not a prod Imagine path).
+     */
+    @PostMapping("/{characterId}/portrait/regenerate")
+    public ResponseEntity<Void> regeneratePortrait(
+            @PathVariable String characterId,
+            @RequestBody RegenerateRequest request) {
+
+        if (!characterEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        if (!allowPromptEditing) {
+            return ResponseEntity.status(403).build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        CharacterEntity character = characterOpt.get();
+        if (!isCharacterEnabled(character.getBook())) {
+            return ResponseEntity.status(403).build();
+        }
+        if (character.getCharacterType() != CharacterType.PRIMARY) {
+            return ResponseEntity.status(403).build();
+        }
+        if (request.prompt() == null || request.prompt().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        characterService.regeneratePortraitWithPrompt(characterId, request.prompt());
+        return ResponseEntity.accepted().build();
+    }
+
     @PostMapping("/chapter/{chapterId}/analyze")
     public ResponseEntity<Void> requestChapterAnalysis(@PathVariable String chapterId) {
         if (!characterEnabled) {
@@ -407,6 +473,8 @@ public class CharacterController {
             int readerChapterIndex,
             int readerParagraphIndex
     ) {}
+
+    public record RegenerateRequest(String prompt) {}
 
     public record ChatResponse(
             String response,

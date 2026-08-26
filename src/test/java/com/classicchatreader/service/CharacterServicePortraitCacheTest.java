@@ -105,6 +105,55 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void requestPortrait_queuesOneCharacterWithoutPrefetch() {
+        character.setStatus(CharacterStatus.PENDING);
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-1")).thenReturn(List.of(character));
+        when(comfyUIService.hasPortraitImage(any())).thenReturn(false);
+
+        service.requestPortrait("character-1");
+
+        assertEquals(1, service.getQueueDepth());
+    }
+
+    @Test
+    void regeneratePortraitWithPrompt_resetsLiveSlotAndQueuesCustomPrompt() {
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+
+        service.regeneratePortraitWithPrompt("character-1", "Mr. Bennet in a dark coat");
+
+        assertEquals(CharacterStatus.PENDING, character.getStatus());
+        assertEquals("Mr. Bennet in a dark coat", character.getPortraitPrompt());
+        assertNull(character.getPortraitFilename());
+        assertEquals(1, service.getQueueDepth());
+        verify(characterRepository).save(character);
+    }
+
+    @Test
+    void generatePortrait_customPrompt_skipsCacheRestoreAndPromptLlm() {
+        String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
+        when(characterRepository.claimPortraitLease(
+                eq("character-1"), any(), any(), eq("test-worker"),
+                eq(CharacterStatus.PENDING), eq(CharacterStatus.GENERATING)))
+                .thenReturn(1);
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-1")).thenReturn(List.of(character));
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+        when(portraitImageGenerator.generatePortrait(
+                eq("Mr. Bennet in a dark coat"), eq("portrait_character-1"), eq(cacheKey)))
+                .thenReturn(cacheKey);
+
+        ReflectionTestUtils.invokeMethod(service, "generatePortrait", "character-1", "Mr. Bennet in a dark coat");
+
+        verify(portraitService, never()).generatePortraitPrompt(any(), any(), any(), any(), any());
+        verify(comfyUIService, never()).hasPortraitImage(any());
+        verify(portraitImageGenerator).generatePortrait(
+                "Mr. Bennet in a dark coat", "portrait_character-1", cacheKey);
+    }
+
+    @Test
     void secondaryCharacterIsNotChatEligibleWhenBookHasNoPrimary() {
         character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
         assertEquals(false, service.isChatEligible(character));
