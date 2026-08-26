@@ -151,7 +151,7 @@ class LiveAssetUploadServiceTest {
     }
 
     @Test
-    void saveUploadedCover_cacheOnly_doesNotWrite() {
+    void saveUploadedCover_cacheOnly_doesNotWrite() throws Exception {
         ReflectionTestUtils.setField(bookCoverService, "cacheOnly", true);
 
         assertEquals(LiveAssetWriteResult.CACHE_ONLY,
@@ -162,7 +162,7 @@ class LiveAssetUploadServiceTest {
     }
 
     @Test
-    void saveUploadedCover_nonPng_rejected() {
+    void saveUploadedCover_nonPng_rejected() throws Exception {
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
 
         assertThrows(UnsupportedImageTypeException.class,
@@ -198,7 +198,7 @@ class LiveAssetUploadServiceTest {
     }
 
     @Test
-    void saveUploadedIllustration_cacheOnlyAndNonPng() {
+    void saveUploadedIllustration_cacheOnlyAndNonPng() throws Exception {
         ReflectionTestUtils.setField(illustrationWriteService, "cacheOnly", true);
         assertEquals(LiveAssetWriteResult.CACHE_ONLY,
                 illustrationWriteService.saveUploadedIllustration("chapter-1", PNG, "studio", null, null));
@@ -240,7 +240,7 @@ class LiveAssetUploadServiceTest {
     }
 
     @Test
-    void saveUploadedPortrait_cacheOnlyAndNonPng() {
+    void saveUploadedPortrait_cacheOnlyAndNonPng() throws Exception {
         ReflectionTestUtils.setField(characterService, "cacheOnly", true);
         assertEquals(LiveAssetWriteResult.CACHE_ONLY,
                 characterService.saveUploadedPortrait("character-1", PNG, "studio", null, null));
