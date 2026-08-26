@@ -22,8 +22,12 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("GET", "/api/pregen/jobs/job-1"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("DELETE", "/api/pregen/jobs/job-1"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/illustrations/chapter/ch-1/request"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/portrait/request"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/char-1/portrait/regenerate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/quizzes/chapter/ch-1/generate"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/library/book-1/cover/retry"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/tts/speak"));
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/tts/analyze/book-1"));
     }
 
     @Test
@@ -86,10 +90,16 @@ class SensitiveApiRequestMatcherTest {
     void classify_marksAdminEndpoints() {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PATCH", "/api/library/book-1/features"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/library/book-1/cover"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/characters/char-1/portrait"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/illustrations/chapter/ch-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1/portrait"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/illustrations/chapter/ch-1"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library/book-1"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/library"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("DELETE", "/api/characters/book/book-1"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/book/book-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1/portrait"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1/portrait/status"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/book/book-1/prefetch"));
     }
 

@@ -15,10 +15,14 @@ public final class SensitiveApiRequestMatcher {
 
     private static final Pattern CHARACTER_CHAPTER_ACTION_PATH =
             Pattern.compile("^/api/characters/chapter/[^/]+/(analyze|prefetch-next)$");
+    private static final Pattern CHARACTER_PORTRAIT_ACTION_PATH =
+            Pattern.compile("^/api/characters/[^/]+/portrait/(request|regenerate)$");
     private static final Pattern CHARACTER_BOOK_PREFETCH_PATH = Pattern.compile("^/api/characters/book/[^/]+/prefetch$");
     private static final Pattern CHARACTER_BOOK_DELETE_PATH = Pattern.compile("^/api/characters/book/[^/]+$");
     private static final Pattern CHARACTER_CHAT_PATH = Pattern.compile("^/api/characters/[^/]+/chat$");
     private static final Pattern CHARACTER_CALL_SESSION_PATH = Pattern.compile("^/api/characters/[^/]+/call-session$");
+    private static final Pattern CHARACTER_PORTRAIT_PATH = Pattern.compile("^/api/characters/[^/]+/portrait$");
+    private static final Pattern ILLUSTRATION_CHAPTER_PATH = Pattern.compile("^/api/illustrations/chapter/[^/]+$");
 
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
@@ -76,6 +80,7 @@ public final class SensitiveApiRequestMatcher {
                     || ILLUSTRATION_CHAPTER_ACTION_PATH.matcher(path).matches()
                     || "/api/illustrations/retry-stuck".equals(path)
                     || CHARACTER_CHAPTER_ACTION_PATH.matcher(path).matches()
+                    || CHARACTER_PORTRAIT_ACTION_PATH.matcher(path).matches()
                     || CHARACTER_BOOK_PREFETCH_PATH.matcher(path).matches()
                     || PREGEN_BOOK_PATH.matcher(path).matches()
                     || PREGEN_GUTENBERG_PATH.matcher(path).matches()
@@ -116,7 +121,9 @@ public final class SensitiveApiRequestMatcher {
             return EndpointType.ADMIN;
         }
 
-        if ("PUT".equals(method) && LIBRARY_COVER_PATH.matcher(path).matches()) {
+        if ("PUT".equals(method) && (LIBRARY_COVER_PATH.matcher(path).matches()
+                || CHARACTER_PORTRAIT_PATH.matcher(path).matches()
+                || ILLUSTRATION_CHAPTER_PATH.matcher(path).matches())) {
             return EndpointType.ADMIN;
         }
 

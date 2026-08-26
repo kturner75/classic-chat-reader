@@ -5,6 +5,7 @@ const {
     canPostSensitiveGeneration,
     isBackgroundSensitivePath,
     isUserInitiatedSensitivePath,
+    shouldCallServerTts,
     shouldPromptCollaboratorOnUnauthorized
 } = require('../../main/resources/static/js/sensitive-request-guard.js');
 
@@ -142,7 +143,35 @@ test('shouldPromptCollaboratorOnUnauthorized prompts only for user-initiated sen
         ...public401,
         method: 'GET',
         path: '/api/tts/speak/gutenberg-996/ch-1/0'
+    }), false);
+});
+
+test('public TTS paragraph play does not open the collaborator modal', () => {
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        method: 'GET',
+        path: '/api/tts/speak/gutenberg-1727/ch-1/0'
+    }), false);
+    assert.equal(isUserInitiatedSensitivePath('/api/tts/speak/gutenberg-1727/ch-1/0', 'GET'), false);
+    assert.equal(isUserInitiatedSensitivePath('/api/tts/speak', 'POST'), true);
+});
+
+test('shouldCallServerTts ignores collaborator auth for public play', () => {
+    assert.equal(shouldCallServerTts({
+        serverTtsAvailable: true,
+        publicMode: true,
+        canAccessSensitive: false
     }), true);
+    assert.equal(shouldCallServerTts({
+        serverTtsAvailable: true,
+        publicMode: false,
+        canAccessSensitive: true
+    }), true);
+    assert.equal(shouldCallServerTts({
+        serverTtsAvailable: false,
+        publicMode: true,
+        canAccessSensitive: false
+    }), false);
 });
 
 test('user-initiated reading-buddy preference and history 401s open the collaborator modal', () => {

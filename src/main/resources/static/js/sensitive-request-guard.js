@@ -15,7 +15,7 @@
         { methods: ['PUT'], path: /^\/api\/reading-buddy\/preferences$/ },
         { methods: ['DELETE'], path: /^\/api\/reading-buddy\/history$/ },
         { methods: ['POST'], path: /^\/api\/illustrations\/chapter\/[^/]+\/regenerate$/ },
-        { methods: ['GET', 'POST'], path: /^\/api\/tts\/speak(?:\/|$)/ }
+        { methods: ['POST'], path: /^\/api\/tts\/speak(?:\/|$)/ }
     ];
 
     const BACKGROUND_SENSITIVE_PATHS = [
@@ -44,6 +44,15 @@
             return false;
         }
         return true;
+    }
+
+    /**
+     * Shared-cache TTS play is public. Collaborator auth must not gate server
+     * paragraph speak; browser speech is only a real provider-failure fallback.
+     */
+    function shouldCallServerTts(flags) {
+        const source = flags || {};
+        return source.serverTtsAvailable === true;
     }
 
     function routeMatches(route, path, method) {
@@ -94,6 +103,7 @@
         canPostSensitiveGeneration,
         isBackgroundSensitivePath,
         isUserInitiatedSensitivePath,
+        shouldCallServerTts,
         shouldPromptCollaboratorOnUnauthorized
     };
 });

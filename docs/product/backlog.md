@@ -124,7 +124,7 @@ Last updated: 2026-08-26
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **Proposed** — studio ST-001/008.) (`BL-075` portrait/illustration upload **Proposed** — studio ST-002 keep/restore.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Done this PR** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -162,6 +162,8 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-25: Added `BL-073` (operator API to grant/revoke `CREATE_CLASSROOM`). Kevin: provision teacher is a studio use case; today `manage_teacher_access.sh` runs SQL. Account must already exist. Studio ST-009 depends on this. Docs only.
 - 2026-08-25: Added `BL-074` (per-character portrait request/regen) and `BL-075` (portrait + illustration multipart upload) from ccr-studio `claude_01` review. Kevin: HTTP-only write-back; ask CCR for both seams. Docs only.
 - 2026-08-25: `BL-075` spec from ccr-studio `claude_02` (N1): uploads accept `source` + prompt metadata; back-port the same fields to cover `PUT`; PNG only. Docs only.
+- 2026-08-26: `BL-075` HTTP write-back: portrait + illustration multipart `PUT`, cover provenance (`studio` + prompts), PNG-only, cache-only 409. No Imagine enqueue. No Flyway.
+- 2026-08-26: `BL-077` public shared-cache TTS — unauthenticated play calls GET paragraph speak and may generate into the shared cache; no collaborator modal. `tts.cache-only` still skips generate. See epic session log.
 - 2026-08-26: Added and implemented `BL-076` (parallel Imagine in-flight). Shared `generation.imagine.max-in-flight` (default 4) across portraits + illustrations + covers. Analysis stays on its own path. No Flyway. Overnight runner stays one book at a time. Off current `main` after #163; not stacked on #132.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
@@ -2373,7 +2375,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Feature / engine gap
 - Priority: P2 (unlocks ccr-studio ST-001 per-character portraits and onboard step 4)
 - Effort: S
-- Status: Proposed
+- Status: In Progress
 - Problem: Studio needs to generate or regen **one** character’s portrait (PRIMARY first, prompt edit, N samples). Today `CharacterController` only has `GET /{characterId}/portrait` and `GET .../portrait/status`. `CharacterService.generatePortrait()` is private and runs from prefetch / extraction. The only kick paths are `POST /api/characters/book/{bookId}/prefetch` (whole book, no job handle) or whole-book pregen.
 - Current Direction:
   - Add the pair illustrations already have: `POST /api/characters/{characterId}/portrait/request` and `POST /api/characters/{characterId}/portrait/regenerate` with `{ "prompt" }`.
@@ -2386,7 +2388,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-074.1 Request + regenerate | Proposed | `POST .../portrait/request` and `POST .../portrait/regenerate { prompt }`; local/generation-gated; cache-only 409 | Studio can kick one character without whole-book prefetch |
+| BL-074.1 Request + regenerate | Done | `POST .../portrait/request` and `POST .../portrait/regenerate { prompt }`; local/generation-gated; cache-only 409 | Studio can kick one character without whole-book prefetch |
 - Acceptance Criteria:
   - A single PRIMARY can be requested or prompt-regenerated without prefetching the whole roster.
   - Prod `generation.cache-only=true` still 409s these routes.
@@ -2396,12 +2398,27 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Distinct from `BL-065` (cast quality). This is an HTTP seam, not a regen campaign.
 - Session Log:
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B1). Kevin chose: ask CCR for the illustration-shaped portrait request/regen pair. Docs only.
+- 2026-08-26: BL-074.1 HTTP seam — `POST /api/characters/{id}/portrait/request` and `.../regenerate { prompt }` for one PRIMARY; same generation-gate + cache-only 409 + `illustration.allow-prompt-editing` as illustrations. No Flyway, upload, PATCH, or /admin.
+- 2026-08-26: Codex P1/P2 — queue request/regen afterCommit; skip cache restore when a stored prompt is pending; 409 regenerate while GENERATING.
+- 2026-08-26: Codex follow-up — 409 regenerate while PENDING (second custom job before claim); 400 when prompt exceeds `portrait_prompt` VARCHAR(2000). No Flyway.
+- 2026-08-26: Codex follow-up — `/portrait/request` skips cache restore when a directed prompt is already pending, so the old stable-key image cannot complete over an unclaimed regen.
+- 2026-08-26: Codex follow-up — atomic `claimPortraitRegeneration` from COMPLETED/FAILED only (no Flyway). Directed-prompt guard is PENDING-only so failed auto-portraits stay requestable. GET cache headers left illustration-parity.
+- 2026-08-26: Codex P2 #3 — local `GET .../portrait` revalidates with `no-cache` + ETag/Last-Modified from `completed_at` so a successful regen is not cached for 7 days. CDN `?v=` path unchanged.
+- 2026-08-26: Codex follow-up — persist directed regen via `portrait_filename = __directed_regen__` (no Flyway) so recovery does not restore cache over a claimed custom job or replay a failed auto prompt as directed.
+- 2026-08-26: Codex follow-up — cache restore and failed-state retry use conditional updates so they cannot overwrite a concurrent regen claim. `/portrait/request` requeues a failed directed job and keeps its prompt.
+- 2026-08-26: Codex follow-up — startup recovery enqueues directed/stuck portraits from `afterCommit` so the worker does not see a still-committed GENERATING row.
+- 2026-08-26: Codex follow-up — `retryFailedPortraitsForBook` also enqueues from `afterCommit`. Book delete removes the stable cache-key file for directed slots, not the marker.
+- 2026-08-26: Codex follow-up — failed-portrait pregen retry uses the same conditional FAILED→PENDING claims so it cannot overwrite a concurrent regen.
+- 2026-08-26: Codex follow-up — successful regen claim deletes the exact previous portrait file (canonical or legacy alias) so the marker overwrite does not orphan it.
+- 2026-08-26: Codex follow-up — `/portrait/request` atomically resets COMPLETED→PENDING and requeues when the portrait file is gone, without overwriting a concurrent directed claim.
+- 2026-08-26: Codex follow-up — regen deletes the prior portrait file from `afterCommit` with the enqueue, so a rolled-back claim cannot leave a 404.
+- 2026-08-26: Codex follow-up — `claimCachedPortraitRestore` does not clear the persistence context, so recovery can still lazy-load `firstChapter` on a later name-collision candidate.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap
 - Priority: P2 (unlocks HTTP-only multi-sample keep/restore)
 - Effort: S
-- Status: Proposed
+- Status: Done
 - Problem: Studio’s winner-only rule and R3 require writing bytes **into** CCR live storage (keep a sample; restore the previous winner after each sample). Covers already have `PUT /api/library/{bookId}/cover` (multipart). Portraits and illustrations have **no** upload route. Without this, a multi-sample loop leaves the last CCR overwrite live — the failure R3 exists to prevent.
 - Current Direction:
   - HTTP only. Studio will **not** write CCR’s filesystem or Postgres directly.
@@ -2417,9 +2434,9 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker (suggested):
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-075.1 Portrait upload | Proposed | Multipart write of PNG + `source` + prompt metadata onto the character’s live portrait | Studio keep/restore of `prt-*` is HTTP-only |
-| BL-075.2 Illustration upload | Proposed | Same for a chapter illustration | Studio keep/restore of `ill-*` is HTTP-only |
-| BL-075.3 Cover PUT provenance | Proposed | Cover upload accepts `source` + prompt fields; studio keep is not stamped `manual_upload` | Kept covers carry the Imagine prompt and a studio source |
+| BL-075.1 Portrait upload | Done | Multipart write of PNG + `source` + prompt metadata onto the character’s live portrait | Studio keep/restore of `prt-*` is HTTP-only |
+| BL-075.2 Illustration upload | Done | Same for a chapter illustration | Studio keep/restore of `ill-*` is HTTP-only |
+| BL-075.3 Cover PUT provenance | Done | Cover upload accepts `source` + prompt fields; studio keep is not stamped `manual_upload` | Kept covers carry the Imagine prompt and a studio source |
 - Acceptance Criteria:
   - Studio can replace the live portrait or illustration without touching CCR disk/SQL itself.
   - Upload does not enqueue a new Imagine job.
@@ -2432,6 +2449,41 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-25: Opened from ccr-studio design review (`claude_01` B2). Kevin chose: HTTP only; ask CCR for portrait/illustration upload. Docs only.
 - 2026-08-25: `claude_02` N1 — cover keep already works, but stamps `manual_upload` and drops prompts. Spec `source` + prompt on BL-075 uploads and back-port to cover PUT. PNG only. Docs only.
+- 2026-08-26: HTTP write-back: `PUT` portrait + illustration (PNG + `source` + prompts, COMPLETED, no Imagine enqueue); cover `PUT` provenance back-port (`studio` vs `manual_upload`). Cache-only 409. No Flyway (studio pointer columns not on main).
+- 2026-08-26: Reject portrait/illustration upload while GENERATING (409) so the in-flight worker cannot overwrite a kept winner. Cover PUT now clears stale prompt/override when those fields are null/blank.
+
+### BL-077 - Public Shared-Cache TTS Play (No Collaborator Gate)
+- Type: Bug / product-rule restore
+- Priority: P1
+- Effort: S
+- Status: In Progress
+- Problem: Kevin locked that **all users share cached TTS**. An unauthorized public visitor may initiate xAI TTS; once the mp3 exists (local cache and/or CDN), everyone gets it. Collaborator sign-in must not be required for play. Prod Odyssey first-open currently falls straight to browser `speechSynthesis` because `reader.js` skips `GET /api/tts/speak/{book}/{chapter}/{para}` when `authPublicMode && !authCanAccessSensitive`, and `TtsController.speakParagraph` 401s uncached generate in public mode without session/API key.
+- Current Direction:
+  - Public play always calls the GET paragraph speak path. Do not prompt Collaborator Access for TTS play.
+  - Cache/CDN hits stay public. Uncached generate is allowed so it writes the shared cache.
+  - Rate-limit public generate (`security.public.rate-limit.tts-generate-requests`) inside the controller so spend is bounded. Do **not** classify the GET path as `GENERATION` in `SensitiveApiRequestMatcher` (that would re-auth-gate it).
+  - `POST /api/tts/speak` and `POST /api/tts/analyze/{bookId}` stay gated.
+  - `tts.cache-only` stays as-is: a miss still does not generate. Do not change Imagine / `generation.cache-only`.
+- Out of this epic:
+  - Imagine / `generation.cache-only`.
+  - Flipping prod `tts.cache-only`.
+  - POST free-text speak or voice analyze for anonymous visitors.
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-077.1 Public GET generate + no-modal play | Done | Allow unauthenticated cache-miss generate on GET paragraph speak; rate-limit generate only; reader always calls server TTS and never opens Collaborator Access for play | Public cache-miss returns audio (or generates then 200); later plays hit cache/CDN; browser TTS only on real provider failure |
+- Acceptance Criteria:
+  - Public/unauthenticated play on a cache-miss paragraph returns audio (or generates then 200).
+  - Subsequent plays hit cache/CDN.
+  - No collaborator modal on TTS play.
+  - Browser TTS is only a real provider-failure fallback.
+  - `tts.cache-only=true` miss still does not generate.
+  - `POST /api/tts/speak` and `/analyze` remain auth-gated in public mode.
+- Dependency Notes:
+  - Distinct from `BL-075` / `BL-076` (studio upload / Imagine in-flight cap). Do not stack on those PRs.
+  - Builds on `#163` feature cache-only flags (do not use TTS cache-only to skip character prefetch).
+- Session Log:
+- 2026-08-26: Public GET paragraph speak may generate into the shared cache without collaborator/API-key auth; generate-only per-IP rate limit; reader play/prefetch no longer skip server TTS or open the collaborator modal. `tts.cache-only` unchanged.
 
 ### BL-076 - Parallel Imagine In-Flight
 - Type: Ops / performance

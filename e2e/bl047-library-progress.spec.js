@@ -247,11 +247,21 @@ function boxesOverlap(a, b) {
   return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
 }
 
+async function waitForBox(locator, message) {
+  let box = null;
+  await expect.poll(async () => {
+    box = await locator.boundingBox();
+    return box;
+  }, { message }).toBeTruthy();
+  return box;
+}
+
 async function expectInsideCard(card, locator) {
-  const cardBox = await card.boundingBox();
-  const childBox = await locator.boundingBox();
-  expect(cardBox, 'assignment card should be measurable').toBeTruthy();
-  expect(childBox, 'card child should be measurable').toBeTruthy();
+  await expect(card).toBeVisible();
+  await expect(locator).toBeVisible();
+  await card.scrollIntoViewIfNeeded();
+  const cardBox = await waitForBox(card, 'assignment card should be measurable');
+  const childBox = await waitForBox(locator, 'card child should be measurable');
   expect(childBox.x).toBeGreaterThanOrEqual(cardBox.x - 1);
   expect(childBox.y).toBeGreaterThanOrEqual(cardBox.y - 1);
   expect(childBox.x + childBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);

@@ -17,20 +17,27 @@ import com.classicchatreader.service.CharacterService;
 import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
+import com.classicchatreader.service.LiveAssetUploads;
+import com.classicchatreader.service.LiveAssetWriteResult;
+import com.classicchatreader.service.UnsupportedImageTypeException;
 import com.classicchatreader.service.llm.LlmProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +60,9 @@ public class CharacterController {
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    @Value("${illustration.allow-prompt-editing:false}")
+    private boolean allowPromptEditing;
 
     private final CharacterService characterService;
     private final CharacterChatService chatService;
@@ -217,9 +227,15 @@ public class CharacterController {
             return ResponseEntity.notFound().build();
         }
 
+        Instant version = characterOpt
+                .map(CharacterEntity::getCompletedAt)
+                .map(completedAt -> completedAt.toInstant(ZoneOffset.UTC))
+                .orElse(Instant.EPOCH);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, "image/png")
-                .header(HttpHeaders.CACHE_CONTROL, "max-age=604800")
+                .cacheControl(CacheControl.noCache().cachePrivate())
+                .eTag(Long.toString(version.getEpochSecond()))
+                .lastModified(version)
                 .body(image);
     }
 
@@ -241,8 +257,138 @@ public class CharacterController {
         response.put("characterId", characterId);
         response.put("status", status != null ? status.name() : "NOT_FOUND");
         response.put("ready", status == CharacterStatus.COMPLETED);
+        response.put("generatedPrompt", characterOpt.map(CharacterEntity::getPortraitPrompt).orElse(null));
 
         return response;
+    }
+
+    @PutMapping(path = "/{characterId}/portrait", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadPortrait(
+            @PathVariable String characterId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "generated_prompt", required = false) String generatedPrompt,
+            @RequestParam(value = "prompt_override", required = false) String promptOverride) throws java.io.IOException {
+        if (!characterEnabled) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(getPortraitStatus(characterId));
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!isCharacterEnabled(characterOpt.get().getBook())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            LiveAssetWriteResult result = characterService.saveUploadedPortrait(
+                    characterId,
+                    file.getBytes(),
+                    source,
+                    generatedPrompt,
+                    promptOverride);
+            if (result == LiveAssetWriteResult.CACHE_ONLY
+                    || result == LiveAssetWriteResult.GENERATION_IN_PROGRESS) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(getPortraitStatus(characterId));
+            }
+            if (result == LiveAssetWriteResult.NOT_FOUND) {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (UnsupportedImageTypeException e) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(Map.of(
+                    "characterId", characterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "characterId", characterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        }
+        Map<String, Object> response = new HashMap<>(getPortraitStatus(characterId));
+        response.put("source", LiveAssetUploads.resolveSource(source));
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Request portrait generation for one existing PRIMARY character.
+     */
+    @PostMapping("/{characterId}/portrait/request")
+    public ResponseEntity<Void> requestPortrait(@PathVariable String characterId) {
+        if (!characterEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        CharacterEntity character = characterOpt.get();
+        if (!isCharacterEnabled(character.getBook())) {
+            return ResponseEntity.status(403).build();
+        }
+        if (character.getCharacterType() != CharacterType.PRIMARY) {
+            return ResponseEntity.status(403).build();
+        }
+        characterService.requestPortrait(characterId);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Regenerate a PRIMARY portrait with a custom prompt.
+     * Gated the same way as illustration prompt editing (local on, not a prod Imagine path).
+     */
+    @PostMapping("/{characterId}/portrait/regenerate")
+    public ResponseEntity<Void> regeneratePortrait(
+            @PathVariable String characterId,
+            @RequestBody RegenerateRequest request) {
+
+        if (!characterEnabled) {
+            return ResponseEntity.status(403).build();
+        }
+        if (!allowPromptEditing) {
+            return ResponseEntity.status(403).build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        CharacterEntity character = characterOpt.get();
+        if (!isCharacterEnabled(character.getBook())) {
+            return ResponseEntity.status(403).build();
+        }
+        if (character.getCharacterType() != CharacterType.PRIMARY) {
+            return ResponseEntity.status(403).build();
+        }
+        if (character.getStatus() == CharacterStatus.GENERATING
+                || character.getStatus() == CharacterStatus.PENDING) {
+            return ResponseEntity.status(409).build();
+        }
+        if (request.prompt() == null || request.prompt().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (request.prompt().length() > CharacterEntity.PORTRAIT_PROMPT_MAX_LENGTH) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        if (!characterService.regeneratePortraitWithPrompt(characterId, request.prompt())) {
+            return ResponseEntity.status(409).build();
+        }
+        return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/chapter/{chapterId}/analyze")
@@ -407,6 +553,8 @@ public class CharacterController {
             int readerChapterIndex,
             int readerParagraphIndex
     ) {}
+
+    public record RegenerateRequest(String prompt) {}
 
     public record ChatResponse(
             String response,

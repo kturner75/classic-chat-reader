@@ -189,6 +189,57 @@ public class IllustrationService {
     }
 
     /**
+     * Replace live illustration bytes and prompt metadata without enqueueing generation.
+     * {@code source} is accepted for studio keep/restore; illustrations have no source
+     * column on main, so only the prompt is persisted.
+     */
+    @Transactional
+    public LiveAssetWriteResult saveUploadedIllustration(
+            String chapterId,
+            byte[] imageData,
+            String source,
+            String generatedPrompt,
+            String promptOverride) {
+        if (cacheOnly) {
+            log.info("Skipping illustration upload in cache-only mode for chapter {}", chapterId);
+            return LiveAssetWriteResult.CACHE_ONLY;
+        }
+        ChapterEntity chapter = chapterRepository.findByIdWithBook(chapterId).orElse(null);
+        if (chapter == null) {
+            return LiveAssetWriteResult.NOT_FOUND;
+        }
+        Optional<IllustrationEntity> existing = illustrationRepository.findByChapterId(chapterId);
+        if (existing.isPresent() && existing.get().getStatus() == IllustrationStatus.GENERATING) {
+            log.info("Rejecting illustration upload for chapter {} while generation is active", chapterId);
+            return LiveAssetWriteResult.GENERATION_IN_PROGRESS;
+        }
+        PngImages.requirePng(imageData, "Illustration uploads must be PNG images.");
+        String cacheKey = assetKeyService.buildIllustrationKey(chapter);
+        String filename;
+        try {
+            filename = comfyUIService.saveIllustrationImage(cacheKey, imageData);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Unable to save illustration: " + e.getMessage(), e);
+        }
+
+        IllustrationEntity illustration = existing.orElseGet(() -> new IllustrationEntity(chapter));
+        illustration.setImageFilename(filename);
+        illustration.setStatus(IllustrationStatus.COMPLETED);
+        illustration.setRetryCount(0);
+        illustration.setNextRetryAt(null);
+        illustration.setErrorMessage(null);
+        illustration.setCompletedAt(LocalDateTime.now());
+        String storedPrompt = LiveAssetUploads.resolveStoredPrompt(generatedPrompt, promptOverride);
+        if (storedPrompt != null) {
+            illustration.setGeneratedPrompt(storedPrompt);
+        }
+        clearIllustrationLease(illustration);
+        illustrationRepository.save(illustration);
+        log.info("Saved uploaded illustration for chapter {} (source={})", chapterId, LiveAssetUploads.resolveSource(source));
+        return LiveAssetWriteResult.SAVED;
+    }
+
+    /**
      * Request an illustration to be generated for a chapter.
      */
     @Transactional

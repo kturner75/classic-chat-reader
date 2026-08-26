@@ -9,8 +9,10 @@ import com.classicchatreader.model.ParagraphAnnotation;
 import com.classicchatreader.service.BookCoverService;
 import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
+import com.classicchatreader.service.LiveAssetWriteResult;
 import com.classicchatreader.service.ParagraphAnnotationService;
 import com.classicchatreader.service.ReaderIdentityService;
+import com.classicchatreader.service.UnsupportedImageTypeException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -41,6 +43,7 @@ public class LibraryController {
     private final ParagraphAnnotationService paragraphAnnotationService;
     private final ReaderIdentityService readerIdentityService;
     private final boolean bookCoverCdnEnabled;
+    private final boolean cacheOnly;
 
     public LibraryController(
             BookStorageService bookStorageService,
@@ -48,13 +51,15 @@ public class LibraryController {
             CdnAssetService cdnAssetService,
             ParagraphAnnotationService paragraphAnnotationService,
             ReaderIdentityService readerIdentityService,
-            @org.springframework.beans.factory.annotation.Value("${book-cover.cdn.enabled:false}") boolean bookCoverCdnEnabled) {
+            @org.springframework.beans.factory.annotation.Value("${book-cover.cdn.enabled:false}") boolean bookCoverCdnEnabled,
+            @org.springframework.beans.factory.annotation.Value("${generation.cache-only:false}") boolean cacheOnly) {
         this.bookStorageService = bookStorageService;
         this.bookCoverService = bookCoverService;
         this.cdnAssetService = cdnAssetService;
         this.paragraphAnnotationService = paragraphAnnotationService;
         this.readerIdentityService = readerIdentityService;
         this.bookCoverCdnEnabled = bookCoverCdnEnabled;
+        this.cacheOnly = cacheOnly;
     }
 
     @GetMapping
@@ -121,15 +126,44 @@ public class LibraryController {
     @PutMapping(path = "/{bookId}/cover", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<CoverStatusResponse> uploadBookCover(
             @PathVariable String bookId,
-            @RequestParam("file") MultipartFile file) throws IOException {
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "generated_prompt", required = false) String generatedPrompt,
+            @RequestParam(value = "prompt_override", required = false) String promptOverride) throws IOException {
         if (bookStorageService.getBook(bookId).isEmpty()) {
             return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(toCoverStatusResponse(bookId));
         }
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
         try {
-            bookCoverService.saveManualCover(bookId, file.getBytes());
+            var result = bookCoverService.saveUploadedCover(
+                    bookId,
+                    file.getBytes(),
+                    source,
+                    generatedPrompt,
+                    promptOverride);
+            if (result == LiveAssetWriteResult.CACHE_ONLY) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(toCoverStatusResponse(bookId));
+            }
+            if (result == LiveAssetWriteResult.NOT_FOUND) {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (UnsupportedImageTypeException e) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(new CoverStatusResponse(
+                    bookId,
+                    "INVALID",
+                    false,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null,
+                    e.getMessage()
+            ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(new CoverStatusResponse(
                     bookId,

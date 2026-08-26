@@ -17,6 +17,7 @@ import com.classicchatreader.service.ComfyUIService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,11 +25,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -37,7 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = {
         "generation.cache-only=true",
         "character.enabled=true",
-        "ai.chat.enabled=true"
+        "ai.chat.enabled=true",
+        "illustration.allow-prompt-editing=true"
 })
 class CharacterControllerCacheOnlyTest {
 
@@ -76,6 +81,39 @@ class CharacterControllerCacheOnlyTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @Test
+    void requestPortrait_cacheOnlyMode_returnsConflict() throws Exception {
+        BookEntity book = new BookEntity();
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(post("/api/characters/character-1/portrait/request"))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).requestPortrait("character-1");
+    }
+
+    @Test
+    void regeneratePortrait_cacheOnlyMode_returnsConflict() throws Exception {
+        mockMvc.perform(post("/api/characters/character-1/portrait/regenerate")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "prompt": "Elizabeth Bennet in a pale muslin gown"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).regeneratePortraitWithPrompt(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
 
     @Test
     void getStatus_cacheOnlyMode_keepsCharacterChatEnabledFlag() throws Exception {
@@ -130,6 +168,30 @@ class CharacterControllerCacheOnlyTest {
                 .andExpect(status().isConflict());
 
         verifyNoInteractions(prefetchService);
-        verify(characterService, never()).queuePortraitGeneration(org.mockito.ArgumentMatchers.any());
+        verify(characterService, never()).queuePortraitGeneration(any());
+    }
+
+    @Test
+    void uploadPortrait_cacheOnly_returnsConflictWithoutWrite() throws Exception {
+        BookEntity book = new BookEntity();
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setBook(book);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.png", "image/png", png);
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .param("source", "studio")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).saveUploadedPortrait(anyString(), any(), any(), any(), any());
+        verify(prefetchService, never()).prefetchCharactersForBook(anyString());
     }
 }
