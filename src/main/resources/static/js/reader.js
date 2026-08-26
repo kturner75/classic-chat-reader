@@ -773,6 +773,12 @@
         && typeof globalThis.CitationUtils.copyTextToClipboard === 'function')
         ? globalThis.CitationUtils
         : null;
+    const sensitiveRequestGuard = (typeof globalThis !== 'undefined'
+        && globalThis.SensitiveRequestGuard
+        && typeof globalThis.SensitiveRequestGuard.canPostSensitiveGeneration === 'function'
+        && typeof globalThis.SensitiveRequestGuard.shouldPromptCollaboratorOnUnauthorized === 'function')
+        ? globalThis.SensitiveRequestGuard
+        : null;
 
     function firstMessageFromPayload(payload) {
         if (!payload) {
@@ -1754,15 +1760,35 @@
         return '';
     }
 
+    function canPostSensitiveGeneration(featureCacheOnly) {
+        if (sensitiveRequestGuard) {
+            return sensitiveRequestGuard.canPostSensitiveGeneration({
+                cacheOnly: state.cacheOnly === true,
+                featureCacheOnly: featureCacheOnly === true,
+                canAccessSensitive: state.authCanAccessSensitive
+            });
+        }
+        if (state.cacheOnly === true || featureCacheOnly === true || state.authCanAccessSensitive === false) {
+            return false;
+        }
+        return true;
+    }
+
+    function shouldPromptCollaboratorOnUnauthorized(path) {
+        if (sensitiveRequestGuard) {
+            return sensitiveRequestGuard.shouldPromptCollaboratorOnUnauthorized({
+                publicMode: state.authPublicMode,
+                path
+            });
+        }
+        return false;
+    }
+
     function installAuthAwareFetch() {
         window.fetch = async (resource, options = undefined) => {
             const response = await nativeFetch(resource, options);
             const path = extractPathFromFetchInput(resource);
-            if (response.status === 401
-                && state.authPublicMode
-                && path.startsWith('/api/')
-                && !path.startsWith('/api/auth')
-                && !path.startsWith('/api/account')) {
+            if (response.status === 401 && shouldPromptCollaboratorOnUnauthorized(path)) {
                 handleSensitiveUnauthorized();
             }
             return response;
@@ -5121,8 +5147,9 @@
             illustrationAnalyzeBook();
         }
 
-        // Prefetch main characters for the book (async, don't block)
-        if (state.characterAvailable) {
+        // Prefetch main characters for the book (async, don't block).
+        // Cache-only / public readers must not POST generation on mere open.
+        if (state.characterAvailable && canPostSensitiveGeneration(state.characterCacheOnly)) {
             nativeFetch(`/api/characters/book/${book.id}/prefetch`, { method: 'POST' })
                 .catch(error => {
                     console.debug('Book character prefetch request failed:', error);
@@ -7655,6 +7682,15 @@
                 leftoverVoice = typeof saved?.voice === 'string' && saved.voice.trim() ? saved.voice.trim() : null;
                 console.log('Saved voice settings are not served by the current TTS provider; re-analyzing', saved);
             }
+            if (!canPostSensitiveGeneration()) {
+                state.ttsVoiceSettings = {
+                    voice: leftoverVoice || state.ttsDefaultVoice || 'orion',
+                    speed: 1.0,
+                    instructions: null,
+                    provider: leftoverVoice ? null : (state.ttsProvider || null)
+                };
+                return;
+            }
             const analyzeResponse = await fetch(`/api/tts/analyze/${state.currentBook.id}`, { method: 'POST' });
             if (analyzeResponse.ok) {
                 state.ttsVoiceSettings = await analyzeResponse.json();
@@ -8710,7 +8746,7 @@
                     mapped.message,
                     mapped.retryable ? () => loadChapterIllustration() : null
                 );
-            } else if (state.illustrationCacheOnly) {
+            } else if (!canPostSensitiveGeneration(state.illustrationCacheOnly)) {
                 const mapped = mapGenerationError({ status: 409 });
                 showIllustrationError(mapped.message, null);
             } else {
@@ -8734,7 +8770,7 @@
             }
 
             // Pre-fetch next chapter
-            if (!state.illustrationCacheOnly) {
+            if (canPostSensitiveGeneration(state.illustrationCacheOnly)) {
                 nativeFetch(`/api/illustrations/chapter/${chapter.id}/prefetch-next`, { method: 'POST' });
             }
 
@@ -9653,7 +9689,7 @@
     async function loadChapterCharacters() {
         console.log('loadChapterCharacters called, available:', state.characterAvailable, 'book:', state.currentBook?.id);
         if (!state.characterAvailable || !state.currentBook) return;
-        if (state.characterCacheOnly) return;
+        if (!canPostSensitiveGeneration(state.characterCacheOnly)) return;
 
         const chapter = state.chapters[state.currentChapterIndex];
         if (!chapter) return;
@@ -9677,7 +9713,7 @@
     }
 
     async function requestChapterRecapGeneration(chapterId) {
-        if (!chapterId || !state.recapGenerationAvailable || state.cacheOnly || state.recapCacheOnly) return;
+        if (!chapterId || !state.recapGenerationAvailable || !canPostSensitiveGeneration(state.recapCacheOnly)) return;
         try {
             await nativeFetch(`/api/recaps/chapter/${chapterId}/generate`, { method: 'POST' });
         } catch (error) {
@@ -9686,7 +9722,7 @@
     }
 
     async function requestChapterQuizGeneration(chapterId) {
-        if (!chapterId || !state.quizGenerationAvailable || state.cacheOnly || state.quizCacheOnly) return;
+        if (!chapterId || !state.quizGenerationAvailable || !canPostSensitiveGeneration(state.quizCacheOnly)) return;
         try {
             await nativeFetch(`/api/quizzes/chapter/${chapterId}/generate`, { method: 'POST' });
         } catch (error) {
