@@ -1788,6 +1788,15 @@
         return true;
     }
 
+    function shouldCallServerTts() {
+        if (sensitiveRequestGuard && typeof sensitiveRequestGuard.shouldCallServerTts === 'function') {
+            return sensitiveRequestGuard.shouldCallServerTts({
+                serverTtsAvailable: state.ttsOpenAIAvailable === true
+            });
+        }
+        return state.ttsOpenAIAvailable === true;
+    }
+
     function shouldPromptCollaboratorOnUnauthorized(path, method) {
         if (sensitiveRequestGuard) {
             return sensitiveRequestGuard.shouldPromptCollaboratorOnUnauthorized({
@@ -7829,19 +7838,14 @@
             return;
         }
 
-        // In public mode, skip sensitive server TTS when collaborator auth is unavailable.
-        if (state.authPublicMode && !state.authCanAccessSensitive) {
+        // Public visitors share cached TTS and may seed it. Do not require
+        // collaborator auth; browser speech is only a provider-failure fallback.
+        if (!shouldCallServerTts()) {
             if (state.ttsBrowserAvailable) {
                 ttsSpeakBrowser(text);
             } else {
                 ttsStop();
             }
-            return;
-        }
-
-        // If server TTS is not available, use browser TTS directly
-        if (!state.ttsOpenAIAvailable) {
-            ttsSpeakBrowser(text);
             return;
         }
 
@@ -7914,11 +7918,6 @@
             try {
                 const response = await fetch(url, { signal: controller.signal });
                 if (!response.ok) {
-                    if (response.status === 401 || response.status === 403) {
-                        state.authCanAccessSensitive = false;
-                        updateAuthUi();
-                        throw new Error(`TTS auth required: ${response.status}`);
-                    }
                     throw new Error(`TTS request failed: ${response.status}`);
                 }
                 const blob = await response.blob();
@@ -7929,11 +7928,7 @@
                     console.log('TTS request aborted for paragraph', state.currentParagraphIndex);
                     return;  // Request was cancelled, don't continue
                 }
-                if (typeof error?.message === 'string' && error.message.startsWith('TTS auth required')) {
-                    console.warn('Sensitive TTS requires collaborator sign-in in public mode; using browser speech.');
-                } else {
-                    console.error('Server TTS fetch error, falling back to browser:', error);
-                }
+                console.error('Server TTS fetch error, falling back to browser:', error);
                 if (state.ttsEnabled && state.ttsBrowserAvailable) {
                     ttsSpeakBrowser(text);
                 }
@@ -8030,9 +8025,8 @@
 
     async function ttsPrefetchNext() {
         // Don't prefetch if server TTS is not available (browser TTS doesn't benefit from prefetch)
-        if (!state.ttsOpenAIAvailable || !state.ttsEnabled) return;
+        if (!shouldCallServerTts() || !state.ttsEnabled) return;
         if (state.ttsCachedAvailable && !state.ttsOpenAIConfigured) return;
-        if (state.authPublicMode && !state.authCanAccessSensitive) return;
 
         const nextIndex = state.currentParagraphIndex + 1;
         const chapter = state.chapters[state.currentChapterIndex];
@@ -8089,11 +8083,6 @@
         try {
             const response = await fetch(url, { signal: controller.signal });
             if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    state.authCanAccessSensitive = false;
-                    updateAuthUi();
-                    return;
-                }
                 throw new Error(`Prefetch request failed: ${response.status}`);
             }
             const blob = await response.blob();
