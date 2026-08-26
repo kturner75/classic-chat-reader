@@ -481,6 +481,12 @@ class CharacterServicePortraitCacheTest {
         character.setPortraitFilename(CharacterEntity.DIRECTED_PORTRAIT_MARKER);
         when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
                 .thenReturn(List.of(character));
+        when(characterRepository.claimFailedDirectedPortraitRetry(
+                "character-1",
+                CharacterStatus.FAILED,
+                CharacterStatus.PENDING,
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER))
+                .thenReturn(1);
 
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -501,9 +507,30 @@ class CharacterServicePortraitCacheTest {
                     ReflectionTestUtils.getField(service, "requestQueue")).peek();
             assertEquals("character-1", ReflectionTestUtils.getField(queuedRequest, "characterId"));
             assertEquals("Mr. Bennet in a dark coat", ReflectionTestUtils.getField(queuedRequest, "customPrompt"));
+            verify(characterRepository, never()).save(character);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void retryFailedPortraitsForBook_lostClaim_doesNotEnqueue() {
+        character.setStatus(CharacterStatus.FAILED);
+        character.setPortraitPrompt("auto-generated prompt");
+        character.setPortraitFilename(null);
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
+                .thenReturn(List.of(character));
+        when(characterRepository.claimFailedAutoPortraitRetry(
+                "character-1",
+                CharacterStatus.FAILED,
+                CharacterStatus.PENDING,
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER))
+                .thenReturn(0);
+
+        assertEquals(0, service.retryFailedPortraitsForBook("book-1"));
+        assertEquals(CharacterStatus.FAILED, character.getStatus());
+        assertEquals(0, service.getQueueDepth());
+        verify(characterRepository, never()).save(character);
     }
 
     @Test

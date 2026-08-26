@@ -2405,6 +2405,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: Codex follow-up — cache restore and failed-state retry use conditional updates so they cannot overwrite a concurrent regen claim. `/portrait/request` requeues a failed directed job and keeps its prompt.
 - 2026-08-26: Codex follow-up — startup recovery enqueues directed/stuck portraits from `afterCommit` so the worker does not see a still-committed GENERATING row.
 - 2026-08-26: Codex follow-up — `retryFailedPortraitsForBook` also enqueues from `afterCommit`. Book delete removes the stable cache-key file for directed slots, not the marker.
+- 2026-08-26: Codex follow-up — failed-portrait pregen retry uses the same conditional FAILED→PENDING claims so it cannot overwrite a concurrent regen.
 
 ### BL-075 - Portrait and Illustration Multipart Upload (Winner Write-back)
 - Type: Feature / engine gap

@@ -992,12 +992,21 @@ public class CharacterService {
         List<CharacterEntity> failedCharacters = characterRepository.findByBookIdAndStatus(bookId, CharacterStatus.FAILED);
         int queued = 0;
         for (CharacterEntity character : failedCharacters) {
-            character.setStatus(CharacterStatus.PENDING);
-            character.setRetryCount(0);
-            character.setNextRetryAt(null);
-            character.setErrorMessage(null);
-            clearCharacterLease(character);
-            characterRepository.save(character);
+            int claimed = hasDirectedPortraitIntent(character)
+                    ? characterRepository.claimFailedDirectedPortraitRetry(
+                            character.getId(),
+                            CharacterStatus.FAILED,
+                            CharacterStatus.PENDING,
+                            CharacterEntity.DIRECTED_PORTRAIT_MARKER)
+                    : characterRepository.claimFailedAutoPortraitRetry(
+                            character.getId(),
+                            CharacterStatus.FAILED,
+                            CharacterStatus.PENDING,
+                            CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+            if (claimed == 0) {
+                continue;
+            }
+            markPortraitPendingForRetry(character);
             if (enqueueRecoveredPortrait(character)) {
                 queued++;
             }
