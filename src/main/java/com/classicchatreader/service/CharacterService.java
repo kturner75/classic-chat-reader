@@ -573,26 +573,37 @@ public class CharacterService {
             return false;
         }
 
-        if (character.hasStoredPortraitImage()) {
-            comfyUIService.deletePortraitFile(character.getPortraitFilename());
-        }
-
-        enqueuePortraitRequest(characterId, customPrompt);
+        String priorFilename = character.hasStoredPortraitImage()
+                ? character.getPortraitFilename()
+                : null;
+        enqueuePortraitRequest(characterId, customPrompt, priorFilename);
         return true;
     }
 
     private void enqueuePortraitRequest(String characterId, String customPrompt) {
+        enqueuePortraitRequest(characterId, customPrompt, null);
+    }
+
+    private void enqueuePortraitRequest(String characterId, String customPrompt, String priorPortraitFilename) {
         PortraitRequest request = new PortraitRequest(characterId, customPrompt);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    deletePriorPortraitIfPresent(priorPortraitFilename);
                     offerPortraitRequest(request);
                 }
             });
             return;
         }
+        deletePriorPortraitIfPresent(priorPortraitFilename);
         offerPortraitRequest(request);
+    }
+
+    private void deletePriorPortraitIfPresent(String filename) {
+        if (filename != null && !filename.isBlank()) {
+            comfyUIService.deletePortraitFile(filename);
+        }
     }
 
     private void offerPortraitRequest(PortraitRequest request) {

@@ -205,6 +205,7 @@ class CharacterServicePortraitCacheTest {
             assertEquals(true, service.regeneratePortraitWithPrompt("character-1", "Mr. Bennet in a dark coat"));
 
             assertEquals(0, service.getQueueDepth());
+            verify(comfyUIService, never()).deletePortraitFile(any());
 
             List<TransactionSynchronization> syncs =
                     List.copyOf(TransactionSynchronizationManager.getSynchronizations());
@@ -212,6 +213,8 @@ class CharacterServicePortraitCacheTest {
             syncs.getFirst().afterCommit();
 
             assertEquals(1, service.getQueueDepth());
+            verify(comfyUIService).deletePortraitFile(
+                    "books/gutenberg/1342/portraits/characters/mr-bennet.png");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
