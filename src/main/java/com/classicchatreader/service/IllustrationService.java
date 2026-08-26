@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +54,7 @@ public class IllustrationService {
     private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
-    private final ConcurrentHashMap<String, Object> styleAnalysisLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> styleAnalysisLocks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
     private ExecutorService executor;
     private volatile boolean running = true;
@@ -356,8 +357,10 @@ public class IllustrationService {
      * Get or analyze illustration settings for a book.
      *
      * <p>First-time style creation is single-flight per book so parallel illustration
-     * workers do not each pay for analysis. Existing style is a lock-free read.
-     * Different books do not share a lock.
+     * workers do not each pay for analysis. The per-book lock is held until after
+     * commit so a second reader cannot {@code findById} the pre-commit row and
+     * analyze again. Existing style is a lock-free read. Different books do not
+     * share a lock.
      */
     @Transactional
     public IllustrationSettings getOrAnalyzeBookStyle(String bookId, boolean forceReanalyze) {
@@ -376,7 +379,10 @@ public class IllustrationService {
             return IllustrationSettings.defaults();
         }
 
-        synchronized (styleLockFor(bookId)) {
+        ReentrantLock lock = styleLockFor(bookId);
+        lock.lock();
+        boolean holdUntilCommit = false;
+        try {
             book = bookRepository.findById(bookId).orElse(null);
             if (book == null) {
                 return IllustrationSettings.defaults();
@@ -403,9 +409,18 @@ public class IllustrationService {
             book.setIllustrationCoverFocus(settings.coverFocus());
             bookRepository.save(book);
 
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(unlockStyleAfterCommit(lock));
+                holdUntilCommit = true;
+            }
+
             log.info("Analyzed illustration style for '{}': {} - {}",
                     book.getTitle(), settings.style(), settings.reasoning());
             return settings;
+        } finally {
+            if (!holdUntilCommit) {
+                unlockStyleIfHeld(lock);
+            }
         }
     }
 
@@ -423,8 +438,28 @@ public class IllustrationService {
         );
     }
 
-    private Object styleLockFor(String bookId) {
-        return styleAnalysisLocks.computeIfAbsent(bookId, id -> new Object());
+    private ReentrantLock styleLockFor(String bookId) {
+        return styleAnalysisLocks.computeIfAbsent(bookId, id -> new ReentrantLock());
+    }
+
+    private static TransactionSynchronization unlockStyleAfterCommit(ReentrantLock lock) {
+        return new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                unlockStyleIfHeld(lock);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                unlockStyleIfHeld(lock);
+            }
+        };
+    }
+
+    private static void unlockStyleIfHeld(ReentrantLock lock) {
+        if (lock.isHeldByCurrentThread()) {
+            lock.unlock();
+        }
     }
 
     /**

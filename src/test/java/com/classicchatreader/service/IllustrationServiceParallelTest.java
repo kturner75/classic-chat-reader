@@ -18,14 +18,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -151,43 +157,73 @@ class IllustrationServiceParallelTest {
 
     @Test
     void twoChaptersWithNoSavedStyleAnalyzeOnce() throws Exception {
-        BookEntity book = book("book-1", false);
-        ChapterEntity chapter1 = chapter(book, "chapter-1", 1);
-        ChapterEntity chapter2 = chapter(book, "chapter-2", 2);
-        stubChapterGeneration(chapter1);
-        stubChapterGeneration(chapter2);
-        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of(chapter1, chapter2));
-        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(anyString())).thenReturn(List.of());
+        AtomicReference<IllustrationSettings> committedStyle = new AtomicReference<>();
+        AtomicBoolean styleVisibleToReaders = new AtomicBoolean(false);
+        when(bookRepository.findById("book-1")).thenAnswer(invocation ->
+                Optional.of(snapshotBook("book-1", styleVisibleToReaders.get() ? committedStyle.get() : null)));
+        when(bookRepository.save(any(BookEntity.class))).thenAnswer(invocation -> {
+            BookEntity saved = invocation.getArgument(0);
+            committedStyle.set(styleFrom(saved));
+            return saved;
+        });
+        when(chapterRepository.findByBookIdOrderByChapterIndex("book-1")).thenReturn(List.of());
 
-        CountDownLatch analyzing = new CountDownLatch(1);
-        CountDownLatch releaseAnalyze = new CountDownLatch(1);
         AtomicInteger analyzeCalls = new AtomicInteger();
         when(styleAnalysisService.analyzeBookForStyle(any(), any(), any())).thenAnswer(invocation -> {
             analyzeCalls.incrementAndGet();
-            analyzing.countDown();
-            if (!releaseAnalyze.await(3, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("style analysis release timed out");
-            }
+            Thread.sleep(40);
             return IllustrationSettings.defaults();
         });
-        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
-                .thenReturn("books/gutenberg/1342/illustrations/chapters/1.png");
 
-        service.init();
-        when(illustrationRepository.findByChapterBookIdAndStatus("book-1", IllustrationStatus.PENDING))
-                .thenReturn(List.of(new IllustrationEntity(chapter1), new IllustrationEntity(chapter2)));
-        assertThat(service.forceQueuePendingForBook("book-1")).isEqualTo(2);
+        CountDownLatch firstReturned = new CountDownLatch(1);
+        CountDownLatch commitSignal = new CountDownLatch(1);
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            Future<IllustrationSettings> first = callers.submit(() -> {
+                TransactionSynchronizationManager.initSynchronization();
+                try {
+                    IllustrationSettings style = service.getOrAnalyzeBookStyle("book-1", false);
+                    firstReturned.countDown();
+                    if (!commitSignal.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("timed out waiting to commit style");
+                    }
+                    styleVisibleToReaders.set(true);
+                    TransactionSynchronizationUtils.triggerAfterCommit();
+                    TransactionSynchronizationUtils.triggerAfterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+                    return style;
+                } finally {
+                    TransactionSynchronizationManager.clearSynchronization();
+                }
+            });
 
-        assertThat(analyzing.await(3, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(200);
-        assertThat(analyzeCalls.get()).isEqualTo(1);
-        releaseAnalyze.countDown();
+            assertThat(firstReturned.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(analyzeCalls.get()).isEqualTo(1);
+            assertThat(snapshotBook("book-1", null).getIllustrationStyle()).isNull();
 
-        verify(styleAnalysisService, timeout(2000).times(1))
-                .analyzeBookForStyle(any(), any(), any());
-        verify(illustrationImageGenerator, timeout(2000).times(2))
-                .generateIllustration(anyString(), anyString(), anyString());
-        assertThat(book.getIllustrationStyle()).isEqualTo("vintage book illustration");
+            Future<IllustrationSettings> second = callers.submit(() -> {
+                TransactionSynchronizationManager.initSynchronization();
+                try {
+                    return service.getOrAnalyzeBookStyle("book-1", false);
+                } finally {
+                    TransactionSynchronizationManager.clearSynchronization();
+                }
+            });
+
+            Thread.sleep(200);
+            assertThat(analyzeCalls.get())
+                    .as("second reader must wait for afterCommit, not analyze against pre-commit findById")
+                    .isEqualTo(1);
+            assertThat(second.isDone())
+                    .as("style lock must still be held until afterCommit")
+                    .isFalse();
+
+            commitSignal.countDown();
+            assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(first.get(5, TimeUnit.SECONDS));
+            assertThat(analyzeCalls.get()).isEqualTo(1);
+            verify(styleAnalysisService, times(1)).analyzeBookForStyle(any(), any(), any());
+        } finally {
+            callers.shutdownNow();
+        }
     }
 
     @Test
@@ -285,5 +321,29 @@ class IllustrationServiceParallelTest {
             book.setIllustrationPromptPrefix("vintage,");
         }
         return book;
+    }
+
+    private static BookEntity snapshotBook(String bookId, IllustrationSettings style) {
+        BookEntity snapshot = book(bookId, false);
+        if (style != null) {
+            snapshot.setIllustrationStyle(style.style());
+            snapshot.setIllustrationPromptPrefix(style.promptPrefix());
+            snapshot.setIllustrationSetting(style.setting());
+            snapshot.setIllustrationStyleReasoning(style.reasoning());
+            snapshot.setIllustrationCoverSubject(style.coverSubject());
+            snapshot.setIllustrationCoverFocus(style.coverFocus());
+        }
+        return snapshot;
+    }
+
+    private static IllustrationSettings styleFrom(BookEntity book) {
+        return new IllustrationSettings(
+                book.getIllustrationStyle(),
+                book.getIllustrationPromptPrefix(),
+                book.getIllustrationSetting(),
+                book.getIllustrationStyleReasoning(),
+                book.getIllustrationCoverSubject(),
+                book.getIllustrationCoverFocus()
+        );
     }
 }
