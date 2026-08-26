@@ -484,12 +484,7 @@ public class CharacterService {
             characterRepository.save(character);
         }
 
-        boolean queued = requestQueue.offer(new PortraitRequest(characterId));
-        if (queued) {
-            log.info("Queued portrait request for character: {}", characterId);
-        } else {
-            log.error("Failed to queue portrait request for character: {}", characterId);
-        }
+        enqueuePortraitRequest(characterId, null);
     }
 
     /**
@@ -506,6 +501,11 @@ public class CharacterService {
             log.warn("Cannot regenerate portrait: character not found {}", characterId);
             return;
         }
+        if (character.getStatus() == CharacterStatus.GENERATING) {
+            log.info("Skipping portrait regeneration for character {} because generation is already in progress",
+                    characterId);
+            return;
+        }
 
         character.setStatus(CharacterStatus.PENDING);
         character.setPortraitPrompt(customPrompt);
@@ -517,11 +517,29 @@ public class CharacterService {
         clearCharacterLease(character);
         characterRepository.save(character);
 
-        boolean queued = requestQueue.offer(new PortraitRequest(characterId, customPrompt));
+        enqueuePortraitRequest(characterId, customPrompt);
+    }
+
+    private void enqueuePortraitRequest(String characterId, String customPrompt) {
+        PortraitRequest request = new PortraitRequest(characterId, customPrompt);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    offerPortraitRequest(request);
+                }
+            });
+            return;
+        }
+        offerPortraitRequest(request);
+    }
+
+    private void offerPortraitRequest(PortraitRequest request) {
+        boolean queued = requestQueue.offer(request);
         if (queued) {
-            log.info("Queued portrait regeneration for character: {}", characterId);
+            log.info("Queued portrait generation for character: {}", request.characterId());
         } else {
-            log.error("Failed to queue portrait regeneration for character: {}", characterId);
+            log.error("Failed to queue portrait generation for character: {}", request.characterId());
         }
     }
 
@@ -628,7 +646,8 @@ public class CharacterService {
         }
 
         String cacheKey = buildPortraitCacheKey(character);
-        if (customPrompt == null && restoreCachedPortrait(character, cacheKey)) {
+        String effectivePrompt = resolveDirectedPortraitPrompt(character, customPrompt);
+        if (effectivePrompt == null && restoreCachedPortrait(character, cacheKey)) {
             return;
         }
         if (cacheOnly) {
@@ -639,8 +658,8 @@ public class CharacterService {
 
         try {
             String portraitPrompt;
-            if (customPrompt != null && !customPrompt.isBlank()) {
-                portraitPrompt = customPrompt;
+            if (effectivePrompt != null) {
+                portraitPrompt = effectivePrompt;
             } else {
                 BookEntity book = character.getBook();
                 IllustrationSettings bookStyle = illustrationService.getOrAnalyzeBookStyle(book.getId(), false);
@@ -696,6 +715,22 @@ public class CharacterService {
         }
         characterRepository.save(character);
         log.debug("Updated character status for {}: {}", characterId, status);
+    }
+
+    private String resolveDirectedPortraitPrompt(CharacterEntity character, String customPrompt) {
+        if (customPrompt != null && !customPrompt.isBlank()) {
+            return customPrompt;
+        }
+        if (hasPendingDirectedPortraitPrompt(character)) {
+            return character.getPortraitPrompt();
+        }
+        return null;
+    }
+
+    private boolean hasPendingDirectedPortraitPrompt(CharacterEntity character) {
+        return character.getPortraitPrompt() != null
+                && !character.getPortraitPrompt().isBlank()
+                && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank());
     }
 
     private boolean restoreCachedPortrait(CharacterEntity character, String cacheKey) {
@@ -856,7 +891,7 @@ public class CharacterService {
         int queued = 0;
         for (CharacterEntity character : pendingCharacters) {
             if (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank()) {
-                if (requestQueue.offer(new PortraitRequest(character.getId()))) {
+                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
                     queued++;
                 }
             }
@@ -885,7 +920,7 @@ public class CharacterService {
             clearCharacterLease(character);
             characterRepository.save(character);
             if (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank()) {
-                if (requestQueue.offer(new PortraitRequest(character.getId()))) {
+                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
                     queued++;
                 }
             }
@@ -939,7 +974,7 @@ public class CharacterService {
                 .flatMap(List::stream)
                 .toList()) {
             String cacheKey = buildPortraitCacheKey(character);
-            if (restoreCachedPortrait(character, cacheKey)) {
+            if (!hasPendingDirectedPortraitPrompt(character) && restoreCachedPortrait(character, cacheKey)) {
                 restored++;
             }
         }
@@ -968,7 +1003,7 @@ public class CharacterService {
         for (CharacterEntity character : stuckGenerating) {
             if (character.getStatus() != CharacterStatus.COMPLETED
                     && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank())) {
-                if (requestQueue.offer(new PortraitRequest(character.getId()))) {
+                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
                     queued++;
                 }
             }
@@ -976,7 +1011,7 @@ public class CharacterService {
         for (CharacterEntity character : stuckPending) {
             if (character.getStatus() != CharacterStatus.COMPLETED
                     && (character.getPortraitFilename() == null || character.getPortraitFilename().isBlank())) {
-                if (requestQueue.offer(new PortraitRequest(character.getId()))) {
+                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
                     queued++;
                 }
             }
@@ -1047,6 +1082,11 @@ public class CharacterService {
         PortraitRequest(String characterId) {
             this(characterId, null);
         }
+    }
+
+    private PortraitRequest portraitRequestFromCharacter(CharacterEntity character) {
+        String storedPrompt = hasPendingDirectedPortraitPrompt(character) ? character.getPortraitPrompt() : null;
+        return new PortraitRequest(character.getId(), storedPrompt);
     }
 
     private boolean tryClaimPortraitLease(String characterId) {

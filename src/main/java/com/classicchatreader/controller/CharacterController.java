@@ -303,6 +303,9 @@ public class CharacterController {
         if (character.getCharacterType() != CharacterType.PRIMARY) {
             return ResponseEntity.status(403).build();
         }
+        if (character.getStatus() == CharacterStatus.GENERATING) {
+            return ResponseEntity.status(409).build();
+        }
         if (request.prompt() == null || request.prompt().isBlank()) {
             return ResponseEntity.badRequest().build();
         }

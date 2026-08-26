@@ -132,6 +132,20 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void regeneratePortraitWithPrompt_alreadyGenerating_doesNotResetOrQueue() {
+        character.setStatus(CharacterStatus.GENERATING);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+
+        service.regeneratePortraitWithPrompt("character-1", "Mr. Bennet in a dark coat");
+
+        assertEquals(CharacterStatus.GENERATING, character.getStatus());
+        assertEquals("books/gutenberg/1342/portraits/characters/mr-bennet.png", character.getPortraitFilename());
+        assertEquals(0, service.getQueueDepth());
+        verify(characterRepository, never()).save(character);
+    }
+
+    @Test
     void generatePortrait_customPrompt_skipsCacheRestoreAndPromptLlm() throws Exception {
         String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
         when(characterRepository.claimPortraitLease(
@@ -154,6 +168,31 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void generatePortrait_storedPromptWithoutFilename_skipsCacheRestoreOnRecovery() throws Exception {
+        String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
+        character.setPortraitPrompt("Mr. Bennet in a dark coat");
+        character.setPortraitFilename(null);
+        character.setStatus(CharacterStatus.PENDING);
+        when(characterRepository.claimPortraitLease(
+                eq("character-1"), any(), any(), eq("test-worker"),
+                eq(CharacterStatus.PENDING), eq(CharacterStatus.GENERATING)))
+                .thenReturn(1);
+        when(characterRepository.findByIdWithBookAndChapter("character-1")).thenReturn(Optional.of(character));
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-1")).thenReturn(List.of(character));
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+        when(portraitImageGenerator.generatePortrait(
+                eq("Mr. Bennet in a dark coat"), eq("portrait_character-1"), eq(cacheKey)))
+                .thenReturn(cacheKey);
+
+        ReflectionTestUtils.invokeMethod(service, "generatePortrait", "character-1");
+
+        verify(portraitService, never()).generatePortraitPrompt(any(), any(), any(), any(), any());
+        verify(comfyUIService, never()).hasPortraitImage(any());
+        verify(portraitImageGenerator).generatePortrait(
+                "Mr. Bennet in a dark coat", "portrait_character-1", cacheKey);
+    }
+
+    @Test
     void secondaryCharacterIsNotChatEligibleWhenBookHasNoPrimary() {
         character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
         assertEquals(false, service.isChatEligible(character));
@@ -163,6 +202,28 @@ class CharacterServicePortraitCacheTest {
     void secondaryCharacterIsNotChatEligibleWhenPrimaryExists() {
         character.setCharacterType(com.classicchatreader.entity.CharacterType.SECONDARY);
         assertEquals(false, service.isChatEligible(character));
+    }
+
+    @Test
+    void startupRecoverySkipsCachedPortraitWhenDirectedPromptIsPending() {
+        character.setStatus(CharacterStatus.PENDING);
+        character.setPortraitPrompt("Mr. Bennet in a dark coat");
+        character.setPortraitFilename(null);
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.GENERATING))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.PENDING))
+                .thenReturn(List.of(character));
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
+                .thenReturn(List.of());
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-1")).thenReturn(List.of(character));
+
+        int recovered = service.resetAndRequeueStuckPortraitsForBook("book-1");
+
+        assertEquals(1, recovered);
+        assertEquals(CharacterStatus.PENDING, character.getStatus());
+        assertNull(character.getPortraitFilename());
+        assertEquals(1, service.getQueueDepth());
+        verify(comfyUIService, never()).hasPortraitImage(any());
     }
 
     @Test
