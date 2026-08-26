@@ -17,6 +17,9 @@ import com.classicchatreader.service.CharacterService;
 import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
+import com.classicchatreader.service.LiveAssetUploads;
+import com.classicchatreader.service.LiveAssetWriteResult;
+import com.classicchatreader.service.UnsupportedImageTypeException;
 import com.classicchatreader.service.llm.LlmProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -24,8 +27,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -241,8 +246,65 @@ public class CharacterController {
         response.put("characterId", characterId);
         response.put("status", status != null ? status.name() : "NOT_FOUND");
         response.put("ready", status == CharacterStatus.COMPLETED);
+        response.put("generatedPrompt", characterOpt.map(CharacterEntity::getPortraitPrompt).orElse(null));
 
         return response;
+    }
+
+    @PutMapping(path = "/{characterId}/portrait", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadPortrait(
+            @PathVariable String characterId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "generated_prompt", required = false) String generatedPrompt,
+            @RequestParam(value = "prompt_override", required = false) String promptOverride) throws java.io.IOException {
+        if (!characterEnabled) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(getPortraitStatus(characterId));
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!isCharacterEnabled(characterOpt.get().getBook())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            LiveAssetWriteResult result = characterService.saveUploadedPortrait(
+                    characterId,
+                    file.getBytes(),
+                    source,
+                    generatedPrompt,
+                    promptOverride);
+            if (result == LiveAssetWriteResult.CACHE_ONLY) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(getPortraitStatus(characterId));
+            }
+            if (result == LiveAssetWriteResult.NOT_FOUND) {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (UnsupportedImageTypeException e) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(Map.of(
+                    "characterId", characterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "characterId", characterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        }
+        Map<String, Object> response = new HashMap<>(getPortraitStatus(characterId));
+        response.put("source", LiveAssetUploads.resolveSource(source));
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/chapter/{chapterId}/analyze")

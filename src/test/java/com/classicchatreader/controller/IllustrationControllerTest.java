@@ -10,8 +10,10 @@ import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.IllustrationService;
 import com.classicchatreader.service.IllustrationStyleAnalysisService;
 import org.junit.jupiter.api.Test;
+import com.classicchatreader.service.LiveAssetWriteResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,6 +27,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -159,6 +162,117 @@ class IllustrationControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status", is("NOT_REQUESTED")))
                     .andExpect(jsonPath("$.ready", is(false)));
+        } finally {
+            ReflectionTestUtils.setField(controller, "cacheOnly", false);
+        }
+    }
+
+    @Test
+    void uploadIllustration_studioPng_replacesLiveBytesWithoutEnqueue() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "scene.png", "image/png", png);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.saveUploadedIllustration(
+                "chapter-1",
+                png,
+                "studio",
+                "storm over the lake",
+                null
+        )).thenReturn(LiveAssetWriteResult.SAVED);
+        when(illustrationService.getStatus("chapter-1")).thenReturn(IllustrationStatus.COMPLETED);
+        when(illustrationService.getPrompt("chapter-1")).thenReturn("storm over the lake");
+
+        mockMvc.perform(multipart("/api/illustrations/chapter/chapter-1")
+                        .file(file)
+                        .param("source", "studio")
+                        .param("generated_prompt", "storm over the lake")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("COMPLETED")))
+                .andExpect(jsonPath("$.ready", is(true)))
+                .andExpect(jsonPath("$.source", is("studio")))
+                .andExpect(jsonPath("$.generatedPrompt", is("storm over the lake")));
+
+        verify(illustrationService).saveUploadedIllustration(
+                "chapter-1",
+                png,
+                "studio",
+                "storm over the lake",
+                null);
+        verify(illustrationService, never()).requestIllustration("chapter-1");
+        verify(illustrationService, never()).regenerateWithPrompt(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void uploadIllustration_nonPng_returnsUnsupportedMediaType() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        byte[] webp = new byte[] {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
+        MockMultipartFile file = new MockMultipartFile("file", "scene.webp", "image/webp", webp);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.saveUploadedIllustration(
+                "chapter-1",
+                webp,
+                null,
+                null,
+                null
+        )).thenThrow(new com.classicchatreader.service.UnsupportedImageTypeException(
+                "Illustration uploads must be PNG images."));
+
+        mockMvc.perform(multipart("/api/illustrations/chapter/chapter-1")
+                        .file(file)
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isUnsupportedMediaType());
+
+        verify(illustrationService, never()).requestIllustration("chapter-1");
+    }
+
+    @Test
+    void uploadIllustration_cacheOnly_returnsConflictWithoutWrite() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "scene.png", "image/png", png);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+
+        ReflectionTestUtils.setField(controller, "cacheOnly", true);
+        try {
+            mockMvc.perform(multipart("/api/illustrations/chapter/chapter-1")
+                            .file(file)
+                            .param("source", "studio")
+                            .with(request -> {
+                                request.setMethod("PUT");
+                                return request;
+                            }))
+                    .andExpect(status().isConflict());
+
+            verify(illustrationService, never()).saveUploadedIllustration(
+                    org.mockito.ArgumentMatchers.anyString(),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any());
+            verify(illustrationService, never()).requestIllustration("chapter-1");
         } finally {
             ReflectionTestUtils.setField(controller, "cacheOnly", false);
         }

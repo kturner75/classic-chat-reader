@@ -9,12 +9,18 @@ import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.IllustrationService;
 import com.classicchatreader.service.IllustrationStyleAnalysisService;
+import com.classicchatreader.service.LiveAssetUploads;
+import com.classicchatreader.service.LiveAssetWriteResult;
+import com.classicchatreader.service.UnsupportedImageTypeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -192,8 +198,65 @@ public class IllustrationController {
         response.put("chapterId", chapterId);
         response.put("status", status != null ? status.name() : "NOT_REQUESTED");
         response.put("ready", status == IllustrationStatus.COMPLETED);
+        response.put("generatedPrompt", illustrationService.getPrompt(chapterId));
 
         return response;
+    }
+
+    /**
+     * Replace the live chapter illustration without enqueueing generation.
+     */
+    @PutMapping(path = "/chapter/{chapterId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadIllustration(
+            @PathVariable String chapterId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "generated_prompt", required = false) String generatedPrompt,
+            @RequestParam(value = "prompt_override", required = false) String promptOverride) throws java.io.IOException {
+        Optional<BookEntity> bookOpt = getBookForChapter(chapterId);
+        if (bookOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(getChapterStatus(chapterId));
+        }
+        if (!isIllustrationEnabled(bookOpt.get())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            LiveAssetWriteResult result = illustrationService.saveUploadedIllustration(
+                    chapterId,
+                    file.getBytes(),
+                    source,
+                    generatedPrompt,
+                    promptOverride);
+            if (result == LiveAssetWriteResult.CACHE_ONLY) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(getChapterStatus(chapterId));
+            }
+            if (result == LiveAssetWriteResult.NOT_FOUND) {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (UnsupportedImageTypeException e) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(Map.of(
+                    "chapterId", chapterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "chapterId", chapterId,
+                    "status", "INVALID",
+                    "ready", false,
+                    "errorMessage", e.getMessage()
+            ));
+        }
+        Map<String, Object> response = new HashMap<>(getChapterStatus(chapterId));
+        response.put("source", LiveAssetUploads.resolveSource(source));
+        return ResponseEntity.ok(response);
     }
 
     /**

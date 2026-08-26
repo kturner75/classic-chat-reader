@@ -17,6 +17,7 @@ import com.classicchatreader.service.ComfyUIService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,9 +25,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -112,5 +117,29 @@ class CharacterControllerCacheOnlyTest {
 
         verify(characterService).getCharacter("character-1");
         verify(chatService).chat("character-1", "Hello there", java.util.List.of(), 0, 0);
+    }
+
+    @Test
+    void uploadPortrait_cacheOnly_returnsConflictWithoutWrite() throws Exception {
+        BookEntity book = new BookEntity();
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setBook(book);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        MockMultipartFile file = new MockMultipartFile("file", "portrait.png", "image/png", png);
+
+        mockMvc.perform(multipart("/api/characters/character-1/portrait")
+                        .file(file)
+                        .param("source", "studio")
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).saveUploadedPortrait(anyString(), any(), any(), any(), any());
+        verify(prefetchService, never()).prefetchCharactersForBook(anyString());
     }
 }
