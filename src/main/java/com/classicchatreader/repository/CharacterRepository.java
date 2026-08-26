@@ -129,6 +129,79 @@ public interface CharacterRepository extends JpaRepository<CharacterEntity, Stri
             @Param("completedStatus") CharacterStatus completedStatus,
             @Param("failedStatus") CharacterStatus failedStatus);
 
+    /**
+     * Restores a cached portrait only when a directed regeneration has not claimed
+     * the row. Returns 0 if {@code portraitFilename} is the directed marker.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :completedStatus,
+                c.portraitFilename = :filename,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.completedAt = :completedAt,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimCachedPortraitRestore(
+            @Param("characterId") String characterId,
+            @Param("filename") String filename,
+            @Param("completedAt") LocalDateTime completedAt,
+            @Param("directedMarker") String directedMarker,
+            @Param("completedStatus") CharacterStatus completedStatus);
+
+    /**
+     * Resets a failed auto-portrait back to PENDING. Returns 0 when a directed
+     * regeneration already claimed the row.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :failedStatus
+              AND (c.portraitFilename IS NULL OR c.portraitFilename <> :directedMarker)
+            """)
+    int claimFailedAutoPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("failedStatus") CharacterStatus failedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
+    /**
+     * Requeues a failed directed regeneration while keeping the marker and prompt.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE CharacterEntity c
+            SET c.status = :pendingStatus,
+                c.errorMessage = NULL,
+                c.retryCount = 0,
+                c.nextRetryAt = NULL,
+                c.leaseOwner = NULL,
+                c.leaseExpiresAt = NULL
+            WHERE c.id = :characterId
+              AND c.status = :failedStatus
+              AND c.portraitFilename = :directedMarker
+            """)
+    int claimFailedDirectedPortraitRetry(
+            @Param("characterId") String characterId,
+            @Param("failedStatus") CharacterStatus failedStatus,
+            @Param("pendingStatus") CharacterStatus pendingStatus,
+            @Param("directedMarker") String directedMarker);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query("""

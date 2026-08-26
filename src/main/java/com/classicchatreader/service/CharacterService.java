@@ -464,9 +464,27 @@ public class CharacterService {
             return;
         }
 
-        if (hasDirectedPortraitIntent(character)) {
+        CharacterStatus status = character.getStatus();
+        if (hasDirectedPortraitIntent(character)
+                && (status == CharacterStatus.PENDING || status == CharacterStatus.GENERATING)) {
             log.debug("Skipping portrait request for character {} because a custom regeneration is already in flight",
                     characterId);
+            return;
+        }
+
+        if (hasDirectedPortraitIntent(character) && status == CharacterStatus.FAILED) {
+            int claimed = characterRepository.claimFailedDirectedPortraitRetry(
+                    characterId,
+                    CharacterStatus.FAILED,
+                    CharacterStatus.PENDING,
+                    CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+            if (claimed == 0) {
+                log.debug("Skipping directed portrait retry for character {} because the slot was already claimed",
+                        characterId);
+                return;
+            }
+            markPortraitPendingForRetry(character);
+            enqueuePortraitRequest(characterId, character.getPortraitPrompt());
             return;
         }
 
@@ -475,19 +493,24 @@ public class CharacterService {
             return;
         }
 
-        CharacterStatus status = character.getStatus();
+        status = character.getStatus();
         if (status == CharacterStatus.COMPLETED || status == CharacterStatus.GENERATING) {
             log.debug("Portrait already {} for character {}", status, characterId);
             return;
         }
 
         if (status == CharacterStatus.FAILED) {
-            character.setStatus(CharacterStatus.PENDING);
-            character.setErrorMessage(null);
-            character.setRetryCount(0);
-            character.setNextRetryAt(null);
-            clearCharacterLease(character);
-            characterRepository.save(character);
+            int claimed = characterRepository.claimFailedAutoPortraitRetry(
+                    characterId,
+                    CharacterStatus.FAILED,
+                    CharacterStatus.PENDING,
+                    CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+            if (claimed == 0) {
+                log.debug("Skipping failed portrait retry for character {} because the slot was already claimed",
+                        characterId);
+                return;
+            }
+            markPortraitPendingForRetry(character);
         }
 
         enqueuePortraitRequest(characterId, null);
@@ -754,9 +777,38 @@ public class CharacterService {
         if (resolvedKey == null) {
             return false;
         }
-        self.updateCharacterStatus(character.getId(), CharacterStatus.COMPLETED, resolvedKey, null);
+        int claimed = characterRepository.claimCachedPortraitRestore(
+                character.getId(),
+                resolvedKey,
+                LocalDateTime.now(),
+                CharacterEntity.DIRECTED_PORTRAIT_MARKER,
+                CharacterStatus.COMPLETED);
+        if (claimed == 0) {
+            log.debug("Skipping cached portrait restore for character {} because a directed job claimed the slot",
+                    character.getId());
+            return false;
+        }
+        markPortraitRestoredFromCache(character, resolvedKey);
         log.info("Restored cached portrait for character '{}' from {}", character.getName(), resolvedKey);
         return true;
+    }
+
+    private void markPortraitRestoredFromCache(CharacterEntity character, String filename) {
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename(filename);
+        character.setErrorMessage(null);
+        character.setRetryCount(0);
+        character.setCompletedAt(LocalDateTime.now());
+        character.setNextRetryAt(null);
+        clearCharacterLease(character);
+    }
+
+    private void markPortraitPendingForRetry(CharacterEntity character) {
+        character.setStatus(CharacterStatus.PENDING);
+        character.setErrorMessage(null);
+        character.setRetryCount(0);
+        character.setNextRetryAt(null);
+        clearCharacterLease(character);
     }
 
     private Optional<String> resolveCachedPortraitKey(CharacterEntity character, String expectedKey) {
