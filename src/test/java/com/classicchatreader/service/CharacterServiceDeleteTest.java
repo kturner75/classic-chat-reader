@@ -1,7 +1,9 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.entity.BookEntity;
+import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.CharacterEntity;
+import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterAnalysisRepository;
 import com.classicchatreader.repository.ChapterRepository;
@@ -74,5 +76,35 @@ class CharacterServiceDeleteTest {
         verify(chapterAnalysisRepository).deleteByBookId("book-84");
         verify(characterRepository).deleteByBookId("book-84");
         verify(bookRepository).save(book);
+    }
+
+    @Test
+    void deleteCharactersForBook_directedSlotDeletesStableCacheKey() {
+        book.setSource("gutenberg");
+        book.setSourceId("84");
+
+        ChapterEntity chapter = new ChapterEntity();
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        chapter.setChapterIndex(1);
+
+        CharacterEntity directed = new CharacterEntity(book, "The Creature", "Victor's creation", chapter, 0);
+        directed.setId("character-1");
+        directed.setStatus(CharacterStatus.PENDING);
+        directed.setPortraitFilename(CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+        directed.setPortraitPrompt("The Creature in candlelight");
+
+        when(characterRepository.findByBookIdOrderByCreatedAt("book-84")).thenReturn(List.of(directed));
+        when(bookRepository.findById("book-84")).thenReturn(Optional.of(book));
+        when(comfyUIService.deletePortraitFile(
+                "books/gutenberg/84/portraits/characters/the-creature.png")).thenReturn(true);
+
+        int deleted = service.deleteCharactersForBook("book-84");
+
+        assertThat(deleted).isEqualTo(1);
+        verify(comfyUIService).deletePortraitFile("books/gutenberg/84/portraits/characters/the-creature.png");
+        verify(comfyUIService, org.mockito.Mockito.never())
+                .deletePortraitFile(CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+        verify(characterRepository).deleteByBookId("book-84");
     }
 }

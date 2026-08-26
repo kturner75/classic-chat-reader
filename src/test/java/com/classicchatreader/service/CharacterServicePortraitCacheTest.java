@@ -475,6 +475,38 @@ class CharacterServicePortraitCacheTest {
     }
 
     @Test
+    void retryFailedPortraitsForBook_directed_enqueuesOnlyAfterCommit() {
+        character.setStatus(CharacterStatus.FAILED);
+        character.setPortraitPrompt("Mr. Bennet in a dark coat");
+        character.setPortraitFilename(CharacterEntity.DIRECTED_PORTRAIT_MARKER);
+        when(characterRepository.findByBookIdAndStatus("book-1", CharacterStatus.FAILED))
+                .thenReturn(List.of(character));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            int queued = service.retryFailedPortraitsForBook("book-1");
+
+            assertEquals(1, queued);
+            assertEquals(CharacterStatus.PENDING, character.getStatus());
+            assertEquals(CharacterEntity.DIRECTED_PORTRAIT_MARKER, character.getPortraitFilename());
+            assertEquals(0, service.getQueueDepth());
+
+            List<TransactionSynchronization> syncs =
+                    List.copyOf(TransactionSynchronizationManager.getSynchronizations());
+            assertEquals(1, syncs.size());
+            syncs.getFirst().afterCommit();
+
+            assertEquals(1, service.getQueueDepth());
+            Object queuedRequest = ((java.util.concurrent.BlockingQueue<?>)
+                    ReflectionTestUtils.getField(service, "requestQueue")).peek();
+            assertEquals("character-1", ReflectionTestUtils.getField(queuedRequest, "characterId"));
+            assertEquals("Mr. Bennet in a dark coat", ReflectionTestUtils.getField(queuedRequest, "customPrompt"));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void startupRecoveryRestoresCacheForPendingAutoPromptWithoutDirectedMarker() {
         String cacheKey = "books/gutenberg/1342/portraits/characters/mr-bennet.png";
         character.setStatus(CharacterStatus.PENDING);

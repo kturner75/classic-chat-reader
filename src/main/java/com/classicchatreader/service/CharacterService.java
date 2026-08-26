@@ -917,11 +917,7 @@ public class CharacterService {
         // Delete portrait files first
         int deletedFiles = 0;
         for (CharacterEntity character : characters) {
-            if (character.hasStoredPortraitImage()) {
-                if (comfyUIService.deletePortraitFile(character.getPortraitFilename())) {
-                    deletedFiles++;
-                }
-            }
+            deletedFiles += deletePortraitAssets(character);
         }
         log.info("Deleted {} portrait files for book {}", deletedFiles, bookId);
 
@@ -943,6 +939,21 @@ public class CharacterService {
         });
 
         return characterCount;
+    }
+
+    private int deletePortraitAssets(CharacterEntity character) {
+        int deleted = 0;
+        if (character.hasStoredPortraitImage()
+                && comfyUIService.deletePortraitFile(character.getPortraitFilename())) {
+            deleted++;
+        }
+        if (character.hasDirectedPortraitIntent() && character.getBook() != null) {
+            String cacheKey = buildPortraitCacheKey(character);
+            if (comfyUIService.deletePortraitFile(cacheKey)) {
+                deleted++;
+            }
+        }
+        return deleted;
     }
 
     /**
@@ -987,10 +998,8 @@ public class CharacterService {
             character.setErrorMessage(null);
             clearCharacterLease(character);
             characterRepository.save(character);
-            if (!character.hasStoredPortraitImage()) {
-                if (requestQueue.offer(portraitRequestFromCharacter(character))) {
-                    queued++;
-                }
+            if (enqueueRecoveredPortrait(character)) {
+                queued++;
             }
         }
         log.info("Reset {} failed portraits and queued {} for book {}", failedCharacters.size(), queued, bookId);
