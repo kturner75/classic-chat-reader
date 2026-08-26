@@ -555,6 +555,10 @@ public class CharacterService {
             return false;
         }
 
+        if (character.hasStoredPortraitImage()) {
+            comfyUIService.deletePortraitFile(character.getPortraitFilename());
+        }
+
         enqueuePortraitRequest(characterId, customPrompt);
         return true;
     }

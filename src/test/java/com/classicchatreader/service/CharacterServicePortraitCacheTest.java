@@ -162,6 +162,28 @@ class CharacterServicePortraitCacheTest {
                 CharacterStatus.PENDING,
                 CharacterStatus.COMPLETED,
                 CharacterStatus.FAILED);
+        verify(comfyUIService).deletePortraitFile(
+                "books/gutenberg/1342/portraits/characters/mr-bennet.png");
+    }
+
+    @Test
+    void regeneratePortraitWithPrompt_deletesLegacyAliasKey() {
+        String aliasKey = "books/gutenberg/1342/portraits/characters/mr-charles-bingley.png";
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setName("Mr. Bingley");
+        character.setPortraitFilename(aliasKey);
+        when(characterRepository.findById("character-1")).thenReturn(Optional.of(character));
+        when(characterRepository.claimPortraitRegeneration(
+                eq("character-1"),
+                eq("Mr. Bingley in a blue coat"),
+                eq(CharacterEntity.DIRECTED_PORTRAIT_MARKER),
+                eq(CharacterStatus.PENDING),
+                eq(CharacterStatus.COMPLETED),
+                eq(CharacterStatus.FAILED)))
+                .thenReturn(1);
+
+        assertEquals(true, service.regeneratePortraitWithPrompt("character-1", "Mr. Bingley in a blue coat"));
+        verify(comfyUIService).deletePortraitFile(aliasKey);
     }
 
     @Test
