@@ -495,6 +495,11 @@ public class IllustrationService {
                     chapterId, illustrationImageGenerator.getProviderName());
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                log.info("Illustration generation interrupted for chapter {}", chapterId);
+                return;
+            }
             log.error("Failed to generate illustration for chapter: {}", chapterId, e);
             self.handleGenerationFailure(chapterId, e.getMessage(), customPrompt, true);
         }

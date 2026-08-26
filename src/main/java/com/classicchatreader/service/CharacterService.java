@@ -619,6 +619,11 @@ public class CharacterService {
                     character.getName(), portraitImageGenerator.getProviderName());
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                log.info("Portrait generation interrupted for character {}", characterId);
+                return;
+            }
             log.error("Failed to generate portrait for character: {}", character.getName(), e);
             self.handlePortraitFailure(characterId, e.getMessage(), true);
         }

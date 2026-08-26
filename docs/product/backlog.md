@@ -2437,7 +2437,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Type: Ops / performance
 - Priority: P1 (overnight catalog burn is Imagine-HTTP-bound, not CPU)
 - Effort: S
-- Status: In Progress
+- Status: Done
 - Problem: `IllustrationService` and `CharacterService` each use `Executors.newSingleThreadExecutor()` and `processQueue()` `take()` → one Imagine HTTP call → next. Leases from `BL-002` already exist; the missing piece is concurrency. Overnight catalog burn is slow because of this, not CPU.
 - Current Direction:
   - Cap Imagine HTTP at **N in flight** (default **4**, `generation.imagine.max-in-flight`), **shared** across portraits + illustrations + covers so the three queues cannot each run N and double/triple the provider load.
@@ -2454,9 +2454,9 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Work Tracker:
 | Slice | Status | Scope | Done When |
 | --- | --- | --- | --- |
-| BL-076.1 Shared Imagine cap | In Progress | Process-wide limiter around Imagine HTTP; default N=4; covers included because they hit Imagine | Portraits + illustrations + covers cannot exceed N in flight together |
-| BL-076.2 Workers > 1 | In Progress | Illustration + portrait queues run N workers; analysis stays off the Imagine pool | A book can have multiple Imagine jobs in flight; analysis is not serialized behind portraits |
-| BL-076.3 Safety nets | In Progress | Lease exclusivity, cache-only 409 / no generate, 429 cooldown worse-not-better | Tests cover workers > 1, exclusive leases, and unchanged cache-only |
+| BL-076.1 Shared Imagine cap | Done | Process-wide limiter around Imagine HTTP; default N=4; covers included because they hit Imagine | Portraits + illustrations + covers cannot exceed N in flight together |
+| BL-076.2 Workers > 1 | Done | Illustration + portrait queues run N workers; analysis stays off the Imagine pool | A book can have multiple Imagine jobs in flight; analysis is not serialized behind portraits |
+| BL-076.3 Safety nets | Done | Lease exclusivity, cache-only 409 / no generate, 429 cooldown worse-not-better | Tests cover workers > 1, exclusive leases, and unchanged cache-only |
 - Acceptance Criteria:
   - Backlog entry exists (this epic).
   - Workers > 1 are test-covered.
@@ -2468,7 +2468,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Distinct from `BL-065` (cast quality / regen). This is Imagine throughput only.
   - Distinct from #132 (name-identity dedupe). Do not stack.
 - Session Log:
-- 2026-08-26: Opened and implemented off current `main` (includes #163). Shared `ImagineInFlightLimiter` on `ImageGenerationHttpClient`; illustration/portrait workers sized to `generation.imagine.max-in-flight` (default 4); analysis on a dedicated executor; 429 cooldown on the limiter. No Flyway. Overnight `PreGenerationBatchRunner` untouched.
+- 2026-08-26: Opened and implemented off current `main` (includes #163). Shared `ImagineInFlightLimiter` on `ImageGenerationHttpClient`; illustration/portrait workers sized to `generation.imagine.max-in-flight` (default 4); analysis on a dedicated executor; 429 cooldown on the limiter. No Flyway. Overnight `PreGenerationBatchRunner` untouched. Workers > 1, exclusive leases, and cache-only 409 covered by tests. Interrupted workers no longer schedule retries.
 
 ## P0
 
