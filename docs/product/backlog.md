@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 ## Implementation handoff (classroom)
 
@@ -33,7 +33,7 @@ Last updated: 2026-08-26
 
 **Known demo issues found during walkthrough (2026-07-13 / 2026-07-16 partner call):**
 - ~~Signing into a reader page that is already open does not reload classroom context~~ **Fixed** (see above).
-- ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position.
+- ~~Assignment Library cards opened via resume progress instead of the assigned chapter~~ **Fixed** on `fix/classroom-assignment-open-chapter`: assignment cards now open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of the student's last resume position. The **flip** (in-progress range assignment Open always restarts at assigned start after refresh) is **`BL-078`** — do not reopen this fix. Originally captured as `BL-072` in #159; `main` later used `BL-072` for curated membership.
 - ~~Assignment completion can temporarily show **2/3 complete** and **Quiz required** after the student completes reading, quiz, and character chat.~~ **Fixed in BL-047:** refreshed classroom context rerenders the visible Library immediately, so the first return shows **3/3 complete**.
 - ~~The teacher workspace can show **Reading Buddy enabled** while the deployment-wide rollout is off without explaining that students cannot use it.~~ **Fixed in BL-048:** the saved policy remains intact, while the control clearly shows deployment unavailability and student settings remain unusable.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
@@ -124,7 +124,7 @@ Last updated: 2026-08-26
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Done this PR** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`), assignment resume starts at assigned first chapter (`BL-078`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Done this PR** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.) (`BL-078` assignment resume at assigned first chapter **Proposed** — in-progress range Open restarts at assigned start after refresh. Originally captured as `BL-072` in #159; that id is now curated membership.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -152,7 +152,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Most recent shipped UI improvement (2026-04-27): cover-forward library shelves with generated book covers, `Continue Reading` feature card, subtler search, horizontal shelf gutters/fades, and desktop shelf arrow controls.
 - Most recent shipped hardening (2026-02-24): completed BL-028 account endpoint safeguards, tightened public-mode TTS behavior so cached paragraph audio remains available without collaborator auth while uncached generation remains protected, and finalized compact reader header/menu interactions (logo back-link, desktop shortcuts, keyboard-driven menu navigation).
 - Reading Buddy Mode is implemented on `main` (flags → schema/prefs → prompts → chat/history → proactive → UI → rolling summary). Deployment availability and saved classroom policy are represented separately; the default remains `reading-buddy.enabled=false`.
-- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity (Columbia State group demo **2026-08-20** completed; Aaron: grant pilot this semester unlikely). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). **`BL-071`** OER/non-PD ingest is Discovery only. **`BL-072`** durable curated membership is Proposed (ccr-studio ST-008 depends on `.3`). **`BL-073`** teacher capability operator API is Proposed / **P3 later** (studio ST-009 stub; flesh out later). General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
+- Active priority work remains the deeper `BL-025` classroom pilot path plus **`BL-043` FERPA/student-PII** after the 2026-08-11 privacy review (P0 pilot blockers trackable in the `BL-043` work tracker; Discovery policy gaps vs V14 schema hooks still open). Parallel ops tracks: `BL-042` AI cost evidence and `BL-053` droplet concurrent capacity (Columbia State group demo **2026-08-20** completed; Aaron: grant pilot this semester unlikely). Classroom character chat **`BL-054` prompt v1** encodes college-appropriate conduct (NSFW/jailbreak refusal without killing fun, engaging, character-aligned tone); optional output fallback remains if QA still sees leaks. `BL-052` short-story curation is **Done** (PR #101; deferred titles + prod publish ops noted on the epic). **`BL-071`** OER/non-PD ingest is Discovery only. **`BL-072`** durable curated membership is Proposed (ccr-studio ST-008 depends on `.3`). **`BL-073`** teacher capability operator API is Proposed / **P3 later** (studio ST-009 stub; flesh out later). **`BL-078`** assignment resume (in-progress range Open restarts at assigned start) is Proposed — originally captured as `BL-072` in #159. General OWASP stays in `docs/SECURITY_AUDIT.md` (do not duplicate here).
 - 2026-08-23: First `BL-043` engineering slice — prod auth gate + Secure cookies (`BL-043.1` / `.12`). See epic session log.
 - 2026-08-23: `BL-043.2` Google OAuth email auto-link consent — password re-auth before link; sessions deleted on link. See epic session log.
 - 2026-08-23: `BL-043.4` classroom invite TTL / max uses / revoke — 30-day default expiry, 40 max uses, revoke API/UI, rotate on create. See epic session log.
@@ -165,6 +165,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-26: `BL-075` HTTP write-back: portrait + illustration multipart `PUT`, cover provenance (`studio` + prompts), PNG-only, cache-only 409. No Imagine enqueue. No Flyway.
 - 2026-08-26: `BL-077` public shared-cache TTS — unauthenticated play calls GET paragraph speak and may generate into the shared cache; no collaborator modal. `tts.cache-only` still skips generate. See epic session log.
 - 2026-08-26: Added and implemented `BL-076` (parallel Imagine in-flight). Shared `generation.imagine.max-in-flight` (default 4) across portraits + illustrations + covers. Analysis stays on its own path. No Flyway. Overnight runner stays one book at a time. Off current `main` after #163; not stacked on #132.
+- 2026-08-24: Added assignment-resume soak item (in-progress range Open starts at assigned first chapter). Kevin prod soak after FERPA+#158 deploy: opened assignment **Frankenstein chapters 1–7**, paged through **chapter 5**, refreshed (same user). Card correctly shows **In progress**; clicking to continue starts at **chapter 1**, not chapter 5. Flip of the 2026-07-16 open-chapter fix — do not blindly reuse book resume and do not always force assigned start once In progress. Hypothesis (verify later): `ClassroomContextService` still exposes the first assignment chapter as `chapterId`; `assignment_progress` (V23) stores `first_opened_at` only. Out of epic: `BL-057`, `BL-058`, `BL-025.10`, FERPA, #132, Imagine catalog regen. Originally captured as `BL-072` in #159; `main` later used that id for curated membership, so this item is **`BL-078`**. Status stays **Proposed**. Resume behavior is not implemented. Docs only.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -269,6 +270,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-17: Assignment-rail **card density** is no longer a BL-018.6 follow-on. Landing stays assignment-first; the reduced card + dedicated assignment page is `BL-057`. Soak overflow hotfix (PR #121) is a demo-night CSS bandage, not this IA.
 - 2026-08-20: New-account **Completed** leak (books the signed-in user never opened on that account) is `BL-068`. Do **not** reopen this Done epic. Landing shelves / Completed row already shipped.
 - 2026-08-20: iPhone library **book covers** failing to load (dark placeholders; character portraits still work) is `BL-069`. Do **not** reopen this Done epic. Cover-forward shelves already shipped.
+- 2026-08-24: In-progress **range** assignment Open restarting at the assigned first chapter (Frankenstein 1–7 → chapter 1 after reading chapter 5) is `BL-078` (originally captured as `BL-072` in #159). Book **Continue Reading** stays this epic’s book cursor. Do **not** reopen this Done epic and do not blindly reuse book resume for assignment Open (that was the 2026-07-16 bug).
 
 ### BL-019 - Gamification and Trophy System
 - Type: Feature
@@ -537,6 +539,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-13: Classroom character-chat conduct (college-appropriate; refuse NSFW without flattening personality) tracked as `BL-054`, not a BL-025.11 completion-model slice. Cross-link only.
 - 2026-08-17: Student landing assignment cards dump the whole dashboard (scope, late, quiz, character-chat required, progress, Chat CTA) and overflow on mobile. Product direction is `BL-057` (reduced card + dedicated assignment page). CSS wrap PR #121 is the soak/demo-night bandage; the thin landing-card hotfix stays out of `BL-057`.
 - 2026-08-20: Teacher workspace (`/teacher`) first paint / first useful UI taking ~10s is `BL-070`. Do **not** reopen this In Progress epic as a workspace rewrite. Classroom UI already shipped; this is latency on that surface.
+- 2026-08-24: In-progress range assignment Open restarting at assigned start after refresh (Frankenstein chapters 1–7 → chapter 1 after reading chapter 5) is `BL-078` (originally captured as `BL-072` in #159). Flip of the 2026-07-16 wrong-chapter-on-open fix. Do **not** reopen that fix, `BL-025.10`, or #132. Docs only.
 
 ### BL-030 - Registered User Home and Account Landing
 - Type: Feature
@@ -1152,6 +1155,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Add an end-to-end regression test that returns `PENDING` on the initial classroom context request and `COMPLETE` on the refresh, then verifies the first Library return shows **3/3 complete**.
 - Preserve immediate local recognition of character chat and existing reading-progress behavior.
 - Related Note: Character chat completion currently means any nonempty locally stored chat history; downloading the transcript is not independently tracked or required by the completion calculation.
+- Distinct from `BL-078` (in-progress range assignment Open restarts at assigned first chapter; originally `BL-072` in #159). That is resume-inside-the-assignment, not a stale **complete** chip. Do not fold.
 
 ### BL-048 - Reading Buddy Classroom Toggle Misrepresents Global Availability
 - Type: Bug
@@ -1642,6 +1646,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Follow-on to shipped #125 persist-suppression (`0a63b90` / merge `cb04f32`). Cross-link only; do not reopen that PR.
 - Pattern to copy: `navigateToChapterParagraph` (allow persist only after the chapter actually loaded).
 - Distinct from `BL-057` (dedicated assignment page + reduced landing card).
+- Distinct from `BL-078` (in-progress range assignment Open restarts at assigned first chapter; originally `BL-072` in #159). Persist-after-load leftovers are not assignment-scoped resume. Do not fold.
 - Risks:
 - Leaving hop paths on the old allow-then-load order recreates the failed-Continue stale-`totalPages` persist after a later failed hop.
 - Session Log:
@@ -2275,6 +2280,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Distinct from `BL-063` (Gutenberg cite on library cards).
 - Distinct from `BL-064` (character blurbs spoil later plot). Do **not** reuse `BL-064` — that ID is taken.
 - Distinct from `BL-065`–`BL-070` (demo-week bugs / regen / registration / recap / Completed leak / iPhone covers / teacher first paint).
+- Distinct from `BL-078` (assignment resume starts at assigned first chapter; originally captured as `BL-072` in #159). OER/non-PD research is not assignment resume.
 - Character-chat conduct (`BL-054`) does not grant rights to copyrighted characters.
 - Session Log:
 - 2026-08-20: Opened after Columbia State demo. Alexander: books outside public domain? Amy: OER. Jessica: adaptation required. Thomasanna: astro/physics OER + free textbooks. Research only.
@@ -2320,6 +2326,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Distinct from `BL-052` (which titles were added for ENGL 1020). Do not reopen.
   - Distinct from `BL-065.3` (regen casts on curated titles). Membership ≠ regen.
   - Distinct from `BL-071` (non-Gutenberg rights). This epic is Gutenberg curated membership only.
+  - Distinct from `BL-078` (assignment resume soak originally captured as `BL-072` in #159). This id is curated membership; do not reuse it for resume.
   - Complements later studio pointer columns on `books` / artifacts (ccr-studio data-model). Those are not required for `.1`–`.3`.
 - Risks:
   - Putting a `curated` boolean on `books` only would drop pre-import landing metadata (aliases/subjects) and could not unlist a title that was never imported.
@@ -2522,6 +2529,77 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - Session Log:
 - 2026-08-26: Opened and implemented off current `main` (includes #163). Shared `ImagineInFlightLimiter` on `ImageGenerationHttpClient`; illustration/portrait workers sized to `generation.imagine.max-in-flight` (default 4); analysis on a dedicated executor; 429 cooldown on the limiter. No Flyway. Overnight `PreGenerationBatchRunner` untouched. Workers > 1, exclusive leases, and cache-only 409 covered by tests. Interrupted workers no longer schedule retries.
 - 2026-08-26: Codex follow-up — interrupting an illustration or portrait worker after lease claim resets the row to PENDING and clears the lease, without charging a retry. Merged `origin/main` (#165/#166/#167) onto this branch.
+
+### BL-078 - Assignment Resume Starts at Assigned First Chapter
+- Type: Bug
+- Priority: P2 (minor; not a deploy blocker)
+- Effort: M (if assignment-scoped cursor needs schema; S if resume can stay in-range of existing book activity)
+- Status: Proposed
+- Id note: Originally captured as **`BL-072`** in #159 while that PR was open. `main` later assigned `BL-072` to durable curated-catalog membership (ccr-studio ST-008). Next free id is **`BL-078`**. Do **not** reuse `BL-072` / `BL-073`. Resume behavior is **not** implemented on `main`; status stays **Proposed**.
+- Problem: Opening an in-progress **range** assignment after refresh starts at the **assigned first chapter**, not the last chapter the student read inside the assignment. Kevin (prod, 2026-08-24 after FERPA+#158 deploy) opened assignment **Frankenstein chapters 1–7**, paged through **chapter 5**, refreshed (same user). Card correctly shows **In progress**. Clicking the assignment to continue starts at **chapter 1**, not chapter 5. Minor; still fix later.
+- Reproduction (Kevin, prod, 2026-08-24 after FERPA+#158 deploy):
+  1. Open assignment **Frankenstein chapters 1–7**.
+  2. Page through **chapter 5**.
+  3. Refresh (same user). Card correctly shows **In progress**.
+  4. Click the assignment to continue. Reader starts at **chapter 1**, not chapter 5.
+- Hypothesis (implementer should verify later; this is the flip of the 2026-07-16 open-chapter bug):
+  - That fix made assignment cards open the teacher-targeted chapter (`chapterId` preferred, then `chapterIndex`) instead of book resume, so a student with prior book progress would not land on the wrong chapter.
+  - `ClassroomContextService` still exposes the **first** assignment chapter as `chapterId`.
+  - `assignment_progress` (V23) only stores `first_opened_at` — enough for In progress / opened, **not** last chapter/paragraph inside the assignment.
+  - Book resume (`lastChapterIndex` on book activity) is a different cursor.
+  - Range assignments (1–7) therefore always restart at the assigned start after refresh.
+- Current Direction:
+- Investigate first. Likely an assignment-scoped last chapter/paragraph (or last-in-range of book activity).
+- Kevin hypothesis to record, not prescribe as the only design: we may need to **track progress by assignment and by book separately**. Book Continue Reading stays the book cursor. Assignment Open (In progress) should resume last position **within the assignment chapter set**.
+- Do not blindly reuse book resume (that was the old 2026-07-16 bug).
+- Do not always force assigned start once In progress (that is this bug).
+- Single-chapter assignments still open that chapter.
+- Not-started still opens assigned start.
+- Do not reopen #132.
+- Out of this epic:
+  - Dedicated assignment page (`BL-057`).
+  - Assignment Open / persist leftovers (`BL-058`).
+  - Teacher overview (`BL-025.10`).
+  - FERPA.
+  - #132.
+  - Imagine catalog regen (`BL-065.3`).
+  - Durable curated membership (`BL-072`) and teacher capability API (`BL-073`) — those ids were reused on `main` after this soak capture.
+- Scope Buckets:
+- In-progress range assignment Open resumes last in-range chapter/paragraph after refresh.
+- Not-started still opens assigned start.
+- Book Continue Reading for the same title stays the book cursor if the student also reads outside the assignment.
+- Single-chapter assignments unchanged.
+- Investigate assignment-scoped cursor vs last-in-range of existing book activity (do not pick a schema in this capture).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-078.1 In-progress range resume | Proposed | After refresh, Open on an in-progress range assignment lands on the last chapter/paragraph read **inside the assignment chapter set** | Frankenstein chapters 1–7 repro: after paging through chapter 5 and refresh, Open starts at chapter 5 (not chapter 1) |
+| BL-078.2 Not-started still assigned start | Proposed | A not-started assignment still opens the teacher-targeted start | Not-started Open still uses assigned `chapterId` / first chapter in range |
+| BL-078.3 Book Continue Reading unchanged | Proposed | Book-level Continue Reading stays the book cursor when the student also reads outside the assignment | Continue Reading for the same title does not become the assignment cursor |
+| BL-078.4 Single-chapter unchanged | Proposed | Single-chapter assignments still open that chapter | Single-chapter Open behavior is unchanged |
+- Acceptance Criteria:
+- In-progress range assignment Open resumes last in-range chapter (ch 5 in the Frankenstein 1–7 repro) after refresh.
+- Not started still opens assigned start.
+- Book Continue Reading for the same title is unchanged if the student also reads outside the assignment.
+- Single-chapter assignments unchanged.
+- This epic stays **Proposed**. Do not mark In Progress / Done in this capture.
+- Dependency Notes:
+- Distinct from the 2026-07-16 wrong-chapter-on-open fix (assignment cards now prefer `chapterId`, then `chapterIndex`, instead of book resume). Do **not** reopen that fix.
+- Distinct from `BL-047` (stale complete chip). That bug is **Done**; this is resume-inside-the-assignment, not a stale **N/M complete** rerender.
+- Distinct from `BL-018` Continue Reading. Book Continue Reading stays the book cursor. Do **not** reopen that Done epic and do not blindly reuse book resume for assignment Open.
+- Distinct from `BL-057` (dedicated assignment page + reduced landing card).
+- Distinct from `BL-058` (assignment Open / persist leftovers). Persist-after-load is not assignment-scoped resume.
+- Distinct from `BL-025.10` (teacher overview / opened timestamps). `first_opened_at` is enough for opened / In progress, not last-in-range resume.
+- Distinct from `BL-072` (durable curated-catalog membership) and `BL-073` (teacher CREATE_CLASSROOM operator API). Those ids collided after #159 captured this soak as `BL-072`.
+- Distinct from #132 (character name-identity dedupe). Do not stack this work on that PR and do not merge #132 as part of this item.
+- Distinct from Imagine catalog regen (`BL-065.3` / ops). Do not mark catalog done here.
+- Risks:
+- Blindly reusing book resume recreates the 2026-07-16 bug (student with prior book progress lands outside the assignment).
+- Always forcing assigned start once In progress leaves this repro (range 1–7 restarts at chapter 1 after chapter 5).
+- Treating `assignment_progress.first_opened_at` as a resume cursor over-fits opened/In progress and still cannot restore chapter 5.
+- Session Log:
+- 2026-08-24: Kevin prod soak after #158 deploy (FERPA+#158). Opened assignment **Frankenstein chapters 1–7**, paged through **chapter 5**, refreshed (same user). Card correctly shows **In progress**; clicking to continue starts at **chapter 1**, not chapter 5. Flip of the 2026-07-16 open-chapter fix. Hypothesis (verify later): `ClassroomContextService` still exposes the first assignment chapter as `chapterId`; `assignment_progress` (V23) stores `first_opened_at` only; book `lastChapterIndex` is a different cursor. Kevin hypothesis: track progress by assignment and by book separately — book Continue Reading stays the book cursor; assignment Open (In progress) resumes last position within the assignment chapter set. Out of epic: `BL-057`, `BL-058`, `BL-025.10`, FERPA, #132, Imagine catalog regen. Docs only; no product code in this capture.
+- 2026-08-27: Rebased #159 onto current `main`. `BL-072`/`BL-073` are taken by ccr-studio CCR engine gaps, so this soak item is **`BL-078`**. Status stays **Proposed** (resume behavior still not implemented). All current `main` backlog items kept.
 
 ## P0
 
