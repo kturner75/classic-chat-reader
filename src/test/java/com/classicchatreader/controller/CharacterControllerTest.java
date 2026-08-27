@@ -25,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -41,6 +42,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,6 +58,9 @@ class CharacterControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private CharacterController controller;
 
     @MockitoBean
     private CharacterService characterService;
@@ -450,6 +455,88 @@ class CharacterControllerTest {
                 .andExpect(header().string("Cache-Control", containsString("no-cache")))
                 .andExpect(header().string("ETag", is(regeneratedEtag)))
                 .andExpect(header().string("ETag", not(is(firstEtag))));
+    }
+
+    @Test
+    void getPortrait_whenCdnUrlConfiguredButPortraitCdnDisabled_servesLocalPng() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        LocalDateTime completedAt = LocalDateTime.of(2026, 8, 20, 12, 0, 0);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setCompletedAt(completedAt);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortrait("character-1")).thenReturn(png);
+
+        mockMvc.perform(get("/api/characters/character-1/portrait"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "image/png"))
+                .andExpect(header().doesNotExist("Location"))
+                .andExpect(content().bytes(png));
+    }
+
+    @Test
+    void getPortrait_whenPortraitCdnDisabledAndLocalFileMissing_returns404WithoutRedirect() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortrait("character-1")).thenReturn(null);
+
+        mockMvc.perform(get("/api/characters/character-1/portrait"))
+                .andExpect(status().isNotFound())
+                .andExpect(header().doesNotExist("Location"));
+    }
+
+    @Test
+    void getPortrait_whenPortraitCdnEnabled_redirectsToAssetUrl() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+
+        LocalDateTime completedAt = LocalDateTime.of(2026, 8, 20, 12, 0, 0);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setCharacterType(CharacterType.PRIMARY);
+        character.setStatus(CharacterStatus.COMPLETED);
+        character.setCompletedAt(completedAt);
+        character.setPortraitFilename("books/gutenberg/1342/portraits/characters/mr-bennet.png");
+
+        CdnAssetService.VersionedAsset asset =
+                new CdnAssetService.VersionedAsset(character.getPortraitFilename(), completedAt);
+
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(cdnAssetService.buildAssetUrl("character-portraits", asset))
+                .thenReturn(Optional.of("https://cdn.example.com/assets/character-portraits/mr-bennet.png?v=1"));
+
+        ReflectionTestUtils.setField(controller, "portraitCdnEnabled", true);
+        try {
+            mockMvc.perform(get("/api/characters/character-1/portrait"))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string(
+                            "Location",
+                            "https://cdn.example.com/assets/character-portraits/mr-bennet.png?v=1"));
+        } finally {
+            ReflectionTestUtils.setField(controller, "portraitCdnEnabled", false);
+        }
     }
 
     @Test

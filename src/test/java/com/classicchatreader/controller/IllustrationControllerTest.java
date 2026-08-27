@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -112,9 +113,54 @@ class IllustrationControllerTest {
         when(cdnAssetService.buildAssetUrl("illustrations", asset))
                 .thenReturn(Optional.of("https://cdn.example.com/chapter-1.png?v=1768478400-abc"));
 
+        ReflectionTestUtils.setField(controller, "illustrationCdnEnabled", true);
+        try {
+            mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "https://cdn.example.com/chapter-1.png?v=1768478400-abc"));
+        } finally {
+            ReflectionTestUtils.setField(controller, "illustrationCdnEnabled", false);
+        }
+    }
+
+    @Test
+    void getIllustration_whenCdnUrlConfiguredButIllustrationCdnDisabled_servesLocalPng() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(illustrationService.getIllustration("chapter-1")).thenReturn(png);
+
         mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://cdn.example.com/chapter-1.png?v=1768478400-abc"));
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "image/png"))
+                .andExpect(header().doesNotExist("Location"))
+                .andExpect(content().bytes(png));
+    }
+
+    @Test
+    void getIllustration_whenIllustrationCdnDisabledAndLocalFileMissing_returns404WithoutRedirect() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(illustrationService.getIllustration("chapter-1")).thenReturn(null);
+
+        mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
+                .andExpect(status().isNotFound())
+                .andExpect(header().doesNotExist("Location"));
     }
 
     @Test
