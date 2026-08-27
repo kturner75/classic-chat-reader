@@ -30,7 +30,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class CharacterService {
@@ -75,11 +77,17 @@ public class CharacterService {
     @Value("${generation.retry.max-delay-seconds:600}")
     private int maxRetryDelaySeconds;
 
+    @Value("${generation.imagine.max-in-flight:4}")
+    private int imagineMaxInFlight;
+
     private String workerId;
+    private int imagineWorkerCount = ImagineInFlightLimiter.DEFAULT_MAX_IN_FLIGHT;
 
     private final BlockingQueue<CharacterRequest> requestQueue = new LinkedBlockingQueue<>();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ExecutorService dispatcher;
+    private ExecutorService analysisExecutor;
+    private ExecutorService portraitExecutor;
     private volatile boolean running = true;
 
     private CharacterService self;
@@ -120,14 +128,30 @@ public class CharacterService {
         workerId = (configuredWorkerId != null && !configuredWorkerId.isBlank())
                 ? configuredWorkerId
                 : "character-" + UUID.randomUUID();
-        executor.submit(this::processQueue);
-        log.info("Character service started with background queue processor (workerId={})", workerId);
+        imagineWorkerCount = Math.max(1, imagineMaxInFlight);
+        dispatcher = Executors.newSingleThreadExecutor(workerThreadFactory("character-dispatch"));
+        analysisExecutor = Executors.newSingleThreadExecutor(workerThreadFactory("character-analysis"));
+        portraitExecutor = Executors.newFixedThreadPool(imagineWorkerCount, workerThreadFactory("character-portrait"));
+        dispatcher.submit(this::dispatchQueue);
+        log.info(
+                "Character service started with {} Imagine portrait workers and a dedicated analysis path (workerId={})",
+                imagineWorkerCount,
+                workerId
+        );
     }
 
     @PreDestroy
     public void shutdown() {
         running = false;
-        executor.shutdownNow();
+        if (dispatcher != null) {
+            dispatcher.shutdownNow();
+        }
+        if (analysisExecutor != null) {
+            analysisExecutor.shutdownNow();
+        }
+        if (portraitExecutor != null) {
+            portraitExecutor.shutdownNow();
+        }
         retryScheduler.shutdownNow();
         log.info("Character service shutting down");
     }
@@ -137,7 +161,11 @@ public class CharacterService {
     }
 
     public boolean isQueueProcessorRunning() {
-        return !executor.isShutdown() && !executor.isTerminated();
+        return dispatcher != null && !dispatcher.isShutdown() && !dispatcher.isTerminated();
+    }
+
+    public int getImagineWorkerCount() {
+        return imagineWorkerCount;
     }
 
     public int getQueueDepth() {
@@ -339,9 +367,9 @@ public class CharacterService {
                 .map(CharacterEntity::getPortraitFilename);
     }
 
-    private void processQueue() {
-        log.info("Character queue processor thread started");
-        int processedCount = 0;
+    private void dispatchQueue() {
+        log.info("Character queue dispatcher thread started");
+        int dispatchedCount = 0;
         while (running) {
             try {
                 log.debug("Waiting for character request in queue...");
@@ -354,24 +382,36 @@ public class CharacterService {
                     }
                     continue;
                 }
-                processedCount++;
+                dispatchedCount++;
 
                 if (request instanceof AnalysisRequest ar) {
-                    log.info("Processing character analysis #{} for chapter: {}", processedCount, ar.chapterId());
-                    processChapterAnalysis(ar.chapterId());
+                    log.info("Dispatching character analysis #{} for chapter: {}", dispatchedCount, ar.chapterId());
+                    analysisExecutor.submit(() -> {
+                        try {
+                            processChapterAnalysis(ar.chapterId());
+                        } catch (Exception e) {
+                            log.error("Error processing character analysis for chapter {}", ar.chapterId(), e);
+                        }
+                    });
                 } else if (request instanceof PortraitRequest pr) {
-                    log.info("Processing portrait generation #{} for character: {}", processedCount, pr.characterId());
-                    generatePortrait(pr.characterId(), pr.customPrompt());
+                    log.info("Dispatching portrait generation #{} for character: {}", dispatchedCount, pr.characterId());
+                    portraitExecutor.submit(() -> {
+                        try {
+                            generatePortrait(pr.characterId(), pr.customPrompt());
+                        } catch (Exception e) {
+                            log.error("Error processing portrait generation for character {}", pr.characterId(), e);
+                        }
+                    });
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.info("Character queue processor thread interrupted");
+                log.info("Character queue dispatcher thread interrupted");
                 break;
             } catch (Exception e) {
-                log.error("Error processing character queue", e);
+                log.error("Error dispatching character queue", e);
             }
         }
-        log.info("Character queue processor thread stopped after processing {} requests", processedCount);
+        log.info("Character queue dispatcher thread stopped after dispatching {} requests", dispatchedCount);
     }
 
     private void processChapterAnalysis(String chapterId) {
@@ -803,6 +843,12 @@ public class CharacterService {
                     character.getName(), portraitImageGenerator.getProviderName());
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                log.info("Portrait generation interrupted for character {}", characterId);
+                self.updateCharacterStatus(characterId, CharacterStatus.PENDING, null, null);
+                return;
+            }
             log.error("Failed to generate portrait for character: {}", character.getName(), e);
             self.handlePortraitFailure(characterId, e.getMessage(), true, customPrompt);
         }
@@ -1432,5 +1478,14 @@ public class CharacterService {
                 requestQueue.offer(request);
             }
         }, normalizedDelayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private static ThreadFactory workerThreadFactory(String prefix) {
+        AtomicInteger sequence = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 }

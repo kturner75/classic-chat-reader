@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -25,12 +26,16 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,12 +55,17 @@ public class IllustrationService {
     private final CdnAssetService cdnAssetService;
 
     private final BlockingQueue<GenerationRequest> generationQueue = new LinkedBlockingQueue<>();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ConcurrentHashMap<String, ReentrantLock> styleAnalysisLocks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ExecutorService executor;
     private volatile boolean running = true;
+    private int imagineWorkerCount = ImagineInFlightLimiter.DEFAULT_MAX_IN_FLIGHT;
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    @Value("${generation.imagine.max-in-flight:4}")
+    private int imagineMaxInFlight;
 
     @Value("${illustration.generation.lease-minutes:20}")
     private int illustrationLeaseMinutes;
@@ -111,15 +121,27 @@ public class IllustrationService {
         workerId = (configuredWorkerId != null && !configuredWorkerId.isBlank())
                 ? configuredWorkerId
                 : "illustration-" + UUID.randomUUID();
-        executor.submit(this::processQueue);
-        log.info("Illustration service started with background queue processor (workerId={})", workerId);
+        imagineWorkerCount = Math.max(1, imagineMaxInFlight);
+        executor = Executors.newFixedThreadPool(imagineWorkerCount, workerThreadFactory("illustration"));
+        for (int i = 0; i < imagineWorkerCount; i++) {
+            executor.submit(this::processQueue);
+        }
+        log.info(
+                "Illustration service started with {} Imagine workers (workerId={})",
+                imagineWorkerCount,
+                workerId
+        );
     }
 
     /**
      * Check if the queue processor is running (for debugging).
      */
     public boolean isQueueProcessorRunning() {
-        return !executor.isShutdown() && !executor.isTerminated();
+        return executor != null && !executor.isShutdown() && !executor.isTerminated();
+    }
+
+    public int getImagineWorkerCount() {
+        return imagineWorkerCount;
     }
 
     public int getQueueDepth() {
@@ -129,7 +151,9 @@ public class IllustrationService {
     @PreDestroy
     public void shutdown() {
         running = false;
-        executor.shutdownNow();
+        if (executor != null) {
+            executor.shutdownNow();
+        }
         retryScheduler.shutdownNow();
         log.info("Illustration service shutting down");
     }
@@ -383,41 +407,81 @@ public class IllustrationService {
 
     /**
      * Get or analyze illustration settings for a book.
+     *
+     * <p>First-time style creation is single-flight per book so parallel illustration
+     * workers do not each pay for analysis. The per-book lock is acquired
+     * <em>outside</em> the style transaction; check/save then runs in a
+     * {@code REQUIRES_NEW} transaction so a second worker cannot re-see a
+     * null-style entity from the first-level cache. The lock is held until that
+     * transaction commits. Existing style is a lock-free read. Different books
+     * do not share a lock.
      */
-    @Transactional
     public IllustrationSettings getOrAnalyzeBookStyle(String bookId, boolean forceReanalyze) {
-        BookEntity book = bookRepository.findById(bookId).orElse(null);
-        if (book == null) {
-            return IllustrationSettings.defaults();
-        }
-
-        // Check if already analyzed
-        if (!forceReanalyze && book.getIllustrationStyle() != null) {
-            return new IllustrationSettings(
-                    book.getIllustrationStyle(),
-                    book.getIllustrationPromptPrefix(),
-                    book.getIllustrationSetting(),
-                    book.getIllustrationStyleReasoning(),
-                    book.getIllustrationCoverSubject(),
-                    book.getIllustrationCoverFocus()
-            );
+        if (!forceReanalyze) {
+            BookEntity book = bookRepository.findById(bookId).orElse(null);
+            if (book == null) {
+                return IllustrationSettings.defaults();
+            }
+            IllustrationSettings existing = existingStyle(book);
+            if (existing != null) {
+                return existing;
+            }
         }
         if (cacheOnly) {
             log.info("Skipping illustration style analysis in cache-only mode for book {}", bookId);
             return IllustrationSettings.defaults();
         }
 
-        // Get opening text for analysis
-        String openingText = getBookOpeningText(book);
+        ReentrantLock lock = styleLockFor(bookId);
+        lock.lock();
+        boolean holdUntilCommit = false;
+        try {
+            IllustrationSettings settings = self.analyzeBookStyleInNewTransaction(bookId, forceReanalyze);
+            // Unit tests call the raw instance (no proxy), so REQUIRES_NEW is a no-op.
+            // Hold the lock until afterCommit so a second reader cannot findById
+            // the pre-commit row. In production, self is the Spring proxy and the
+            // inner transaction has already committed when this returns.
+            if (self == this && TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(unlockStyleAfterCommit(lock));
+                holdUntilCommit = true;
+            }
+            return settings;
+        } finally {
+            if (!holdUntilCommit) {
+                unlockStyleIfHeld(lock);
+            }
+        }
+    }
 
-        // Analyze with LLM
+    /**
+     * Fresh persistence context for the locked style check/save. Invoked via
+     * {@code self} so {@code REQUIRES_NEW} applies. Callers should use
+     * {@link #getOrAnalyzeBookStyle(String, boolean)}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public IllustrationSettings analyzeBookStyleInNewTransaction(String bookId, boolean forceReanalyze) {
+        BookEntity book = bookRepository.findById(bookId).orElse(null);
+        if (book == null) {
+            return IllustrationSettings.defaults();
+        }
+        if (!forceReanalyze) {
+            IllustrationSettings existing = existingStyle(book);
+            if (existing != null) {
+                return existing;
+            }
+        }
+        if (cacheOnly) {
+            log.info("Skipping illustration style analysis in cache-only mode for book {}", bookId);
+            return IllustrationSettings.defaults();
+        }
+
+        String openingText = getBookOpeningText(book);
         IllustrationSettings settings = styleAnalysisService.analyzeBookForStyle(
                 book.getTitle(),
                 book.getAuthor(),
                 openingText
         );
 
-        // Save to book entity
         book.setIllustrationStyle(settings.style());
         book.setIllustrationPromptPrefix(settings.promptPrefix());
         book.setIllustrationSetting(settings.setting());
@@ -428,8 +492,45 @@ public class IllustrationService {
 
         log.info("Analyzed illustration style for '{}': {} - {}",
                 book.getTitle(), settings.style(), settings.reasoning());
-
         return settings;
+    }
+
+    private static IllustrationSettings existingStyle(BookEntity book) {
+        if (book.getIllustrationStyle() == null) {
+            return null;
+        }
+        return new IllustrationSettings(
+                book.getIllustrationStyle(),
+                book.getIllustrationPromptPrefix(),
+                book.getIllustrationSetting(),
+                book.getIllustrationStyleReasoning(),
+                book.getIllustrationCoverSubject(),
+                book.getIllustrationCoverFocus()
+        );
+    }
+
+    private ReentrantLock styleLockFor(String bookId) {
+        return styleAnalysisLocks.computeIfAbsent(bookId, id -> new ReentrantLock());
+    }
+
+    private static TransactionSynchronization unlockStyleAfterCommit(ReentrantLock lock) {
+        return new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                unlockStyleIfHeld(lock);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                unlockStyleIfHeld(lock);
+            }
+        };
+    }
+
+    private static void unlockStyleIfHeld(ReentrantLock lock) {
+        if (lock.isHeldByCurrentThread()) {
+            lock.unlock();
+        }
     }
 
     /**
@@ -501,7 +602,6 @@ public class IllustrationService {
                 // Use the custom prompt directly
                 imagePrompt = customPrompt;
             } else {
-                // Get or analyze book style (use self to ensure @Transactional proxy is invoked)
                 IllustrationSettings styleSettings = self.getOrAnalyzeBookStyle(book.getId(), false);
 
                 // Get chapter content
@@ -526,6 +626,12 @@ public class IllustrationService {
                     chapterId, illustrationImageGenerator.getProviderName());
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                log.info("Illustration generation interrupted for chapter {}", chapterId);
+                self.updateIllustrationStatus(chapterId, IllustrationStatus.PENDING, null, null);
+                return;
+            }
             log.error("Failed to generate illustration for chapter: {}", chapterId, e);
             self.handleGenerationFailure(chapterId, e.getMessage(), customPrompt, true);
         }
@@ -879,5 +985,14 @@ public class IllustrationService {
                 generationQueue.offer(request);
             }
         }, normalizedDelayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private static ThreadFactory workerThreadFactory(String prefix) {
+        AtomicInteger sequence = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 }

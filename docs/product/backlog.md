@@ -164,6 +164,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-25: `BL-075` spec from ccr-studio `claude_02` (N1): uploads accept `source` + prompt metadata; back-port the same fields to cover `PUT`; PNG only. Docs only.
 - 2026-08-26: `BL-075` HTTP write-back: portrait + illustration multipart `PUT`, cover provenance (`studio` + prompts), PNG-only, cache-only 409. No Imagine enqueue. No Flyway.
 - 2026-08-26: `BL-077` public shared-cache TTS — unauthenticated play calls GET paragraph speak and may generate into the shared cache; no collaborator modal. `tts.cache-only` still skips generate. See epic session log.
+- 2026-08-26: Added and implemented `BL-076` (parallel Imagine in-flight). Shared `generation.imagine.max-in-flight` (default 4) across portraits + illustrations + covers. Analysis stays on its own path. No Flyway. Overnight runner stays one book at a time. Off current `main` after #163; not stacked on #132.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -2483,6 +2484,44 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Builds on `#163` feature cache-only flags (do not use TTS cache-only to skip character prefetch).
 - Session Log:
 - 2026-08-26: Public GET paragraph speak may generate into the shared cache without collaborator/API-key auth; generate-only per-IP rate limit; reader play/prefetch no longer skip server TTS or open the collaborator modal. `tts.cache-only` unchanged.
+
+### BL-076 - Parallel Imagine In-Flight
+- Type: Ops / performance
+- Priority: P1 (overnight catalog burn is Imagine-HTTP-bound, not CPU)
+- Effort: S
+- Status: Done
+- Problem: `IllustrationService` and `CharacterService` each use `Executors.newSingleThreadExecutor()` and `processQueue()` `take()` → one Imagine HTTP call → next. Leases from `BL-002` already exist; the missing piece is concurrency. Overnight catalog burn is slow because of this, not CPU.
+- Current Direction:
+  - Cap Imagine HTTP at **N in flight** (default **4**, `generation.imagine.max-in-flight`), **shared** across portraits + illustrations + covers so the three queues cannot each run N and double/triple the provider load.
+  - Size illustration and portrait workers to N. Cover generation already hits Imagine through `ImageGenerationHttpClient`, so it shares the same cap without a multi-book cover fan-out.
+  - Keep chapter analysis on its own path. It shares the character *queue* but must not consume an Imagine slot; the cap that matters is Imagine HTTP, not LLM analysis.
+  - Lease claim remains one job per chapter/character (`BL-002`). Parallel workers do not waive exclusivity.
+  - 429 / retry backoff must get **worse-not-better** under load: a 429 installs a shared cooldown (Retry-After or the existing retry floor). A freed permit does not immediately fire another Imagine call.
+  - Prod `generation.cache-only=true` stays **409 / no generate**. Overnight runner stays **one book at a time** — do not multi-book wipe.
+- Out of this epic:
+  - Flyway (not required; do not create `V31` or any new migration).
+  - Held draft **#132** (do not stack or reuse).
+  - Multi-book overnight / Kevin’s local `:8080` Imagine runner.
+  - Recap / quiz / TTS parallelism.
+- Work Tracker:
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-076.1 Shared Imagine cap | Done | Process-wide limiter around Imagine HTTP; default N=4; covers included because they hit Imagine | Portraits + illustrations + covers cannot exceed N in flight together |
+| BL-076.2 Workers > 1 | Done | Illustration + portrait queues run N workers; analysis stays off the Imagine pool | A book can have multiple Imagine jobs in flight; analysis is not serialized behind portraits |
+| BL-076.3 Safety nets | Done | Lease exclusivity, cache-only 409 / no generate, 429 cooldown worse-not-better | Tests cover workers > 1, exclusive leases, and unchanged cache-only |
+- Acceptance Criteria:
+  - Backlog entry exists (this epic).
+  - Workers > 1 are test-covered.
+  - Lease claim is still exclusive (one job per chapter/character).
+  - Prod / cache-only generation stays 409 and does not generate.
+  - Overnight catalog runner is still one book at a time.
+- Dependency Notes:
+  - Builds on `BL-002` durable leases. Does not reopen that epic.
+  - Distinct from `BL-065` (cast quality / regen). This is Imagine throughput only.
+  - Distinct from #132 (name-identity dedupe). Do not stack.
+- Session Log:
+- 2026-08-26: Opened and implemented off current `main` (includes #163). Shared `ImagineInFlightLimiter` on `ImageGenerationHttpClient`; illustration/portrait workers sized to `generation.imagine.max-in-flight` (default 4); analysis on a dedicated executor; 429 cooldown on the limiter. No Flyway. Overnight `PreGenerationBatchRunner` untouched. Workers > 1, exclusive leases, and cache-only 409 covered by tests. Interrupted workers no longer schedule retries.
+- 2026-08-26: Codex follow-up — interrupting an illustration or portrait worker after lease claim resets the row to PENDING and clears the lease, without charging a retry. Merged `origin/main` (#165/#166/#167) onto this branch.
 
 ## P0
 

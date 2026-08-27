@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -151,6 +152,23 @@ class CharacterControllerCacheOnlyTest {
 
         verify(characterService).getCharacter("character-1");
         verify(chatService).chat("character-1", "Hello there", java.util.List.of(), 0, 0);
+    }
+
+    @Test
+    void analyze_cacheOnlyMode_returnsConflictAndDoesNotGenerate() throws Exception {
+        mockMvc.perform(post("/api/characters/chapter/chapter-1/analyze"))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).requestChapterAnalysis("chapter-1");
+    }
+
+    @Test
+    void prefetch_cacheOnlyMode_returnsConflictAndDoesNotGenerate() throws Exception {
+        mockMvc.perform(post("/api/characters/book/book-1/prefetch"))
+                .andExpect(status().isConflict());
+
+        verifyNoInteractions(prefetchService);
+        verify(characterService, never()).queuePortraitGeneration(any());
     }
 
     @Test
