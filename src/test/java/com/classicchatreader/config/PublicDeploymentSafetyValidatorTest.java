@@ -127,6 +127,9 @@ class PublicDeploymentSafetyValidatorTest {
         assertEquals("public", properties.getProperty("deployment.mode"));
         assertEquals("true", properties.getProperty("security.public.session.secure-cookie"));
         assertEquals("true", properties.getProperty("account.auth.secure-cookie"));
+        assertEquals("${BOOK_COVER_CDN_ENABLED:true}", properties.getProperty("book-cover.cdn.enabled"));
+        assertEquals("${CHARACTER_PORTRAIT_CDN_ENABLED:true}", properties.getProperty("character.portrait.cdn.enabled"));
+        assertEquals("${ILLUSTRATION_CDN_ENABLED:true}", properties.getProperty("illustration.cdn.enabled"));
     }
 
     @Test
@@ -135,6 +138,9 @@ class PublicDeploymentSafetyValidatorTest {
         assertEquals("public", properties.getProperty("deployment.mode"));
         assertEquals("true", properties.getProperty("security.public.session.secure-cookie"));
         assertEquals("true", properties.getProperty("account.auth.secure-cookie"));
+        assertEquals("${BOOK_COVER_CDN_ENABLED:true}", properties.getProperty("book-cover.cdn.enabled"));
+        assertEquals("${CHARACTER_PORTRAIT_CDN_ENABLED:true}", properties.getProperty("character.portrait.cdn.enabled"));
+        assertEquals("${ILLUSTRATION_CDN_ENABLED:true}", properties.getProperty("illustration.cdn.enabled"));
     }
 
     private static Properties loadClasspathProperties(String path) throws Exception {

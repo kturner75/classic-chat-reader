@@ -38,6 +38,9 @@ public class IllustrationController {
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
+    @Value("${illustration.cdn.enabled:false}")
+    private boolean illustrationCdnEnabled;
+
     private final IllustrationService illustrationService;
     private final IllustrationStyleAnalysisService styleAnalysisService;
     private final ComfyUIService comfyUIService;
@@ -144,7 +147,7 @@ public class IllustrationController {
             return ResponseEntity.status(403).build();
         }
 
-        if (cdnAssetService.isEnabled()) {
+        if (illustrationCdnEnabled && cdnAssetService.isEnabled()) {
             return illustrationService.getIllustrationAsset(chapterId)
                     .flatMap(asset -> cdnAssetService.buildAssetUrl("illustrations", asset))
                     .map(url -> ResponseEntity.status(302)

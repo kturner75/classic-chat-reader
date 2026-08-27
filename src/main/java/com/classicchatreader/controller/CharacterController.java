@@ -61,6 +61,9 @@ public class CharacterController {
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
 
+    @Value("${character.portrait.cdn.enabled:false}")
+    private boolean portraitCdnEnabled;
+
     @Value("${illustration.allow-prompt-editing:false}")
     private boolean allowPromptEditing;
 
@@ -210,7 +213,7 @@ public class CharacterController {
             return ResponseEntity.status(403).build();
         }
 
-        if (cdnAssetService.isEnabled()) {
+        if (portraitCdnEnabled && cdnAssetService.isEnabled()) {
             return characterOpt
                     .filter(c -> c.getStatus() == CharacterStatus.COMPLETED)
                     .flatMap(c -> cdnAssetService.buildAssetUrl(
