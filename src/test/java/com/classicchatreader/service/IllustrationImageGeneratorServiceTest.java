@@ -125,14 +125,18 @@ class IllustrationImageGeneratorServiceTest {
     }
 
     @Test
-    void comfyUiGenerationUsesTheWorkflow() throws Exception {
+    void comfyUiGenerationSendsTheChapterPromptUnchanged() throws Exception {
         useProvider("comfyui");
-        when(comfyUIService.submitWorkflow(anyString(), anyString(), anyString())).thenReturn("prompt-1");
+        String chapterPrompt = "Victorian parlor, an adolescent girl and her romantic friend sewing by the window";
+        assertThat(ImagePromptSafety.isBlocked(chapterPrompt)).isTrue();
+
+        when(comfyUIService.submitWorkflow(chapterPrompt, "illustration_ch1", "cache-key")).thenReturn("prompt-1");
         when(comfyUIService.pollForCompletion("prompt-1"))
                 .thenReturn(new ComfyUIService.IllustrationResult(true, "cached/ch1.png", null));
 
-        String filename = service.generateIllustration("a chapter scene", "illustration_ch1", "cache-key");
+        String filename = service.generateIllustration(chapterPrompt, "illustration_ch1", "cache-key");
 
         assertThat(filename).isEqualTo("cached/ch1.png");
+        verify(comfyUIService).submitWorkflow(chapterPrompt, "illustration_ch1", "cache-key");
     }
 }

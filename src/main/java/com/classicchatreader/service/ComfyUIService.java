@@ -124,14 +124,18 @@ public class ComfyUIService {
   }
 
   /**
-   * Submit a workflow to ComfyUI for image generation.
+   * Submit a chapter-illustration workflow to ComfyUI.
+   *
+   * <p>The prompt is sent as written. Classroom sanitization stays on
+   * {@link #submitPortraitWorkflow} and {@link #submitBookCoverWorkflow}.
+   * Operator review before transfer is ST-011.
    *
    * @param positivePrompt The positive prompt for the image
    * @param outputFilename The filename prefix for the output image
    * @return The prompt_id for polling
    */
   public String submitWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
-    ObjectNode workflow = buildWorkflow(ImagePromptSafety.prepareForGeneration(positivePrompt), outputFilename);
+    ObjectNode workflow = buildWorkflow(positivePrompt, outputFilename);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("prompt", workflow);
