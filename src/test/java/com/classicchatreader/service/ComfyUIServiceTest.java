@@ -115,7 +115,7 @@ class ComfyUIServiceTest {
             }
 
             @Override
-            public Optional<org.springframework.http.server.reactive.ServerHttpResponse> serverResponse() {
+            public Optional<org.springframework.http.server.reactive.ServerHttpRequest> serverRequest() {
                 return Optional.empty();
             }
 
