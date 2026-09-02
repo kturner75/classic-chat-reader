@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -95,11 +96,22 @@ public class IllustrationImageGeneratorService {
      * @return the cached illustration filename
      */
     public String generateIllustration(String prompt, String outputPrefix, String cacheKey) throws Exception {
-        String safePrompt = ImagePromptSafety.prepareForGeneration(prompt);
+        return generateIllustration(prompt, outputPrefix, cacheKey, List.of());
+    }
+
+    public String generateIllustration(
+            String prompt,
+            String outputPrefix,
+            String cacheKey,
+            List<IllustrationPortraitReferences.PortraitRef> portraitRefs) throws Exception {
+        String platePrompt = IllustrationPromptService.ensureNarrativePlate(prompt);
         if ("xai".equals(getProviderName())) {
-            return generateWithXai(safePrompt, cacheKey);
+            return generateWithXai(platePrompt, cacheKey, portraitRefs == null ? List.of() : portraitRefs);
         }
-        return generateWithComfyUi(safePrompt, outputPrefix, cacheKey);
+        if (portraitRefs != null && !portraitRefs.isEmpty()) {
+            log.info("Skipping {} portrait refs; ComfyUI illustrations are text-only", portraitRefs.size());
+        }
+        return generateWithComfyUi(platePrompt, outputPrefix, cacheKey);
     }
 
     private String generateWithComfyUi(String prompt, String outputPrefix, String cacheKey) throws Exception {
@@ -113,12 +125,19 @@ public class IllustrationImageGeneratorService {
         return result.filename();
     }
 
-    private String generateWithXai(String prompt, String cacheKey) throws Exception {
+    private String generateWithXai(
+            String prompt,
+            String cacheKey,
+            List<IllustrationPortraitReferences.PortraitRef> portraitRefs) throws Exception {
         Optional<String> oauthToken = oauthTokenManager != null
                 ? oauthTokenManager.getAccessToken()
                 : Optional.empty();
         String bearer = BookCoverImageGeneratorService.resolveXaiBearer(oauthToken, xaiApiKey);
         boolean usingOAuth = oauthToken.isPresent();
+        if (!portraitRefs.isEmpty()) {
+            log.info("event=illustration_xai_request skipping_portrait_bytes n={} reason=edits_would_reuse_portrait",
+                    portraitRefs.size());
+        }
         log.info("event=illustration_xai_request auth_source={}", usingOAuth ? "oauth" : "api_key");
 
         ObjectNode request = objectMapper.createObjectNode();
@@ -128,16 +147,18 @@ public class IllustrationImageGeneratorService {
         request.put("response_format", "b64_json");
         request.put("aspect_ratio", xaiAspectRatio);
         request.put("resolution", xaiResolution);
+        String path = "/images/generations";
 
         try {
-            byte[] png = httpClient.postAndDecodePng(xaiClient, request, "xAI", bearer, timeoutSeconds);
+            byte[] png = httpClient.postAndDecodePng(xaiClient, request, "xAI", bearer, timeoutSeconds, path);
             return comfyUIService.saveIllustrationImage(cacheKey, png);
         } catch (WebClientResponseException e) {
             if (usingOAuth && e.getStatusCode().value() == 401) {
                 oauthTokenManager.invalidate();
                 if (xaiApiKey != null && !xaiApiKey.isBlank()) {
                     log.warn("event=illustration_xai_oauth_rejected retrying_with=api_key");
-                    byte[] png = httpClient.postAndDecodePng(xaiClient, request, "xAI", xaiApiKey, timeoutSeconds);
+                    byte[] png = httpClient.postAndDecodePng(
+                            xaiClient, request, "xAI", xaiApiKey, timeoutSeconds, path);
                     return comfyUIService.saveIllustrationImage(cacheKey, png);
                 }
                 log.warn("event=illustration_xai_oauth_rejected no_api_key_fallback");
@@ -145,4 +166,5 @@ public class IllustrationImageGeneratorService {
             throw e;
         }
     }
+
 }

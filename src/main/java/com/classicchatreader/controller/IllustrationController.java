@@ -3,6 +3,7 @@ package com.classicchatreader.controller;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.IllustrationStatus;
 import com.classicchatreader.model.IllustrationSettings;
+import com.classicchatreader.model.IllustrationStyleSuggestions;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.service.ComfyUIService;
@@ -15,6 +16,7 @@ import com.classicchatreader.service.UnsupportedImageTypeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -108,6 +110,54 @@ public class IllustrationController {
     }
 
     /**
+     * Operator override of the book-wide Imagine style used by portraits, covers, and chapter plates.
+     */
+    @PutMapping("/settings/{bookId}")
+    public ResponseEntity<IllustrationSettings> putStyleSettings(
+            @PathVariable String bookId,
+            @RequestBody IllustrationSettings body) {
+        Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
+        if (bookOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        if (!isIllustrationEnabled(bookOpt.get())) {
+            return ResponseEntity.status(403).build();
+        }
+        IllustrationSettings saved = illustrationService.updateBookStyle(bookId, body);
+        if (saved == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(saved);
+    }
+
+    /**
+     * AI suggestions for book-wide Imagine style. Does not persist; operator picks one and PUT /settings.
+     */
+    @PostMapping("/settings/{bookId}/suggestions")
+    public ResponseEntity<IllustrationStyleSuggestions> suggestStyles(
+            @PathVariable String bookId,
+            @RequestParam(required = false, defaultValue = "4") int limit) {
+        Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
+        if (bookOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(409).build();
+        }
+        if (!isIllustrationEnabled(bookOpt.get())) {
+            return ResponseEntity.status(403).build();
+        }
+        IllustrationStyleSuggestions suggestions = illustrationService.suggestBookStyles(bookId, limit);
+        if (suggestions == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(suggestions);
+    }
+
+    /**
      * Analyze book and determine illustration style.
      */
     @PostMapping("/analyze/{bookId}")
@@ -147,6 +197,14 @@ public class IllustrationController {
             return ResponseEntity.status(403).build();
         }
 
+        byte[] image = illustrationService.getIllustration(chapterId);
+        if (image != null) {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, "image/png")
+                    .cacheControl(CacheControl.noCache().cachePrivate())
+                    .body(image);
+        }
+
         if (illustrationCdnEnabled && cdnAssetService.isEnabled()) {
             return illustrationService.getIllustrationAsset(chapterId)
                     .flatMap(asset -> cdnAssetService.buildAssetUrl("illustrations", asset))
@@ -156,15 +214,7 @@ public class IllustrationController {
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
 
-        byte[] image = illustrationService.getIllustration(chapterId);
-        if (image == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, "image/png")
-                .header(HttpHeaders.CACHE_CONTROL, "max-age=604800") // Cache for 1 week
-                .body(image);
+        return ResponseEntity.notFound().build();
     }
 
     /**
@@ -331,7 +381,7 @@ public class IllustrationController {
     @PostMapping("/chapter/{chapterId}/regenerate")
     public ResponseEntity<Void> regenerate(
             @PathVariable String chapterId,
-            @RequestBody RegenerateRequest request) {
+            @RequestBody(required = false) RegenerateRequest request) {
 
         if (!allowPromptEditing) {
             return ResponseEntity.status(403).build();
@@ -347,11 +397,8 @@ public class IllustrationController {
             return ResponseEntity.status(403).build();
         }
 
-        if (request.prompt() == null || request.prompt().isBlank()) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        illustrationService.regenerateWithPrompt(chapterId, request.prompt());
+        String prompt = request == null ? null : request.prompt();
+        illustrationService.regenerateWithPrompt(chapterId, prompt);
         return ResponseEntity.accepted().build();
     }
 

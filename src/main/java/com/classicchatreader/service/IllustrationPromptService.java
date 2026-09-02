@@ -9,10 +9,28 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.regex.Pattern;
+
 @Service
 public class IllustrationPromptService {
 
     private static final Logger log = LoggerFactory.getLogger(IllustrationPromptService.class);
+
+    private static final Pattern OLD_FACE_BAN = Pattern.compile("DO NOT include human faces", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OLD_SILHOUETTE_GUIDE = Pattern.compile(
+            "silhouettes?, back views", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SILHOUETTE_WORD = Pattern.compile("\\bsilhouette", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_SILHOUETTE = Pattern.compile(
+            "\\bnot (?:a )?silhouettes?\\b", Pattern.CASE_INSENSITIVE);
+
+    static final String NARRATIVE_PLATE_GUARD =
+            " Full-page narrative book plate, not a character portrait, not a head-and-shoulders"
+                    + " or window-profile crop. Setting must occupy most of the frame;"
+                    + " people at three-quarter or full figure in the scene.";
+
+    static final String MEDIUM_LOCK =
+            " same medium as the rest of this book, not a cartoon, not a children's watercolor.";
 
     private final LlmProvider reasoningProvider;
 
@@ -40,13 +58,30 @@ public class IllustrationPromptService {
             String chapterTitle,
             String chapterContent,
             IllustrationSettings styleSettings) {
+        return generatePromptForChapter(bookTitle, author, chapterTitle, chapterContent, styleSettings, List.of());
+    }
+
+    public String generatePromptForChapter(
+            String bookTitle,
+            String author,
+            String chapterTitle,
+            String chapterContent,
+            IllustrationSettings styleSettings,
+            List<String> featuredCharacters) {
+        List<String> cast = featuredCharacters == null ? List.of() : featuredCharacters.stream()
+                .filter(n -> n != null && !n.isBlank())
+                .toList();
         if (cacheOnly) {
-            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings);
+            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings, cast);
         }
 
         String settingContext = styleSettings.setting() != null
                 ? "Cultural/Geographic Setting: " + styleSettings.setting()
                 : "";
+        String castBlock = cast.isEmpty()
+                ? "CAST: no named portrait characters for this plate. Do not invent named people."
+                : "CAST (include each of these people by name, with visible faces; do not add other named characters):\n- "
+                        + String.join("\n- ", cast);
 
         String prompt = String.format("""
             You are creating a prompt for an AI image generator to illustrate a chapter from a classic book.
@@ -54,6 +89,7 @@ public class IllustrationPromptService {
             Book: %s by %s
             Chapter: %s
             Illustration Style: %s
+            %s
             %s
 
             Chapter content excerpt:
@@ -72,15 +108,17 @@ public class IllustrationPromptService {
             - NEVER mix cultural elements (e.g., no Buddhist temples in Russian novels, no pagodas in English countryside)
 
             OTHER GUIDELINES:
-            - Focus on: setting, atmosphere, key objects, and mood
-            - DO NOT include human faces or detailed character features (use silhouettes, back views, or distant figures)
+            - This is a CHAPTER ILLUSTRATION PLATE, not a character portrait. Do not write a close-up, bust, head-and-shoulders, or window-profile headshot.
+            - The setting must occupy most of the frame. Named people appear in the scene at three-quarter or full figure.
+            - Focus on: setting, atmosphere, key objects, mood, and the people in the scene
+            - Use the CAST names exactly when people appear. Do not replace them with "a girl" or "a young man"
+            - When people appear, show visible faces with readable expressions — not silhouettes, not back-turned figures, not featureless shadows
             - Describe the scene as if it were a book illustration plate
             - Include lighting, time of day, weather if relevant
             - Keep it evocative and atmospheric rather than literal
 
-            %s
-
             Start your prompt with this style prefix: %s
+            Keep that exact medium for the whole prompt. Do not switch to cartoon, children's watercolor, anime, 3d render, or photoreal CGI unless the prefix is that medium.
 
             Respond with ONLY the image prompt, no explanation or other text. The prompt should be 50-150 words.
             """,
@@ -89,15 +127,16 @@ public class IllustrationPromptService {
                 chapterTitle,
                 styleSettings.style(),
                 settingContext,
+                castBlock,
                 truncateText(chapterContent, 2000),
-                ImagePromptSafety.LLM_RULES,
                 styleSettings.promptPrefix());
 
         try {
             String generatedPrompt = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.7)).trim();
 
             // Clean up the prompt - remove any quotes or extra formatting
-            generatedPrompt = ImagePromptSafety.prepareForGeneration(cleanPrompt(generatedPrompt));
+            generatedPrompt = lockBookMedium(
+                    ensureNarrativePlate(cleanPrompt(generatedPrompt)), styleSettings);
 
             log.info("Generated illustration prompt for chapter '{}': {}", chapterTitle,
                     truncateText(generatedPrompt, 100));
@@ -107,15 +146,84 @@ public class IllustrationPromptService {
         } catch (Exception e) {
             log.error("Failed to generate illustration prompt for chapter: {}", chapterTitle, e);
             // Return a fallback prompt using the style prefix
-            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings);
+            return fallbackPrompt(bookTitle, author, chapterTitle, styleSettings, cast);
         }
     }
 
     private String fallbackPrompt(String bookTitle, String author, String chapterTitle,
-                                  IllustrationSettings styleSettings) {
-        return ImagePromptSafety.prepareForGeneration(
+                                  IllustrationSettings styleSettings, List<String> cast) {
+        String featuring = cast == null || cast.isEmpty()
+                ? ""
+                : ", featuring " + String.join(" and ", cast);
+        return lockBookMedium(ensureNarrativePlate(
                 styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
-                        ", chapter " + chapterTitle + ", atmospheric book illustration");
+                        ", chapter " + chapterTitle + featuring + ", atmospheric book illustration"),
+                styleSettings);
+    }
+
+    /** Keep the book's Imagine prefix at the front and a short medium lock at the end. */
+    static String lockBookMedium(String prompt, IllustrationSettings styleSettings) {
+        String text = prompt == null ? "" : prompt.trim();
+        String prefix = styleSettings == null || styleSettings.promptPrefix() == null
+                ? ""
+                : styleSettings.promptPrefix().trim();
+        if (!prefix.isEmpty() && !startsWithPrefix(text, prefix)) {
+            text = text.isEmpty() ? prefix : prefix + (prefix.endsWith(" ") ? "" : " ") + text;
+            text = text.trim();
+        }
+        String medium = "";
+        if (styleSettings != null) {
+            if (styleSettings.style() != null && !styleSettings.style().isBlank()) {
+                medium = styleSettings.style().trim();
+            } else if (!prefix.isEmpty()) {
+                medium = prefix.replaceAll(",+$", "").trim();
+            }
+        }
+        String lock = (medium.isEmpty() ? "" : " " + medium + ",") + MEDIUM_LOCK;
+        if (!text.toLowerCase().contains("same medium as the rest of this book")) {
+            text = text + lock;
+        }
+        return text.trim();
+    }
+
+    static boolean startsWithPrefix(String prompt, String prefix) {
+        if (prompt == null || prefix == null || prefix.isBlank()) {
+            return true;
+        }
+        String p = prefix.trim();
+        String t = prompt.trim();
+        if (t.regionMatches(true, 0, p, 0, p.length())) {
+            return true;
+        }
+        String stripped = p.replaceAll(",+$", "").trim();
+        return !stripped.isEmpty() && t.regionMatches(true, 0, stripped, 0, stripped.length());
+    }
+
+    /** Operator or LLM prompts that would otherwise read as a roster portrait. */
+    public static String ensureNarrativePlate(String prompt) {
+        String text = prompt == null ? "" : prompt.trim();
+        if (text.isEmpty()) {
+            text = "a full-page narrative book illustration of a chapter scene";
+        }
+        if (hasNarrativePlateGuard(text)) {
+            return text;
+        }
+        return text + NARRATIVE_PLATE_GUARD;
+    }
+
+    static boolean hasNarrativePlateGuard(String prompt) {
+        return prompt != null && prompt.toLowerCase().contains("not a character portrait");
+    }
+
+    /** Stored prompts written under the old no-faces / silhouette guideline. */
+    public static boolean isSilhouetteEraPrompt(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return false;
+        }
+        if (OLD_FACE_BAN.matcher(prompt).find() || OLD_SILHOUETTE_GUIDE.matcher(prompt).find()) {
+            return true;
+        }
+        return SILHOUETTE_WORD.matcher(prompt).find() && !NOT_SILHOUETTE.matcher(prompt).find();
     }
 
     private String truncateText(String text, int maxLength) {

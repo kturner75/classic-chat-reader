@@ -58,6 +58,7 @@ class IllustrationServiceParallelTest {
     @Mock private IllustrationStyleAnalysisService styleAnalysisService;
     @Mock private ComfyUIService comfyUIService;
     @Mock private IllustrationImageGeneratorService illustrationImageGenerator;
+    @Mock private IllustrationPortraitReferences portraitReferences;
     @Mock private CdnAssetService cdnAssetService;
 
     private IllustrationService service;
@@ -73,6 +74,7 @@ class IllustrationServiceParallelTest {
                 styleAnalysisService,
                 comfyUIService,
                 illustrationImageGenerator,
+                portraitReferences,
                 new AssetKeyService(),
                 cdnAssetService
         );
@@ -109,7 +111,7 @@ class IllustrationServiceParallelTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger inFlight = new AtomicInteger();
         AtomicInteger maxInFlight = new AtomicInteger();
-        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
+        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString(), any()))
                 .thenAnswer(invocation -> {
                     inFlight.incrementAndGet();
                     maxInFlight.accumulateAndGet(inFlight.get(), Math::max);
@@ -130,7 +132,7 @@ class IllustrationServiceParallelTest {
         assertThat(maxInFlight.get()).isEqualTo(2);
         release.countDown();
         verify(illustrationImageGenerator, timeout(2000).times(2))
-                .generateIllustration(anyString(), anyString(), anyString());
+                .generateIllustration(anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -142,7 +144,7 @@ class IllustrationServiceParallelTest {
                 eq(IllustrationStatus.PENDING), eq(IllustrationStatus.GENERATING)))
                 .thenReturn(1)
                 .thenReturn(0);
-        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
+        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString(), any()))
                 .thenReturn("books/gutenberg/1342/illustrations/chapters/1.png");
 
         service.init();
@@ -152,7 +154,7 @@ class IllustrationServiceParallelTest {
         service.forceQueuePendingForBook("book-1");
 
         verify(illustrationImageGenerator, timeout(2000).times(1))
-                .generateIllustration(anyString(), anyString(), anyString());
+                .generateIllustration(anyString(), anyString(), anyString(), any());
         verify(illustrationRepository, times(2)).claimGenerationLease(
                 eq("chapter-1"), any(), any(), any(),
                 eq(IllustrationStatus.PENDING), eq(IllustrationStatus.GENERATING));
@@ -169,7 +171,7 @@ class IllustrationServiceParallelTest {
         illustration.setRetryCount(0);
         when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.of(illustration));
         CountDownLatch started = new CountDownLatch(1);
-        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString()))
+        when(illustrationImageGenerator.generateIllustration(anyString(), anyString(), anyString(), any()))
                 .thenAnswer(invocation -> {
                     started.countDown();
                     throw new InterruptedException("imagine wait interrupted");
@@ -328,7 +330,7 @@ class IllustrationServiceParallelTest {
                 .thenReturn(List.of(new IllustrationEntity(chapter)));
         assertThat(service.forceQueuePendingForBook("book-1")).isEqualTo(0);
         Thread.sleep(200);
-        verify(illustrationImageGenerator, never()).generateIllustration(any(), any(), any());
+        verify(illustrationImageGenerator, never()).generateIllustration(any(), any(), any(), any());
         verify(illustrationRepository, never()).claimGenerationLease(any(), any(), any(), any(), any(), any());
     }
 
@@ -342,8 +344,11 @@ class IllustrationServiceParallelTest {
         when(comfyUIService.hasImage(anyString())).thenReturn(false);
         when(bookRepository.findById(chapter.getBook().getId())).thenReturn(Optional.of(chapter.getBook()));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex(chapterId)).thenReturn(List.of());
-        when(promptService.generatePromptForChapter(any(), any(), any(), any(), any()))
+        when(promptService.generatePromptForChapter(any(), any(), any(), any(), any(), any()))
                 .thenReturn("a chapter scene");
+        when(portraitReferences.castForChapter(any(), any(), any())).thenReturn(List.of());
+        when(portraitReferences.load(any())).thenReturn(List.of());
+        when(portraitReferences.select(any(), any(), any())).thenReturn(List.of());
         when(illustrationRepository.findByChapterId(chapterId))
                 .thenReturn(Optional.of(new IllustrationEntity(chapter)));
     }

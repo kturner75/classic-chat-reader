@@ -8,6 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ImagePromptSafetyTest {
 
     @Test
+    void classroomRulesAllowVisibleFaces() {
+        assertFalse(ImagePromptSafety.LLM_RULES.contains("back-view"));
+        assertFalse(ImagePromptSafety.LLM_RULES.contains("distant or back-view"));
+        assertTrue(ImagePromptSafety.LLM_RULES.contains("Visible faces are fine"));
+    }
+
+    @Test
     void appendsClassroomSuffixToSafePrompts() {
         String original = "soft watercolor, a Florentine pensione balcony at dusk";
         assertFalse(ImagePromptSafety.isBlocked(original));

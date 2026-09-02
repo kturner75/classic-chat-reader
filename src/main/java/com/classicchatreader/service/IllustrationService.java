@@ -8,6 +8,7 @@ import com.classicchatreader.entity.IllustrationEntity;
 import com.classicchatreader.entity.IllustrationStatus;
 import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.model.IllustrationSettings;
+import com.classicchatreader.model.IllustrationStyleSuggestions;
 import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.repository.IllustrationRepository;
@@ -51,6 +52,7 @@ public class IllustrationService {
     private final IllustrationStyleAnalysisService styleAnalysisService;
     private final ComfyUIService comfyUIService;
     private final IllustrationImageGeneratorService illustrationImageGenerator;
+    private final IllustrationPortraitReferences portraitReferences;
     private final AssetKeyService assetKeyService;
     private final CdnAssetService cdnAssetService;
 
@@ -96,6 +98,7 @@ public class IllustrationService {
             IllustrationStyleAnalysisService styleAnalysisService,
             ComfyUIService comfyUIService,
             IllustrationImageGeneratorService illustrationImageGenerator,
+            IllustrationPortraitReferences portraitReferences,
             AssetKeyService assetKeyService,
             CdnAssetService cdnAssetService) {
         this.illustrationRepository = illustrationRepository;
@@ -106,6 +109,7 @@ public class IllustrationService {
         this.styleAnalysisService = styleAnalysisService;
         this.comfyUIService = comfyUIService;
         this.illustrationImageGenerator = illustrationImageGenerator;
+        this.portraitReferences = portraitReferences;
         this.assetKeyService = assetKeyService;
         this.cdnAssetService = cdnAssetService;
     }
@@ -288,10 +292,14 @@ public class IllustrationService {
             illustrationRepository.flush(); // Ensure delete is committed before insert
         }
 
-        // Create pending record - handle race condition gracefully
+        // Create pending record - handle race condition gracefully.
+        // Flush here so uk_illustrations_chapter is raised inside this try.
+        // save() alone defers the INSERT until commit, which bypasses the catch
+        // and 500s the servlet (studio Regen all + prefetchNext race).
         try {
             IllustrationEntity illustration = new IllustrationEntity(chapter);
             illustrationRepository.save(illustration);
+            illustrationRepository.flush();
 
             // Add to queue AFTER transaction commits to ensure the record is visible
             // to the background thread
@@ -495,6 +503,61 @@ public class IllustrationService {
         return settings;
     }
 
+    /** Operator override of the book-wide Imagine style (portraits, covers, chapter plates). */
+    @Transactional
+    public IllustrationSettings updateBookStyle(String bookId, IllustrationSettings incoming) {
+        BookEntity book = bookRepository.findById(bookId).orElse(null);
+        if (book == null) {
+            return null;
+        }
+        if (incoming != null) {
+            if (incoming.style() != null && !incoming.style().isBlank()) {
+                book.setIllustrationStyle(incoming.style().trim());
+            } else if (book.getIllustrationStyle() == null) {
+                book.setIllustrationStyle("watercolor");
+            }
+            if (incoming.promptPrefix() != null) {
+                book.setIllustrationPromptPrefix(incoming.promptPrefix().trim());
+            }
+            if (incoming.setting() != null) {
+                book.setIllustrationSetting(blankToNull(incoming.setting()));
+            }
+            if (incoming.reasoning() != null) {
+                book.setIllustrationStyleReasoning(blankToNull(incoming.reasoning()));
+            }
+            if (incoming.coverSubject() != null) {
+                book.setIllustrationCoverSubject(blankToNull(incoming.coverSubject()));
+            }
+            if (incoming.coverFocus() != null) {
+                book.setIllustrationCoverFocus(blankToNull(incoming.coverFocus()));
+            }
+        }
+        if (book.getIllustrationStyle() == null) {
+            book.setIllustrationStyle("watercolor");
+        }
+        bookRepository.save(book);
+        log.info("Updated illustration style for '{}': {}", book.getTitle(), book.getIllustrationStyle());
+        return existingStyle(book);
+    }
+
+    /** Operator choices: does not persist. Pick one and PUT /settings/{bookId}. */
+    public IllustrationStyleSuggestions suggestBookStyles(String bookId, int limit) {
+        BookEntity book = bookRepository.findById(bookId).orElse(null);
+        if (book == null) {
+            return null;
+        }
+        if (cacheOnly) {
+            log.info("Skipping illustration style suggestions in cache-only mode for book {}", bookId);
+            return IllustrationStyleSuggestions.empty();
+        }
+        return styleAnalysisService.suggestStylesForBook(
+                book.getTitle(),
+                book.getAuthor(),
+                getBookOpeningText(book),
+                limit
+        );
+    }
+
     private static IllustrationSettings existingStyle(BookEntity book) {
         if (book.getIllustrationStyle() == null) {
             return null;
@@ -533,6 +596,14 @@ public class IllustrationService {
         }
     }
 
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     /**
      * Background queue processor.
      */
@@ -549,8 +620,9 @@ public class IllustrationService {
                 }
                 processedCount++;
                 log.info("Processing illustration request #{} for chapter: {}", processedCount, request.chapterId());
-                String customPrompt = (request instanceof RegenerateRequest r) ? r.customPrompt() : null;
-                generateIllustration(request.chapterId(), customPrompt);
+                boolean rewritePrompt = request instanceof RegenerateRequest;
+                String customPrompt = rewritePrompt ? blankToNull(((RegenerateRequest) request).customPrompt()) : null;
+                generateIllustration(request.chapterId(), customPrompt, rewritePrompt);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.info("Illustration queue processor thread interrupted");
@@ -565,8 +637,9 @@ public class IllustrationService {
     /**
      * Generate illustration for a chapter.
      * @param customPrompt If provided, skip LLM prompt generation and use this prompt directly
+     * @param rewritePrompt Operator asked to regenerate: do not restore a cached plate
      */
-    private void generateIllustration(String chapterId, String customPrompt) {
+    private void generateIllustration(String chapterId, String customPrompt, boolean rewritePrompt) {
         if (!tryClaimGenerationLease(chapterId)) {
             log.debug("Skipping illustration generation for chapter {} because lease claim failed", chapterId);
             rescheduleDeferredRetryIfNeeded(chapterId, customPrompt);
@@ -584,7 +657,7 @@ public class IllustrationService {
         }
         BookEntity book = chapter.getBook();
         String cacheKey = assetKeyService.buildIllustrationKey(chapter);
-        if (customPrompt == null && comfyUIService.hasImage(cacheKey)) {
+        if (customPrompt == null && !rewritePrompt && comfyUIService.hasImage(cacheKey)) {
             illustrationRepository.findByChapterId(chapterId)
                     .ifPresent(illustration -> restoreCachedIllustration(illustration, cacheKey));
             return;
@@ -596,31 +669,41 @@ public class IllustrationService {
         }
 
         try {
+            String chapterContent = getChapterText(chapterId);
+            if (IllustrationPromptService.isSilhouetteEraPrompt(customPrompt)) {
+                log.info("Dropping silhouette-era prompt for chapter {}; writing a new one", chapterId);
+                customPrompt = null;
+            }
             String imagePrompt;
+            List<IllustrationPortraitReferences.PortraitRef> portraitRefs;
 
             if (customPrompt != null) {
-                // Use the custom prompt directly
                 imagePrompt = customPrompt;
+                portraitRefs = portraitReferences.select(book.getId(), chapter, customPrompt);
             } else {
+                var cast = portraitReferences.castForChapter(book.getId(), chapter, chapterContent);
+                var castNames = IllustrationPortraitReferences.namesOf(cast);
                 IllustrationSettings styleSettings = self.getOrAnalyzeBookStyle(book.getId(), false);
-
-                // Get chapter content
-                String chapterContent = getChapterText(chapterId);
-
-                // Generate prompt with LLM
                 imagePrompt = promptService.generatePromptForChapter(
                         book.getTitle(),
                         book.getAuthor(),
                         chapter.getTitle(),
                         chapterContent,
-                        styleSettings
+                        styleSettings,
+                        castNames
                 );
-
+                imagePrompt = IllustrationPortraitReferences.ensureCastNamed(imagePrompt, castNames);
+                portraitRefs = portraitReferences.load(cast);
+            }
+            imagePrompt = IllustrationPortraitReferences.appendLikeness(imagePrompt, portraitRefs);
+            imagePrompt = IllustrationPromptService.ensureNarrativePlate(imagePrompt);
+            if (customPrompt == null) {
                 self.updateIllustrationPrompt(chapterId, imagePrompt);
             }
 
             String outputPrefix = "illustration_" + chapterId;
-            String filename = illustrationImageGenerator.generateIllustration(imagePrompt, outputPrefix, cacheKey);
+            String filename = illustrationImageGenerator.generateIllustration(
+                    imagePrompt, outputPrefix, cacheKey, portraitRefs);
             self.updateIllustrationStatus(chapterId, IllustrationStatus.COMPLETED, filename, null);
             log.info("Illustration completed for chapter: {} via {}",
                     chapterId, illustrationImageGenerator.getProviderName());
@@ -753,10 +836,11 @@ public class IllustrationService {
         }
 
         IllustrationEntity illustration = existing.get();
+        String prompt = blankToNull(customPrompt);
 
-        // Reset to pending with the custom prompt
+        // Reset to pending. Blank prompt means write a new LLM prompt (skip cached plate).
         illustration.setStatus(IllustrationStatus.PENDING);
-        illustration.setGeneratedPrompt(customPrompt);
+        illustration.setGeneratedPrompt(prompt);
         illustration.setErrorMessage(null);
         illustration.setImageFilename(null);
         illustration.setCompletedAt(null);
@@ -765,9 +849,9 @@ public class IllustrationService {
         clearIllustrationLease(illustration);
         illustrationRepository.save(illustration);
 
-        // Add to queue for regeneration
-        generationQueue.offer(new RegenerateRequest(chapterId, customPrompt));
-        log.info("Queued illustration regeneration for chapter: {}", chapterId);
+        enqueueAfterCommit(new RegenerateRequest(chapterId, prompt));
+        log.info("Queued illustration regeneration for chapter: {}{}", chapterId,
+                prompt == null ? " (new prompt)" : " (custom prompt)");
     }
 
     /**
@@ -976,6 +1060,23 @@ public class IllustrationService {
             delaySeconds = Math.min(maxSeconds, delaySeconds * 2);
         }
         return Math.max(1L, delaySeconds) * 1000L;
+    }
+
+    private void enqueueAfterCommit(GenerationRequest request) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    boolean queued = generationQueue.offer(request);
+                    if (!queued) {
+                        log.error("Failed to queue illustration {} for chapter {} - queue full",
+                                request.getClass().getSimpleName(), request.chapterId());
+                    }
+                }
+            });
+            return;
+        }
+        generationQueue.offer(request);
     }
 
     private void scheduleRetryRequest(GenerationRequest request, long delayMs) {
