@@ -490,12 +490,13 @@ public class IllustrationService {
                 openingText
         );
 
-        book.setIllustrationStyle(settings.style());
-        book.setIllustrationPromptPrefix(settings.promptPrefix());
-        book.setIllustrationSetting(settings.setting());
-        book.setIllustrationStyleReasoning(settings.reasoning());
-        book.setIllustrationCoverSubject(settings.coverSubject());
-        book.setIllustrationCoverFocus(settings.coverFocus());
+        book.setIllustrationStyle(IllustrationSettings.clip(settings.style(), IllustrationSettings.STYLE_MAX));
+        book.setIllustrationPromptPrefix(
+                IllustrationSettings.clip(settings.promptPrefix(), IllustrationSettings.PREFIX_MAX));
+        book.setIllustrationSetting(clipOrNull(settings.setting(), IllustrationSettings.SETTING_MAX));
+        book.setIllustrationStyleReasoning(clipOrNull(settings.reasoning(), IllustrationSettings.REASONING_MAX));
+        book.setIllustrationCoverSubject(clipOrNull(settings.coverSubject(), IllustrationSettings.COVER_SUBJECT_MAX));
+        book.setIllustrationCoverFocus(clipOrNull(settings.coverFocus(), IllustrationSettings.COVER_FOCUS_MAX));
         bookRepository.save(book);
 
         log.info("Analyzed illustration style for '{}': {} - {}",
@@ -512,24 +513,26 @@ public class IllustrationService {
         }
         if (incoming != null) {
             if (incoming.style() != null && !incoming.style().isBlank()) {
-                book.setIllustrationStyle(incoming.style().trim());
+                book.setIllustrationStyle(IllustrationSettings.clip(incoming.style(), IllustrationSettings.STYLE_MAX));
             } else if (book.getIllustrationStyle() == null) {
                 book.setIllustrationStyle("watercolor");
             }
             if (incoming.promptPrefix() != null) {
-                book.setIllustrationPromptPrefix(incoming.promptPrefix().trim());
+                book.setIllustrationPromptPrefix(
+                        IllustrationSettings.clip(incoming.promptPrefix(), IllustrationSettings.PREFIX_MAX));
             }
             if (incoming.setting() != null) {
-                book.setIllustrationSetting(blankToNull(incoming.setting()));
+                book.setIllustrationSetting(clipOrNull(incoming.setting(), IllustrationSettings.SETTING_MAX));
             }
             if (incoming.reasoning() != null) {
-                book.setIllustrationStyleReasoning(blankToNull(incoming.reasoning()));
+                book.setIllustrationStyleReasoning(clipOrNull(incoming.reasoning(), IllustrationSettings.REASONING_MAX));
             }
             if (incoming.coverSubject() != null) {
-                book.setIllustrationCoverSubject(blankToNull(incoming.coverSubject()));
+                book.setIllustrationCoverSubject(
+                        clipOrNull(incoming.coverSubject(), IllustrationSettings.COVER_SUBJECT_MAX));
             }
             if (incoming.coverFocus() != null) {
-                book.setIllustrationCoverFocus(blankToNull(incoming.coverFocus()));
+                book.setIllustrationCoverFocus(clipOrNull(incoming.coverFocus(), IllustrationSettings.COVER_FOCUS_MAX));
             }
         }
         if (book.getIllustrationStyle() == null) {
@@ -602,6 +605,11 @@ public class IllustrationService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String clipOrNull(String value, int max) {
+        String clipped = IllustrationSettings.clip(value, max);
+        return clipped == null || clipped.isEmpty() ? null : clipped;
     }
 
     /**

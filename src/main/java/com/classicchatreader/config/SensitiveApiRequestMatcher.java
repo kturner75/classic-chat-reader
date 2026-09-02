@@ -10,6 +10,9 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern TTS_ANALYZE_PATH = Pattern.compile("^/api/tts/analyze/[^/]+$");
 
     private static final Pattern ILLUSTRATION_ANALYZE_PATH = Pattern.compile("^/api/illustrations/analyze/[^/]+$");
+    private static final Pattern ILLUSTRATION_SETTINGS_PATH = Pattern.compile("^/api/illustrations/settings/[^/]+$");
+    private static final Pattern ILLUSTRATION_SETTINGS_SUGGEST_PATH =
+            Pattern.compile("^/api/illustrations/settings/[^/]+/suggestions$");
     private static final Pattern ILLUSTRATION_CHAPTER_ACTION_PATH =
             Pattern.compile("^/api/illustrations/chapter/[^/]+/(request|prefetch-next|regenerate)$");
 
@@ -77,6 +80,7 @@ public final class SensitiveApiRequestMatcher {
             if ("/api/tts/speak".equals(path)
                     || TTS_ANALYZE_PATH.matcher(path).matches()
                     || ILLUSTRATION_ANALYZE_PATH.matcher(path).matches()
+                    || ILLUSTRATION_SETTINGS_SUGGEST_PATH.matcher(path).matches()
                     || ILLUSTRATION_CHAPTER_ACTION_PATH.matcher(path).matches()
                     || "/api/illustrations/retry-stuck".equals(path)
                     || CHARACTER_CHAPTER_ACTION_PATH.matcher(path).matches()
@@ -123,7 +127,8 @@ public final class SensitiveApiRequestMatcher {
 
         if ("PUT".equals(method) && (LIBRARY_COVER_PATH.matcher(path).matches()
                 || CHARACTER_PORTRAIT_PATH.matcher(path).matches()
-                || ILLUSTRATION_CHAPTER_PATH.matcher(path).matches())) {
+                || ILLUSTRATION_CHAPTER_PATH.matcher(path).matches()
+                || ILLUSTRATION_SETTINGS_PATH.matcher(path).matches())) {
             return EndpointType.ADMIN;
         }
 
