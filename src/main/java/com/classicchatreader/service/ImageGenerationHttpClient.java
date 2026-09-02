@@ -48,19 +48,30 @@ public class ImageGenerationHttpClient {
             String providerName,
             String bearerToken,
             int timeoutSeconds) throws Exception {
-        return inFlightLimiter.run(() ->
-                ensurePng(postImageGenerationRequest(client, request, providerName, bearerToken, timeoutSeconds)));
+        return postAndDecodePng(client, request, providerName, bearerToken, timeoutSeconds, "/images/generations");
     }
 
-    private byte[] postImageGenerationRequest(
+    public byte[] postAndDecodePng(
             WebClient client,
             ObjectNode request,
             String providerName,
             String bearerToken,
-            int timeoutSeconds) throws Exception {
+            int timeoutSeconds,
+            String path) throws Exception {
+        return inFlightLimiter.run(() ->
+                ensurePng(postImageRequest(client, request, providerName, bearerToken, timeoutSeconds, path)));
+    }
+
+    private byte[] postImageRequest(
+            WebClient client,
+            ObjectNode request,
+            String providerName,
+            String bearerToken,
+            int timeoutSeconds,
+            String path) throws Exception {
         Duration timeout = Duration.ofSeconds(Math.max(30, timeoutSeconds));
         var spec = client.post()
-                .uri("/images/generations")
+                .uri(path == null || path.isBlank() ? "/images/generations" : path)
                 .contentType(MediaType.APPLICATION_JSON);
         if (bearerToken != null && !bearerToken.isBlank()) {
             spec = spec.header("Authorization", "Bearer " + bearerToken);

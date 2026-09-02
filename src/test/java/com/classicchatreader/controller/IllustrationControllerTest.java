@@ -7,6 +7,8 @@ import com.classicchatreader.repository.BookRepository;
 import com.classicchatreader.repository.ChapterRepository;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.ComfyUIService;
+import com.classicchatreader.model.IllustrationStyleSuggestion;
+import com.classicchatreader.model.IllustrationStyleSuggestions;
 import com.classicchatreader.service.IllustrationService;
 import com.classicchatreader.service.IllustrationStyleAnalysisService;
 import org.junit.jupiter.api.Test;
@@ -20,9 +22,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -92,6 +97,70 @@ class IllustrationControllerTest {
                 .andExpect(status().isForbidden());
 
         verify(illustrationService, never()).getOrAnalyzeBookStyle("book-1", false);
+    }
+
+    @Test
+    void suggestStyles_returnsOperatorChoices() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setId("book-1");
+        book.setIllustrationEnabled(true);
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(illustrationService.suggestBookStyles("book-1", 4)).thenReturn(
+                new IllustrationStyleSuggestions(
+                        "1860s Boston",
+                        List.of(new IllustrationStyleSuggestion(
+                                "watercolor",
+                                "Warm watercolor",
+                                "warm watercolor,",
+                                "Juvenile novel"))));
+
+        mockMvc.perform(post("/api/illustrations/settings/book-1/suggestions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.setting", is("1860s Boston")))
+                .andExpect(jsonPath("$.suggestions[0].style", is("watercolor")))
+                .andExpect(jsonPath("$.suggestions[0].label", is("Warm watercolor")));
+    }
+
+    @Test
+    void suggestStyles_illustrationsDisabledForBook_returnsForbidden() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setId("book-1");
+        book.setIllustrationEnabled(false);
+
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+
+        mockMvc.perform(post("/api/illustrations/settings/book-1/suggestions"))
+                .andExpect(status().isForbidden());
+
+        verify(illustrationService, never()).suggestBookStyles(eq("book-1"), anyInt());
+    }
+
+    @Test
+    void getIllustration_whenCdnEnabledAndLocalPngExists_servesLocalBytes() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(cdnAssetService.isEnabled()).thenReturn(true);
+        when(illustrationService.getIllustration("chapter-1")).thenReturn(png);
+
+        ReflectionTestUtils.setField(controller, "illustrationCdnEnabled", true);
+        try {
+            mockMvc.perform(get("/api/illustrations/chapter/chapter-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/png"))
+                    .andExpect(header().doesNotExist("Location"))
+                    .andExpect(content().bytes(png));
+        } finally {
+            ReflectionTestUtils.setField(controller, "illustrationCdnEnabled", false);
+        }
     }
 
     @Test
@@ -362,7 +431,7 @@ class IllustrationControllerTest {
     }
 
     @Test
-    void regenerate_blankPrompt_returnsBadRequest() throws Exception {
+    void regenerate_blankPrompt_rewritesViaLlm() throws Exception {
         BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
         book.setIllustrationEnabled(true);
 
@@ -379,8 +448,8 @@ class IllustrationControllerTest {
                                   "prompt": "   "
                                 }
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isAccepted());
 
-        verify(illustrationService, never()).regenerateWithPrompt("chapter-1", "   ");
+        verify(illustrationService).regenerateWithPrompt("chapter-1", "   ");
     }
 }

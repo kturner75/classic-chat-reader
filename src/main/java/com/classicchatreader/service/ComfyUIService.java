@@ -131,7 +131,7 @@ public class ComfyUIService {
    * @return The prompt_id for polling
    */
   public String submitWorkflow(String positivePrompt, String outputFilename, String cacheKey) throws Exception {
-    ObjectNode workflow = buildWorkflow(ImagePromptSafety.prepareForGeneration(positivePrompt), outputFilename);
+    ObjectNode workflow = buildWorkflow(positivePrompt, outputFilename);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("prompt", workflow);

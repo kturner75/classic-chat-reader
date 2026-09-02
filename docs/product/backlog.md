@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-08-27
+Last updated: 2026-09-01
 
 ## Implementation handoff (classroom)
 
@@ -2697,6 +2697,30 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-24: Kevin must-haves on the same capture: (1) **cherry-pick regen** — one illustration / portrait / discovery name, keep every other artifact; no whole-book wipe, no sibling restamp, no `restoreCachedIllustrationIfPresent` neighbor clobber. (2) **prompt edit + multi-sample** — edit the Imagine prompt, request N samples for the same artifact, choose the winner, discard the rest. Winner-only transfer; losers stay local or are deleted, never pushed. Recorded in Current Direction, `.3`/`.4`, and Acceptance. Still docs only; do not mark In Progress / Done.
 - 2026-08-24: Folded three #160 review threads as recorded constraints (not implemented): (1) character deletions must reach prod — `exportPortraits`/`importPortraits` never delete absent rows; require tombstone or **reviewed-roster replacement**; cherry-pick keep-siblings still applies to *images*; leftover Moon/Mule/bees. (2) regenerated metadata must `--on-conflict overwrite` (or equivalent) so filename / prompt / `completed_at` and CDN `?v=` change; winner-only, do not overwrite siblings. (3) book picker type-ahead / title-ordered / keyboard listbox / no-results (`BL-079.1`; AGENTS.md selection-control bar; local Kevin tool, not a VPAT slice). Current Direction, `.1`/`.2`/`.5`, and Acceptance. Still **Proposed**.
 - 2026-08-27: Rebased #160 onto the updated #159 HEAD. `BL-072`/`BL-073` are taken by ccr-studio CCR engine gaps, so this studio item is **`BL-079`**. Studio now lives in `kturner75/ccr-studio` (not `/admin`). Do not invent new CCR engine APIs. Folded leftover #160 Codex P1s: **stage samples** (uniquely keyed candidates; promote to canonical only after keep — stable-cache-key overwrite can destroy accepted art) and **roster edits transfer independently of portrait completion** (`exportPortraits` COMPLETED+filename-only drops PRIMARY/SECONDARY / identity changes). Status stays **Proposed**. All current `main` + `BL-078` items kept.
+
+### BL-080 - Reader display-only chapter illustrations (no live generate on site)
+- Type: Product cleanup
+- Priority: P2 leftover (after #170)
+- Effort: M
+- Status: Proposed (docs only)
+- Problem: With ccr-studio as the operator cockpit, classicchatreader.com still exposes illustration request/regen/suggest/settings in the reader. Kevin does not want live Imagine from the site. Prod cache-only already 409s generate; the UI still looks like students/teachers can kick plates. Public settings/suggest were a Sentry High on #170 even with cache-only.
+- Current Direction:
+  - Public reader: display cached chapter plates only. No request, regenerate, suggest-styles, or prompt-edit from reader.js / teacher UI.
+  - Keep CCR engine HTTP for local studio (request/regen/status/upload/settings/suggest). Do not delete those APIs.
+  - Prod `generation.cache-only=true` stays.
+  - SensitiveApiRequestMatcher ADMIN/GENERATION gating from #170 stays even if the UI is gone.
+- Out of this epic:
+  - Building ST-008 / ST-011.
+  - Turning off Imagine in studio.
+  - Removing portrait or cover generate from studio.
+  - #132.
+  - Folding this into the #170 code diff (docs only here).
+- Acceptance Criteria:
+  - classicchatreader.com illustration mode shows existing plates and never POSTs request/regen/suggest from the reader.
+  - Local studio can still kick chapter illustrations against local CCR.
+  - Prod cache-only unchanged.
+- Session Log:
+- 2026-09-01: Captured from Kevin after OFG soak. Studio is the cockpit; site is display-only. Docs only; Proposed.
 
 ## P0
 

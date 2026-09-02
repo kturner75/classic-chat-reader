@@ -213,6 +213,20 @@ public class CharacterController {
             return ResponseEntity.status(403).build();
         }
 
+        byte[] image = characterOpt.map(c -> characterService.getPortrait(c.getId())).orElse(null);
+        if (image != null) {
+            Instant version = characterOpt
+                    .map(CharacterEntity::getCompletedAt)
+                    .map(completedAt -> completedAt.toInstant(ZoneOffset.UTC))
+                    .orElse(Instant.EPOCH);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, "image/png")
+                    .cacheControl(CacheControl.noCache().cachePrivate())
+                    .eTag(Long.toString(version.getEpochSecond()))
+                    .lastModified(version)
+                    .body(image);
+        }
+
         if (portraitCdnEnabled && cdnAssetService.isEnabled()) {
             return characterOpt
                     .filter(c -> c.getStatus() == CharacterStatus.COMPLETED)
@@ -225,21 +239,7 @@ public class CharacterController {
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
 
-        byte[] image = characterOpt.map(c -> characterService.getPortrait(c.getId())).orElse(null);
-        if (image == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        Instant version = characterOpt
-                .map(CharacterEntity::getCompletedAt)
-                .map(completedAt -> completedAt.toInstant(ZoneOffset.UTC))
-                .orElse(Instant.EPOCH);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, "image/png")
-                .cacheControl(CacheControl.noCache().cachePrivate())
-                .eTag(Long.toString(version.getEpochSecond()))
-                .lastModified(version)
-                .body(image);
+        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/{characterId}/portrait/status")

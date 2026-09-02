@@ -13,15 +13,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +40,7 @@ class IllustrationServiceCacheTest {
     @Mock private IllustrationStyleAnalysisService styleAnalysisService;
     @Mock private ComfyUIService comfyUIService;
     @Mock private IllustrationImageGeneratorService illustrationImageGenerator;
+    @Mock private IllustrationPortraitReferences portraitReferences;
     @Mock private CdnAssetService cdnAssetService;
 
     private IllustrationService service;
@@ -55,6 +59,7 @@ class IllustrationServiceCacheTest {
                 styleAnalysisService,
                 comfyUIService,
                 illustrationImageGenerator,
+                portraitReferences,
                 new AssetKeyService(),
                 cdnAssetService
         );
@@ -172,5 +177,20 @@ class IllustrationServiceCacheTest {
         assertEquals(cacheKey, asset.key());
         assertEquals(completedAt, asset.completedAt());
         assertEquals(cacheKey, service.getIllustrationFilename("chapter-1").orElseThrow());
+    }
+
+    @Test
+    void requestIllustrationUniqueRaceIsHandledWithoutThrowing() {
+        ReflectionTestUtils.setField(service, "cacheOnly", false);
+        when(chapterRepository.findByIdWithBook("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationRepository.findByChapterId("chapter-1")).thenReturn(Optional.empty());
+        when(comfyUIService.hasImage(any())).thenReturn(false);
+        when(illustrationRepository.save(any(IllustrationEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new DataIntegrityViolationException("uk_illustrations_chapter"))
+                .when(illustrationRepository)
+                .flush();
+
+        assertDoesNotThrow(() -> service.requestIllustration("chapter-1"));
+        verify(illustrationRepository).flush();
     }
 }

@@ -14,7 +14,7 @@ final class ImagePromptSafety {
             - Fully clothed period-appropriate dress only. No nudity, no lingerie, no sexual or suggestive poses, no erotic framing.
             - Never sexualize a child or adolescent. If a source character is a minor, show a public, non-romantic scene and keep them fully clothed.
             - Implied literary violence is allowed (a distant battle, a closed tomb). No graphic gore, dismemberment, torture, or sexual violence.
-            - Prefer setting, objects, atmosphere, and distant or back-view figures over bodies.
+            - Prefer setting, objects, atmosphere, and fully clothed figures in a public scene. Visible faces are fine. Do not isolate bodies or linger on anatomy.
             """;
 
     static final String SUFFIX = " School-appropriate book illustration. Fully clothed figures in period dress. "

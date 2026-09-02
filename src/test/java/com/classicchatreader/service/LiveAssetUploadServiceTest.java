@@ -52,6 +52,7 @@ class LiveAssetUploadServiceTest {
     @Mock private IllustrationPromptService promptService;
     @Mock private IllustrationStyleAnalysisService styleAnalysisService;
     @Mock private IllustrationImageGeneratorService illustrationImageGenerator;
+    @Mock private IllustrationPortraitReferences portraitReferences;
     @Mock private CdnAssetService cdnAssetService;
     @Mock private CharacterRepository characterRepository;
     @Mock private ChapterAnalysisRepository chapterAnalysisRepository;
@@ -84,6 +85,7 @@ class LiveAssetUploadServiceTest {
                 styleAnalysisService,
                 comfyUIService,
                 illustrationImageGenerator,
+                portraitReferences,
                 new AssetKeyService(),
                 cdnAssetService
         );
