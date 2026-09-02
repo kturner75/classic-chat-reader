@@ -3,8 +3,9 @@ package com.classicchatreader.service;
 import java.util.regex.Pattern;
 
 /**
- * Classroom-safe constraints for cover, chapter, and portrait image prompts.
+ * Classroom-safe constraints for cover and portrait image prompts.
  * Applied both when the LLM writes a prompt and again immediately before generation.
+ * Chapter illustrations are not sanitized here; operator review before transfer is ST-011.
  */
 final class ImagePromptSafety {
 

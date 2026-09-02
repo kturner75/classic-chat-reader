@@ -82,7 +82,7 @@ class IllustrationImageGeneratorServiceTest {
     }
 
     @Test
-    void xaiGenerationSanitizesThePromptBeforeSending() throws Exception {
+    void xaiGenerationSendsTheChapterPromptUnchanged() throws Exception {
         useProvider("xai");
         when(oauthTokenManager.getAccessToken()).thenReturn(Optional.of("oauth-token"));
         when(httpClient.postAndDecodePng(any(), any(), anyString(), anyString(), any(Integer.class)))
@@ -94,9 +94,34 @@ class IllustrationImageGeneratorServiceTest {
 
         verify(httpClient).postAndDecodePng(
                 any(), request.capture(), anyString(), anyString(), any(Integer.class));
-        assertThat(request.getValue().path("prompt").asText())
-                .isEqualTo(ImagePromptSafety.prepareForGeneration("a storm over the lake"));
+        String sent = request.getValue().path("prompt").asText();
+        assertThat(sent).isEqualTo("a storm over the lake");
+        assertThat(sent).doesNotContain("School-appropriate book illustration");
+        assertThat(sent).doesNotContain(ImagePromptSafety.SUFFIX.trim());
         assertThat(request.getValue().path("model").asText()).isEqualTo("grok-imagine-image");
+    }
+
+    @Test
+    void xaiGenerationDoesNotReplaceANormalChapterPromptWithEmptyLandscape() throws Exception {
+        useProvider("xai");
+        when(oauthTokenManager.getAccessToken()).thenReturn(Optional.of("oauth-token"));
+        when(httpClient.postAndDecodePng(any(), any(), anyString(), anyString(), any(Integer.class)))
+                .thenReturn(new byte[] {1, 2, 3});
+        when(comfyUIService.saveIllustrationImage(anyString(), any())).thenReturn("cached/x.png");
+
+        String chapterPrompt = "Victorian parlor, an adolescent girl and her romantic friend sewing by the window";
+        assertThat(ImagePromptSafety.isBlocked(chapterPrompt)).isTrue();
+
+        ArgumentCaptor<ObjectNode> request = ArgumentCaptor.forClass(ObjectNode.class);
+        service.generateIllustration(chapterPrompt, "illustration_ch1", "cache-key");
+
+        verify(httpClient).postAndDecodePng(
+                any(), request.capture(), anyString(), anyString(), any(Integer.class));
+        String sent = request.getValue().path("prompt").asText();
+        assertThat(sent).isEqualTo(chapterPrompt);
+        assertThat(sent).doesNotContain("distant architecture and landscape only");
+        assertThat(sent).doesNotContain("no figures");
+        assertThat(sent).doesNotContain("School-appropriate book illustration");
     }
 
     @Test

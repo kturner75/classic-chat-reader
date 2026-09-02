@@ -61,7 +61,7 @@ public class IllustrationPromptService {
             %s
             ---
 
-            Generate a single, detailed image prompt that captures the essence of this chapter.
+            Generate a single, detailed image prompt that writes a scene from this chapter.
 
             CRITICAL REQUIREMENTS FOR CULTURAL ACCURACY:
             - The illustration MUST accurately reflect the book's specific cultural and geographic setting
@@ -78,8 +78,6 @@ public class IllustrationPromptService {
             - Include lighting, time of day, weather if relevant
             - Keep it evocative and atmospheric rather than literal
 
-            %s
-
             Start your prompt with this style prefix: %s
 
             Respond with ONLY the image prompt, no explanation or other text. The prompt should be 50-150 words.
@@ -90,14 +88,13 @@ public class IllustrationPromptService {
                 styleSettings.style(),
                 settingContext,
                 truncateText(chapterContent, 2000),
-                ImagePromptSafety.LLM_RULES,
                 styleSettings.promptPrefix());
 
         try {
             String generatedPrompt = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.7)).trim();
 
             // Clean up the prompt - remove any quotes or extra formatting
-            generatedPrompt = ImagePromptSafety.prepareForGeneration(cleanPrompt(generatedPrompt));
+            generatedPrompt = cleanPrompt(generatedPrompt);
 
             log.info("Generated illustration prompt for chapter '{}': {}", chapterTitle,
                     truncateText(generatedPrompt, 100));
@@ -113,9 +110,8 @@ public class IllustrationPromptService {
 
     private String fallbackPrompt(String bookTitle, String author, String chapterTitle,
                                   IllustrationSettings styleSettings) {
-        return ImagePromptSafety.prepareForGeneration(
-                styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
-                        ", chapter " + chapterTitle + ", atmospheric book illustration");
+        return styleSettings.promptPrefix() + " a scene from " + bookTitle + " by " + author +
+                ", chapter " + chapterTitle + ", atmospheric book illustration";
     }
 
     private String truncateText(String text, int maxLength) {

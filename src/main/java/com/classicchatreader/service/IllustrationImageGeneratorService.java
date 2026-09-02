@@ -95,11 +95,10 @@ public class IllustrationImageGeneratorService {
      * @return the cached illustration filename
      */
     public String generateIllustration(String prompt, String outputPrefix, String cacheKey) throws Exception {
-        String safePrompt = ImagePromptSafety.prepareForGeneration(prompt);
         if ("xai".equals(getProviderName())) {
-            return generateWithXai(safePrompt, cacheKey);
+            return generateWithXai(prompt, cacheKey);
         }
-        return generateWithComfyUi(safePrompt, outputPrefix, cacheKey);
+        return generateWithComfyUi(prompt, outputPrefix, cacheKey);
     }
 
     private String generateWithComfyUi(String prompt, String outputPrefix, String cacheKey) throws Exception {
