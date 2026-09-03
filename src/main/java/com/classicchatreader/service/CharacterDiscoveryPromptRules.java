@@ -1,7 +1,8 @@
 package com.classicchatreader.service;
 
 /**
- * Shared discovery-prompt contract for prefetch (PRIMARY) and chapter extraction (SECONDARY).
+ * Shared discovery-prompt contract for book-level prefetch (PRIMARY and SECONDARY)
+ * and chapter extraction.
  */
 final class CharacterDiscoveryPromptRules {
 
