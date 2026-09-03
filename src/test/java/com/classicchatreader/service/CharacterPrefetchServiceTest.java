@@ -20,7 +20,9 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -55,8 +57,10 @@ class CharacterPrefetchServiceTest {
                 bookRepository, chapterRepository, characterRepository,
                 paragraphRepository, characterService, reasoningProvider);
         ReflectionTestUtils.setField(service, "cacheOnly", false);
-        ReflectionTestUtils.setField(service, "placementRetryMaxContextChars", 12000);
+        ReflectionTestUtils.setField(service, "placementRetryMaxPromptChars", 12000);
         ReflectionTestUtils.setField(service, "placementRetryParagraphsPerChapter", 3);
+        ReflectionTestUtils.setField(service, "placementRetryMaxChapterMapLines", 80);
+        ReflectionTestUtils.setField(service, "placementRetryMaxDescriptionChars", 200);
 
         book = new BookEntity();
         book.setId(BOOK_ID);
@@ -532,6 +536,300 @@ class CharacterPrefetchServiceTest {
     }
 
     @Test
+    void detectSuspiciousBatchCollapse_falseForTwoLeadPrologueCast() {
+        ChapterEntity prologue = chapter("prologue", 0);
+        prologue.setTitle("Prologue: The Beginning");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(prologue));
+
+        List<CharacterPrefetchService.PrefetchedCharacter> cast = List.of(
+                new CharacterPrefetchService.PrefetchedCharacter("Alice", "Lead one.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Bob", "Lead two.", 1));
+
+        assertThat(service.detectSuspiciousBatchCollapse(BOOK_ID, cast)).isFalse();
+    }
+
+    @Test
+    void detectSuspiciousBatchCollapse_falseForThreeCharacterCast() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+
+        List<CharacterPrefetchService.PrefetchedCharacter> cast = List.of(
+                new CharacterPrefetchService.PrefetchedCharacter("A", "One.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("B", "Two.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("C", "Three.", 1));
+
+        assertThat(service.detectSuspiciousBatchCollapse(BOOK_ID, cast)).isFalse();
+    }
+
+    @Test
+    void isFrontMatterTitle_recognizesPrefaceVariantsAndRejectsChapterIntroductions() {
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Author's Preface")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Preface to the Second Edition")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Prologue: The Beginning")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Introduction")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Introduction to Society")).isFalse();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Chapter I")).isFalse();
+    }
+
+    @Test
+    void normalizeCharacterName_ignoresPunctuationAndWhitespace() {
+        assertThat(CharacterPrefetchService.normalizeCharacterName("Mrs. Shaw"))
+                .isEqualTo(CharacterPrefetchService.normalizeCharacterName("Mrs   Shaw"));
+    }
+
+    @Test
+    void evaluatePlacementRetry_confirmsCompleteAgreementWithInitialCollapse() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+
+        List<CharacterPrefetchService.PrefetchedCharacter> cast = List.of(
+                new CharacterPrefetchService.PrefetchedCharacter("Polly", "A.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Fanny", "B.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Tom", "C.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Maud", "D.", 1));
+        Map<String, Integer> retry = Map.of(
+                "polly", 1,
+                "fanny", 1,
+                "tom", 1,
+                "maud", 1);
+
+        CharacterPrefetchService.PlacementRetryEvaluation evaluation =
+                service.evaluatePlacementRetry(BOOK_ID, cast, retry, 1);
+
+        assertThat(evaluation.outcome())
+                .isEqualTo(CharacterPrefetchService.PlacementRetryOutcome.CONFIRMED_COLLAPSE);
+    }
+
+    @Test
+    void prefetch_twoLeadPrologueCastUsesSingleCallAndPreservesPlacement() {
+        ChapterEntity prologue = chapter("prologue", 0);
+        prologue.setTitle("Prologue: The Beginning");
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(prologue));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(prologue));
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"Alice","description":"First lead.","firstChapterNumber":1},
+                  {"name":"Bob","description":"Second lead.","firstChapterNumber":1}
+                ]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(reasoningProvider, times(1)).generate(any(), any());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsOnly(0);
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_retryAgreementPreservesCollapsedCast() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("Chapter I");
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(preface, chapter1));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(any())).thenReturn(List.of(
+                paragraph(0, "Opening text.")));
+
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(reasoningProvider.generate(any(), any())).thenAnswer(invocation -> {
+            if (llmCalls.getAndIncrement() == 0) {
+                return """
+                        [
+                          {"name":"Alpha","description":"Lead.","firstChapterNumber":1},
+                          {"name":"Beta","description":"Lead.","firstChapterNumber":1},
+                          {"name":"Gamma","description":"Lead.","firstChapterNumber":1},
+                          {"name":"Delta","description":"Lead.","firstChapterNumber":1}
+                        ]
+                        """;
+            }
+            return """
+                    [
+                      {"name":"Alpha","firstChapterNumber":1},
+                      {"name":"Beta","firstChapterNumber":1},
+                      {"name":"Gamma","firstChapterNumber":1},
+                      {"name":"Delta","firstChapterNumber":1}
+                    ]
+                    """;
+        });
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(reasoningProvider, times(2)).generate(any(), any());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(4)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsOnly(0);
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_retryProviderThrowNoSavesAndLeavesLatchUnset() {
+        stubOldFashionedGirlChapters();
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(reasoningProvider.generate(any(), any())).thenAnswer(invocation -> {
+            if (llmCalls.getAndIncrement() == 0) {
+                return """
+                        [
+                          {"name":"Polly","description":"A country girl.","firstChapterNumber":1},
+                          {"name":"Fanny","description":"A city girl.","firstChapterNumber":1},
+                          {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1},
+                          {"name":"Maud","description":"The youngest Shaw.","firstChapterNumber":1},
+                          {"name":"Mrs. Shaw","description":"Fanny's mother.","firstChapterNumber":1},
+                          {"name":"Mr. Shaw","description":"Fanny's father.","firstChapterNumber":1}
+                        ]
+                        """;
+            }
+            throw new IllegalStateException("provider down during placement retry");
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(reasoningProvider, times(2)).generate(any(), any());
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+        verify(bookRepository, never()).save(any());
+        assertThat(book.getCharacterPrefetchCompleted()).isFalse();
+    }
+
+    @Test
+    void prefetch_placementRetryMatchesPunctuationVariantNames() {
+        stubOldFashionedGirlChapters();
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(reasoningProvider.generate(any(), any())).thenAnswer(invocation -> {
+            if (llmCalls.getAndIncrement() == 0) {
+                return """
+                        [
+                          {"name":"Polly","description":"A country girl.","firstChapterNumber":1},
+                          {"name":"Fanny","description":"A city girl.","firstChapterNumber":1},
+                          {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1},
+                          {"name":"Mrs. Shaw","description":"Fanny's mother.","firstChapterNumber":1}
+                        ]
+                        """;
+            }
+            return """
+                    [
+                      {"name":"Polly","firstChapterNumber":2},
+                      {"name":"Fanny","firstChapterNumber":2},
+                      {"name":"Tom","firstChapterNumber":3},
+                      {"name":"Mrs Shaw","firstChapterNumber":2}
+                    ]
+                    """;
+        });
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(4)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "Mrs. Shaw".equals(character.getName()))
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsExactly(1);
+    }
+
+    @Test
+    void prefetch_placementRetryDropsHallucinatedNames() {
+        stubOldFashionedGirlChapters();
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(reasoningProvider.generate(any(), any())).thenAnswer(invocation -> {
+            if (llmCalls.getAndIncrement() == 0) {
+                return """
+                        [
+                          {"name":"Polly","description":"A country girl.","firstChapterNumber":1},
+                          {"name":"Fanny","description":"A city girl.","firstChapterNumber":1},
+                          {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1},
+                          {"name":"Maud","description":"The youngest Shaw.","firstChapterNumber":1}
+                        ]
+                        """;
+            }
+            return """
+                    [
+                      {"name":"Polly","firstChapterNumber":2},
+                      {"name":"Fanny","firstChapterNumber":2},
+                      {"name":"Tom","firstChapterNumber":3},
+                      {"name":"Maud","firstChapterNumber":4},
+                      {"name":"Imaginary Friend","firstChapterNumber":2}
+                    ]
+                    """;
+        });
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(4)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getName)
+                .doesNotContain("Imaginary Friend");
+    }
+
+    @Test
+    void buildPlacementRetryPrompt_boundsChapterMapForLargeBooks() {
+        ReflectionTestUtils.setField(service, "placementRetryMaxChapterMapLines", 80);
+        ReflectionTestUtils.setField(service, "placementRetryMaxPromptChars", 12000);
+
+        List<ChapterEntity> manyChapters = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            ChapterEntity chapterEntity = chapter("chapter-" + i, i);
+            chapterEntity.setTitle("Chapter " + (i + 1));
+            manyChapters.add(chapterEntity);
+        }
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(manyChapters);
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(any())).thenReturn(List.of());
+
+        List<CharacterPrefetchService.PrefetchedCharacter> cast = List.of(
+                new CharacterPrefetchService.PrefetchedCharacter("Polly", "A country girl.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Fanny", "A city girl.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Tom", "Brother.", 1),
+                new CharacterPrefetchService.PrefetchedCharacter("Maud", "Youngest.", 1));
+
+        String prompt = service.buildPlacementRetryPrompt(book, cast);
+
+        assertThat(prompt.length()).isLessThanOrEqualTo(12000);
+        assertThat(prompt).contains("Polly");
+        assertThat(prompt).contains("Fanny");
+        assertThat(prompt).contains("Additional chapters omitted from map");
+        assertThat(prompt).contains("Chapter 80");
+        assertThat(prompt).doesNotContain("Chapter 200.");
+    }
+
+    @Test
     void detectSuspiciousBatchCollapse_trueWhenMultipleCharactersSharePreface() {
         ChapterEntity preface = chapter("preface", 0);
         preface.setTitle("Preface");
@@ -608,7 +906,8 @@ class CharacterPrefetchServiceTest {
                           {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1},
                           {"name":"Maud","description":"The youngest Shaw.","firstChapterNumber":1},
                           {"name":"Mrs. Shaw","description":"Fanny's mother.","firstChapterNumber":1},
-                          {"name":"Mr. Shaw","description":"Fanny's father.","firstChapterNumber":1}
+                          {"name":"Mr. Shaw","description":"Fanny's father.","firstChapterNumber":1},
+                          {"name":"Grandma","description":"Polly's grandmother.","firstChapterNumber":1}
                         ]
                         """;
             }
@@ -619,7 +918,8 @@ class CharacterPrefetchServiceTest {
                       {"name":"Tom","firstChapterNumber":3},
                       {"name":"Maud","firstChapterNumber":4},
                       {"name":"Mrs. Shaw","firstChapterNumber":2},
-                      {"name":"Mr. Shaw","firstChapterNumber":5}
+                      {"name":"Mr. Shaw","firstChapterNumber":5},
+                      {"name":"Grandma","firstChapterNumber":6}
                     ]
                     """;
         });
@@ -635,16 +935,17 @@ class CharacterPrefetchServiceTest {
 
         verify(reasoningProvider, times(2)).generate(any(), any());
         ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
-        verify(characterRepository, times(6)).save(saved.capture());
+        verify(characterRepository, times(7)).save(saved.capture());
         assertThat(saved.getAllValues())
                 .extracting(character -> character.getName())
-                .containsExactlyInAnyOrder("Polly", "Fanny", "Tom", "Maud", "Mrs. Shaw", "Mr. Shaw");
+                .containsExactlyInAnyOrder(
+                        "Polly", "Fanny", "Tom", "Maud", "Mrs. Shaw", "Mr. Shaw", "Grandma");
         assertThat(saved.getAllValues())
                 .extracting(character -> character.getFirstChapter().getChapterIndex())
                 .doesNotContain(0);
         assertThat(saved.getAllValues())
                 .extracting(character -> character.getFirstChapter().getChapterIndex())
-                .contains(1, 2, 3, 4);
+                .contains(1, 2, 3, 4, 5);
         assertThat(saved.getAllValues())
                 .extracting(CharacterEntity::getCharacterType)
                 .containsOnly(CharacterType.PRIMARY);
@@ -691,7 +992,7 @@ class CharacterPrefetchServiceTest {
     }
 
     @Test
-    void prefetch_collapsedBatchDoesNotUsePhraseScanWhenRetryFails() {
+    void prefetch_collapsedBatchUnresolvedWhenRetryIncompleteAndStillCollapsed() {
         stubOldFashionedGirlChapters();
         when(reasoningProvider.generate(any(), any())).thenAnswer(invocation -> {
             String prompt = invocation.getArgument(0);
@@ -708,7 +1009,8 @@ class CharacterPrefetchServiceTest {
                     [
                       {"name":"Polly","description":"A country girl.","firstChapterNumber":1},
                       {"name":"Fanny","description":"A city girl.","firstChapterNumber":1},
-                      {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1}
+                      {"name":"Tom","description":"Fanny's brother.","firstChapterNumber":1},
+                      {"name":"Maud","description":"The youngest Shaw.","firstChapterNumber":1}
                     ]
                     """;
         });
