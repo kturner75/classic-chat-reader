@@ -27,7 +27,7 @@ public class LlmProviderConfig {
     @Value("${ai.reasoning.provider:xai}")
     private String reasoningProvider;
 
-    @Value("${ai.reasoning.timeout-seconds:180}")
+    @Value("${ai.reasoning.timeout-seconds:420}")
     private int reasoningTimeoutSeconds;
 
     @Value("${ai.reasoning.ollama.base-url:http://localhost:11434}")
@@ -55,7 +55,7 @@ public class LlmProviderConfig {
     @Value("${recap.reasoning.provider:${ai.reasoning.provider:xai}}")
     private String recapReasoningProvider;
 
-    @Value("${recap.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:180}}")
+    @Value("${recap.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:420}}")
     private int recapReasoningTimeoutSeconds;
 
     @Value("${recap.reasoning.ollama.base-url:${ai.reasoning.ollama.base-url:http://localhost:11434}}")
@@ -83,7 +83,7 @@ public class LlmProviderConfig {
     @Value("${quiz.reasoning.provider:${ai.reasoning.provider:xai}}")
     private String quizReasoningProvider;
 
-    @Value("${quiz.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:180}}")
+    @Value("${quiz.reasoning.timeout-seconds:${ai.reasoning.timeout-seconds:420}}")
     private int quizReasoningTimeoutSeconds;
 
     @Value("${quiz.reasoning.ollama.base-url:${ai.reasoning.ollama.base-url:http://localhost:11434}}")
