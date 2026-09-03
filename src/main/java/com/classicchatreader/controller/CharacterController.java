@@ -206,6 +206,41 @@ public class CharacterController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /**
+     * Operator PATCH for studio snapshot apply: optional type and first chapter.
+     * Does not run prefetch, miner, or portrait generation.
+     */
+    @PatchMapping("/{characterId}")
+    public ResponseEntity<CharacterInfo> patchCharacter(
+            @PathVariable String characterId,
+            @RequestBody(required = false) CharacterPatchRequest request) {
+        if (!characterEnabled) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (cacheOnly) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
+        if (characterOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!isCharacterEnabled(characterOpt.get().getBook())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        try {
+            CharacterInfo updated = characterService.patchCharacter(
+                    characterId,
+                    request != null ? request.characterType() : null,
+                    request != null ? request.firstChapterIndex() : null,
+                    request != null ? request.firstParagraphIndex() : null);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+    }
+
     @GetMapping("/{characterId}/portrait")
     public ResponseEntity<byte[]> getPortrait(@PathVariable String characterId) {
         Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
@@ -558,6 +593,16 @@ public class CharacterController {
     ) {}
 
     public record RegenerateRequest(String prompt) {}
+
+    /**
+     * All fields optional. Omit a field to leave the live row unchanged.
+     * {@code firstParagraphIndex} defaults to 0 when only {@code firstChapterIndex} is sent.
+     */
+    public record CharacterPatchRequest(
+            String characterType,
+            Integer firstChapterIndex,
+            Integer firstParagraphIndex
+    ) {}
 
     public record ChatResponse(
             String response,

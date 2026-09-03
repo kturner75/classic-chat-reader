@@ -19,6 +19,7 @@ import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.llm.LlmProviderException;
 import org.junit.jupiter.api.Test;
 import com.classicchatreader.entity.CharacterStatus;
+import com.classicchatreader.model.CharacterInfo;
 import com.classicchatreader.service.LiveAssetWriteResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -41,6 +42,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -206,6 +208,246 @@ class CharacterControllerTest {
                 .andExpect(status().isUnsupportedMediaType());
 
         verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void patchCharacter_typeAndChapter_returnsUpdatedInfo() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+
+        CharacterInfo updated = new CharacterInfo(
+                "character-grandma",
+                "Grandma",
+                "Sydney's grandmother",
+                "chapter-6",
+                "Chapter VI. Grandma",
+                6,
+                0,
+                "COMPLETED",
+                true,
+                "PRIMARY",
+                true
+        );
+
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-grandma", "PRIMARY", 6, null)).thenReturn(updated);
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "PRIMARY",
+                                  "firstChapterIndex": 6
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is("character-grandma")))
+                .andExpect(jsonPath("$.characterType", is("PRIMARY")))
+                .andExpect(jsonPath("$.firstChapterIndex", is(6)))
+                .andExpect(jsonPath("$.firstParagraphIndex", is(0)))
+                .andExpect(jsonPath("$.chatEligible", is(true)));
+
+        verify(characterService).patchCharacter("character-grandma", "PRIMARY", 6, null);
+        verify(prefetchService, never()).prefetchCharactersForBook(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void patchCharacter_omittedFields_leavesLiveRowToService() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+
+        CharacterInfo unchanged = new CharacterInfo(
+                "character-grandma",
+                "Grandma",
+                "Sydney's grandmother",
+                "chapter-1",
+                "Chapter I. Polly Arrives",
+                1,
+                4,
+                "COMPLETED",
+                true,
+                "PRIMARY",
+                true
+        );
+
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-grandma", null, null, null)).thenReturn(unchanged);
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.characterType", is("PRIMARY")))
+                .andExpect(jsonPath("$.firstChapterIndex", is(1)))
+                .andExpect(jsonPath("$.firstParagraphIndex", is(4)))
+                .andExpect(jsonPath("$.chatEligible", is(true)));
+
+        verify(characterService).patchCharacter("character-grandma", null, null, null);
+    }
+
+    @Test
+    void patchCharacter_primaryToSecondary_flipsChatEligible() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-trix");
+        character.setBook(book);
+
+        CharacterInfo demoted = new CharacterInfo(
+                "character-trix",
+                "Trix",
+                "A cousin",
+                "chapter-11",
+                "Chapter XI",
+                11,
+                0,
+                "COMPLETED",
+                true,
+                "SECONDARY",
+                false
+        );
+
+        when(characterService.getCharacter("character-trix")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-trix", "SECONDARY", 11, null)).thenReturn(demoted);
+
+        mockMvc.perform(patch("/api/characters/character-trix")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "SECONDARY",
+                                  "firstChapterIndex": 11
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.characterType", is("SECONDARY")))
+                .andExpect(jsonPath("$.chatEligible", is(false)));
+    }
+
+    @Test
+    void patchCharacter_unknownChapterIndex_returnsBadRequest() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-grandma", null, 99, null))
+                .thenThrow(new IllegalArgumentException("Unknown firstChapterIndex 99 for this book"));
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "firstChapterIndex": 99
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(characterService, never()).requestChapterAnalysis(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void patchCharacter_invalidType_returnsBadRequest() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-grandma", "SUPPORTING", null, null))
+                .thenThrow(new IllegalArgumentException("Invalid characterType: SUPPORTING"));
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "SUPPORTING"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchCharacter_missingCharacter_returnsNotFound() throws Exception {
+        when(characterService.getCharacter("character-missing")).thenReturn(Optional.empty());
+
+        mockMvc.perform(patch("/api/characters/character-missing")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "PRIMARY"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+
+        verify(characterService, never()).patchCharacter(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void patchCharacter_bookCharacterModeDisabled_returnsForbidden() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(false);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "PRIMARY"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        verify(characterService, never()).patchCharacter(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void patchCharacter_featureDisabled_returnsForbidden() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+
+        ReflectionTestUtils.setField(controller, "characterEnabled", false);
+        try {
+            mockMvc.perform(patch("/api/characters/character-grandma")
+                            .contentType("application/json")
+                            .content("""
+                                    {
+                                      "characterType": "PRIMARY"
+                                    }
+                                    """))
+                    .andExpect(status().isForbidden());
+        } finally {
+            ReflectionTestUtils.setField(controller, "characterEnabled", true);
+        }
+
+        verify(characterService, never()).patchCharacter(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test

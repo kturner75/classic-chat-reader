@@ -25,6 +25,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern CHARACTER_CHAT_PATH = Pattern.compile("^/api/characters/[^/]+/chat$");
     private static final Pattern CHARACTER_CALL_SESSION_PATH = Pattern.compile("^/api/characters/[^/]+/call-session$");
     private static final Pattern CHARACTER_PORTRAIT_PATH = Pattern.compile("^/api/characters/[^/]+/portrait$");
+    private static final Pattern CHARACTER_RESOURCE_PATH = Pattern.compile("^/api/characters/[^/]+$");
     private static final Pattern ILLUSTRATION_CHAPTER_PATH = Pattern.compile("^/api/illustrations/chapter/[^/]+$");
 
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
@@ -121,7 +122,8 @@ public final class SensitiveApiRequestMatcher {
             }
         }
 
-        if ("PATCH".equals(method) && LIBRARY_FEATURES_PATH.matcher(path).matches()) {
+        if ("PATCH".equals(method) && (LIBRARY_FEATURES_PATH.matcher(path).matches()
+                || CHARACTER_RESOURCE_PATH.matcher(path).matches())) {
             return EndpointType.ADMIN;
         }
 

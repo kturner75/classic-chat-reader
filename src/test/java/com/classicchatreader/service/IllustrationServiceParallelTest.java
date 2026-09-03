@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -183,10 +184,13 @@ class IllustrationServiceParallelTest {
         service.forceQueuePendingForBook("book-1");
 
         assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
-        verify(illustrationRepository, timeout(2000).atLeastOnce()).save(illustration);
-        assertThat(illustration.getStatus()).isEqualTo(IllustrationStatus.PENDING);
-        assertThat(illustration.getLeaseOwner()).isNull();
-        assertThat(illustration.getLeaseExpiresAt()).isNull();
+        // Prompt persist also save()s this row before generateIllustration throws.
+        // Wait for the interrupt handler's PENDING reset, not that earlier write.
+        verify(illustrationRepository, timeout(2000).atLeastOnce()).save(argThat(saved ->
+                saved == illustration
+                        && saved.getStatus() == IllustrationStatus.PENDING
+                        && saved.getLeaseOwner() == null
+                        && saved.getLeaseExpiresAt() == null));
         assertThat(illustration.getRetryCount()).isEqualTo(0);
         assertThat(illustration.getNextRetryAt()).isNull();
     }

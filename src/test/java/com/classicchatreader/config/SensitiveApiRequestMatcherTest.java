@@ -92,6 +92,9 @@ class SensitiveApiRequestMatcherTest {
     @Test
     void classify_marksAdminEndpoints() {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PATCH", "/api/library/book-1/features"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PATCH", "/api/characters/char-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("PATCH", "/api/characters/char-1/portrait"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/library/book-1/cover"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/characters/char-1/portrait"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/illustrations/chapter/ch-1"));
