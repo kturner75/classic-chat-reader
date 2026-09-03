@@ -233,7 +233,8 @@ class CharacterControllerTest {
         );
 
         when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
-        when(characterService.patchCharacter("character-grandma", "PRIMARY", 6, null)).thenReturn(updated);
+        when(characterService.patchCharacter("character-grandma", "PRIMARY", 6, null))
+                .thenReturn(Optional.of(updated));
 
         mockMvc.perform(patch("/api/characters/character-grandma")
                         .contentType("application/json")
@@ -277,7 +278,8 @@ class CharacterControllerTest {
         );
 
         when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
-        when(characterService.patchCharacter("character-grandma", null, null, null)).thenReturn(unchanged);
+        when(characterService.patchCharacter("character-grandma", null, null, null))
+                .thenReturn(Optional.of(unchanged));
 
         mockMvc.perform(patch("/api/characters/character-grandma")
                         .contentType("application/json")
@@ -314,7 +316,8 @@ class CharacterControllerTest {
         );
 
         when(characterService.getCharacter("character-trix")).thenReturn(Optional.of(character));
-        when(characterService.patchCharacter("character-trix", "SECONDARY", 11, null)).thenReturn(demoted);
+        when(characterService.patchCharacter("character-trix", "SECONDARY", 11, null))
+                .thenReturn(Optional.of(demoted));
 
         mockMvc.perform(patch("/api/characters/character-trix")
                         .contentType("application/json")
@@ -348,7 +351,8 @@ class CharacterControllerTest {
                                   "firstChapterIndex": 99
                                 }
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", is("Unknown firstChapterIndex 99 for this book")));
 
         verify(characterService, never()).requestChapterAnalysis(org.mockito.ArgumentMatchers.anyString());
     }
@@ -372,7 +376,29 @@ class CharacterControllerTest {
                                   "characterType": "SUPPORTING"
                                 }
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", is("Invalid characterType: SUPPORTING")));
+    }
+
+    @Test
+    void patchCharacter_serviceLosesRowBetweenChecks_returnsNotFound() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(characterService.patchCharacter("character-grandma", "PRIMARY", null, null))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "PRIMARY"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
     }
 
     @Test

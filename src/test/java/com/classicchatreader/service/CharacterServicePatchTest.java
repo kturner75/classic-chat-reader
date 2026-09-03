@@ -88,7 +88,7 @@ class CharacterServicePatchTest {
 
         assertThat(service.isChatEligible(grandma)).isFalse();
 
-        CharacterInfo info = service.patchCharacter("character-grandma", "PRIMARY", 6, null);
+        CharacterInfo info = service.patchCharacter("character-grandma", "PRIMARY", 6, null).orElseThrow();
 
         assertThat(grandma.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
         assertThat(grandma.getFirstChapter()).isSameAs(chapterSix);
@@ -107,9 +107,8 @@ class CharacterServicePatchTest {
         grandma.setCharacterType(CharacterType.PRIMARY);
         when(characterRepository.findByIdWithBookAndChapter("character-grandma"))
                 .thenReturn(Optional.of(grandma));
-        when(characterRepository.save(grandma)).thenReturn(grandma);
 
-        CharacterInfo info = service.patchCharacter("character-grandma", null, null, null);
+        CharacterInfo info = service.patchCharacter("character-grandma", null, null, null).orElseThrow();
 
         assertThat(grandma.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
         assertThat(grandma.getFirstChapter()).isSameAs(chapterOne);
@@ -119,6 +118,7 @@ class CharacterServicePatchTest {
         assertThat(info.firstParagraphIndex()).isEqualTo(4);
         assertThat(info.chatEligible()).isTrue();
         verify(chapterRepository, never()).findByBookIdAndChapterIndex(anyString(), anyInt());
+        verify(characterRepository, never()).save(any());
     }
 
     @Test
@@ -128,7 +128,7 @@ class CharacterServicePatchTest {
                 .thenReturn(Optional.of(grandma));
         when(characterRepository.save(grandma)).thenReturn(grandma);
 
-        CharacterInfo info = service.patchCharacter("character-grandma", "SECONDARY", null, null);
+        CharacterInfo info = service.patchCharacter("character-grandma", "SECONDARY", null, null).orElseThrow();
 
         assertThat(grandma.getCharacterType()).isEqualTo(CharacterType.SECONDARY);
         assertThat(grandma.getFirstChapter()).isSameAs(chapterOne);
@@ -169,6 +169,15 @@ class CharacterServicePatchTest {
     }
 
     @Test
+    void patchCharacter_missingCharacter_returnsEmpty() {
+        when(characterRepository.findByIdWithBookAndChapter("character-missing"))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.patchCharacter("character-missing", "PRIMARY", 6, null)).isEmpty();
+        verify(characterRepository, never()).save(any());
+    }
+
+    @Test
     void patchCharacter_cacheOnly_rejectsWithoutWrite() {
         ReflectionTestUtils.setField(service, "cacheOnly", true);
 
@@ -201,7 +210,7 @@ class CharacterServicePatchTest {
                 .thenReturn(Optional.of(chapterSix));
         when(characterRepository.save(grandma)).thenReturn(grandma);
 
-        CharacterInfo info = service.patchCharacter("character-grandma", null, 6, 2);
+        CharacterInfo info = service.patchCharacter("character-grandma", null, 6, 2).orElseThrow();
 
         assertThat(grandma.getFirstChapter()).isSameAs(chapterSix);
         assertThat(grandma.getFirstParagraphIndex()).isEqualTo(2);

@@ -211,7 +211,7 @@ public class CharacterController {
      * Does not run prefetch, miner, or portrait generation.
      */
     @PatchMapping("/{characterId}")
-    public ResponseEntity<CharacterInfo> patchCharacter(
+    public ResponseEntity<?> patchCharacter(
             @PathVariable String characterId,
             @RequestBody(required = false) CharacterPatchRequest request) {
         if (!characterEnabled) {
@@ -228,14 +228,15 @@ public class CharacterController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
-            CharacterInfo updated = characterService.patchCharacter(
-                    characterId,
-                    request != null ? request.characterType() : null,
-                    request != null ? request.firstChapterIndex() : null,
-                    request != null ? request.firstParagraphIndex() : null);
-            return ResponseEntity.ok(updated);
+            return characterService.patchCharacter(
+                            characterId,
+                            request != null ? request.characterType() : null,
+                            request != null ? request.firstChapterIndex() : null,
+                            request != null ? request.firstParagraphIndex() : null)
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }

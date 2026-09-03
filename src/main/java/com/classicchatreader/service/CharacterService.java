@@ -303,7 +303,7 @@ public class CharacterService {
      * paragraph defaults to 0.
      */
     @Transactional
-    public CharacterInfo patchCharacter(
+    public Optional<CharacterInfo> patchCharacter(
             String characterId,
             String characterType,
             Integer firstChapterIndex,
@@ -313,8 +313,10 @@ public class CharacterService {
             throw new IllegalStateException("Character roster cannot be patched in cache-only mode");
         }
 
-        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId).orElse(null);
+        if (character == null) {
+            return Optional.empty();
+        }
 
         CharacterType parsedType = parseOperatorCharacterType(characterType);
         if (firstParagraphIndex != null && firstParagraphIndex < 0) {
@@ -327,6 +329,10 @@ public class CharacterService {
             newChapter = chapterRepository.findByBookIdAndChapterIndex(bookId, firstChapterIndex)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Unknown firstChapterIndex " + firstChapterIndex + " for this book"));
+        }
+
+        if (parsedType == null && newChapter == null && firstParagraphIndex == null) {
+            return Optional.of(toChatAwareInfo(character));
         }
 
         if (parsedType != null) {
@@ -347,7 +353,7 @@ public class CharacterService {
                 character.getFirstChapter().getChapterIndex(),
                 character.getFirstParagraphIndex()
         );
-        return toChatAwareInfo(character);
+        return Optional.of(toChatAwareInfo(character));
     }
 
     private CharacterType parseOperatorCharacterType(String raw) {
