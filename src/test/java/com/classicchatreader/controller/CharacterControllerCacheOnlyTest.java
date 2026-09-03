@@ -33,6 +33,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -81,6 +82,26 @@ class CharacterControllerCacheOnlyTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @Test
+    void patchCharacter_cacheOnlyMode_returnsConflict() throws Exception {
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "characterType": "PRIMARY",
+                                  "firstChapterIndex": 6
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        verify(characterService, never()).patchCharacter(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        verifyNoInteractions(prefetchService);
+    }
 
     @Test
     void requestPortrait_cacheOnlyMode_returnsConflict() throws Exception {

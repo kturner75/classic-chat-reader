@@ -20,6 +20,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Arrays;
@@ -290,6 +291,78 @@ public class CharacterService {
      */
     public boolean isChatEligible(CharacterEntity character) {
         return character != null && character.getCharacterType() == CharacterType.PRIMARY;
+    }
+
+    /**
+     * Operator overlay for studio apply: type and/or first appearance.
+     * Omitted fields stay unchanged. Explicit PRIMARY→SECONDARY is allowed here;
+     * the prefetch refresh lock does not apply to this write.
+     * <p>
+     * {@code firstChapter} stays NOT NULL: an unknown {@code firstChapterIndex}
+     * is rejected instead of clearing the chapter. When only the chapter changes,
+     * paragraph defaults to 0.
+     */
+    @Transactional
+    public CharacterInfo patchCharacter(
+            String characterId,
+            String characterType,
+            Integer firstChapterIndex,
+            Integer firstParagraphIndex) {
+        if (cacheOnly) {
+            log.info("Skipping character patch in cache-only mode for character {}", characterId);
+            throw new IllegalStateException("Character roster cannot be patched in cache-only mode");
+        }
+
+        CharacterEntity character = characterRepository.findByIdWithBookAndChapter(characterId)
+                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+
+        CharacterType parsedType = parseOperatorCharacterType(characterType);
+        if (firstParagraphIndex != null && firstParagraphIndex < 0) {
+            throw new IllegalArgumentException("firstParagraphIndex must be >= 0");
+        }
+
+        ChapterEntity newChapter = null;
+        if (firstChapterIndex != null) {
+            String bookId = character.getBook().getId();
+            newChapter = chapterRepository.findByBookIdAndChapterIndex(bookId, firstChapterIndex)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Unknown firstChapterIndex " + firstChapterIndex + " for this book"));
+        }
+
+        if (parsedType != null) {
+            character.setCharacterType(parsedType);
+        }
+        if (newChapter != null) {
+            character.setFirstChapter(newChapter);
+            character.setFirstParagraphIndex(firstParagraphIndex != null ? firstParagraphIndex : 0);
+        } else if (firstParagraphIndex != null) {
+            character.setFirstParagraphIndex(firstParagraphIndex);
+        }
+
+        characterRepository.save(character);
+        log.info(
+                "Operator patched character {} type={} firstChapterIndex={} firstParagraphIndex={}",
+                characterId,
+                character.getCharacterType(),
+                character.getFirstChapter().getChapterIndex(),
+                character.getFirstParagraphIndex()
+        );
+        return toChatAwareInfo(character);
+    }
+
+    private CharacterType parseOperatorCharacterType(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("Invalid characterType");
+        }
+        try {
+            return CharacterType.valueOf(trimmed.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid characterType: " + raw);
+        }
     }
 
     private List<CharacterInfo> toChatAwareInfos(String bookId, List<CharacterEntity> characters) {
