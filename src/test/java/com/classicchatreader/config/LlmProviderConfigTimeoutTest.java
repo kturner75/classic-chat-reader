@@ -9,7 +9,6 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Documents the reasoning-client wall-clock default. grok-4.6 high + chapter-map
@@ -23,10 +22,10 @@ class LlmProviderConfigTimeoutTest {
 
         assertEquals("420", props.getProperty("ai.reasoning.timeout-seconds"));
         assertEquals("60", props.getProperty("ai.chat.timeout-seconds"));
-        assertTrue(props.getProperty("recap.reasoning.timeout-seconds")
-                .startsWith("${ai.reasoning.timeout-seconds"));
-        assertTrue(props.getProperty("quiz.reasoning.timeout-seconds")
-                .startsWith("${ai.reasoning.timeout-seconds"));
+        assertEquals("${ai.reasoning.timeout-seconds:420}",
+                props.getProperty("recap.reasoning.timeout-seconds"));
+        assertEquals("${ai.reasoning.timeout-seconds:420}",
+                props.getProperty("quiz.reasoning.timeout-seconds"));
     }
 
     @Test
