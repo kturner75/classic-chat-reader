@@ -22,7 +22,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -40,6 +44,14 @@ public class CharacterPrefetchService {
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    /** Total character budget for placement-retry chapter excerpts. */
+    @Value("${character.prefetch.placement-retry-max-context-chars:12000}")
+    private int placementRetryMaxContextChars;
+
+    /** Opening paragraphs included per chapter in a placement-retry prompt. */
+    @Value("${character.prefetch.placement-retry-paragraphs-per-chapter:3}")
+    private int placementRetryParagraphsPerChapter;
 
     public CharacterPrefetchService(
             BookRepository bookRepository,
@@ -113,12 +125,33 @@ public class CharacterPrefetchService {
             return;
         }
 
+        boolean suspiciousCollapse = detectSuspiciousBatchCollapse(bookId, mainCharacters);
+        Map<String, Integer> retryPlacements = Map.of();
+        if (suspiciousCollapse) {
+            log.warn("Suspicious whole-cast front-matter collapse for '{}'; running placement-only LLM retry",
+                    book.getTitle());
+            try {
+                retryPlacements = queryPlacementRetry(book, mainCharacters);
+                if (isRetryPlacementStillCollapsed(bookId, retryPlacements)) {
+                    log.warn("Placement retry for '{}' still collapsed to front matter; leaving placements unresolved",
+                            book.getTitle());
+                    retryPlacements = Map.of();
+                }
+            } catch (Exception e) {
+                log.error("Placement retry failed for '{}'; leaving placements unresolved",
+                        book.getTitle(), e);
+                retryPlacements = Map.of();
+            }
+        }
+
         int created = 0;
         int promoted = 0;
         int moved = 0;
 
         for (PrefetchedCharacter pc : mainCharacters) {
-            FirstAppearance appearance = resolveFirstAppearance(bookId, pc);
+            FirstAppearance appearance = suspiciousCollapse
+                    ? resolveRetryPlacement(bookId, pc, retryPlacements)
+                    : resolveFirstAppearance(bookId, pc);
             if (appearance == null) {
                 log.warn("Could not map first appearance for character '{}', skipping", pc.name());
                 continue;
@@ -400,5 +433,241 @@ public class CharacterPrefetchService {
         // so the book stays retryable rather than being recorded as having no characters.
         throw new IllegalStateException("No JSON array found in prefetch response: "
                 + (text.length() > 200 ? text.substring(0, 200) + "..." : text));
+    }
+
+    /**
+     * True when multiple discovered characters all model-map to the same front-matter
+     * chapter at paragraph origin. Single-character books and dispersed placements are
+     * not suspicious.
+     */
+    boolean detectSuspiciousBatchCollapse(String bookId, List<PrefetchedCharacter> characters) {
+        if (characters.size() < 2) {
+            return false;
+        }
+        ChapterEntity sharedChapter = null;
+        for (PrefetchedCharacter pc : characters) {
+            ChapterEntity chapter = mapModelChapter(bookId, pc.firstChapterNumber());
+            if (chapter == null) {
+                return false;
+            }
+            if (sharedChapter == null) {
+                sharedChapter = chapter;
+            } else if (sharedChapter.getChapterIndex() != chapter.getChapterIndex()) {
+                return false;
+            }
+        }
+        return isFrontMatterChapter(sharedChapter);
+    }
+
+    static boolean isFrontMatterChapter(ChapterEntity chapter) {
+        if (chapter == null || chapter.getTitle() == null) {
+            return false;
+        }
+        String upper = chapter.getTitle().trim().toUpperCase(Locale.ROOT);
+        if (upper.equals("PREFACE") || upper.startsWith("PREFACE.")) {
+            return true;
+        }
+        if (upper.equals("INTRODUCTION") || upper.startsWith("INTRODUCTION.")) {
+            return true;
+        }
+        if (upper.equals("PROLOGUE") || upper.startsWith("PROLOGUE.")) {
+            return true;
+        }
+        if (upper.equals("FOREWORD") || upper.startsWith("FOREWORD.")) {
+            return true;
+        }
+        if (upper.equals("PREFATORY NOTE") || upper.startsWith("PREFATORY NOTE")) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Rejects a placement-retry batch when two or more returned chapters still share front matter.
+     */
+    boolean isRetryPlacementStillCollapsed(String bookId, Map<String, Integer> retryPlacements) {
+        if (retryPlacements.size() < 2) {
+            return false;
+        }
+        return isSharedFrontMatterPlacement(bookId, retryPlacements);
+    }
+
+    private boolean isSharedFrontMatterPlacement(String bookId, Map<String, Integer> placements) {
+        ChapterEntity sharedChapter = null;
+        for (Integer chapterNumber : placements.values()) {
+            ChapterEntity chapter = mapModelChapter(bookId, chapterNumber);
+            if (chapter == null) {
+                return false;
+            }
+            if (sharedChapter == null) {
+                sharedChapter = chapter;
+            } else if (sharedChapter.getChapterIndex() != chapter.getChapterIndex()) {
+                return false;
+            }
+        }
+        return isFrontMatterChapter(sharedChapter);
+    }
+
+    /**
+     * Second LLM call: placement only for a known roster after suspicious collapse.
+     * Adds exactly one additional xAI/reasoning call per affected book.
+     */
+    private Map<String, Integer> queryPlacementRetry(BookEntity book, List<PrefetchedCharacter> characters)
+            throws JsonProcessingException {
+        String prompt = buildPlacementRetryPrompt(book, characters);
+        String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.2));
+        return parsePlacementRetryResponse(extractJsonArray(generatedText), characters);
+    }
+
+    String buildPlacementRetryPrompt(BookEntity book, List<PrefetchedCharacter> characters) {
+        StringBuilder roster = new StringBuilder();
+        for (PrefetchedCharacter pc : characters) {
+            roster.append("- ").append(pc.name());
+            if (pc.description() != null && !pc.description().isBlank()) {
+                roster.append(": ").append(pc.description());
+            }
+            roster.append('\n');
+        }
+
+        List<ChapterEntity> chapters = chapterRepository.findByBookIdOrderByChapterIndex(book.getId());
+        StringBuilder chapterMap = new StringBuilder();
+        for (ChapterEntity chapter : chapters) {
+            int oneBased = chapter.getChapterIndex() + 1;
+            chapterMap.append(oneBased).append(". ").append(chapter.getTitle());
+            if (isFrontMatterChapter(chapter)) {
+                chapterMap.append(" (front matter — mentions here are NOT first appearance as a person)");
+            }
+            chapterMap.append('\n');
+        }
+
+        return String.format("""
+            You are placing first appearances for known characters in "%s" by %s.
+
+            The initial discovery returned the same front-matter chapter for every character — likely incorrect.
+            Do NOT rediscover, rename, add, or drop characters. Return placement ONLY for this exact roster:
+
+            %s
+            CHAPTER MAP (firstChapterNumber is 1-based and must match a row below):
+            %s
+            %s
+
+            For each roster character, return firstChapterNumber: the 1-based chapter where the reader first meets
+            them present as a person in the story — not merely named in Preface/Introduction/front matter,
+            and not a later recap or journal entry that restates their name.
+            %s
+
+            Respond ONLY with valid JSON in this exact format (one object per roster character, exact names):
+            [
+              {"name": "Character Name", "firstChapterNumber": 2}
+            ]
+            """,
+                book.getTitle(),
+                book.getAuthor(),
+                roster,
+                chapterMap,
+                buildBoundedChapterExcerpts(book.getId(), chapters),
+                CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
+    }
+
+    private String buildBoundedChapterExcerpts(String bookId, List<ChapterEntity> chapters) {
+        StringBuilder excerpts = new StringBuilder("\nCHAPTER EXCERPTS (opening paragraphs for placement grounding):\n");
+        int remaining = placementRetryMaxContextChars;
+        for (ChapterEntity chapter : chapters) {
+            if (remaining <= 0) {
+                excerpts.append("\n[Additional chapters omitted to stay within context budget]\n");
+                break;
+            }
+            List<ParagraphEntity> paragraphs =
+                    paragraphRepository.findByChapterIdOrderByParagraphIndex(chapter.getId());
+            if (paragraphs.isEmpty()) {
+                continue;
+            }
+            int oneBased = chapter.getChapterIndex() + 1;
+            String header = String.format("--- Chapter %d: %s ---%n", oneBased, chapter.getTitle());
+            if (header.length() > remaining) {
+                break;
+            }
+            excerpts.append(header);
+            remaining -= header.length();
+
+            int included = 0;
+            for (ParagraphEntity paragraph : paragraphs) {
+                if (included >= placementRetryParagraphsPerChapter || remaining <= 0) {
+                    break;
+                }
+                String line = truncateForPrompt(paragraph.getContent(), Math.min(800, remaining)) + "\n";
+                excerpts.append(line);
+                remaining -= line.length();
+                included++;
+            }
+            excerpts.append('\n');
+        }
+        if (excerpts.length() <= "\nCHAPTER EXCERPTS (opening paragraphs for placement grounding):\n".length()) {
+            return "\nCHAPTER EXCERPTS: (no paragraph text available — use chapter titles and your knowledge)\n";
+        }
+        return excerpts.toString();
+    }
+
+    private static String truncateForPrompt(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength) + "...";
+    }
+
+    private Map<String, Integer> parsePlacementRetryResponse(
+            String json, List<PrefetchedCharacter> expectedCharacters) throws JsonProcessingException {
+        Map<String, Integer> expectedNames = new LinkedHashMap<>();
+        for (PrefetchedCharacter pc : expectedCharacters) {
+            expectedNames.put(normalizeCharacterName(pc.name()), pc.firstChapterNumber());
+        }
+
+        Map<String, Integer> placements = new HashMap<>();
+        JsonNode array = objectMapper.readTree(json);
+        for (JsonNode node : array) {
+            String name = node.has("name") ? node.get("name").asText().trim() : "";
+            if (name.isBlank()) {
+                continue;
+            }
+            String normalized = normalizeCharacterName(name);
+            if (!expectedNames.containsKey(normalized)) {
+                log.info("Placement retry returned unexpected name '{}'; ignoring", name);
+                continue;
+            }
+            Integer chapterNumber = parseFirstChapterNumber(node);
+            if (chapterNumber != null) {
+                placements.put(normalized, chapterNumber);
+            }
+        }
+        return placements;
+    }
+
+    private static String normalizeCharacterName(String name) {
+        return name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private FirstAppearance resolveRetryPlacement(
+            String bookId, PrefetchedCharacter pc, Map<String, Integer> retryPlacements) {
+        Integer chapterNumber = retryPlacements.get(normalizeCharacterName(pc.name()));
+        if (chapterNumber == null) {
+            log.warn("Placement retry did not resolve chapter for '{}'; leaving unresolved", pc.name());
+            return null;
+        }
+        ChapterEntity chapter = mapModelChapter(bookId, chapterNumber);
+        if (chapter == null) {
+            log.warn("Placement retry chapter {} does not map for '{}'; leaving unresolved",
+                    chapterNumber, pc.name());
+            return null;
+        }
+        if (isFrontMatterChapter(chapter)) {
+            log.warn("Placement retry mapped '{}' to front matter chapter {}; leaving unresolved",
+                    pc.name(), chapter.getTitle());
+            return null;
+        }
+        return new FirstAppearance(chapter, 0);
     }
 }
