@@ -1,7 +1,8 @@
 package com.classicchatreader.service;
 
 /**
- * Shared discovery-prompt contract for prefetch (PRIMARY) and chapter extraction (SECONDARY).
+ * Shared discovery-prompt contract for book-level prefetch (PRIMARY and SECONDARY)
+ * and chapter extraction.
  */
 final class CharacterDiscoveryPromptRules {
 
@@ -28,10 +29,16 @@ final class CharacterDiscoveryPromptRules {
                     + "from later chapters.";
 
     static final String FIRST_CHAPTER_PLACEMENT =
-            "firstChapterNumber is the 1-based story chapter where the character is first present as a person "
-                    + "in the story — who the reader first meets, including under another name or shorter form. "
-                    + "Do not use the first exact full-name string match. Do not use a later journal, diary, "
-                    + "or recap that restates their name.";
+            "firstChapterIndex is the 0-based chapterIndex from the CHAPTER MAP below — the chapter where "
+                    + "the character is first present as a person in the story, including under another "
+                    + "name or shorter form. Do not use the first exact full-name string match. Do not "
+                    + "use a later journal, diary, or recap that restates their name. A name merely "
+                    + "mentioned in Preface, Introduction, or other front matter is not first appearance "
+                    + "as a person. Return null if unsure; do not guess 0 or 1.";
+
+    static final String CHARACTER_TYPE_RULE =
+            "characterType is PRIMARY for central recurring/chat-worthy leads, or SECONDARY for supporting "
+                    + "named characters worth a roster entry and portrait but not primary chat.";
 
     private CharacterDiscoveryPromptRules() {
     }

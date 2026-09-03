@@ -23,12 +23,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
 public class CharacterPrefetchService {
 
     private static final Logger log = LoggerFactory.getLogger(CharacterPrefetchService.class);
+
+    static final int DEFAULT_MAX_PROMPT_CHARS = 8000;
+    static final int DEFAULT_MAX_CHAPTER_TITLE_CHARS = 60;
 
     private final BookRepository bookRepository;
     private final ChapterRepository chapterRepository;
@@ -40,6 +44,12 @@ public class CharacterPrefetchService {
 
     @Value("${generation.cache-only:false}")
     private boolean cacheOnly;
+
+    @Value("${character.prefetch.max-prompt-chars:" + DEFAULT_MAX_PROMPT_CHARS + "}")
+    private int maxPromptChars;
+
+    @Value("${character.prefetch.max-chapter-title-chars:" + DEFAULT_MAX_CHAPTER_TITLE_CHARS + "}")
+    private int maxChapterTitleChars;
 
     public CharacterPrefetchService(
             BookRepository bookRepository,
@@ -61,12 +71,23 @@ public class CharacterPrefetchService {
     public record PrefetchedCharacter(
         String name,
         String description,
-        Integer firstChapterNumber
-    ) {}
+        Integer firstChapterIndex,
+        Integer firstChapterNumber,
+        CharacterType characterType
+    ) {
+        PrefetchedCharacter(String name, String description, Integer firstChapterIndex) {
+            this(name, description, firstChapterIndex, null, CharacterType.PRIMARY);
+        }
+    }
 
     /**
      * Prefetch main characters for a book using LLM knowledge.
      * This should be called asynchronously when a book is first opened.
+     * <p>
+     * Classification: new rows (including after Studio Replace DELETE) persist
+     * the model's PRIMARY/SECONDARY. Existing SECONDARY may promote to PRIMARY.
+     * A non-wipe refresh never demotes an existing PRIMARY, so chat eligibility
+     * cannot shrink silently.
      */
     @Transactional
     public void prefetchCharactersForBook(String bookId) {
@@ -80,7 +101,6 @@ public class CharacterPrefetchService {
             return;
         }
 
-        // Check if already prefetched
         if (Boolean.TRUE.equals(book.getCharacterPrefetchCompleted())) {
             log.debug("Characters already prefetched for book: {}", book.getTitle());
             refreshPrimaryCharacterPositions(book);
@@ -97,10 +117,8 @@ public class CharacterPrefetchService {
 
         List<PrefetchedCharacter> mainCharacters;
         try {
-            mainCharacters = queryMainCharacters(book.getTitle(), book.getAuthor());
+            mainCharacters = queryMainCharacters(book);
         } catch (Exception e) {
-            // Only a usable answer may mark prefetch done. Latching the flag on an
-            // infrastructure failure permanently strands the book with no PRIMARY characters.
             log.error("Character prefetch failed for '{}' by {}; leaving prefetch incomplete so it retries",
                     book.getTitle(), book.getAuthor(), e);
             return;
@@ -120,46 +138,46 @@ public class CharacterPrefetchService {
         for (PrefetchedCharacter pc : mainCharacters) {
             FirstAppearance appearance = resolveFirstAppearance(bookId, pc);
             if (appearance == null) {
+                // first_chapter_id is NOT NULL; skip rather than invent a placeholder row.
                 log.warn("Could not map first appearance for character '{}', skipping", pc.name());
                 continue;
             }
             ChapterEntity chapter = appearance.chapter();
             int paragraphIndex = appearance.paragraphIndex();
 
-            // Check for existing character with same name (case-insensitive)
             Optional<CharacterEntity> existing = characterRepository
                     .findByBookIdAndNameIgnoreCase(bookId, pc.name());
 
             if (existing.isPresent()) {
                 CharacterEntity existingChar = existing.get();
                 if (existingChar.getCharacterType() == CharacterType.SECONDARY) {
-                    existingChar.setCharacterType(CharacterType.PRIMARY);
+                    // Existing SECONDARY may promote; new/Replace rows persist model type below.
+                    if (pc.characterType() == CharacterType.PRIMARY) {
+                        existingChar.setCharacterType(CharacterType.PRIMARY);
+                        log.info("Promoted existing character '{}' to PRIMARY", pc.name());
+                        promoted++;
+                    }
                     existingChar.setFirstChapter(chapter);
                     existingChar.setFirstParagraphIndex(paragraphIndex);
-                    // Update description if prefetch has a better one
                     if (pc.description() != null && !pc.description().isBlank() &&
                             (existingChar.getDescription() == null ||
                              pc.description().length() > existingChar.getDescription().length())) {
                         existingChar.setDescription(pc.description());
                     }
                     characterRepository.save(existingChar);
-                    log.info("Promoted existing character '{}' to PRIMARY", pc.name());
-                    promoted++;
                 } else if (movePrimaryToEarlierModelChapter(existingChar, bookId, pc)) {
+                    // Non-wipe refresh: never demote existing PRIMARY (preserves chat eligibility).
                     moved++;
                 }
             } else {
-                // Knowledge prefetch is the PRIMARY list. Type at construction so the
-                // entity default (SECONDARY) cannot leak if a later save forgets setType.
                 CharacterEntity character = new CharacterEntity(
                         book, pc.name(), pc.description(), chapter, paragraphIndex,
-                        CharacterType.PRIMARY
+                        pc.characterType()
                 );
                 characterRepository.save(character);
-
-                // Queue portrait generation
                 characterService.queuePortraitGeneration(character.getId());
-                log.info("Created PRIMARY character '{}' for book '{}'", pc.name(), book.getTitle());
+                log.info("Created {} character '{}' for book '{}'",
+                        pc.characterType(), pc.name(), book.getTitle());
                 created++;
             }
         }
@@ -177,7 +195,7 @@ public class CharacterPrefetchService {
      */
     private boolean movePrimaryToEarlierModelChapter(
             CharacterEntity existing, String bookId, PrefetchedCharacter pc) {
-        ChapterEntity modelChapter = mapModelChapter(bookId, pc.firstChapterNumber());
+        ChapterEntity modelChapter = mapModelChapter(bookId, pc);
         if (modelChapter == null) {
             return false;
         }
@@ -189,8 +207,8 @@ public class CharacterPrefetchService {
         existing.setFirstChapter(modelChapter);
         existing.setFirstParagraphIndex(0);
         characterRepository.save(existing);
-        log.info("Moved PRIMARY '{}' first chapter from {} to model chapter {}",
-                pc.name(), previousIndex + 1, pc.firstChapterNumber());
+        log.info("Moved PRIMARY '{}' first chapter from {} to model chapter index {}",
+                pc.name(), previousIndex, modelChapter.getChapterIndex());
         return true;
     }
 
@@ -220,8 +238,6 @@ public class CharacterPrefetchService {
             if (character.getCharacterType() != CharacterType.PRIMARY) {
                 continue;
             }
-            // Model placement is the source of truth. Never overwrite an existing
-            // first chapter with a later exact-phrase scan hit.
             if (character.getFirstChapter() != null) {
                 continue;
             }
@@ -244,48 +260,60 @@ public class CharacterPrefetchService {
         return updated;
     }
 
-    /**
-     * Returns the main characters the model knows for this book. An empty list means the
-     * model does not know the book; any failure throws so the caller can retry later.
-     */
-    private List<PrefetchedCharacter> queryMainCharacters(String title, String author)
+    private List<PrefetchedCharacter> queryMainCharacters(BookEntity book)
             throws JsonProcessingException {
-        String prompt = buildPrefetchPrompt(title, author);
-        // Low temperature for factual responses.
+        List<ChapterEntity> chapters = chapterRepository.findByBookIdOrderByChapterIndex(book.getId());
+        String prompt = buildPrefetchPrompt(book.getTitle(), book.getAuthor(), chapters);
         String generatedText = reasoningProvider.generate(prompt, LlmOptions.withTemperature(0.2));
         return parseCharacters(extractJsonArray(generatedText));
     }
 
     String buildPrefetchPrompt(String title, String author) {
+        return buildPrefetchPrompt(title, author, List.of());
+    }
+
+    String buildPrefetchPrompt(String title, String author, List<ChapterEntity> chapters) {
+        String reserved = formatPrefetchPrompt(title, author, "");
+        int mapBudget = Math.max(200, maxPromptChars - reserved.length());
+        String chapterMap = compactChapterMap(chapters, mapBudget);
+        return formatPrefetchPrompt(title, author, chapterMap);
+    }
+
+    private String formatPrefetchPrompt(String title, String author, String chapterMap) {
         return String.format("""
             You are analyzing the famous book "%s" by %s.
 
-            List the MAIN CHARACTERS for a tight PRIMARY set.
-            If this work is a novel, include named people who are central to the story (typically 3-8).
+            List the MAIN CHARACTERS: a tight PRIMARY set plus supporting SECONDARY named people worth a roster entry.
+            If this work is a novel, include named people who are central to the story (typically 3-8 PRIMARY).
             If this work is a short-story collection or linked tales (title like "The Adventures of Sherlock Holmes", or several distinct stories under one title): include the recurring leads plus the principal named character(s) of each story. Typical set 8-16, not 3-8. Being central to an included story is enough — appearing throughout the book is not required.
+            %s
             %s
             For each character, provide:
             1. Their exact name as it appears in the book (use their most common form, e.g., "Elizabeth Bennet" not just "Lizzy")
             2. A 2-3 sentence description. %s
-            3. firstChapterNumber: the 1-based story chapter where they are first present as a person in the story (use 1 if you're unsure or they appear in chapter 1). %s
+            3. firstChapterIndex: the 0-based chapterIndex from the CHAPTER MAP. %s
+            4. characterType: PRIMARY or SECONDARY.
 
+            CHAPTER MAP (stable DB chapterIndex — choose firstChapterIndex exactly from this list):
+            %s
             IMPORTANT RULES:
-            - For novels: only include major characters who play significant roles throughout the story
+            - For novels: only include major characters who play significant roles throughout the story, plus supporting named people worth portraits
             - For short-story collections / linked tales: include recurring leads plus each story's principal named character(s); "throughout the book" is not required
             - Do NOT include minor walk-ons or unnamed extras
             - Use the character's primary/full name
             - %s
             - %s
-            - %s
             - If you don't know this book well, respond with an empty array []
             - Do NOT make up characters - only include characters you're confident about
+            - firstChapterIndex must be one of the chapterIndex values above, or null if unsure
 
             Respond ONLY with valid JSON in this exact format:
             [
               {
                 "name": "Character Name",
                 "description": "First-appearance description of the character",
-                "firstChapterNumber": 1
+                "firstChapterIndex": 1,
+                "characterType": "PRIMARY"
               }
             ]
 
@@ -294,14 +322,59 @@ public class CharacterPrefetchService {
                 title,
                 author,
                 CharacterDiscoveryPromptRules.NAMED_PEOPLE_ONLY,
+                CharacterDiscoveryPromptRules.CHARACTER_TYPE_RULE,
                 CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB,
                 CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT,
+                chapterMap,
                 CharacterDiscoveryPromptRules.REJECT_NON_PERSONS,
-                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES,
-                CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
+                CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
     }
 
-    private List<PrefetchedCharacter> parseCharacters(String json) throws JsonProcessingException {
+    private String compactChapterMap(List<ChapterEntity> chapters, int maxChars) {
+        if (chapters == null || chapters.isEmpty()) {
+            return "(no chapters loaded — return null for firstChapterIndex)";
+        }
+        String full = formatChapterMapLines(chapters, 0, chapters.size());
+        if (full.length() <= maxChars) {
+            return full;
+        }
+        int keepHead = Math.min(40, chapters.size());
+        int keepTail = Math.min(10, Math.max(0, chapters.size() - keepHead));
+        String compact = formatChapterMapLines(chapters, 0, keepHead)
+                + "[... " + (chapters.size() - keepHead - keepTail) + " chapters omitted ...]\n"
+                + formatChapterMapLines(chapters, chapters.size() - keepTail, chapters.size());
+        if (compact.length() <= maxChars) {
+            return compact;
+        }
+        return truncateForPrompt(compact, maxChars);
+    }
+
+    private String formatChapterMapLines(List<ChapterEntity> chapters, int fromInclusive, int toExclusive) {
+        StringBuilder map = new StringBuilder();
+        for (int i = fromInclusive; i < toExclusive && i < chapters.size(); i++) {
+            ChapterEntity chapter = chapters.get(i);
+            map.append(chapter.getChapterIndex()).append(". ")
+                    .append(truncateForPrompt(chapter.getTitle(), maxChapterTitleChars));
+            if (isFrontMatterChapter(chapter)) {
+                map.append(" (front matter — mention here is not first presence as a person)");
+            }
+            map.append('\n');
+        }
+        return map.toString();
+    }
+
+    private static String truncateForPrompt(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    List<PrefetchedCharacter> parseCharacters(String json) throws JsonProcessingException {
         List<PrefetchedCharacter> characters = new ArrayList<>();
         JsonNode charactersArray = objectMapper.readTree(json);
         for (JsonNode charNode : charactersArray) {
@@ -309,7 +382,9 @@ public class CharacterPrefetchService {
             String description = charNode.has("description")
                     ? charNode.get("description").asText()
                     : "A main character in the story";
+            Integer chapterIndex = parseFirstChapterIndex(charNode);
             Integer chapterNumber = parseFirstChapterNumber(charNode);
+            CharacterType characterType = parseCharacterType(charNode);
 
             if (name.isBlank()) {
                 name = charNode.has("characterName") ? charNode.get("characterName").asText() : "";
@@ -319,12 +394,25 @@ public class CharacterPrefetchService {
             }
 
             if (!name.isBlank() && CharacterRosterNameFilter.isClearlyNamed(name)) {
-                characters.add(new PrefetchedCharacter(name.trim(), description, chapterNumber));
+                characters.add(new PrefetchedCharacter(
+                        name.trim(), description, chapterIndex, chapterNumber, characterType));
             } else if (!name.isBlank()) {
                 log.info("Dropping prefetch name '{}' — failed roster gate", name);
             }
         }
         return characters;
+    }
+
+    private Integer parseFirstChapterIndex(JsonNode charNode) {
+        if (!charNode.has("firstChapterIndex") || charNode.get("firstChapterIndex").isNull()) {
+            return null;
+        }
+        JsonNode node = charNode.get("firstChapterIndex");
+        if (!node.isNumber() && !(node.isTextual() && !node.asText().isBlank())) {
+            return null;
+        }
+        int value = node.asInt(Integer.MIN_VALUE);
+        return value >= 0 ? value : null;
     }
 
     private Integer parseFirstChapterNumber(JsonNode charNode) {
@@ -339,30 +427,94 @@ public class CharacterPrefetchService {
         return value >= 1 ? value : null;
     }
 
+    private CharacterType parseCharacterType(JsonNode charNode) {
+        if (!charNode.hasNonNull("characterType")) {
+            return CharacterType.PRIMARY;
+        }
+        String raw = charNode.get("characterType").asText("").trim();
+        if (raw.isBlank()) {
+            return CharacterType.PRIMARY;
+        }
+        try {
+            return CharacterType.valueOf(raw.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            log.info("Unknown characterType '{}'; defaulting to PRIMARY", raw);
+            return CharacterType.PRIMARY;
+        }
+    }
+
     /**
-     * Prefer the model's 1-based chapter when it maps to a real chapter.
-     * Phrase scan is fallback only if the model omitted a chapter or the number
-     * does not map.
+     * Whole-book prefetch placement is model-only. A valid firstChapterIndex is truth.
+     * Null, invalid, or unmapped indexes skip the row (first_chapter_id is NOT NULL).
+     * Phrase/name scan is not used here — it can claim a Preface mention as first presence.
+     * Legacy firstChapterNumber is accepted only when it maps to a non-front-matter chapter.
      */
     private FirstAppearance resolveFirstAppearance(String bookId, PrefetchedCharacter pc) {
-        ChapterEntity modelChapter = mapModelChapter(bookId, pc.firstChapterNumber());
+        ChapterEntity modelChapter = mapModelChapter(bookId, pc);
         if (modelChapter != null) {
             return new FirstAppearance(modelChapter, 0);
         }
-        if (pc.firstChapterNumber() != null) {
-            log.info("Model firstChapterNumber {} does not map for '{}'; using phrase-scan fallback",
+        if (pc.firstChapterIndex() != null) {
+            log.warn("Model firstChapterIndex {} does not map for '{}'; leaving placement unresolved",
+                    pc.firstChapterIndex(), pc.name());
+        } else if (pc.firstChapterNumber() != null) {
+            log.warn("Legacy firstChapterNumber {} does not map unambiguously for '{}'; leaving placement unresolved",
                     pc.firstChapterNumber(), pc.name());
         } else {
-            log.info("Model omitted firstChapterNumber for '{}'; using phrase-scan fallback", pc.name());
+            log.warn("Model omitted firstChapterIndex for '{}'; leaving placement unresolved", pc.name());
         }
-        return findFirstAppearance(bookId, pc.name());
+        return null;
     }
 
-    private ChapterEntity mapModelChapter(String bookId, Integer chapterNumber) {
-        if (chapterNumber == null || chapterNumber < 1) {
+    private ChapterEntity mapModelChapter(String bookId, PrefetchedCharacter pc) {
+        if (pc.firstChapterIndex() != null) {
+            return chapterRepository.findByBookIdAndChapterIndex(bookId, pc.firstChapterIndex()).orElse(null);
+        }
+        if (pc.firstChapterNumber() == null || pc.firstChapterNumber() < 1) {
             return null;
         }
-        return chapterRepository.findByBookIdAndChapterIndex(bookId, chapterNumber - 1).orElse(null);
+        ChapterEntity legacy = chapterRepository
+                .findByBookIdAndChapterIndex(bookId, pc.firstChapterNumber() - 1)
+                .orElse(null);
+        if (legacy == null) {
+            return null;
+        }
+        // Do not treat "story chapter 1 / unsure" as Preface.
+        if (isFrontMatterChapter(legacy)) {
+            log.info("Ignoring legacy firstChapterNumber {} for '{}' because it maps to front matter '{}'",
+                    pc.firstChapterNumber(), pc.name(), legacy.getTitle());
+            return null;
+        }
+        return legacy;
+    }
+
+    static boolean isFrontMatterChapter(ChapterEntity chapter) {
+        if (chapter == null || chapter.getTitle() == null) {
+            return false;
+        }
+        return isFrontMatterTitle(chapter.getTitle());
+    }
+
+    static boolean isFrontMatterTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return false;
+        }
+        String upper = title.trim().toUpperCase(Locale.ROOT);
+        if (upper.startsWith("INTRODUCTION TO ")) {
+            return false;
+        }
+        if (upper.equals("PREFACE") || upper.startsWith("PREFACE.") || upper.startsWith("PREFACE:")
+                || upper.startsWith("PREFACE TO ") || upper.contains("'S PREFACE")
+                || upper.endsWith(" PREFACE") || upper.contains(" PREFACE TO ")) {
+            return true;
+        }
+        if (upper.equals("INTRODUCTION") || upper.startsWith("INTRODUCTION.") || upper.startsWith("INTRODUCTION:")) {
+            return true;
+        }
+        if (upper.equals("FOREWORD") || upper.startsWith("FOREWORD.") || upper.startsWith("FOREWORD:")) {
+            return true;
+        }
+        return upper.equals("PREFATORY NOTE") || upper.startsWith("PREFATORY NOTE");
     }
 
     private record FirstAppearance(ChapterEntity chapter, int paragraphIndex) {}
@@ -385,19 +537,15 @@ public class CharacterPrefetchService {
     }
 
     private String extractJsonArray(String text) {
-        // Find JSON array in the response
         int start = text.indexOf('[');
         int end = text.lastIndexOf(']');
         if (start >= 0 && end > start) {
             return text.substring(start, end + 1);
         }
-        // "I don't know this book" is a real answer and may be recorded as prefetched.
         if (text.trim().equalsIgnoreCase("[]") || text.toLowerCase().contains("unfamiliar") ||
                 text.toLowerCase().contains("don't know")) {
             return "[]";
         }
-        // Anything else is an unusable response, not an empty cast. Treat it as a failure
-        // so the book stays retryable rather than being recorded as having no characters.
         throw new IllegalStateException("No JSON array found in prefetch response: "
                 + (text.length() > 200 ? text.substring(0, 200) + "..." : text));
     }

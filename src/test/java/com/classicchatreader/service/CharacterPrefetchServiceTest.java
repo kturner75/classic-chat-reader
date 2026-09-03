@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,6 +55,8 @@ class CharacterPrefetchServiceTest {
                 bookRepository, chapterRepository, characterRepository,
                 paragraphRepository, characterService, reasoningProvider);
         ReflectionTestUtils.setField(service, "cacheOnly", false);
+        ReflectionTestUtils.setField(service, "maxPromptChars", 8000);
+        ReflectionTestUtils.setField(service, "maxChapterTitleChars", 60);
 
         book = new BookEntity();
         book.setId(BOOK_ID);
@@ -69,6 +72,7 @@ class CharacterPrefetchServiceTest {
         ChapterEntity chapter = new ChapterEntity();
         chapter.setId("chapter-0");
         chapter.setChapterIndex(0);
+        chapter.setTitle("Chapter I");
         when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(chapter));
         when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(chapter));
     }
@@ -76,7 +80,7 @@ class CharacterPrefetchServiceTest {
     @Test
     void prefetch_usesConfiguredReasoningProvider() {
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name": "Montresor", "description": "The narrator.", "firstChapterNumber": 1}]
+                [{"name": "Montresor", "description": "The narrator.", "firstChapterIndex": 0, "characterType": "PRIMARY"}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Montresor"))
                 .thenReturn(Optional.empty());
@@ -88,7 +92,7 @@ class CharacterPrefetchServiceTest {
 
         service.prefetchCharactersForBook(BOOK_ID);
 
-        verify(reasoningProvider).generate(any(), any());
+        verify(reasoningProvider, times(1)).generate(any(), any());
         verify(characterRepository).save(any(CharacterEntity.class));
         assertThat(book.getCharacterPrefetchCompleted()).isTrue();
     }
@@ -144,7 +148,7 @@ class CharacterPrefetchServiceTest {
         existing.setCharacterType(CharacterType.SECONDARY);
 
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name": "Fortunato", "description": "The insulted connoisseur who follows Montresor into the vaults.", "firstChapterNumber": 1}]
+                [{"name": "Fortunato", "description": "The insulted connoisseur.", "firstChapterIndex": 0, "characterType": "PRIMARY"}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Fortunato"))
                 .thenReturn(Optional.of(existing));
@@ -170,7 +174,12 @@ class CharacterPrefetchServiceTest {
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
         assertThat(text).contains("tight PRIMARY");
+        assertThat(text).contains("firstChapterIndex");
+        assertThat(text).contains("0-based");
+        assertThat(text).contains("first present as a person");
+        assertThat(text).doesNotContain("use 1 if you're unsure");
         assertThat(text).doesNotContain("avoid major spoilers");
+        verify(reasoningProvider, times(1)).generate(any(), any());
     }
 
     @Test
@@ -193,8 +202,9 @@ class CharacterPrefetchServiceTest {
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_APPEARANCE_BLURB);
         assertThat(text).contains(CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
         assertThat(text).contains(CharacterDiscoveryPromptRules.NO_GLITCH_NAMES);
+        assertThat(text).contains("firstChapterIndex");
+        assertThat(text).doesNotContain("use 1 if you're unsure");
         assertThat(text).doesNotContain("avoid major spoilers");
-        assertThat(text).contains("1-based story chapter");
         assertThat(text).contains("first present as a person");
         assertThat(text).contains("exact full-name string");
         assertThat(text).contains("journal");
@@ -204,12 +214,12 @@ class CharacterPrefetchServiceTest {
     void prefetch_dropsJunkNamesAndKeepsNamedPeople() {
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [
-                  {"name":"bees","description":"insects in the garden","firstChapterNumber":1},
-                  {"name":"The Moon","description":"hangs over the ship","firstChapterNumber":1},
-                  {"name":"The Mule","description":"a pack animal","firstChapterNumber":1},
-                  {"name":"Dorian","description":"a young man first seen in the studio","firstChapterNumber":1},
-                  {"name":"Fortunato","description":"a wine connoisseur at carnival","firstChapterNumber":1},
-                  {"name":"Elizabeth Bennet","description":"the second Bennet daughter","firstChapterNumber":1}
+                  {"name":"bees","description":"insects in the garden","firstChapterIndex":0},
+                  {"name":"The Moon","description":"hangs over the ship","firstChapterIndex":0},
+                  {"name":"The Mule","description":"a pack animal","firstChapterIndex":0},
+                  {"name":"Dorian","description":"a young man first seen in the studio","firstChapterIndex":0},
+                  {"name":"Fortunato","description":"a wine connoisseur at carnival","firstChapterIndex":0},
+                  {"name":"Elizabeth Bennet","description":"the second Bennet daughter","firstChapterIndex":0}
                 ]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
@@ -238,11 +248,11 @@ class CharacterPrefetchServiceTest {
         when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 4)).thenReturn(Optional.of(chapter5));
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [
-                  {"name":"Victor Frankenstein","description":"A Genevese student","firstChapterNumber":1},
-                  {"name":"The Creature","description":"The being Victor animates","firstChapterNumber":5},
-                  {"name":"The Monster","description":"How frightened villagers name him","firstChapterNumber":5},
-                  {"name":"The Turk","description":"A prize-winning swordsman","firstChapterNumber":1},
-                  {"characterName":"Dorian Gray","description":"A young man in Basil's studio","firstChapterNumber":1}
+                  {"name":"Victor Frankenstein","description":"A Genevese student","firstChapterIndex":0},
+                  {"name":"The Creature","description":"The being Victor animates","firstChapterIndex":4},
+                  {"name":"The Monster","description":"How frightened villagers name him","firstChapterIndex":4},
+                  {"name":"The Turk","description":"A prize-winning swordsman","firstChapterIndex":0},
+                  {"characterName":"Dorian Gray","description":"A young man in Basil's studio","firstChapterIndex":0}
                 ]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
@@ -277,7 +287,7 @@ class CharacterPrefetchServiceTest {
         ChapterEntity chapter8 = chapter("chapter-7", 7);
         stubCrusoeChapters(chapter1, chapter8);
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterIndex":0}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
                 .thenReturn(Optional.empty());
@@ -290,6 +300,7 @@ class CharacterPrefetchServiceTest {
 
         service.prefetchCharactersForBook(BOOK_ID);
 
+        verify(reasoningProvider, times(1)).generate(any(), any());
         verify(characterRepository).save(saved.capture());
         assertThat(saved.getValue().getName()).isEqualTo("Robinson Crusoe");
         assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-0");
@@ -312,7 +323,7 @@ class CharacterPrefetchServiceTest {
         existing.setFirstParagraphIndex(3);
 
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterIndex":0,"characterType":"PRIMARY"}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
                 .thenReturn(Optional.of(existing));
@@ -338,13 +349,11 @@ class CharacterPrefetchServiceTest {
         existing.setFirstChapter(chapter8);
         existing.setFirstParagraphIndex(2);
 
-        // Already prefetched and pinned at the journal chapter; latch-clear
-        // must let prefetch re-ask the model and move him. Do not require delete.
         book.setCharacterPrefetchCompleted(true);
         book.setCharacterPrefetchCompleted(false);
 
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":1}]
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterIndex":0}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
                 .thenReturn(Optional.of(existing));
@@ -373,7 +382,7 @@ class CharacterPrefetchServiceTest {
         existing.setFirstParagraphIndex(0);
 
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":8}]
+                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterIndex":7}]
                 """);
         when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
                 .thenReturn(Optional.of(existing));
@@ -411,51 +420,277 @@ class CharacterPrefetchServiceTest {
     }
 
     @Test
-    void prefetch_usesScanWhenModelOmitsChapter() {
+    void prefetch_skipsUnresolvedWhenModelOmitsChapter() {
         ChapterEntity chapter1 = chapter("chapter-0", 0);
         ChapterEntity chapter8 = chapter("chapter-7", 7);
         stubCrusoeChapters(chapter1, chapter8);
         when(reasoningProvider.generate(any(), any())).thenReturn("""
                 [{"name":"Robinson Crusoe","description":"A York youth who goes to sea."}]
                 """);
-        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
-                .thenReturn(Optional.empty());
-        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
-        when(characterRepository.save(any())).thenAnswer(invocation -> {
-            CharacterEntity character = invocation.getArgument(0);
-            character.setId("character-crusoe");
-            return character;
-        });
 
         service.prefetchCharactersForBook(BOOK_ID);
 
-        verify(characterRepository).save(saved.capture());
-        assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-7");
-        assertThat(saved.getValue().getFirstParagraphIndex()).isEqualTo(2);
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
     }
 
     @Test
-    void prefetch_usesScanWhenModelChapterDoesNotMap() {
-        ChapterEntity chapter1 = chapter("chapter-0", 0);
-        ChapterEntity chapter8 = chapter("chapter-7", 7);
-        stubCrusoeChapters(chapter1, chapter8);
+    void prefetch_nullOrInvalidIndexDoesNotScanPrefaceMentions() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("CHAPTER I");
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(preface, chapter1));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("preface")).thenReturn(List.of(
+                paragraph(0, "This tale follows Polly, Fanny, Tom, Maud, Mrs. Shaw, and Grandma.")));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1")).thenReturn(List.of(
+                paragraph(0, "Polly Milton arrived at the Shaw house.")));
+
         when(reasoningProvider.generate(any(), any())).thenReturn("""
-                [{"name":"Robinson Crusoe","description":"A York youth who goes to sea.","firstChapterNumber":99}]
+                [
+                  {"name":"Polly","description":"A country girl.","firstChapterIndex":null},
+                  {"name":"Fanny","description":"A city girl.","firstChapterIndex":99},
+                  {"name":"Tom","description":"Fanny's brother."}
+                ]
                 """);
-        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Robinson Crusoe"))
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+        verify(paragraphRepository, never()).findByChapterIdOrderByParagraphIndex("preface");
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_doesNotDemoteExistingPrimaryOnNonWipeRefresh() {
+        ChapterEntity chapter1 = chapter("chapter-0", 0);
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(chapter1));
+
+        CharacterEntity existing = new CharacterEntity();
+        existing.setId("character-polly");
+        existing.setName("Polly");
+        existing.setCharacterType(CharacterType.PRIMARY);
+        existing.setFirstChapter(chapter1);
+        existing.setFirstParagraphIndex(0);
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Polly","description":"A country girl.","firstChapterIndex":0,"characterType":"SECONDARY"}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Polly"))
+                .thenReturn(Optional.of(existing));
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        assertThat(existing.getCharacterType()).isEqualTo(CharacterType.PRIMARY);
+        verify(characterRepository, never()).save(existing);
+    }
+
+    @Test
+    void prefetch_newRowPersistsModelSecondary() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Maud","description":"The youngest Shaw.","firstChapterIndex":0,"characterType":"SECONDARY"}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Maud"))
                 .thenReturn(Optional.empty());
-        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
         when(characterRepository.save(any())).thenAnswer(invocation -> {
-            CharacterEntity character = invocation.getArgument(0);
-            character.setId("character-crusoe");
-            return character;
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-maud");
+            return saved;
         });
 
         service.prefetchCharactersForBook(BOOK_ID);
 
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
         verify(characterRepository).save(saved.capture());
-        assertThat(saved.getValue().getFirstChapter().getId()).isEqualTo("chapter-7");
-        assertThat(saved.getValue().getFirstParagraphIndex()).isEqualTo(2);
+        assertThat(saved.getValue().getName()).isEqualTo("Maud");
+        assertThat(saved.getValue().getCharacterType()).isEqualTo(CharacterType.SECONDARY);
+    }
+
+    @Test
+    void prefetch_invalidIndexDoesNotCoerceToPreface() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("CHAPTER I");
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(preface, chapter1));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(any())).thenReturn(List.of());
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Polly","description":"A country girl.","firstChapterIndex":99}]
+                """);
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+        assertThat(book.getCharacterPrefetchCompleted()).isTrue();
+    }
+
+    @Test
+    void prefetch_legacyFirstChapterNumberDoesNotMapStoryOneOntoPreface() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("CHAPTER I");
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(preface, chapter1));
+        when(paragraphRepository.findByChapterIdOrderByParagraphIndex(any())).thenReturn(List.of());
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Polly","description":"A country girl.","firstChapterNumber":1}]
+                """);
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(characterRepository, never()).save(any(CharacterEntity.class));
+    }
+
+    @Test
+    void prefetch_ofgModelIndexOneMapsChapterINotPreface() {
+        stubOldFashionedGirlChapters();
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"Polly","description":"A country girl.","firstChapterIndex":1,"characterType":"PRIMARY"},
+                  {"name":"Fanny","description":"A city girl.","firstChapterIndex":1,"characterType":"PRIMARY"},
+                  {"name":"Tom","description":"Fanny's brother.","firstChapterIndex":2,"characterType":"PRIMARY"},
+                  {"name":"Maud","description":"The youngest Shaw.","firstChapterIndex":3,"characterType":"SECONDARY"},
+                  {"name":"Mrs. Shaw","description":"Fanny's mother.","firstChapterIndex":1,"characterType":"SECONDARY"},
+                  {"name":"Grandma","description":"Polly's grandmother.","firstChapterIndex":5,"characterType":"SECONDARY"}
+                ]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        verify(reasoningProvider, times(1)).generate(any(), any());
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(6)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "Polly".equals(character.getName()))
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsExactly(1);
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "Polly".equals(character.getName()))
+                .extracting(character -> character.getFirstChapter().getTitle())
+                .containsExactly("CHAPTER I");
+        assertThat(saved.getAllValues())
+                .extracting(character -> character.getFirstChapter().getChapterIndex())
+                .containsExactlyInAnyOrder(1, 1, 2, 3, 1, 5);
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "Maud".equals(character.getName()))
+                .extracting(CharacterEntity::getCharacterType)
+                .containsExactly(CharacterType.SECONDARY);
+        assertThat(saved.getAllValues())
+                .filteredOn(character -> "Polly".equals(character.getName()))
+                .extracting(CharacterEntity::getCharacterType)
+                .containsExactly(CharacterType.PRIMARY);
+    }
+
+    @Test
+    void prefetch_prefaceIndexZeroIsValidWhenModelChoosesIt() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("CHAPTER I");
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(preface, chapter1));
+
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [{"name":"Editor","description":"The preface narrator.","firstChapterIndex":0,"characterType":"SECONDARY"}]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(BOOK_ID, "Editor"))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-editor");
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository).save(saved.capture());
+        assertThat(saved.getValue().getFirstChapter().getChapterIndex()).isZero();
+        assertThat(saved.getValue().getFirstChapter().getTitle()).isEqualTo("Preface");
+        assertThat(saved.getValue().getCharacterType()).isEqualTo(CharacterType.SECONDARY);
+    }
+
+    @Test
+    void prefetch_omittedAndMalformedCharacterTypeDefaultToPrimary() {
+        when(reasoningProvider.generate(any(), any())).thenReturn("""
+                [
+                  {"name":"Montresor","description":"Narrator.","firstChapterIndex":0},
+                  {"name":"Fortunato","description":"Victim.","firstChapterIndex":0,"characterType":"sidekick"}
+                ]
+                """);
+        when(characterRepository.findByBookIdAndNameIgnoreCase(eq(BOOK_ID), any()))
+                .thenReturn(Optional.empty());
+        when(characterRepository.save(any())).thenAnswer(invocation -> {
+            CharacterEntity saved = invocation.getArgument(0);
+            saved.setId("character-" + saved.getName());
+            return saved;
+        });
+
+        service.prefetchCharactersForBook(BOOK_ID);
+
+        ArgumentCaptor<CharacterEntity> saved = ArgumentCaptor.forClass(CharacterEntity.class);
+        verify(characterRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(CharacterEntity::getCharacterType)
+                .containsOnly(CharacterType.PRIMARY);
+    }
+
+    @Test
+    void buildPrefetchPrompt_includesChapterMapAndStaysBoundedFor200LongTitles() {
+        List<ChapterEntity> chapters = new ArrayList<>();
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Author's Preface to the Excessively Long Second Edition " + "X".repeat(80));
+        chapters.add(preface);
+        for (int i = 1; i < 200; i++) {
+            ChapterEntity chapterEntity = chapter("chapter-" + i, i);
+            chapterEntity.setTitle("CHAPTER " + i + " " + "Y".repeat(120));
+            chapters.add(chapterEntity);
+        }
+
+        String prompt = service.buildPrefetchPrompt("An Old-Fashioned Girl", "Louisa May Alcott", chapters);
+
+        assertThat(prompt.length()).isLessThanOrEqualTo(8000);
+        assertThat(prompt).contains("0. ");
+        assertThat(prompt).contains("Author's Preface");
+        assertThat(prompt).contains("front matter");
+        assertThat(prompt).contains("firstChapterIndex");
+        assertThat(prompt).contains("not first presence as a person");
+        assertThat(prompt).contains(CharacterDiscoveryPromptRules.FIRST_CHAPTER_PLACEMENT);
+        assertThat(prompt).contains("\"characterType\": \"PRIMARY\"");
+        assertThat(prompt).contains("If you're unfamiliar with this book");
+        assertThat(prompt).doesNotContain("use 1 if you're unsure");
+        assertThat(prompt).doesNotContain("Y".repeat(120));
+    }
+
+    @Test
+    void isFrontMatterTitle_keepsPrefaceAndBookIntroductionButNotPlainPrologue() {
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Preface")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Author's Preface")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Introduction")).isTrue();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Introduction to Society")).isFalse();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Prologue")).isFalse();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("Prologue: The Beginning")).isFalse();
+        assertThat(CharacterPrefetchService.isFrontMatterTitle("CHAPTER I")).isFalse();
     }
 
     @Test
@@ -519,6 +754,31 @@ class CharacterPrefetchServiceTest {
                         + "in England we are now called Crusoe.")));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-7")).thenReturn(List.of(
                 paragraph(2, "I, poor miserable Robinson Crusoe, being shipwrecked during a dreadful storm, came on shore.")));
+    }
+
+    private void stubOldFashionedGirlChapters() {
+        ChapterEntity preface = chapter("preface", 0);
+        preface.setTitle("Preface");
+        ChapterEntity chapter1 = chapter("chapter-1", 1);
+        chapter1.setTitle("CHAPTER I");
+        ChapterEntity chapter2 = chapter("chapter-2", 2);
+        chapter2.setTitle("CHAPTER II");
+        ChapterEntity chapter3 = chapter("chapter-3", 3);
+        chapter3.setTitle("CHAPTER III");
+        ChapterEntity chapter4 = chapter("chapter-4", 4);
+        chapter4.setTitle("CHAPTER IV");
+        ChapterEntity chapter5 = chapter("chapter-5", 5);
+        chapter5.setTitle("CHAPTER V");
+
+        when(chapterRepository.findByBookIdAndChapterIndex(eq(BOOK_ID), anyInt())).thenReturn(Optional.empty());
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 0)).thenReturn(Optional.of(preface));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 1)).thenReturn(Optional.of(chapter1));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 2)).thenReturn(Optional.of(chapter2));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 3)).thenReturn(Optional.of(chapter3));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 4)).thenReturn(Optional.of(chapter4));
+        when(chapterRepository.findByBookIdAndChapterIndex(BOOK_ID, 5)).thenReturn(Optional.of(chapter5));
+        when(chapterRepository.findByBookIdOrderByChapterIndex(BOOK_ID)).thenReturn(List.of(
+                preface, chapter1, chapter2, chapter3, chapter4, chapter5));
     }
 
     private static ParagraphEntity paragraph(int index, String content) {
