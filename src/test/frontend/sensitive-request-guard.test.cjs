@@ -209,6 +209,39 @@ test('reading-buddy GET and background check-comment do not open the collaborato
     assert.equal(isUserInitiatedSensitivePath('/api/reading-buddy/check-comment', 'POST'), false);
 });
 
+test('shouldPromptCollaboratorOnUnauthorized never prompts a registered account', () => {
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/characters/sancha/call-session'
+    }), false);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/characters/don-quixote/chat'
+    }), false);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: false,
+        method: 'POST',
+        path: '/api/characters/sancha/call-session'
+    }), true);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/illustrations/chapter/ch-1/regenerate'
+    }), true);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/tts/speak'
+    }), true);
+});
+
 test('shouldPromptCollaboratorOnUnauthorized never prompts outside public mode or for auth/account', () => {
     assert.equal(shouldPromptCollaboratorOnUnauthorized({
         publicMode: false,

@@ -18,6 +18,15 @@
         { methods: ['POST'], path: /^\/api\/tts\/speak(?:\/|$)/ }
     ];
 
+    const ACCOUNT_ACCEPTED_SENSITIVE_ROUTES = [
+        { methods: ['POST'], path: /^\/api\/characters\/[^/]+\/chat$/ },
+        { methods: ['POST'], path: /^\/api\/characters\/[^/]+\/call-session$/ },
+        { methods: ['POST'], path: /^\/api\/recaps\/book\/[^/]+\/chat$/ },
+        { methods: ['POST'], path: /^\/api\/reading-buddy\/chat$/ },
+        { methods: ['PUT'], path: /^\/api\/reading-buddy\/preferences$/ },
+        { methods: ['DELETE'], path: /^\/api\/reading-buddy\/history$/ }
+    ];
+
     const BACKGROUND_SENSITIVE_PATHS = [
         /^\/api\/characters\/book\/[^/]+\/prefetch$/,
         /^\/api\/characters\/chapter\/[^/]+\/(?:analyze|prefetch-next)$/,
@@ -73,6 +82,14 @@
         return USER_INITIATED_SENSITIVE_ROUTES.some((route) => routeMatches(route, path, normalizedMethod));
     }
 
+    function isAccountAcceptedSensitivePath(path, method) {
+        if (typeof path !== 'string' || !path) {
+            return false;
+        }
+        const normalizedMethod = normalizeMethod(method);
+        return ACCOUNT_ACCEPTED_SENSITIVE_ROUTES.some((route) => routeMatches(route, path, normalizedMethod));
+    }
+
     function isBackgroundSensitivePath(path) {
         if (typeof path !== 'string' || !path) {
             return false;
@@ -91,6 +108,9 @@
             return false;
         }
         if (path.startsWith('/api/auth') || path.startsWith('/api/account')) {
+            return false;
+        }
+        if (source.accountAuthenticated === true && isAccountAcceptedSensitivePath(path, method)) {
             return false;
         }
         if (isBackgroundSensitivePath(path)) {

@@ -1,6 +1,6 @@
 # Product Backlog
 
-Last updated: 2026-09-01
+Last updated: 2026-09-04
 
 ## Implementation handoff (classroom)
 
@@ -38,6 +38,7 @@ Last updated: 2026-09-01
 - ~~The teacher workspace can show **Reading Buddy enabled** while the deployment-wide rollout is off without explaining that students cannot use it.~~ **Fixed in BL-048:** the saved policy remains intact, while the control clearly shows deployment unavailability and student settings remain unusable.
 - The local Library contains duplicate/malformed **Pride and Prejudice** imports (3 chapters and 59 chapters rather than the expected 61); tracked in `BL-046`. Use the fuller edition for the demo and avoid presenting the current chapter list as production-ready.
 - **Cask / Fortunato never discovered** after a full short-story read (incognito TTS + `demo_teacher` `j`-key) — empty roster. **`SECONDARY` must still discover and appear in the roster**; PRIMARY is a separate chat-lead preference. Tracked in `BL-056`.
+- **P0 — signed-in Call Character still asks for collaborator password, then unauthorized** (`BL-081`). Kevin 2026-09-03 evening on prod: own account, *Sir Gawain and the Green Knight*, showing his daughter. Dismissed the collaborator modal; call said unauthorized. Do **not** treat this as `BL-077` (TTS-only).
 - Assignment v1 is a working pilot path, not a complete LMS workflow: creation/edit/publish and student due/quiz signals work, while submission/grading, durable assignment-specific completion, notifications, and teacher reporting remain future work.
 
 **Partner feedback (2026-07-16 educator call — Jessica):**
@@ -124,7 +125,7 @@ Last updated: 2026-09-01
 14. FERPA-gated after Discovery exit + P0 remediations: full usage event platform (`BL-025.6`), teacher chat export (`BL-025.7`), **broad** dashboard rollout beyond pilot teacher drill-down (`BL-025.10`)
 15. **`BL-056` Cask Fortunato never discovered** (Week 2 short story; mark PRIMARY + confirm prod rows/QA). Do not block FERPA, but fix before treating Cask as a character-chat demo book.
 
-**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`), assignment resume starts at assigned first chapter (`BL-078`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Done this PR** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.) (`BL-078` assignment resume at assigned first chapter **Proposed** — in-progress range Open restarts at assigned start after refresh. Originally captured as `BL-072` in #159; that id is now curated membership.) (`BL-079` Operator Art Studio **Proposed** — local review/regen/transfer in `kturner75/ccr-studio`; cherry-pick + prompt-edit multi-sample + staged samples; not product UI / not `/admin`. Originally captured as `BL-073` in #160; that id is now the teacher capability API. Do not invent new CCR engine APIs here.)
+**Not started:** **FERPA P0 remediations (`BL-043.3`, `.5`–`.7`)** (`BL-043.1` / `.12` **Done** PR #152; `BL-043.2` **Done** PR #153; `BL-043.4` **Done this PR**), roster display-name edit UX (`BL-025.2` remaining), full `BL-025.6` platform (beyond thin heartbeat), **AI cost metering (`BL-042` / this-term `BL-042.5`)**, **classroom concurrent capacity (`BL-053`)**, full character-chat assignment completion tracking / teacher export (`BL-025.11` deeper slices), school-tier admin UI, reader browser-Back convenience (`BL-051`), teacher-defined trophies (`BL-055`), **Cask Fortunato discovery (`BL-056`)**, dedicated assignment page + reduced landing card (`BL-057`), assignment Open / persist leftovers (`BL-058`), landing library load (`BL-059`), arrow-key paragraph nav (`BL-060`), My Chats Open Book skip landing (`BL-061`), character browser detail Esc + list j/k (`BL-062`), character blurb spoilers (`BL-064`), character regen with xAI (`BL-065` — `.1` documented / `.2` In Progress this follow-up after Kevin’s local trial; **do not mark `.3` catalog done**), open general registration after Columbia State approval (`BL-066`), recap chat misses chapter characters (`BL-067`), new-account Completed leak (`BL-068`), iPhone book covers (`BL-069`), teacher workspace first paint (`BL-070`), assignment resume starts at assigned first chapter (`BL-078`). (`BL-063` Gutenberg library-card cite **In Progress** — landing this PR.) (`BL-025.10` pilot drill-down **In Progress / demo-ready**; broad FERPA-gated dashboard still blocked.) (`BL-052` content-ops **Done** — deferred titles noted under the epic; prod publish when Kevin runs `ccr-production-ops`.) (`BL-054` prompt v1 **Done**; optional output fallback still open.) (`BL-071` OER/non-PD ingest **Discovery** — research only, do not build.) (`BL-072` durable curated membership **Proposed** — studio ST-008 depends on it.) (`BL-073` teacher CREATE_CLASSROOM operator API **Proposed / P3 later** — studio ST-009 stub.) (`BL-074` portrait request/regen **In Progress** — `.1` HTTP seam this PR; studio ST-001/008.) (`BL-075` portrait/illustration upload **Done this PR** — studio ST-002 keep/restore.) (`BL-077` public shared-cache TTS **In Progress** — public GET speak may generate; no collaborator modal.) (`BL-078` assignment resume at assigned first chapter **Proposed** — in-progress range Open restarts at assigned start after refresh. Originally captured as `BL-072` in #159; that id is now curated membership.) (`BL-079` Operator Art Studio **Proposed** — local review/regen/transfer in `kturner75/ccr-studio`; cherry-pick + prompt-edit multi-sample + staged samples; not product UI / not `/admin`. Originally captured as `BL-073` in #160; that id is now the teacher capability API. Do not invent new CCR engine APIs here.) (`BL-081` signed-in Call Character still prompts collaborator + unauthorized **P0** — do not fold into `BL-077`.)
 
 **Done (2026-08-12 / BL-025.10 pilot teacher→student overview):**
 - Roster row opens class-scoped student overview (current/completed assignments, progress by book, quizzes with scores/retries, opened vs not-opened, approximate time in reader).
@@ -169,6 +170,7 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
 - 2026-08-24: Added Operator Art Studio (local review / regen / transfer). Kevin: Imagine portraits are really good; chapter illustrations still hit-or-miss. Entirely local, separate web app — now **`kturner75/ccr-studio`**, not in the CCR product jar, not on classicchatreader.com, not a `/admin` route. Talks to **local** CCR only (`deployment.mode=local`, `generation.cache-only=false`); prod stays cache-only. Jobs for a **specific book / character / chapter illustration**. Discovery review (override PRIMARY/SECONDARY, delete; no miner invent). Must-haves: **cherry-pick regen** (one name / portrait / illustration; keep every other artifact; no sibling restamp; no `restoreCachedIllustrationIfPresent` neighbor clobber) and **prompt edit + multi-sample** (edit Imagine prompt, request N samples, choose the winner, discard the rest). Winner-only transfer via existing path (`CacheTransferRunner` portraits feature carries roster identity; `sync_spaces.sh`; do **not** use `publish_book_remote.sh`). CDN `?v=` (#158) cache-busts after transfer. Distinct from `BL-065.3` bulk catalog regen. Originally captured as `BL-073` in #160; `main` later used that id for the teacher capability API, so this item is **`BL-079`**. Do **not** invent new CCR engine APIs in this capture (`BL-074`/`BL-075` already exist). Docs only; Status **Proposed**.
 - 2026-08-24: Refined Operator Art Studio transfer/picker constraints: deletions must reach prod (tombstone or reviewed-roster replacement); regenerated metadata uses `--on-conflict overwrite` so CDN `?v=` changes; book picker type-ahead / ordered / keyboard listbox / no-results. Docs only.
 - 2026-08-27: Folded leftover #160 Codex P1s into `BL-079`: (1) **stage samples** before replacing canonical assets — uniquely keyed candidate storage; promote to canonical file/metadata only after keep (current regen writes the stable cache key and can destroy accepted art if N samples run). (2) **transfer roster edits independently of portrait completion** — PRIMARY/SECONDARY / identity changes must reach prod even when a portrait is pending/failed/missing (`exportPortraits` today only emits COMPLETED rows with a filename). Still **Proposed**. No new CCR engine APIs.
+- 2026-09-04: Added **`BL-081` P0** — signed-in reader Call Character on prod still prompts Collaborator Access; dismiss → unauthorized. Kevin 2026-09-03 evening, own account, *Sir Gawain and the Green Knight*, showing his daughter. Distinct from `BL-077` TTS. Docs only.
 - 2026-07-09: Backlog updated after an educator partner (college professor) feedback call. `BL-025` (Classroom Admin and Assignment Workflows) expanded with concrete requirements: student roster, instructor-as-admin, shareable classroom-ID join link, per-student usage logging, teacher/student chat history export, Teacher vs. School account tiers, semester-scoped rosters, and a teacher dashboard with student drill-down, independent per-feature class toggles (for example recap off + quiz on), and per-question teacher quiz overrides for a book/chapter. New epics added: `BL-042` (token usage tracking + classroom cost calculator), `BL-043`/`BL-044` (FERPA and ADA compliance, pilot-blocking), and `BL-045` (user guide + classroom onboarding documentation, driven by the partner's college funding a pilot for a couple of classes).
 - 2026-07-10: Captured partner assignment use case under `BL-025.11` (not in the immediate data-model / v1 assignment slice): teacher may **require students to chat with a book character**, and may use student–character conversations as a **fun in-class share/discussion activity**. At capture time chat was client-local; server persistence later shipped in `BL-049`, while teacher export remains deferred.
 - 2026-07-10: BL-025 first implementation slice (schema + APIs, no FE). See **Implementation handoff (classroom)** above for resume checklist.
@@ -2721,6 +2723,48 @@ Statuses: `Discovery`, `Proposed`, `Ready`, `In Progress`, `Blocked`, `Done`
   - Prod cache-only unchanged.
 - Session Log:
 - 2026-09-01: Captured from Kevin after OFG soak. Studio is the cockpit; site is display-only. Docs only; Proposed.
+
+### BL-081 - Signed-in Call Character Prompts Collaborator then Unauthorized
+- Type: Bug
+- Priority: **P0** (signed-in parent demo on prod; Call Character unusable)
+- Effort: S
+- Status: In Progress (this PR)
+- Problem: Kevin 2026-09-03 evening (America/Chicago) on **prod**, signed in with **his reader account**, showing his daughter **Call Character** on *Sir Gawain and the Green Knight* (curated Gutenberg **66084**). The UI prompted for the **collaborator password**. He thought that gate was already gone. He **dismissed** it. The call then said **unauthorized**.
+- Why this is not `BL-077`: `BL-077` only removed the collaborator modal from **shared-cache TTS play**. Call Character mints `POST /api/characters/{id}/call-session` (CHAT). That path was not in the TTS fix. Do **not** reopen `BL-077`.
+- Investigation (verify; not a decided root cause):
+  - `/api/auth/status` `authenticated` / `canAccessSensitive` is **collaborator cookie** (`PublicSessionAuthService`), not the reader account session.
+  - `PublicApiGuardInterceptor` in public mode accepts API key or collaborator session for CHAT. `SensitiveApiRequestMatcher.acceptsAccountPrincipal` is **only** classroom quiz-suggest POSTs — **not** `call-session` or character chat.
+  - Frontend `sensitive-request-guard.js` lists `call-session` as user-initiated sensitive; a signed-in reader with `canAccessSensitive=false` is steered to Collaborator Access. Dismiss → `401 Authentication required`.
+- Current Direction (2026-09-04):
+  - A **signed-in reader account** must be enough to start Call Character on prod. Do **not** require the collaborator password.
+  - Collaborator Access must **not** appear for that signed-in Call path.
+  - Dismissing any leftover modal must not strand the call as unauthorized.
+  - Collaborator / API-key remain the operator path, orthogonal to classroom/reader accounts (`BL-021` / `BL-025` KD-5).
+- Out of this epic:
+  - TTS collaborator-gate (`BL-077`).
+  - Opening general registration (`BL-066`).
+  - Gawain roster / PRIMARY quality (`BL-065`).
+  - Cask Fortunato discovery (`BL-056`).
+- Work Tracker (suggested):
+| Slice | Status | Scope | Done When |
+| --- | --- | --- | --- |
+| BL-081.1 Account principal on call-session | In Progress | Signed-in reader account satisfies public-mode CHAT auth for `POST .../call-session` (and matching UI flags so Collaborator Access does not open) | Kevin’s signed-in account starts Call Character on prod Gawain with no collaborator prompt and no unauthorized |
+- Acceptance Criteria:
+  - Prod, signed-in reader account, Gawain Call Character: **no collaborator password prompt**.
+  - Call starts (or fails for a real voice/provider reason), not `unauthorized` / `Authentication required`.
+  - Anonymous visitor behavior is an explicit follow-up if Kevin wants it; this card is the **signed-in** path.
+  - TTS play still has no collaborator modal (`BL-077`).
+- Dependency Notes:
+  - Distinct from `BL-077` (TTS GET speak).
+  - Distinct from `BL-021` account auth architecture — do not merge collaborator and reader accounts; **accept the reader principal** on Call.
+  - Distinct from `BL-043.1` prod auth gate — that shipped; this is the leftover Call surface.
+- Risks:
+  - Treating “we fixed collaborator prompts” as done because TTS no longer prompts — Call still does.
+  - Widening `acceptsAccountPrincipal` to ADMIN/GENERATION by accident.
+  - Fixing only the modal and leaving the interceptor 401.
+- Session Log:
+- 2026-09-04: Captured from Kevin. Last night (2026-09-03 evening) on prod, own signed-in account, Call Character for *Sir Gawain and the Green Knight* while showing his daughter. Collaborator password prompt (thought already fixed). Dismissed. Call unauthorized. **P0**. Docs only; do not fold into `BL-077`.
+- 2026-09-04: Implementation — public-mode CHAT (call-session + character chat + recap/buddy chat mutations) accepts a registered account principal; Collaborator Access is not opened when `accountAuthenticated`. ADMIN/GENERATION stay operator-only. Do not mark Done until prod Gawain Call smoke.
 
 ## P0
 

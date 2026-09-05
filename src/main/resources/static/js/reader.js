@@ -1801,6 +1801,7 @@
         if (sensitiveRequestGuard) {
             return sensitiveRequestGuard.shouldPromptCollaboratorOnUnauthorized({
                 publicMode: state.authPublicMode,
+                accountAuthenticated: state.accountAuthenticated === true,
                 path,
                 method
             });
