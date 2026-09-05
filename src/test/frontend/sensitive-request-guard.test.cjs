@@ -228,6 +228,18 @@ test('shouldPromptCollaboratorOnUnauthorized never prompts a registered account'
         method: 'POST',
         path: '/api/characters/sancha/call-session'
     }), true);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/illustrations/chapter/ch-1/regenerate'
+    }), true);
+    assert.equal(shouldPromptCollaboratorOnUnauthorized({
+        publicMode: true,
+        accountAuthenticated: true,
+        method: 'POST',
+        path: '/api/tts/speak'
+    }), true);
 });
 
 test('shouldPromptCollaboratorOnUnauthorized never prompts outside public mode or for auth/account', () => {

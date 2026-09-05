@@ -2672,7 +2672,6 @@
         state.authCanAccessSensitive = false;
         state.authAuthenticated = false;
         updateAuthUi();
-        if (state.accountAuthenticated) return;
         if (isAuthModalVisible() || state.authPromptShown) return;
         openAuthModal('Sign in is required for this action.');
     }
