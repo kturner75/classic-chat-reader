@@ -52,7 +52,7 @@ class SensitiveApiRequestMatcherTest {
     }
 
     @Test
-    void acceptsAccountPrincipal_onlyClassroomSuggestPosts() {
+    void acceptsAccountPrincipal_classroomSuggestAndRegisteredUserChat() {
         assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "POST", "/api/classroom/assignments/asg-1/suggest-questions"));
         assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
@@ -61,6 +61,18 @@ class SensitiveApiRequestMatcherTest {
                 "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-questions"));
         assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-distractors"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/characters/char-1/call-session"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/characters/char-1/chat"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/recaps/book/book-1/chat"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/reading-buddy/chat"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "PUT", "/api/reading-buddy/preferences"));
+        assertTrue(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "DELETE", "/api/reading-buddy/history"));
         assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "GET", "/api/classroom/assignments/asg-1/suggest-questions"));
         assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
@@ -71,6 +83,8 @@ class SensitiveApiRequestMatcherTest {
                 "PATCH", "/api/library/book-1/features"));
         assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/reading-buddy/check-comment"));
     }
 
     @Test

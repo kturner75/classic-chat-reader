@@ -93,6 +93,9 @@
         if (path.startsWith('/api/auth') || path.startsWith('/api/account')) {
             return false;
         }
+        if (source.accountAuthenticated === true) {
+            return false;
+        }
         if (isBackgroundSensitivePath(path)) {
             return false;
         }

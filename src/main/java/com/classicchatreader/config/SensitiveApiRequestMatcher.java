@@ -159,12 +159,22 @@ public final class SensitiveApiRequestMatcher {
     }
 
     /**
-     * Classroom suggest routes are GENERATION for rate limits, but teachers
-     * authenticate with an account session rather than an operator API key
-     * or collaborator cookie.
+     * Routes that accept a signed-in reader/teacher account instead of an
+     * operator API key or collaborator cookie.
+     *
+     * <p>CHAT (character chat, Call Character, recap chat, Reading Buddy
+     * mutations) is a registered-user surface. Classroom suggest-* stays on
+     * the GENERATION bucket but teachers still authenticate with an account.
+     * ADMIN and other GENERATION routes stay operator-only.
      */
     public static boolean acceptsAccountPrincipal(String method, String path) {
-        if (!"POST".equals(method) || path == null) {
+        if (method == null || path == null) {
+            return false;
+        }
+        if (classify(method, path) == EndpointType.CHAT) {
+            return true;
+        }
+        if (!"POST".equals(method)) {
             return false;
         }
         return ASSIGNMENT_SUGGEST_PATH.matcher(path).matches()
