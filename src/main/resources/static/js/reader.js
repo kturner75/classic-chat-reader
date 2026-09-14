@@ -26,6 +26,7 @@
         readerPreferences: null,
         annotationsByKey: new Map(),
         bookmarks: [],
+        bookmarkToggleInFlight: false,
         noteModalParagraphIndex: null,
         isImporting: false,
         ttsEnabled: false,
@@ -5601,16 +5602,32 @@
     }
 
     async function toggleBookmarkForCurrentParagraph() {
+        if (state.bookmarkToggleInFlight) {
+            return;
+        }
         const chapterId = getCurrentChapterId();
         const paragraphIndex = state.currentParagraphIndex;
         if (!chapterId || !Number.isInteger(paragraphIndex)) return;
 
         const existing = getParagraphAnnotation(chapterId, paragraphIndex);
-        await upsertParagraphAnnotation(chapterId, paragraphIndex, {
-            highlighted: !!existing?.highlighted,
-            bookmarked: !existing?.bookmarked,
-            noteText: existing?.noteText || ''
-        });
+        const bookmarked = !existing?.bookmarked;
+        state.bookmarkToggleInFlight = true;
+        try {
+            const saved = await upsertParagraphAnnotation(chapterId, paragraphIndex, {
+                highlighted: !!existing?.highlighted,
+                bookmarked,
+                noteText: existing?.noteText || ''
+            });
+            showAppToast({
+                title: saved ? 'Bookmark' : 'Bookmark not saved',
+                message: saved
+                    ? (bookmarked ? 'Bookmark added.' : 'Bookmark removed.')
+                    : 'Could not update the bookmark. Please try again.',
+                autoDismissMs: saved ? 3000 : 9000
+            });
+        } finally {
+            state.bookmarkToggleInFlight = false;
+        }
     }
 
     function createParagraphMeasureContainer(columnWidth) {
@@ -5843,7 +5860,10 @@
                 ? highlightTermsInHtml(segment.content, state.searchHighlightTerms)
                 : segment.content;
             const continuationClass = segment.continuation ? ' paragraph-continuation' : '';
-            return `<p class="${classes.join(' ')}${continuationClass}" data-index="${globalIndex}" style="text-indent: ${segment.indent}">${paraContent}</p>`;
+            const bookmarkIndicator = annotation?.bookmarked
+                ? '<span class="paragraph-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"></span>'
+                : '';
+            return `<p class="${classes.join(' ')}${continuationClass}" data-index="${globalIndex}" style="text-indent: ${segment.indent}">${bookmarkIndicator}${paraContent}</p>`;
         };
 
         const leftHtml = (pageData.columns?.[0] || []).map(renderSegment).join('');
