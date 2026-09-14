@@ -5606,10 +5606,18 @@
         if (!chapterId || !Number.isInteger(paragraphIndex)) return;
 
         const existing = getParagraphAnnotation(chapterId, paragraphIndex);
-        await upsertParagraphAnnotation(chapterId, paragraphIndex, {
+        const bookmarked = !existing?.bookmarked;
+        const saved = await upsertParagraphAnnotation(chapterId, paragraphIndex, {
             highlighted: !!existing?.highlighted,
-            bookmarked: !existing?.bookmarked,
+            bookmarked,
             noteText: existing?.noteText || ''
+        });
+        showAppToast({
+            title: saved ? 'Bookmark' : 'Bookmark not saved',
+            message: saved
+                ? (bookmarked ? 'Bookmark added.' : 'Bookmark removed.')
+                : 'Could not update the bookmark. Please try again.',
+            autoDismissMs: saved ? 3000 : 9000
         });
     }
 
@@ -5843,7 +5851,10 @@
                 ? highlightTermsInHtml(segment.content, state.searchHighlightTerms)
                 : segment.content;
             const continuationClass = segment.continuation ? ' paragraph-continuation' : '';
-            return `<p class="${classes.join(' ')}${continuationClass}" data-index="${globalIndex}" style="text-indent: ${segment.indent}">${paraContent}</p>`;
+            const bookmarkIndicator = annotation?.bookmarked
+                ? '<span class="paragraph-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"></span>'
+                : '';
+            return `<p class="${classes.join(' ')}${continuationClass}" data-index="${globalIndex}" style="text-indent: ${segment.indent}">${bookmarkIndicator}${paraContent}</p>`;
         };
 
         const leftHtml = (pageData.columns?.[0] || []).map(renderSegment).join('');

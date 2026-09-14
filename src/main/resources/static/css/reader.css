@@ -2251,6 +2251,8 @@ a.my-chat-card:focus-visible,
 }
 
 .paragraph {
+    /* Reserve marker space even when unbookmarked to keep pagination stable. */
+    padding-left: 1rem;
     text-indent: 1.5em;
     margin-bottom: 0;
     text-align: justify;
@@ -2268,7 +2270,7 @@ a.my-chat-card:focus-visible,
     background-color: var(--highlight-color);
     margin-left: -0.5rem;
     margin-right: -0.5rem;
-    padding: 0 0.5rem;
+    padding: 0 0.5rem 0 1.5rem;
     border-radius: 2px;
 }
 
@@ -2291,15 +2293,25 @@ a.my-chat-card:focus-visible,
     border-radius: 2px;
 }
 
-.paragraph.annotation-bookmarked::before {
-    content: '';
+.paragraph-bookmark {
     position: absolute;
-    top: 0.35rem;
-    left: -0.65rem;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+    top: 0.3em;
+    left: 0;
+    width: 0.65rem;
+    height: 0.9rem;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
     background: #b5741f;
+}
+
+.paragraph.highlighted .paragraph-bookmark {
+    left: 0.5rem;
+}
+
+@media (forced-colors: active) {
+    .paragraph-bookmark {
+        background: CanvasText;
+        forced-color-adjust: none;
+    }
 }
 
 .paragraph.annotation-noted {
@@ -3166,6 +3178,10 @@ kbd {
     flex-direction: column;
     gap: 0.6rem;
     pointer-events: none;
+}
+
+body:has(#reader-view.mobile-layout:not(.hidden)) .app-toast-region {
+    bottom: calc(5.1rem + env(safe-area-inset-bottom));
 }
 
 .app-toast {
