@@ -26,6 +26,7 @@
         readerPreferences: null,
         annotationsByKey: new Map(),
         bookmarks: [],
+        bookmarkToggleInFlight: false,
         noteModalParagraphIndex: null,
         isImporting: false,
         ttsEnabled: false,
@@ -5601,24 +5602,32 @@
     }
 
     async function toggleBookmarkForCurrentParagraph() {
+        if (state.bookmarkToggleInFlight) {
+            return;
+        }
         const chapterId = getCurrentChapterId();
         const paragraphIndex = state.currentParagraphIndex;
         if (!chapterId || !Number.isInteger(paragraphIndex)) return;
 
         const existing = getParagraphAnnotation(chapterId, paragraphIndex);
         const bookmarked = !existing?.bookmarked;
-        const saved = await upsertParagraphAnnotation(chapterId, paragraphIndex, {
-            highlighted: !!existing?.highlighted,
-            bookmarked,
-            noteText: existing?.noteText || ''
-        });
-        showAppToast({
-            title: saved ? 'Bookmark' : 'Bookmark not saved',
-            message: saved
-                ? (bookmarked ? 'Bookmark added.' : 'Bookmark removed.')
-                : 'Could not update the bookmark. Please try again.',
-            autoDismissMs: saved ? 3000 : 9000
-        });
+        state.bookmarkToggleInFlight = true;
+        try {
+            const saved = await upsertParagraphAnnotation(chapterId, paragraphIndex, {
+                highlighted: !!existing?.highlighted,
+                bookmarked,
+                noteText: existing?.noteText || ''
+            });
+            showAppToast({
+                title: saved ? 'Bookmark' : 'Bookmark not saved',
+                message: saved
+                    ? (bookmarked ? 'Bookmark added.' : 'Bookmark removed.')
+                    : 'Could not update the bookmark. Please try again.',
+                autoDismissMs: saved ? 3000 : 9000
+            });
+        } finally {
+            state.bookmarkToggleInFlight = false;
+        }
     }
 
     function createParagraphMeasureContainer(columnWidth) {
