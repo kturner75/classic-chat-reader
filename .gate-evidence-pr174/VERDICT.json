@@ -1,0 +1,66 @@
+{
+  "overall": "PASS",
+  "mergeReadyCandidate": true,
+  "modalPresent": false,
+  "callStarted": true,
+  "authEmail": "demo.student@example.com",
+  "bookId": "4fe5bc32-6a4b-499f-a595-17260dc981de",
+  "bookTitle": "Sir Gawain and the Green Knight: A Middle-English Arthurian Romance Retold in Modern Prose",
+  "character": {
+    "id": "b63f81f1-579e-458a-892c-ace6af15e024",
+    "name": "Sir Gawain",
+    "type": "PRIMARY"
+  },
+  "paths": {
+    "evidence": "/tmp/ccr-pr174-860812c/evidence",
+    "screenshots": "/tmp/ccr-pr174-860812c/evidence/screenshots",
+    "verdict": "/tmp/ccr-pr174-860812c/evidence/VERDICT.json",
+    "fingerprint": "/tmp/ccr-pr174-860812c/evidence/fingerprint.txt",
+    "pid": "/tmp/ccr-pr174-860812c/evidence/health/java_pid.txt"
+  },
+  "details": {
+    "modalPresent": false,
+    "callModalVisible": false,
+    "statusText": "Connecting\u2026",
+    "errorText": "",
+    "unauthorized": false,
+    "callStarted": true
+  },
+  "authMode": "login",
+  "fingerprintMatch": true,
+  "head": "860812c4335e94bfbc5a3100e1f23dc0e01de741",
+  "claimA": "PASS",
+  "claimB": "PASS",
+  "claimC": "PASS",
+  "guardProbe": {
+    "available": true,
+    "callSessionSignedIn": false,
+    "chatSignedIn": false,
+    "illustrationRegenSignedIn": true,
+    "ttsSpeakSignedIn": true,
+    "callSessionAnon": true,
+    "note": "From SensitiveRequestGuard on HEAD 860812c"
+  },
+  "quotes": [
+    "authEmail=demo.student@example.com authenticated via login",
+    "modalPresent=False (no Collaborator Access modal)",
+    "callStarted=True statusText=Connecting\u2026",
+    "book=Sir Gawain and the Green Knight: A Middle-English Arthurian Romance Retold in Modern Prose character=Sir Gawain",
+    "Call Character does not open Collaborator modal for signed-in registered account",
+    "operator-only routes (illustration regenerate / tts speak) still shouldPromptCollaborator when signed-in",
+    "account-accepted routes call-session/chat do not prompt when accountAuthenticated=true",
+    "unauthorized-after-dismiss did not recur (unauthorized=false)"
+  ],
+  "liveGuard": "272ebb4d325f0a0817931ffe359778e3525ec4287d42497f7501cf43f94223e5",
+  "liveReader": "980fa032d75cd0d3e3bac831ac3eaafad57270094d021fd98057cf70d5d1742f",
+  "expectGuard": "272ebb4d325f0a0817931ffe359778e3525ec4287d42497f7501cf43f94223e5",
+  "expectReader": "980fa032d75cd0d3e3bac831ac3eaafad57270094d021fd98057cf70d5d1742f",
+  "pid": "96084",
+  "auth": {
+    "email": "demo.student@example.com",
+    "authenticated": true,
+    "mode": "login"
+  },
+  "discarded": "97b460e",
+  "noteAuth": "e2e/.env absent; demo.student used with gate-local credential reset to e2e fixture (password not printed)"
+}

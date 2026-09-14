@@ -1,0 +1,22 @@
+{
+  "count": 4,
+  "names": [
+    "Sir Gawain",
+    "The Green Knight",
+    "King Arthur",
+    "Queen Guinevere"
+  ],
+  "chosen": {
+    "id": "b63f81f1-579e-458a-892c-ace6af15e024",
+    "name": "Sir Gawain",
+    "description": "A knight of the Round Table and King Arthur's nephew, seated in a place of honor beside Queen Guinevere at the Christmas feast in Camelot. He is presented as courteous, modest, and among the foremost of Arthur's company.",
+    "firstChapterId": "573c9992-4429-4fd0-a29c-605e6564026f",
+    "firstChapterTitle": "Preface",
+    "firstChapterIndex": 0,
+    "firstParagraphIndex": 3,
+    "status": "COMPLETED",
+    "portraitReady": true,
+    "characterType": "PRIMARY",
+    "chatEligible": true
+  }
+}

@@ -1,0 +1,10 @@
+VERDICT=FAIL
+mergeReadyCandidate=false
+modalPresent=false
+callStarted=false
+authEmail=demo.student@example.com
+book=Sir Gawain and the Green Knight: A Middle-English Arthurian Romance Retold in Modern Prose
+character=Sir Gawain
+status=Connecting…
+error=
+head=

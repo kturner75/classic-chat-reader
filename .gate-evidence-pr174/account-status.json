@@ -1,0 +1,10 @@
+{
+  "accountAuthEnabled": true,
+  "authenticated": true,
+  "email": "demo.student@example.com",
+  "message": null,
+  "googleAuthEnabled": true,
+  "rolloutMode": "optional",
+  "accountRequired": false,
+  "pendingGoogleLink": false
+}

@@ -12322,6 +12322,16 @@
                 return;
             }
 
+            // Preserve modified arrows and arrow navigation within editable controls.
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                const activeElement = document.activeElement;
+                if (e.altKey || e.shiftKey || e.defaultPrevented
+                    || activeElement?.isContentEditable
+                    || activeElement?.closest('input, textarea, select, [role="combobox"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="menu"], [role="tree"], [role="grid"], [role="tablist"]')) {
+                    return;
+                }
+            }
+
             switch (e.key) {
                 case '?':
                     e.preventDefault();
@@ -12361,11 +12371,13 @@
                     e.preventDefault();
                     void copyCurrentBookMlaCitation();
                     break;
+                case 'ArrowDown':
                 case 'j':
                     e.preventDefault();
                     nextParagraph();
                     ttsInterrupt();
                     break;
+                case 'ArrowUp':
                 case 'k':
                     e.preventDefault();
                     prevParagraph();

@@ -1,0 +1,1 @@
+{"ok":true,"status":200,"text":"{\"accountAuthEnabled\":true,\"authenticated\":true,\"email\":\"demo.student@example.com\",\"message\":\"Signed in.\",\"googleAuthEnabled\":true,\"rolloutMode\":\"optional\",\"accountRequired\":false,\"pendingGoogleLink\":false}","email":"demo.student@example.com"}

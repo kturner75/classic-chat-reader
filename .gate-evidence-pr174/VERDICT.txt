@@ -1,0 +1,14 @@
+VERDICT=PASS
+mergeReadyCandidate=true
+modalPresent=False
+callStarted=True
+auth={"email": "demo.student@example.com", "authenticated": true, "mode": "login"}
+claimA=PASS
+claimB=PASS
+claimC=PASS
+pid=96084
+liveGuard=272ebb4d325f0a0817931ffe359778e3525ec4287d42497f7501cf43f94223e5
+liveReader=980fa032d75cd0d3e3bac831ac3eaafad57270094d021fd98057cf70d5d1742f
+head=860812c4335e94bfbc5a3100e1f23dc0e01de741
+discarded=97b460e
+status=Connecting…
