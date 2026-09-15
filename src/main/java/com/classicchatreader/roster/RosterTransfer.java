@@ -98,7 +98,9 @@ public final class RosterTransfer {
                 }
             }
         }
-        byte[] payload = JSON.writeValueAsBytes(Arrays.asList(source, sourceId, bookId, revisionRows, rows, chapters));
+        // Chat counts stay on the snapshot for Studio; they are advisory and must
+        // not stale a confirm when only conversations changed.
+        byte[] payload = JSON.writeValueAsBytes(Arrays.asList(source, sourceId, bookId, revisionRows, chapters));
         String revision = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
         return new Snapshot(source, sourceId, revision, rows, chapters);
     }
@@ -161,16 +163,56 @@ public final class RosterTransfer {
                             VALUES (?, ?, ?, ?, ?, ?, ?, 'COMPLETED', CURRENT_TIMESTAMP, 0)
                             """, UUID.randomUUID().toString(), bookId, row.name(), row.characterType(), row.description(), chapterIds.get(row.firstChapterIndex()), row.firstParagraphIndex());
                 } else {
+                    // Settle retained FAILED/lease state so confirm cannot latch prefetch
+                    // on a stuck row. New inserts are already metadata-only COMPLETED.
                     execute(c, """
                             UPDATE characters SET name = ?, character_type = ?, description = ?, first_chapter_id = ?, first_paragraph_index = ?,
                               call_voice = CASE WHEN ? = 'SECONDARY' THEN NULL ELSE call_voice END,
-                              call_voice_provider = CASE WHEN ? = 'SECONDARY' THEN NULL ELSE call_voice_provider END WHERE id = ?
+                              call_voice_provider = CASE WHEN ? = 'SECONDARY' THEN NULL ELSE call_voice_provider END,
+                              status = 'COMPLETED', error_message = NULL, lease_expires_at = NULL,
+                              lease_owner = NULL, next_retry_at = NULL, retry_count = 0 WHERE id = ?
                             """, row.name(), row.characterType(), row.description(), chapterIds.get(row.firstChapterIndex()), row.firstParagraphIndex(), row.characterType(), row.characterType(), row.id());
                 }
             }
-            execute(c, "UPDATE books SET character_prefetch_completed = TRUE WHERE id = ?", bookId);
-            return snapshot(c, plan.source(), plan.sourceId(), bookId);
+            Snapshot after = snapshot(c, plan.source(), plan.sourceId(), bookId);
+            verifyApplied(plan, after, removed);
+            if (after.characters().stream().allMatch(row -> "COMPLETED".equals(row.status()))) {
+                execute(c, "UPDATE books SET character_prefetch_completed = TRUE WHERE id = ?", bookId);
+            } else {
+                execute(c, "UPDATE books SET character_prefetch_completed = FALSE WHERE id = ?", bookId);
+            }
+            return after;
         });
+    }
+
+    private static void verifyApplied(Plan plan, Snapshot after, Set<String> removed) {
+        if (after.characters().size() != plan.rows().size()) {
+            throw new IllegalStateException("Roster replacement did not match the plan");
+        }
+        Map<String, LiveRow> byId = new HashMap<>();
+        Map<String, LiveRow> byName = new HashMap<>();
+        for (LiveRow live : after.characters()) {
+            byId.put(live.character().id(), live);
+            byName.put(live.character().name(), live);
+        }
+        for (String id : removed) {
+            if (byId.containsKey(id)) throw new IllegalStateException("Removed character is still present");
+        }
+        for (Row row : plan.rows()) {
+            LiveRow live = row.id() != null ? byId.get(row.id()) : byName.get(row.name());
+            if (live == null || !sameRosterRow(row, live.character())) {
+                throw new IllegalStateException("Roster replacement did not match the plan");
+            }
+        }
+    }
+
+    private static boolean sameRosterRow(Row expected, Row actual) {
+        return expected.name().equals(actual.name())
+                && expected.characterType().equals(actual.characterType())
+                && Objects.equals(expected.firstChapterIndex(), actual.firstChapterIndex())
+                && Objects.equals(expected.firstParagraphIndex(), actual.firstParagraphIndex())
+                && Objects.equals(expected.description(), actual.description())
+                && (expected.id() == null || expected.id().equals(actual.id()));
     }
 
     private static void execute(Connection c, String sql, Object... values) throws SQLException {

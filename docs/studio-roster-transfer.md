@@ -12,8 +12,10 @@ CacheTransferRunner portrait import, or file/Spaces operations.
   removals, validated and committed in one transaction; returns the resulting snapshot.
 
 These endpoints require a direct loopback connection and a loopback Host. Forwarded
-requests and foreign browser Origins are refused. They do not add startup feature flags.
-Production administration uses the CLI with the operator's database connection.
+requests (`Forwarded`, `X-Forwarded-For`, `X-Real-IP`) and foreign browser Origins are
+refused. `SensitiveApiRequestMatcher` classifies GET/POST `/api/studio/roster/**` as
+ADMIN so public mode still requires an operator API key. They do not add startup feature
+flags. Production administration uses the CLI with the operator's database connection.
 
 Replacement JSON:
 
@@ -37,13 +39,19 @@ All retained destination IDs must be listed. A null ID creates a new character. 
 characters must appear exactly once in `removeIds`. No fuzzy/name matching occurs in the
 engine; Studio owns destination mapping and the plan. The destination book and all row
 placements must exist. Empty rosters, duplicate names/IDs, foreign IDs, stale revisions,
-and PENDING/GENERATING portraits are rejected before mutation.
+and PENDING/GENERATING portraits are rejected before mutation. The revision token hashes
+roster identity and placements only; live conversation/message counts stay on the export
+as advisory consequence data and do not stale confirm.
 
 Renames preserve IDs and image fields. SECONDARY rows lose call voice/provider. Removed
 characters cascade saved conversations and messages through existing constraints; the
 export exposes those counts so Studio can show the consequence before Confirm. No image
 files are deleted. New rows are metadata-only COMPLETED characters without portraits;
-explicit portrait generation remains available. Primary-prefetch is marked complete.
+explicit portrait generation remains available. Retained FAILED rows are reset to
+COMPLETED with lease/error/retry cleared so confirm cannot leave a stuck prefetch latch.
+After mutation the engine verifies retained IDs/names/types/placements and removals
+before commit. Primary-prefetch is marked complete only when every remaining character
+is COMPLETED.
 
 ## CLI
 

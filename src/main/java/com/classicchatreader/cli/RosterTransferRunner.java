@@ -55,7 +55,9 @@ public final class RosterTransferRunner {
         } catch (IllegalArgumentException e) {
             err.println(e.getMessage()); return 1;
         } catch (Exception e) {
-            err.println("Roster operation failed. Re-export the destination before retrying; no success receipt was written."); return 1;
+            err.println("Roster operation failed: " + e.getMessage()
+                    + ". Re-export the destination before retrying; no success receipt was written.");
+            return 1;
         }
     }
     private static String required(Map<String, String> options, String key) {

@@ -14,6 +14,7 @@ class StudioRosterControllerTest {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new StudioRosterController(ds)).build();
         mvc.perform(get("/api/studio/roster/gutenberg/17396").with(r -> { r.setRemoteAddr("192.0.2.1"); return r; })).andExpect(status().isForbidden());
         mvc.perform(get("/api/studio/roster/gutenberg/17396").header("X-Forwarded-For","192.0.2.1")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/studio/roster/gutenberg/17396").header("X-Real-IP","192.0.2.1")).andExpect(status().isForbidden());
         mvc.perform(get("/api/studio/roster/gutenberg/17396").header("Origin","https://other.example")).andExpect(status().isForbidden());
         mvc.perform(get("http://other.example/api/studio/roster/gutenberg/17396")).andExpect(status().isForbidden());
         verifyNoInteractions(ds);

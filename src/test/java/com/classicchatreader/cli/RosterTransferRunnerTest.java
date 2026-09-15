@@ -41,4 +41,16 @@ class RosterTransferRunnerTest {
         assertEquals(1,RosterTransferRunner.run(new String[]{"replace","--source","gutenberg","--source-id","17396","--output",dir.resolve("out.json").toString()},out,out));
         assertEquals(1,RosterTransferRunner.run(new String[]{"export","--output",dir.resolve("out.json").toString()},out,out));
     }
+    @Test void unexpectedFailurePrintsTheUnderlyingMessage() {
+        var out = new ByteArrayOutputStream();
+        var err = new ByteArrayOutputStream();
+        int code = RosterTransferRunner.run(new String[]{"export","--source","gutenberg","--source-id","17396",
+                "--output",dir.resolve("out.json").toString(),"--db-url","jdbc:doesnotexist:foo"},
+                new PrintStream(out), new PrintStream(err));
+        assertEquals(1, code);
+        String message = err.toString();
+        assertTrue(message.contains("Roster operation failed:"), message);
+        assertTrue(message.contains("No suitable driver") || message.toLowerCase().contains("driver"), message);
+        assertTrue(message.contains("Re-export the destination before retrying"), message);
+    }
 }

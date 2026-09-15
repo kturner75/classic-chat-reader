@@ -19,7 +19,8 @@ public class StudioRosterController {
 
     private void requireLocal(HttpServletRequest request) {
         if (!Set.of("127.0.0.1", "0:0:0:0:0:0:0:1", "::1").contains(request.getRemoteAddr()) ||
-                request.getHeader("Forwarded") != null || request.getHeader("X-Forwarded-For") != null)
+                request.getHeader("Forwarded") != null || request.getHeader("X-Forwarded-For") != null
+                || request.getHeader("X-Real-IP") != null)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Local Studio access required");
         try {
             String host = new URI(request.getRequestURL().toString()).getHost();

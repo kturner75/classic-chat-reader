@@ -50,6 +50,9 @@ class RosterTransferTest {
         assertEquals("Other",value("SELECT name FROM characters WHERE id='x'"));
         assertEquals("COMPLETED",value("SELECT status FROM characters WHERE name='Beth'"));
         assertEquals("TRUE",value("SELECT character_prefetch_completed FROM books WHERE id='book'"));
+        assertEquals("Josephine", result.characters().stream().filter(r -> r.character().id().equals("a")).findFirst().orElseThrow().character().name());
+        assertTrue(result.characters().stream().noneMatch(r -> r.character().id().equals("b")));
+        assertTrue(result.characters().stream().anyMatch(r -> "Beth".equals(r.character().name()) && r.character().id() != null));
     }
     @Test void demotionClearsOnlyCallVoiceAndPreservesPortrait() throws Exception {
         RosterTransfer.apply(c,plan(List.of(row("a","Jo","SECONDARY"),row("b","Friedrich","SECONDARY")),List.of()));
@@ -92,6 +95,28 @@ class RosterTransferTest {
         sql("UPDATE characters SET status='GENERATING' WHERE id='a'");
         var busy = plan(List.of(row("a","New","PRIMARY")),List.of("b"));
         assertThrows(RosterTransfer.StalePlan.class,() -> RosterTransfer.apply(c,busy));
+    }
+    @Test void retainedFailedRowIsResetAndPrefetchLatchesWhenCompleted() throws Exception {
+        sql("UPDATE characters SET status='FAILED', error_message='boom', lease_owner='worker', lease_expires_at=CURRENT_TIMESTAMP, retry_count=3 WHERE id='a'");
+        sql("UPDATE books SET character_prefetch_completed = FALSE WHERE id='book'");
+        var result = RosterTransfer.apply(c,plan(List.of(row("a","Josephine","PRIMARY"),row("b","Friedrich","SECONDARY")),List.of()));
+        assertEquals("COMPLETED",value("SELECT status FROM characters WHERE id='a'"));
+        assertNull(value("SELECT error_message FROM characters WHERE id='a'"));
+        assertNull(value("SELECT lease_owner FROM characters WHERE id='a'"));
+        assertEquals("0",value("SELECT retry_count FROM characters WHERE id='a'"));
+        assertEquals("Josephine",value("SELECT name FROM characters WHERE id='a'"));
+        assertEquals("TRUE",value("SELECT character_prefetch_completed FROM books WHERE id='book'"));
+        assertEquals("COMPLETED", result.characters().stream().filter(r -> r.character().id().equals("a")).findFirst().orElseThrow().status());
+        assertEquals("Josephine", result.characters().stream().filter(r -> r.character().id().equals("a")).findFirst().orElseThrow().character().name());
+    }
+    @Test void revisionIgnoresLiveChatCounts() throws Exception {
+        var exported = snapshot();
+        sql("INSERT INTO character_chat_messages(id,conversation_id,user_id,sequence_number,role,content,created_at) VALUES ('msg2','chat','user',1,'ASSISTANT','Later',CURRENT_TIMESTAMP)");
+        assertEquals(exported.revision(), snapshot().revision());
+        var applied = RosterTransfer.apply(c, new RosterTransfer.Plan("gutenberg","17396",exported.revision(),
+                List.of(row("a","Josephine","PRIMARY"),row("b","Friedrich","SECONDARY")),List.of(),true));
+        assertEquals("Josephine", applied.characters().stream().filter(r -> r.character().id().equals("a")).findFirst().orElseThrow().character().name());
+        assertEquals(2, applied.characters().stream().filter(r -> r.character().id().equals("b")).findFirst().orElseThrow().messages());
     }
     @Test void localApiRoundTripUsesTheSameTransaction() throws Exception {
         var ds = new org.h2.jdbcx.JdbcDataSource();
