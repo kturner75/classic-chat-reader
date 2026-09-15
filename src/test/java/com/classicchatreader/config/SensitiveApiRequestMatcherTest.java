@@ -85,6 +85,8 @@ class SensitiveApiRequestMatcherTest {
                 "POST", "/api/classroom/terms/term-1/chapters/ch-1/suggest-foo"));
         assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
                 "POST", "/api/reading-buddy/check-comment"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/studio/roster/gutenberg/17396/replace"));
     }
 
     @Test
@@ -125,6 +127,19 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1/portrait"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/characters/char-1/portrait/status"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/characters/book/book-1/prefetch"));
+    }
+
+    @Test
+    void classify_marksStudioRosterAsAdmin() {
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/studio/roster/gutenberg/17396"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("POST", "/api/studio/roster/gutenberg/17396/replace"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/studio/roster/standardebooks/foo-bar"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("PUT", "/api/studio/roster/gutenberg/17396"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/studio/roster"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "GET", "/api/studio/roster/gutenberg/17396"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal(
+                "POST", "/api/studio/roster/gutenberg/17396/replace"));
     }
 
     @Test

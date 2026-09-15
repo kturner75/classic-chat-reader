@@ -59,6 +59,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern LIBRARY_COVER_RETRY_PATH = Pattern.compile("^/api/library/[^/]+/cover/retry$");
     private static final Pattern LIBRARY_COVER_PATH = Pattern.compile("^/api/library/[^/]+/cover$");
     private static final Pattern LIBRARY_DELETE_BOOK_PATH = Pattern.compile("^/api/library/[^/]+$");
+    private static final Pattern STUDIO_ROSTER_PATH = Pattern.compile("^/api/studio/roster/.+");
 
     private SensitiveApiRequestMatcher() {
     }
@@ -120,6 +121,10 @@ public final class SensitiveApiRequestMatcher {
             if (PREGEN_JOB_STATUS_PATH.matcher(path).matches()) {
                 return EndpointType.GENERATION;
             }
+        }
+
+        if (("GET".equals(method) || "POST".equals(method)) && STUDIO_ROSTER_PATH.matcher(path).matches()) {
+            return EndpointType.ADMIN;
         }
 
         if ("PATCH".equals(method) && (LIBRARY_FEATURES_PATH.matcher(path).matches()
