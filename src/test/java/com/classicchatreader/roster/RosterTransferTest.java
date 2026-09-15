@@ -111,7 +111,7 @@ class RosterTransferTest {
     }
     @Test void revisionIgnoresLiveChatCounts() throws Exception {
         var exported = snapshot();
-        sql("INSERT INTO character_chat_messages(id,conversation_id,user_id,sequence_number,role,content,created_at) VALUES ('msg2','chat','user',1,'ASSISTANT','Later',CURRENT_TIMESTAMP)");
+        sql("INSERT INTO character_chat_messages(id,conversation_id,user_id,sequence_number,role,content,created_at) VALUES ('msg2','chat','user',1,'USER','Later',CURRENT_TIMESTAMP)");
         assertEquals(exported.revision(), snapshot().revision());
         var applied = RosterTransfer.apply(c, new RosterTransfer.Plan("gutenberg","17396",exported.revision(),
                 List.of(row("a","Josephine","PRIMARY"),row("b","Friedrich","SECONDARY")),List.of(),true));
