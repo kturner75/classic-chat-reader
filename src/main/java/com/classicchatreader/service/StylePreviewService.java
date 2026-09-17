@@ -1,11 +1,16 @@
 package com.classicchatreader.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import java.io.IOException;
 import java.util.UUID;
 
 /** Disposable image generation: no entity, settings, queue, or live-slot writes. */
 @Service
 public class StylePreviewService {
+    private static final Logger log = LoggerFactory.getLogger(StylePreviewService.class);
+
     public static class InvalidPreviewRequest extends IllegalArgumentException {
         public InvalidPreviewRequest(String message) { super(message); }
     }
@@ -43,7 +48,11 @@ public class StylePreviewService {
             if (bytes == null || bytes.length == 0) throw new IllegalStateException("Preview image was not available");
             return bytes;
         } finally {
-            cache.deleteStylePreview(family, key);
+            try {
+                cache.deleteStylePreview(family, key);
+            } catch (IOException cleanupFailure) {
+                log.warn("Failed to delete style preview cache file {} ({})", key, family, cleanupFailure);
+            }
         }
     }
 }

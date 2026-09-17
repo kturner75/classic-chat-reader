@@ -41,6 +41,19 @@ class StylePreviewServiceTest {
     }
 
     @Test
+    void cleanupFailureDoesNotDiscardSuccessfulPreview() throws Exception {
+        var covers = mock(BookCoverImageGeneratorService.class);
+        var cache = mock(ComfyUIService.class);
+        var service = new StylePreviewService(covers, mock(CharacterPortraitImageGeneratorService.class), mock(IllustrationImageGeneratorService.class), cache);
+        byte[] bytes = {4, 5};
+        when(covers.generateBookCover(anyString(), anyString(), anyString())).thenReturn("cover.png");
+        when(cache.getBookCoverImage("cover.png")).thenReturn(bytes);
+        doThrow(new java.io.IOException("Disk busy")).when(cache).deleteStylePreview(eq("cover"), anyString());
+        assertArrayEquals(bytes, service.generate("cover", "Ink"));
+        verify(cache).deleteStylePreview(eq("cover"), startsWith("style-preview-"));
+    }
+
+    @Test
     void deletesOnlyDisposableCacheFiles(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
         var cache = new ComfyUIService();
         org.springframework.test.util.ReflectionTestUtils.setField(cache, "bookCoverCacheDir", directory.toString());

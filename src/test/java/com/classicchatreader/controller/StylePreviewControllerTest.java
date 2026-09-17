@@ -24,7 +24,7 @@ class StylePreviewControllerTest {
         when(service.generate("other", "Ink")).thenThrow(new StylePreviewService.InvalidPreviewRequest("Unknown family"));
         var mvc = MockMvcBuilders.standaloneSetup(new StylePreviewController(service, false)).build();
         mvc.perform(post("/api/style-previews").contentType("application/json").content("{\"family\":\"cover\",\"prompt\":\"Ink\"}"))
-                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store")).andExpect(content().bytes(new byte[]{1, 2}));
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store")).andExpect(content().contentType("image/png")).andExpect(content().bytes(new byte[]{1, 2}));
         mvc.perform(post("/api/style-previews").contentType("application/json").content("{\"family\":\"other\",\"prompt\":\"Ink\"}")).andExpect(status().isBadRequest());
     }
 

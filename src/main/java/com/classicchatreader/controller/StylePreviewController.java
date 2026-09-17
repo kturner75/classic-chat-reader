@@ -32,7 +32,7 @@ public class StylePreviewController {
         if (request.family() == null) return ResponseEntity.badRequest().body(Map.of("error", "Preview family is required"));
         try {
             byte[] bytes = previews.generate(request.family(), request.prompt());
-            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM).body(bytes);
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG).body(bytes);
         } catch (StylePreviewService.InvalidPreviewRequest invalid) {
             return ResponseEntity.badRequest().body(Map.of("error", invalid.getMessage()));
         }
