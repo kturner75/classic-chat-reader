@@ -79,7 +79,8 @@ public final class SensitiveApiRequestMatcher {
         }
 
         if ("POST".equals(method)) {
-            if ("/api/tts/speak".equals(path)
+            if ("/api/style-previews".equals(path)
+                    || "/api/tts/speak".equals(path)
                     || TTS_ANALYZE_PATH.matcher(path).matches()
                     || ILLUSTRATION_ANALYZE_PATH.matcher(path).matches()
                     || ILLUSTRATION_SETTINGS_SUGGEST_PATH.matcher(path).matches()
