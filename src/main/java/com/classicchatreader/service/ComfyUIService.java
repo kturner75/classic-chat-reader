@@ -638,6 +638,20 @@ public class ComfyUIService {
     return cachedFilename;
   }
 
+  /** Only server-generated preview keys can be removed through this helper. */
+  public void deleteStylePreview(String family, String key) throws IOException {
+    if (key == null || !key.matches("style-preview-[0-9a-f-]{36}")) {
+      throw new IllegalArgumentException("Invalid preview key");
+    }
+    String directory = switch (family) {
+      case "cover" -> bookCoverCacheDir;
+      case "portrait" -> portraitCacheDir;
+      case "illustration" -> cacheDir;
+      default -> throw new IllegalArgumentException("Unknown preview family");
+    };
+    Files.deleteIfExists(safeResolve(directory, resolveCacheFilename(key, key)));
+  }
+
   public byte[] getBookCoverImage(String filename) {
     try {
       Path imagePath = safeResolve(bookCoverCacheDir, filename);
