@@ -15,6 +15,9 @@ class SensitiveApiRequestMatcherTest {
 
     @Test
     void classify_marksGenerationEndpoints() {
+        assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/style-previews"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/style-previews"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal("POST", "/api/style-previews"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/pregen/book/book-1"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/pregen/jobs/book/book-1"));
         assertEquals(GENERATION, SensitiveApiRequestMatcher.classify("POST", "/api/pregen/jobs/gutenberg/1234"));

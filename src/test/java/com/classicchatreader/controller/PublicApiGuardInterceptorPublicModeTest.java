@@ -22,7 +22,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(PreGenerationController.class)
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
+@WebMvcTest({PreGenerationController.class, StylePreviewController.class})
 @Import({PublicApiGuardMvcConfig.class, PublicApiGuardInterceptor.class, InMemoryIpRateLimiter.class})
 @TestPropertySource(properties = {
         "deployment.mode=public",
@@ -44,6 +45,23 @@ class PublicApiGuardInterceptorPublicModeTest {
 
     @MockitoBean
     private PreGenerationJobService preGenerationJobService;
+
+    @MockitoBean
+    private com.classicchatreader.service.StylePreviewService stylePreviewService;
+
+    @Test
+    void stylePreviewRequiresAuthenticationAndUsesGenerationRateLimit() throws Exception {
+        String body = "{\"family\":\"cover\",\"prompt\":\"Ink\"}";
+        mockMvc.perform(post("/api/style-previews").contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(stylePreviewService);
+        when(stylePreviewService.generate("cover", "Ink")).thenReturn(new byte[]{1});
+        mockMvc.perform(post("/api/style-previews").header("X-API-Key", "test-key")
+                        .contentType("application/json").content(body)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/style-previews").header("X-API-Key", "test-key")
+                        .contentType("application/json").content(body)).andExpect(status().isTooManyRequests());
+        verify(stylePreviewService, times(1)).generate("cover", "Ink");
+    }
 
     @Test
     void sensitiveEndpointWithoutApiKey_returnsUnauthorized() throws Exception {
