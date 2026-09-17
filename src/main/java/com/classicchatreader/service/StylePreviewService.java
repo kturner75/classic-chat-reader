@@ -6,6 +6,10 @@ import java.util.UUID;
 /** Disposable image generation: no entity, settings, queue, or live-slot writes. */
 @Service
 public class StylePreviewService {
+    public static class InvalidPreviewRequest extends IllegalArgumentException {
+        public InvalidPreviewRequest(String message) { super(message); }
+    }
+
     private final BookCoverImageGeneratorService covers;
     private final CharacterPortraitImageGeneratorService portraits;
     private final IllustrationImageGeneratorService illustrations;
@@ -21,9 +25,9 @@ public class StylePreviewService {
 
     public byte[] generate(String family, String prompt) throws Exception {
         if (!java.util.Set.of("cover", "portrait", "illustration").contains(family))
-            throw new IllegalArgumentException("Unknown preview family");
+            throw new InvalidPreviewRequest("Unknown preview family");
         if (prompt == null || prompt.isBlank() || prompt.length() > 12000)
-            throw new IllegalArgumentException("Preview prompt must contain 1–12000 characters");
+            throw new InvalidPreviewRequest("Preview prompt must contain 1–12000 characters");
         String key = "style-preview-" + UUID.randomUUID();
         try {
             String filename = switch (family) {

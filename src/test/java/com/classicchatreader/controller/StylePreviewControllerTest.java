@@ -21,10 +21,21 @@ class StylePreviewControllerTest {
     void returnsUncachedBytesAndRejectsInvalidFamily() throws Exception {
         var service = mock(StylePreviewService.class);
         when(service.generate("cover", "Ink")).thenReturn(new byte[]{1, 2});
-        when(service.generate("other", "Ink")).thenThrow(new IllegalArgumentException("Unknown family"));
+        when(service.generate("other", "Ink")).thenThrow(new StylePreviewService.InvalidPreviewRequest("Unknown family"));
         var mvc = MockMvcBuilders.standaloneSetup(new StylePreviewController(service, false)).build();
         mvc.perform(post("/api/style-previews").contentType("application/json").content("{\"family\":\"cover\",\"prompt\":\"Ink\"}"))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store")).andExpect(content().bytes(new byte[]{1, 2}));
         mvc.perform(post("/api/style-previews").contentType("application/json").content("{\"family\":\"other\",\"prompt\":\"Ink\"}")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void providerArgumentFailureIsNotReportedAsInvalidRequest() throws Exception {
+        var service = mock(StylePreviewService.class);
+        var failure = new IllegalArgumentException("Provider returned invalid image bytes");
+        when(service.generate("cover", "Ink")).thenThrow(failure);
+        var controller = new StylePreviewController(service, false);
+        var thrown = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> controller.generate(new StylePreviewController.Request("cover", "Ink")));
+        org.junit.jupiter.api.Assertions.assertSame(failure, thrown);
     }
 }

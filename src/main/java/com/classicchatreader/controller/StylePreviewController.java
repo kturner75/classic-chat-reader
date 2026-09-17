@@ -33,7 +33,7 @@ public class StylePreviewController {
         try {
             byte[] bytes = previews.generate(request.family(), request.prompt());
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM).body(bytes);
-        } catch (IllegalArgumentException invalid) {
+        } catch (StylePreviewService.InvalidPreviewRequest invalid) {
             return ResponseEntity.badRequest().body(Map.of("error", invalid.getMessage()));
         }
     }
