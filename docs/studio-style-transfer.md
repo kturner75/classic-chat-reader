@@ -31,9 +31,10 @@ Export returns `{source, sourceId, revision, style}`. Replace JSON:
 ```
 
 Replace sets all six fields exactly. Values are trimmed. Blank optional fields become NULL.
-Style and prompt prefix are required. Values over the column limits (style 255, prefix
-1000, setting 1000, reasoning 2000, cover subject 32, cover focus 500) are rejected, not
-clipped, so production can never silently differ from the reviewed draft. The book row is
+Style and prompt prefix are required. Limits come from `IllustrationSettings`, the same
+ones the local settings API uses: style 255, prefix 1000, setting 1000, reasoning 2000,
+cover subject 32, and cover focus 4000 (a `TEXT` column since V30). Longer values are
+rejected, not clipped, so production can never silently differ from the reviewed draft. The book row is
 locked, the revision is compared, and the stored row is read back and must equal the plan
 before commit.
 

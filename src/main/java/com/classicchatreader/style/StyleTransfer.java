@@ -1,5 +1,6 @@
 package com.classicchatreader.style;
 
+import com.classicchatreader.model.IllustrationSettings;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.MessageDigest;
 import java.sql.*;
@@ -9,10 +10,6 @@ import java.util.*;
 public final class StyleTransfer {
     private static final ObjectMapper JSON = new ObjectMapper();
     private StyleTransfer() {}
-
-    /** Column limits from the books table (V1, V29). */
-    static final int STYLE_MAX = 255, PREFIX_MAX = 1000, SETTING_MAX = 1000, REASONING_MAX = 2000,
-            COVER_SUBJECT_MAX = 32, COVER_FOCUS_MAX = 500;
 
     public record Style(String style, String promptPrefix, String setting, String reasoning,
                         String coverSubject, String coverFocus) {}
@@ -89,9 +86,13 @@ public final class StyleTransfer {
 
     static Style normalize(Style style) {
         if (style == null) throw new IllegalArgumentException("Style is required");
-        Style result = new Style(field("style", style.style(), STYLE_MAX), field("promptPrefix", style.promptPrefix(), PREFIX_MAX),
-                field("setting", style.setting(), SETTING_MAX), field("reasoning", style.reasoning(), REASONING_MAX),
-                field("coverSubject", style.coverSubject(), COVER_SUBJECT_MAX), field("coverFocus", style.coverFocus(), COVER_FOCUS_MAX));
+        // Same limits the local settings API enforces, so a style accepted locally can always ship to production.
+        Style result = new Style(field("style", style.style(), IllustrationSettings.STYLE_MAX),
+                field("promptPrefix", style.promptPrefix(), IllustrationSettings.PREFIX_MAX),
+                field("setting", style.setting(), IllustrationSettings.SETTING_MAX),
+                field("reasoning", style.reasoning(), IllustrationSettings.REASONING_MAX),
+                field("coverSubject", style.coverSubject(), IllustrationSettings.COVER_SUBJECT_MAX),
+                field("coverFocus", style.coverFocus(), IllustrationSettings.COVER_FOCUS_MAX));
         if (result.style() == null || result.promptPrefix() == null) throw new IllegalArgumentException("Style name and prompt prefix must not be blank");
         return result;
     }

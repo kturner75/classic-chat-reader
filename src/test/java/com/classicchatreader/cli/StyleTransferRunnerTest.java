@@ -2,11 +2,10 @@ package com.classicchatreader.cli;
 
 import com.classicchatreader.style.StyleTransfer;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.h2.tools.RunScript;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.*;
-import java.nio.file.*;
+import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -14,10 +13,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class StyleTransferRunnerTest {
     @TempDir Path dir;
     @Test void exportThenExplicitReplacementProducesVerifiedReceipt() throws Exception {
-        String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+        String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        org.flywaydb.core.Flyway.configure().dataSource(url, "sa", "").locations("classpath:db/migration").load().migrate();
         try (Connection c = DriverManager.getConnection(url, "sa", "")) {
-            for (String migration : List.of("V1__baseline_schema.sql", "V29__book_cover_subject.sql"))
-                RunScript.execute(c, new StringReader(Files.readString(Path.of("src/main/resources/db/migration", migration))));
             try (Statement s = c.createStatement()) {
                 s.execute("INSERT INTO books(id,source,source_id,title,author) VALUES ('b','gutenberg','1342','Title','Author')");
             }
