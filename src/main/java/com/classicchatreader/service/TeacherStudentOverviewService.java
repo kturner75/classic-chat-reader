@@ -292,8 +292,10 @@ public class TeacherStudentOverviewService {
                 .filter(a -> a.getCreatedAt() != null && !a.getCreatedAt().isBefore(since))
                 .findFirst()
                 .orElse(null);
+        // Box the int branch explicitly: a mixed int/Integer ternary unboxes to int and throws when the
+        // student has no attempts at all (orElse(null)).
         Integer totalQuestions = latestInWindow != null
-                ? latestInWindow.getTotalQuestions()
+                ? Integer.valueOf(latestInWindow.getTotalQuestions())
                 : attempts.stream().findFirst().map(QuizAttemptEntity::getTotalQuestions).orElse(null);
         String latestAt = latestInWindow != null && latestInWindow.getCreatedAt() != null
                 ? latestInWindow.getCreatedAt().atOffset(ZoneOffset.UTC).toString()
