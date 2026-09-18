@@ -17,6 +17,7 @@ Use **Notion Tasks** for project **classic-chat-reader**:
 - `backlog.md`: pointer to the Notion Tasks backlog (not a living work queue).
 - `bl-023-qa-checklist.md`: mobile QA + desktop regression checklist for adaptive reader behavior, plus core chat, voice call, and My Chats checks.
 - `bl-021-auth-architecture-adr.md`: auth and security decision record for user registration/account rollout.
+- `ferpa-access-logging.md`: implemented FERPA education-record access audit (BL-043.5) — surfaces, fail-closed rule, retention placeholder.
 - `bl-025-classroom-data-model.md`: classroom domain model + FERPA schema hooks / companion checklist (runtime policy owned by `BL-043` in Notion).
 - `landing-ranking.md`: deterministic ranking rules for personalized landing queues.
 - `discover-affinity.md`: deterministic recommendation model for the `Discover` rail.

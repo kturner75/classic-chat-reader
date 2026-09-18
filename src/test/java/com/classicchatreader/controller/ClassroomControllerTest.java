@@ -11,7 +11,9 @@ import com.classicchatreader.service.AssignmentQuizService;
 import com.classicchatreader.service.ClassroomAdminService;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
+import com.classicchatreader.entity.EducationRecordAccessLogEntity;
 import com.classicchatreader.service.ClassroomUsageService;
+import com.classicchatreader.service.EducationRecordAccessLogService;
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.TeacherQuizAuthoringService;
 import com.classicchatreader.service.TeacherStudentOverviewService;
@@ -36,9 +38,12 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -80,6 +85,9 @@ class ClassroomControllerTest {
 
     @MockitoBean
     private ClassroomUsageService classroomUsageService;
+
+    @MockitoBean
+    private EducationRecordAccessLogService educationRecordAccessLogService;
 
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
@@ -193,6 +201,57 @@ class ClassroomControllerTest {
                 .andExpect(jsonPath("$[0].displayNameOverride").value("Alex Rivera"))
                 .andExpect(jsonPath("$[0].email").value("student@example.test"))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+
+        // BL-043.5: every student whose record left the server is audited.
+        verify(educationRecordAccessLogService).recordAccess(
+                eq("teacher-1"),
+                eq(List.of("student-1")),
+                eq("term-1"),
+                eq(EducationRecordAccessLogEntity.ACCESS_VIEW_ROSTER),
+                eq(EducationRecordAccessLogEntity.RESOURCE_TERM),
+                eq("term-1"),
+                any());
+    }
+
+    @Test
+    void rosterFailsClosedWhenTheAccessLogCannotBeWritten() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(classroomAdminService.listRoster("teacher-1", "term-1")).thenReturn(List.of(
+                new ClassroomAdminService.EnrollmentRow(
+                        "enrollment-1", "student-1", "student@example.test", "ACTIVE", LocalDate.of(2026, 8, 24), "Alex Rivera")));
+        doThrow(new IllegalStateException("audit unavailable")).when(educationRecordAccessLogService)
+                .recordAccess(any(), anyList(), any(), any(), any(), any(), any());
+
+        // The read must not succeed without an audit row; MockMvc surfaces the failure as a servlet error.
+        Exception failure = assertThrows(Exception.class, () -> mockMvc.perform(get("/api/classroom/terms/term-1/roster")));
+        assertEquals("audit unavailable", rootCause(failure).getMessage());
+    }
+
+    @Test
+    void studentOverviewFailsClosedWhenTheAccessLogCannotBeWritten() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(teacherStudentOverviewService.getOverview("teacher-1", "term-1", "student-1"))
+                .thenReturn(new StudentOverviewResponse("term-1",
+                        new StudentIdentity("student-1", "student@example.test", "Alex Rivera", "2026-08-24"),
+                        List.of(), List.of(), List.of(), List.of(),
+                        new TimeInReaderSummary("Approximate time in reader", "Engagement proxy", 0L, List.of()),
+                        "Pilot teacher drill-down"));
+        doThrow(new IllegalStateException("audit unavailable")).when(educationRecordAccessLogService)
+                .recordAccess(any(), eq("student-1"), any(), any(), any(), any(), any());
+
+        Exception failure = assertThrows(Exception.class,
+                () -> mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview")));
+        assertEquals("audit unavailable", rootCause(failure).getMessage());
+    }
+
+    private static Throwable rootCause(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     @Test
@@ -220,6 +279,15 @@ class ClassroomControllerTest {
                 .andExpect(jsonPath("$.student.email").value("student@example.test"))
                 .andExpect(jsonPath("$.timeInReader.approximateTotalMs").value(60000))
                 .andExpect(jsonPath("$.ferpaNote").exists());
+
+        verify(educationRecordAccessLogService).recordAccess(
+                eq("teacher-1"),
+                eq("student-1"),
+                eq("term-1"),
+                eq(EducationRecordAccessLogEntity.ACCESS_VIEW_STUDENT_OVERVIEW),
+                eq(EducationRecordAccessLogEntity.RESOURCE_TERM),
+                eq("term-1"),
+                any());
     }
 
     @Test

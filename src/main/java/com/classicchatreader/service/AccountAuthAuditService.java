@@ -6,9 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -52,7 +49,7 @@ public class AccountAuthAuditService {
             event.put("emailHash", emailHash);
         }
 
-        String ipHash = hash(resolveClientIp(request));
+        String ipHash = hash(RequestPrivacy.resolveClientIp(request));
         if (ipHash != null) {
             event.put("ipHash", ipHash);
         }
@@ -69,27 +66,6 @@ public class AccountAuthAuditService {
         return event;
     }
 
-    private String resolveClientIp(HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            String[] parts = forwarded.split(",");
-            if (parts.length > 0 && !parts[0].isBlank()) {
-                return parts[0].trim();
-            }
-        }
-
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-
-        String remoteAddr = request.getRemoteAddr();
-        return (remoteAddr == null || remoteAddr.isBlank()) ? null : remoteAddr.trim();
-    }
-
     private String normalize(String value) {
         if (value == null) {
             return null;
@@ -99,17 +75,7 @@ public class AccountAuthAuditService {
     }
 
     private String hash(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-            return encoded.substring(0, Math.min(22, encoded.length()));
-        } catch (Exception e) {
-            return Integer.toHexString(value.hashCode());
-        }
+        return RequestPrivacy.hash(value);
     }
 
     private String nullSafe(String value, String fallback) {
