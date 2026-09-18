@@ -56,6 +56,30 @@ class AccountControllerTest {
     @MockitoBean
     private GoogleAccountOAuthService googleAccountOAuthService;
 
+    @MockitoBean
+    private com.classicchatreader.service.AccountDataExportService accountDataExportService;
+
+    @Test
+    void exportMyDataRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(accountDataExportService);
+    }
+
+    @Test
+    void exportMyDataDownloadsOnlyTheSignedInAccountsFile() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.export("user-1")).thenReturn("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.account").exists());
+        verify(accountDataExportService).export("user-1");
+    }
+
     @Test
     void status_returnsUnauthenticatedWhenNoSession() throws Exception {
         when(accountAuthService.status(any()))
