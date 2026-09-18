@@ -60,6 +60,28 @@ class ClassroomAuthorizationServiceTest {
         when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
     }
 
+    private ClassRoleMembershipEntity member(String userId, String role) {
+        ClassRoleMembershipEntity membership = new ClassRoleMembershipEntity();
+        membership.setUserId(userId);
+        membership.setRole(role);
+        membership.setStatus("ACTIVE");
+        return membership;
+    }
+
+    @Test
+    void chatExportAllowsTeachersAndCoTeachersButNotTas() {
+        liveActiveTerm("term-1", "sec-1");
+        when(classRoleMembershipRepository.findByTermIdAndStatus("term-1", "ACTIVE"))
+                .thenReturn(List.of(member("t1", "TEACHER"), member("c1", "CO_TEACHER"), member("ta1", "TA")));
+
+        assertTrue(service.canExportStudentChats("t1", "term-1"));
+        assertTrue(service.canExportStudentChats("c1", "term-1"));
+        assertFalse(service.canExportStudentChats("ta1", "term-1"));
+        assertTrue(service.canManageTerm("ta1", "term-1"), "TAs still manage the term; only export is narrower");
+        assertFalse(service.canExportStudentChats("stranger", "term-1"));
+        assertFalse(service.canExportStudentChats(null, "term-1"));
+    }
+
     @Test
     void teacherCanManageTerm() {
         liveActiveTerm("term-1", "sec-1");

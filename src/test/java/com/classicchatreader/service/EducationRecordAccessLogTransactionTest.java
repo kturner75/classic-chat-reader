@@ -72,4 +72,17 @@ class EducationRecordAccessLogTransactionTest {
         });
         assertEquals(1, repository.findBySubjectUserIdOrderByOccurredAtDesc("tx-student").size());
     }
+
+    @Test
+    void joinedAuditWriteRollsBackWithItsCallerAndRefusesToRunWithoutOne() {
+        tx().executeWithoutResult(status -> {
+            service.recordAccessWithinTransaction("tx-teacher", "tx-student", null,
+                    EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT, null, null, null);
+            status.setRollbackOnly();
+        });
+        assertEquals(0, repository.findBySubjectUserIdOrderByOccurredAtDesc("tx-student").size());
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.transaction.IllegalTransactionStateException.class,
+                () -> service.recordAccessWithinTransaction("tx-teacher", "tx-student", null,
+                        EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT, null, null, null));
+    }
 }

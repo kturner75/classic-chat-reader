@@ -64,6 +64,34 @@ public class EducationRecordAccessLogService {
             String resourceType,
             String resourceId,
             HttpServletRequest request) {
+        write(actorUserId, subjectUserIds, termId, accessType, resourceType, resourceId, request);
+    }
+
+    /**
+     * Joins the caller's transaction instead of committing independently. For writes whose audit
+     * row references another row created in the same transaction (a chat export job): both commit
+     * together or neither does. Requires an active transaction.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordAccessWithinTransaction(
+            String actorUserId,
+            String subjectUserId,
+            String termId,
+            String accessType,
+            String resourceType,
+            String resourceId,
+            HttpServletRequest request) {
+        write(actorUserId, List.of(subjectUserId), termId, accessType, resourceType, resourceId, request);
+    }
+
+    private void write(
+            String actorUserId,
+            Collection<String> subjectUserIds,
+            String termId,
+            String accessType,
+            String resourceType,
+            String resourceId,
+            HttpServletRequest request) {
         if (actorUserId == null || actorUserId.isBlank()) {
             throw new IllegalArgumentException("Education record access log needs an actor");
         }
