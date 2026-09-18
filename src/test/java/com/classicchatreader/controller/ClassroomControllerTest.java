@@ -224,8 +224,34 @@ class ClassroomControllerTest {
                 .recordAccess(any(), anyList(), any(), any(), any(), any(), any());
 
         // The read must not succeed without an audit row; MockMvc surfaces the failure as a servlet error.
-        assertThrows(Exception.class, () -> mockMvc.perform(get("/api/classroom/terms/term-1/roster"))
-                .andExpect(status().is5xxServerError()));
+        Exception failure = assertThrows(Exception.class, () -> mockMvc.perform(get("/api/classroom/terms/term-1/roster")));
+        assertEquals("audit unavailable", rootCause(failure).getMessage());
+    }
+
+    @Test
+    void studentOverviewFailsClosedWhenTheAccessLogCannotBeWritten() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(teacherStudentOverviewService.getOverview("teacher-1", "term-1", "student-1"))
+                .thenReturn(new StudentOverviewResponse("term-1",
+                        new StudentIdentity("student-1", "student@example.test", "Alex Rivera", "2026-08-24"),
+                        List.of(), List.of(), List.of(), List.of(),
+                        new TimeInReaderSummary("Approximate time in reader", "Engagement proxy", 0L, List.of()),
+                        "Pilot teacher drill-down"));
+        doThrow(new IllegalStateException("audit unavailable")).when(educationRecordAccessLogService)
+                .recordAccess(any(), eq("student-1"), any(), any(), any(), any(), any());
+
+        Exception failure = assertThrows(Exception.class,
+                () -> mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview")));
+        assertEquals("audit unavailable", rootCause(failure).getMessage());
+    }
+
+    private static Throwable rootCause(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     @Test

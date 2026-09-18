@@ -35,6 +35,11 @@ public class EducationRecordAccessLogService {
         this.classroomProperties = classroomProperties;
     }
 
+    /**
+     * Annotated as well as the collection overload: the internal call below bypasses Spring's
+     * proxy, so this entry point must open the independent transaction itself.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordAccess(
             String actorUserId,
             String subjectUserId,
