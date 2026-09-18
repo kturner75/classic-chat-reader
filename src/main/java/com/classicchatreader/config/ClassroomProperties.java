@@ -42,6 +42,12 @@ public class ClassroomProperties {
      */
     private Invite invite = new Invite();
 
+    /**
+     * FERPA education-record audit retention (BL-043.5). The default is a placeholder
+     * until the legal retention duration is agreed (BL-043.3 / BL-043.13).
+     */
+    private Ferpa ferpa = new Ferpa();
+
     public String getMode() {
         return mode;
     }
@@ -121,8 +127,37 @@ public class ClassroomProperties {
         return invite.getDefaultTtlDays();
     }
 
+    public Ferpa getFerpa() {
+        return ferpa;
+    }
+
+    public void setFerpa(Ferpa ferpa) {
+        this.ferpa = ferpa == null ? new Ferpa() : ferpa;
+    }
+
+    public int accessLogRetainDays() {
+        return ferpa.getAccessLogRetainDays();
+    }
+
     public LocalDateTime inviteDefaultExpiresAt() {
         return LocalDateTime.now(ZoneOffset.UTC).plusDays(invite.getDefaultTtlDays());
+    }
+
+    public static class Ferpa {
+        private int accessLogRetainDays = 2555;
+
+        public int getAccessLogRetainDays() {
+            return accessLogRetainDays;
+        }
+
+        public void setAccessLogRetainDays(int accessLogRetainDays) {
+            if (accessLogRetainDays < 1) {
+                log.warn("Invalid classroom.ferpa.access-log-retain-days={}; using 2555", accessLogRetainDays);
+                this.accessLogRetainDays = 2555;
+                return;
+            }
+            this.accessLogRetainDays = accessLogRetainDays;
+        }
     }
 
     public static class Invite {

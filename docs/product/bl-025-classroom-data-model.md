@@ -662,6 +662,11 @@ Prefer **logical delete** over FK `ON DELETE CASCADE` for education records. Acc
 \*School admin may gain education-record access only after BL-043 documents “school official” scope.  
 \**Teachers do not read raw access logs in v1 (write-only system); compliance export is ops/BL-043.
 
+**Implemented (BL-043.5):** roster and student-overview reads write `VIEW_ROSTER` /
+`VIEW_STUDENT_OVERVIEW` rows fail-closed, with hashed IP/user agent and `retain_until` from
+`classroom.ferpa.access-log-retain-days` (placeholder 2555 days). See
+`docs/product/ferpa-access-logging.md`.
+
 ---
 
 ## Privacy, retention, FERPA hooks (BL-043)

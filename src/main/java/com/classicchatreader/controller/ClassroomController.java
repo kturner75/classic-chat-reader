@@ -20,7 +20,9 @@ import com.classicchatreader.service.ClassroomAdminService.InviteSummary;
 import com.classicchatreader.service.ClassroomContextService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCapabilities;
+import com.classicchatreader.entity.EducationRecordAccessLogEntity;
 import com.classicchatreader.service.ClassroomUsageService;
+import com.classicchatreader.service.EducationRecordAccessLogService;
 import com.classicchatreader.service.ClassroomUsageService.HeartbeatRequest;
 import com.classicchatreader.service.ClassroomUsageService.HeartbeatResult;
 import com.classicchatreader.service.ClassroomUsageService.OpenedResult;
@@ -69,6 +71,7 @@ public class ClassroomController {
     private final AssignmentQuizService assignmentQuizService;
     private final TeacherStudentOverviewService teacherStudentOverviewService;
     private final ClassroomUsageService classroomUsageService;
+    private final EducationRecordAccessLogService educationRecordAccessLogService;
 
     public ClassroomController(
             ClassroomContextService classroomContextService,
@@ -79,7 +82,8 @@ public class ClassroomController {
             TeacherQuizAuthoringService teacherQuizAuthoringService,
             AssignmentQuizService assignmentQuizService,
             TeacherStudentOverviewService teacherStudentOverviewService,
-            ClassroomUsageService classroomUsageService) {
+            ClassroomUsageService classroomUsageService,
+            EducationRecordAccessLogService educationRecordAccessLogService) {
         this.classroomContextService = classroomContextService;
         this.classroomAdminService = classroomAdminService;
         this.inviteLinkService = inviteLinkService;
@@ -89,6 +93,7 @@ public class ClassroomController {
         this.assignmentQuizService = assignmentQuizService;
         this.teacherStudentOverviewService = teacherStudentOverviewService;
         this.classroomUsageService = classroomUsageService;
+        this.educationRecordAccessLogService = educationRecordAccessLogService;
     }
 
     @GetMapping("/context")
@@ -203,7 +208,18 @@ public class ClassroomController {
 
     @GetMapping("/terms/{termId}/roster")
     public List<EnrollmentRow> roster(@PathVariable String termId, HttpServletRequest request) {
-        return classroomAdminService.listRoster(requireUserId(request), termId);
+        String actorUserId = requireUserId(request);
+        List<EnrollmentRow> roster = classroomAdminService.listRoster(actorUserId, termId);
+        // FERPA audit before the roster leaves the server (BL-043.5); a failed write fails the read.
+        educationRecordAccessLogService.recordAccess(
+                actorUserId,
+                roster.stream().map(EnrollmentRow::userId).toList(),
+                termId,
+                EducationRecordAccessLogEntity.ACCESS_VIEW_ROSTER,
+                EducationRecordAccessLogEntity.RESOURCE_TERM,
+                termId,
+                request);
+        return roster;
     }
 
     /** Pilot teacher→student overview (BL-025.10). Teacher of term only. */
@@ -212,7 +228,17 @@ public class ClassroomController {
             @PathVariable String termId,
             @PathVariable String userId,
             HttpServletRequest request) {
-        return teacherStudentOverviewService.getOverview(requireUserId(request), termId, userId);
+        String actorUserId = requireUserId(request);
+        StudentOverviewResponse overview = teacherStudentOverviewService.getOverview(actorUserId, termId, userId);
+        educationRecordAccessLogService.recordAccess(
+                actorUserId,
+                userId,
+                termId,
+                EducationRecordAccessLogEntity.ACCESS_VIEW_STUDENT_OVERVIEW,
+                EducationRecordAccessLogEntity.RESOURCE_TERM,
+                termId,
+                request);
+        return overview;
     }
 
     /** Durable first-open for an assignment (student of that term). */
