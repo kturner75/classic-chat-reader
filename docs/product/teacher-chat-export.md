@@ -17,8 +17,9 @@ Returns a download of one student's **Reading Buddy** messages for one term.
 
 ## Who may export
 
-- The requester must be an **active teacher or co-teacher on a live term** (`canManageTerm`).
-  Exports close when the term ends, which is the conservative reading of the data model.
+- The requester must be an **active TEACHER or CO_TEACHER on a live term**
+  (`canExportStudentChats`). **TAs are refused**, even though they can manage the term. Exports close
+  when the term ends, which is the conservative reading of the data model.
 - The student must have a non-deleted enrollment in that term, in **any status**. A dropped or
   completed student stays exportable ("has or had enrollment"). Deleted enrollments do not.
 - Teachers cannot export themselves through this endpoint, and school admins are denied (KD-16).
@@ -33,8 +34,10 @@ Returns a download of one student's **Reading Buddy** messages for one term.
    the term window. Exports are synchronous and streamed, so **no export file is stored**
    (`artifact_storage_key` stays null). That avoids a second copy of student records needing
    its own retention.
-3. An `EXPORT_CHAT` access-log row pointing at the job is written, **fail-closed**. If the audit
-   write fails, the job row rolls back and nothing is returned.
+3. The file is built, then an `EXPORT_CHAT` access-log row pointing at the job is written **in the
+   same transaction** (`recordAccessWithinTransaction`). The job and its audit row commit together or
+   not at all, so an audit row can never point at an export that didn't happen, and an export can
+   never be returned without its audit row (fail-closed).
 4. The file is returned as an attachment with `Cache-Control: no-store` and `X-Chat-Export-Id`.
 
 ## Formats

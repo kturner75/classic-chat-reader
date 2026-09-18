@@ -34,11 +34,10 @@ class TeacherChatExportIntegrationTest {
 
     @Autowired private TeacherChatExportService service;
     @Autowired private ChatExportJobRepository jobs;
-    @Autowired private EducationRecordAccessLogRepository accessLogs;
+    @MockitoSpyBean private EducationRecordAccessLogRepository accessLogs;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private EntityManager entityManager;
     @MockitoBean private ClassroomAuthorizationService authorization;
-    @MockitoSpyBean private EducationRecordAccessLogService accessLogService;
 
     private void sql(String statement) {
         new TransactionTemplate(transactionManager).executeWithoutResult(s -> entityManager.createNativeQuery(statement).executeUpdate());
@@ -54,7 +53,7 @@ class TeacherChatExportIntegrationTest {
         sql("INSERT INTO books (id, source, source_id, title, author) VALUES ('book-x', 'gutenberg', 'ex-1342', 'Pride and Prejudice', 'Austen, Jane')");
         sql("INSERT INTO reading_buddy_messages (id, owner_key, book_id, persona_id, role, content, kind, chapter_index, paragraph_index, content_hash, created_at, chronology_sequence) "
                 + "VALUES ('ex-msg', 'user:ex-student', 'book-x', 'sage', 'user', 'Why is Darcy rude?', 'chat', 1, 0, 'hash', TIMESTAMP '2026-09-01 10:00:00', 1)");
-        when(authorization.canManageTerm("ex-teacher", "ex-term")).thenReturn(true);
+        when(authorization.canExportStudentChats("ex-teacher", "ex-term")).thenReturn(true);
     }
 
     @AfterEach
@@ -85,9 +84,20 @@ class TeacherChatExportIntegrationTest {
     }
 
     @Test
+    void auditRowDoesNotOutliveAnExportThatRollsBackAfterTheAuditWrite() {
+        // The export completes, audit row included, then its transaction rolls back. An independently
+        // committed audit row would survive here, pointing at a job that never existed.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            service.exportReadingBuddy("ex-teacher", "ex-term", "ex-student", "json", null);
+            status.setRollbackOnly();
+        });
+        assertTrue(jobs.findBySubjectUserIdOrderByCreatedAtDesc("ex-student").isEmpty());
+        assertTrue(accessLogs.findBySubjectUserIdOrderByOccurredAtDesc("ex-student").isEmpty());
+    }
+
+    @Test
     void failedAuditWriteLeavesNoExportJobBehind() {
-        doThrow(new IllegalStateException("audit unavailable")).when(accessLogService)
-                .recordAccess(any(), any(String.class), any(), any(), any(), any(), any());
+        doThrow(new IllegalStateException("audit unavailable")).when(accessLogs).saveAll(any());
 
         assertThrows(IllegalStateException.class, () -> service.exportReadingBuddy("ex-teacher", "ex-term", "ex-student", "json", null));
         assertTrue(jobs.findBySubjectUserIdOrderByCreatedAtDesc("ex-student").isEmpty());

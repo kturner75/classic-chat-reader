@@ -88,7 +88,7 @@ public class TeacherChatExportService {
         if (teacherUserId == null || teacherUserId.isBlank() || !userRepository.existsById(teacherUserId)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account sign-in required.");
         }
-        if (!authorizationService.canManageTerm(teacherUserId, termId)) {
+        if (!authorizationService.canExportStudentChats(teacherUserId, termId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required.");
         }
         // "has or had" enrollment: dropped or completed students stay exportable for the term; deleted rows do not.
@@ -114,17 +114,17 @@ public class TeacherChatExportService {
                     "This export has more than " + MAX_MESSAGES + " messages. Contact support for a bulk export.");
         }
 
-        ChatExportJobEntity job = chatExportJobRepository.save(new ChatExportJobEntity(teacherUserId, studentUserId, termId,
-                format, ChatExportJobEntity.SOURCE_READING_BUDDY, from, to));
-        // Fail-closed: no audit row, no export. The job row rolls back with this transaction if the audit write fails.
-        accessLogService.recordAccess(teacherUserId, studentUserId, termId, EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT,
-                EducationRecordAccessLogEntity.RESOURCE_CHAT_EXPORT_JOB, job.getId(), request);
-
         Map<String, String> titles = new HashMap<>();
         for (BookEntity book : bookRepository.findAllById(messages.stream().map(ReadingBuddyMessageEntity::getBookId).distinct().toList())) {
             titles.put(book.getId(), book.getTitle());
         }
+        ChatExportJobEntity job = chatExportJobRepository.save(new ChatExportJobEntity(teacherUserId, studentUserId, termId,
+                format, ChatExportJobEntity.SOURCE_READING_BUDDY, from, to));
         byte[] bytes = "TXT".equals(format) ? text(job, term, messages, titles) : jsonDocument(job, term, messages, titles);
+        // Fail-closed, and atomic with the job row: the audit row joins this transaction, so the job and
+        // its EXPORT_CHAT row commit together or not at all, and nothing is returned without both.
+        accessLogService.recordAccessWithinTransaction(teacherUserId, studentUserId, termId, EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT,
+                EducationRecordAccessLogEntity.RESOURCE_CHAT_EXPORT_JOB, job.getId(), request);
         String extension = format.toLowerCase(Locale.ROOT);
         return new ExportFile(job.getId(), "reading-buddy-" + termId + "-" + studentUserId + "." + extension,
                 "TXT".equals(format) ? "text/plain;charset=UTF-8" : "application/json", bytes, messages.size());

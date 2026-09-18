@@ -62,7 +62,7 @@ class TeacherChatExportServiceTest {
     @BeforeEach
     void setup() {
         when(users.existsById("teacher-1")).thenReturn(true);
-        when(authorization.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        when(authorization.canExportStudentChats("teacher-1", "term-1")).thenReturn(true);
         when(enrollments.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "student-1")).thenReturn(Optional.of(new EnrollmentEntity()));
         TermEntity term = new TermEntity();
         term.setId("term-1");
@@ -103,7 +103,7 @@ class TeacherChatExportServiceTest {
         assertEquals("application/json", file.contentType());
         assertEquals("reading-buddy-term-1-student-1.json", file.filename());
 
-        verify(accessLog).recordAccess("teacher-1", "student-1", "term-1", EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT,
+        verify(accessLog).recordAccessWithinTransaction("teacher-1", "student-1", "term-1", EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT,
                 EducationRecordAccessLogEntity.RESOURCE_CHAT_EXPORT_JOB, "export-1", null);
         verify(jobs).save(argThat(job -> "JSON".equals(job.getFormat()) && "READING_BUDDY".equals(job.getChatSources())
                 && LocalDateTime.of(2026, 8, 24, 0, 0).equals(job.getFilterFrom())
@@ -122,7 +122,7 @@ class TeacherChatExportServiceTest {
     @Test
     void auditFailureReturnsNothing() {
         doThrow(new IllegalStateException("audit unavailable")).when(accessLog)
-                .recordAccess(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), any());
+                .recordAccessWithinTransaction(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), any());
         assertThrows(IllegalStateException.class, () -> service.exportReadingBuddy("teacher-1", "term-1", "student-1", "json", null));
     }
 

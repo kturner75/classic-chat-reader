@@ -54,6 +54,19 @@ public class ClassroomAuthorizationService {
                 .isPresent();
     }
 
+    /**
+     * Chat export is narrower than term management: TEACHER or CO_TEACHER only, never TA
+     * (data model: "has ACTIVE TEACHER/CO_TEACHER on term").
+     */
+    public boolean canExportStudentChats(String userId, String termId) {
+        if (userId == null || termId == null || !isLiveActiveTerm(termId)) {
+            return false;
+        }
+        return classRoleMembershipRepository.findByTermIdAndStatus(termId, STATUS_ACTIVE).stream()
+                .anyMatch(m -> userId.equals(m.getUserId())
+                        && (ROLE_TEACHER.equals(m.getRole()) || ROLE_CO_TEACHER.equals(m.getRole())));
+    }
+
     public boolean canManageTerm(String userId, String termId) {
         return isActiveTeacherOnTerm(userId, termId);
     }
