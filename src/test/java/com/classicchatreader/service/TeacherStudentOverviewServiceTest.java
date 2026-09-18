@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -103,6 +104,42 @@ class TeacherStudentOverviewServiceTest {
                 () -> service.getOverview("teacher-1", "term-1", "student-1")
         );
         assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
+    void quizAssignmentWithNoAttemptsReportsNullTotalInsteadOfFailing() throws Exception {
+        when(userRepository.existsById("teacher-1")).thenReturn(true);
+        when(authorizationService.canManageTerm("teacher-1", "term-1")).thenReturn(true);
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setTermId("term-1");
+        enrollment.setUserId("student-1");
+        enrollment.setStatus("ACTIVE");
+        enrollment.setJoinedDate(LocalDate.of(2026, 8, 1));
+        when(enrollmentRepository.findByTermIdAndUserIdAndDeletedAtIsNull("term-1", "student-1"))
+                .thenReturn(Optional.of(enrollment));
+        UserEntity student = new UserEntity();
+        student.setId("student-1");
+        student.setEmail("new@example.test");
+        when(userRepository.findById("student-1")).thenReturn(Optional.of(student));
+        AssignmentEntity untouched = publishedAssignment("a-new", "Not attempted", "book-1", "ch-1", 0, true);
+        when(assignmentRepository.findByTermIdAndStatusAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(
+                "term-1", "PUBLISHED"))
+                .thenReturn(List.of(untouched));
+        BookEntity book = new BookEntity();
+        book.setId("book-1");
+        book.setTitle("Pride and Prejudice");
+        when(bookRepository.findAllById(any())).thenReturn(List.of(book));
+        when(chapterRepository.findById("ch-1")).thenReturn(Optional.of(chapter("ch-1", book, 0, "Chapter I")));
+
+        TeacherStudentOverviewService.StudentOverviewResponse overview =
+                service.getOverview("teacher-1", "term-1", "student-1");
+
+        TeacherStudentOverviewService.QuizOverview quiz = overview.quizzesForBook().stream()
+                .filter(q -> "a-new".equals(q.assignmentId()))
+                .findFirst()
+                .orElseThrow();
+        assertNull(quiz.totalQuestions());
+        assertEquals(0, quiz.attemptsUsed());
     }
 
     @Test
