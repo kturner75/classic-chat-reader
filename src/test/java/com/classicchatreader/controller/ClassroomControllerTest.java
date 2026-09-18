@@ -14,6 +14,7 @@ import com.classicchatreader.service.ClassroomTeacherCapabilityService;
 import com.classicchatreader.entity.EducationRecordAccessLogEntity;
 import com.classicchatreader.service.ClassroomUsageService;
 import com.classicchatreader.service.EducationRecordAccessLogService;
+import com.classicchatreader.service.TeacherChatExportService;
 import com.classicchatreader.service.InviteLinkService;
 import com.classicchatreader.service.TeacherQuizAuthoringService;
 import com.classicchatreader.service.TeacherStudentOverviewService;
@@ -88,6 +89,9 @@ class ClassroomControllerTest {
 
     @MockitoBean
     private EducationRecordAccessLogService educationRecordAccessLogService;
+
+    @MockitoBean
+    private TeacherChatExportService teacherChatExportService;
 
     @Test
     void getContextReturnsNotEnrolledWhenClassroomDisabled() throws Exception {
@@ -244,6 +248,31 @@ class ClassroomControllerTest {
         Exception failure = assertThrows(Exception.class,
                 () -> mockMvc.perform(get("/api/classroom/terms/term-1/students/student-1/overview")));
         assertEquals("audit unavailable", rootCause(failure).getMessage());
+    }
+
+    @Test
+    void chatExportDownloadsAnUncachedAttachmentForTheSignedInTeacher() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.of(
+                new AccountAuthService.AccountPrincipal("teacher-1", "teacher@example.test")));
+        when(teacherChatExportService.exportReadingBuddy(eq("teacher-1"), eq("term-1"), eq("student-1"), eq("txt"), any()))
+                .thenReturn(new TeacherChatExportService.ExportFile("export-1", "reading-buddy-term-1-student-1.txt",
+                        "text/plain;charset=UTF-8", "Reading Buddy chat export".getBytes(java.nio.charset.StandardCharsets.UTF_8), 1));
+
+        mockMvc.perform(post("/api/classroom/terms/term-1/students/student-1/chat-export").param("format", "txt"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Disposition", "attachment; filename=\"reading-buddy-term-1-student-1.txt\""))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Chat-Export-Id", "export-1"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string("Reading Buddy chat export"));
+    }
+
+    @Test
+    void chatExportRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(Optional.empty());
+        mockMvc.perform(post("/api/classroom/terms/term-1/students/student-1/chat-export"))
+                .andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(teacherChatExportService);
     }
 
     private static Throwable rootCause(Throwable failure) {

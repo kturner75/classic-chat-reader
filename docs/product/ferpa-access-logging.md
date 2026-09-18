@@ -9,7 +9,7 @@ to `education_record_access_logs` (the V14 hook table) before the data leaves th
 | --- | --- | --- |
 | `GET /api/classroom/terms/{termId}/roster` | `VIEW_ROSTER` | one row per student in the returned roster |
 | `GET /api/classroom/terms/{termId}/students/{userId}/overview` | `VIEW_STUDENT_OVERVIEW` | the student |
-| Chat export (BL-043.7, not built yet) | `EXPORT_CHAT` | the student |
+| `POST /api/classroom/terms/{termId}/students/{userId}/chat-export` (BL-043.7) | `EXPORT_CHAT` | the student; `resource_type=CHAT_EXPORT_JOB`, `resource_id` = the export job |
 
 `subject_user_id` is NOT NULL, so a roster read of thirty students writes thirty rows.
 
@@ -42,6 +42,5 @@ in BL-043.3 / BL-043.13. Access logs are never soft-deleted with student content
 ## Open follow-ups
 
 - BL-043.6: retention/purge job and account-delete reconciliation, including these rows.
-- BL-043.7: server chat-export API, which must write `EXPORT_CHAT` through this same writer.
 - Any new teacher-facing surface that returns student records needs a writer call; there is no
   automatic interception.

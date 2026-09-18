@@ -25,6 +25,7 @@ public class EducationRecordAccessLogEntity {
     public static final String ACCESS_EXPORT_CHAT = "EXPORT_CHAT";
 
     public static final String RESOURCE_TERM = "TERM";
+    public static final String RESOURCE_CHAT_EXPORT_JOB = "CHAT_EXPORT_JOB";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

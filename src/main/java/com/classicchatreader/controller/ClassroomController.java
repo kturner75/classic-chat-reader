@@ -23,6 +23,7 @@ import com.classicchatreader.service.ClassroomTeacherCapabilityService.TeacherCa
 import com.classicchatreader.entity.EducationRecordAccessLogEntity;
 import com.classicchatreader.service.ClassroomUsageService;
 import com.classicchatreader.service.EducationRecordAccessLogService;
+import com.classicchatreader.service.TeacherChatExportService;
 import com.classicchatreader.service.ClassroomUsageService.HeartbeatRequest;
 import com.classicchatreader.service.ClassroomUsageService.HeartbeatResult;
 import com.classicchatreader.service.ClassroomUsageService.OpenedResult;
@@ -47,6 +48,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -72,6 +77,7 @@ public class ClassroomController {
     private final TeacherStudentOverviewService teacherStudentOverviewService;
     private final ClassroomUsageService classroomUsageService;
     private final EducationRecordAccessLogService educationRecordAccessLogService;
+    private final TeacherChatExportService teacherChatExportService;
 
     public ClassroomController(
             ClassroomContextService classroomContextService,
@@ -83,7 +89,8 @@ public class ClassroomController {
             AssignmentQuizService assignmentQuizService,
             TeacherStudentOverviewService teacherStudentOverviewService,
             ClassroomUsageService classroomUsageService,
-            EducationRecordAccessLogService educationRecordAccessLogService) {
+            EducationRecordAccessLogService educationRecordAccessLogService,
+            TeacherChatExportService teacherChatExportService) {
         this.classroomContextService = classroomContextService;
         this.classroomAdminService = classroomAdminService;
         this.inviteLinkService = inviteLinkService;
@@ -94,6 +101,7 @@ public class ClassroomController {
         this.teacherStudentOverviewService = teacherStudentOverviewService;
         this.classroomUsageService = classroomUsageService;
         this.educationRecordAccessLogService = educationRecordAccessLogService;
+        this.teacherChatExportService = teacherChatExportService;
     }
 
     @GetMapping("/context")
@@ -239,6 +247,26 @@ public class ClassroomController {
                 termId,
                 request);
         return overview;
+    }
+
+    /**
+     * Teacher export of a student's Reading Buddy chats for this term (BL-043.7). POST because
+     * each export writes a job row and an EXPORT_CHAT access-log row before the file is returned.
+     */
+    @PostMapping("/terms/{termId}/students/{userId}/chat-export")
+    public ResponseEntity<byte[]> exportStudentChats(
+            @PathVariable String termId,
+            @PathVariable String userId,
+            @RequestParam(value = "format", required = false) String format,
+            HttpServletRequest request) {
+        TeacherChatExportService.ExportFile file = teacherChatExportService.exportReadingBuddy(
+                requireUserId(request), termId, userId, format, request);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+                .header("X-Chat-Export-Id", file.jobId())
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .body(file.bytes());
     }
 
     /** Durable first-open for an assignment (student of that term). */
