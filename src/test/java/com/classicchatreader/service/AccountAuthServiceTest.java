@@ -79,6 +79,48 @@ class AccountAuthServiceTest {
         );
     }
 
+    private UserEntity deletionUser() {
+        UserEntity user = new UserEntity();
+        user.setId("user-1");
+        user.setEmail("reader@example.com");
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        return user;
+    }
+
+    private UserLocalCredentialEntity deletionPassword(String password) {
+        UserLocalCredentialEntity credential = new UserLocalCredentialEntity();
+        credential.setUserId("user-1");
+        credential.setPasswordHash(BCrypt.hashpw(password, BCrypt.gensalt(4)));
+        when(userLocalCredentialRepository.findByUserId("user-1")).thenReturn(Optional.of(credential));
+        return credential;
+    }
+
+    @Test
+    void confirmAccountOwner_requiresTypedEmailAndPasswordForPasswordAccounts() {
+        deletionUser();
+        UserLocalCredentialEntity credential = deletionPassword("correct horse");
+
+        assertEquals(AccountAuthService.ResultStatus.INVALID_CREDENTIALS,
+                accountAuthService.confirmAccountOwner("user-1", "someone@example.com", "correct horse").status());
+        assertEquals(AccountAuthService.ResultStatus.INVALID_CREDENTIALS,
+                accountAuthService.confirmAccountOwner("user-1", "Reader@Example.com", "wrong").status());
+        assertEquals(1, credential.getFailedLoginAttempts(), "a wrong password counts toward lockout");
+        assertEquals(AccountAuthService.ResultStatus.INVALID_CREDENTIALS,
+                accountAuthService.confirmAccountOwner("user-1", "reader@example.com", null).status());
+        assertEquals(AccountAuthService.ResultStatus.SUCCESS,
+                accountAuthService.confirmAccountOwner("user-1", " Reader@Example.com ", "correct horse").status());
+    }
+
+    @Test
+    void confirmAccountOwner_googleOnlyAccountsConfirmWithTypedEmail() {
+        deletionUser();
+        when(userLocalCredentialRepository.findByUserId("user-1")).thenReturn(Optional.empty());
+        assertEquals(AccountAuthService.ResultStatus.SUCCESS,
+                accountAuthService.confirmAccountOwner("user-1", "reader@example.com", null).status());
+        assertEquals(AccountAuthService.ResultStatus.INVALID_CREDENTIALS,
+                accountAuthService.confirmAccountOwner("user-1", "", null).status());
+    }
+
     @Test
     void register_validCredentials_createsUserCredentialsAndSessionCookie() {
         AtomicReference<UserSessionEntity> storedSession = new AtomicReference<>();

@@ -13,6 +13,8 @@ import com.classicchatreader.service.ReaderProfileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import java.util.Map;
+import com.classicchatreader.service.AccountDeletionService;
 import org.springframework.http.MediaType;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -36,6 +38,7 @@ public class AccountController {
     private final AccountAuthAuditService accountAuthAuditService;
     private final GoogleAccountOAuthService googleAccountOAuthService;
     private final AccountDataExportService accountDataExportService;
+    private final AccountDeletionService accountDeletionService;
 
     public AccountController(
             AccountAuthService accountAuthService,
@@ -45,7 +48,8 @@ public class AccountController {
             AccountAuthRateLimiter accountAuthRateLimiter,
             AccountAuthAuditService accountAuthAuditService,
             GoogleAccountOAuthService googleAccountOAuthService,
-            AccountDataExportService accountDataExportService) {
+            AccountDataExportService accountDataExportService,
+            AccountDeletionService accountDeletionService) {
         this.accountAuthService = accountAuthService;
         this.readerProfileService = readerProfileService;
         this.accountClaimSyncService = accountClaimSyncService;
@@ -54,6 +58,64 @@ public class AccountController {
         this.accountAuthAuditService = accountAuthAuditService;
         this.googleAccountOAuthService = googleAccountOAuthService;
         this.accountDataExportService = accountDataExportService;
+        this.accountDeletionService = accountDeletionService;
+    }
+
+    /** What deleting this account would do: classes the student would leave, and whether it is blocked. */
+    @GetMapping("/delete-preview")
+    public ResponseEntity<AccountDeletionService.DeletionPreview> deletePreview(HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String userId = principal.get().userId();
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(accountDeletionService.preview(userId, accountAuthService.hasLocalPassword(userId)));
+    }
+
+    /**
+     * Permanently delete the signed-in account (BL-043.6). Requires {@code confirm: true}, the typed
+     * account email, and the password when the account has one. Everything is removed at once;
+     * FERPA audit and export records are kept under a pseudonym. The session cookie is cleared.
+     */
+    @PostMapping("/delete")
+    public ResponseEntity<Map<String, Object>> deleteAccount(
+            @RequestBody(required = false) DeleteAccountRequest body,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (body == null || !Boolean.TRUE.equals(body.confirm())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Confirm that you want to permanently delete this account."));
+        }
+        String userId = principal.get().userId();
+        AccountAuthService.AuthResult check = accountAuthService.confirmAccountOwner(userId, body.email(), body.password());
+        if (check.status() != AccountAuthService.ResultStatus.SUCCESS) {
+            accountAuthAuditService.record("account_delete", outcomeFor(check.status()), request, principal.get().email(), userId, check.retryAfterSeconds(), "reauth");
+            ResponseEntity.BodyBuilder denied = ResponseEntity.status(check.status() == AccountAuthService.ResultStatus.ACCOUNT_LOCKED
+                    ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.UNAUTHORIZED);
+            if (check.retryAfterSeconds() != null && check.retryAfterSeconds() > 0) {
+                denied.header("Retry-After", String.valueOf(check.retryAfterSeconds()));
+            }
+            return denied.body(Map.of("error", check.message()));
+        }
+        AccountDeletionService.DeletionResult result;
+        try {
+            result = accountDeletionService.delete(userId);
+        } catch (IllegalStateException blocked) {
+            accountAuthAuditService.record("account_delete", "blocked", request, principal.get().email(), userId, null, "teacher_footprint");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", blocked.getMessage()));
+        }
+        accountAuthService.clearSessionCookie(response);
+        // The user id no longer exists; log the pseudonym the retained compliance rows now carry.
+        accountAuthAuditService.record("account_delete", "success", request, principal.get().email(), result.pseudonym(), null, null);
+        return ResponseEntity.ok(Map.of("deleted", true));
+    }
+
+    public record DeleteAccountRequest(Boolean confirm, String email, String password) {
     }
 
     /**
