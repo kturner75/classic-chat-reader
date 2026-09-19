@@ -906,6 +906,30 @@
                 <button id="account-register" class="chapter-recap-btn chapter-recap-btn-secondary">Register</button>
                 <button id="account-signin" class="chapter-recap-btn chapter-recap-btn-primary">Sign In</button>
             </div>
+            <section id="account-data-section" class="account-data-section hidden" aria-labelledby="account-data-title">
+                <h4 id="account-data-title">Your data</h4>
+                <p class="auth-modal-help">Download everything saved to this account as a file.</p>
+                <div class="account-data-actions">
+                    <a id="account-data-download" class="chapter-recap-btn chapter-recap-btn-secondary" href="/api/account/export" download>Download my data</a>
+                    <button id="account-delete-start" class="account-delete-start" type="button">Delete account…</button>
+                </div>
+                <div id="account-delete-panel" class="account-delete-panel hidden">
+                    <div id="account-delete-notice" class="account-delete-notice"></div>
+                    <div id="account-delete-form">
+                        <label for="account-delete-email" class="auth-modal-label">Type your account email to confirm</label>
+                        <input id="account-delete-email" class="auth-modal-input" type="email" autocomplete="off" />
+                        <div id="account-delete-password-row" class="hidden">
+                            <label for="account-delete-password" class="auth-modal-label">Password</label>
+                            <input id="account-delete-password" class="auth-modal-input" type="password" autocomplete="current-password" />
+                        </div>
+                    </div>
+                    <p id="account-delete-status" class="auth-modal-status" role="status"></p>
+                    <div class="auth-modal-actions">
+                        <button id="account-delete-cancel" class="chapter-recap-btn chapter-recap-btn-secondary" type="button">Cancel</button>
+                        <button id="account-delete-confirm" class="chapter-recap-btn account-delete-confirm" type="button" disabled>Permanently delete account</button>
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -941,6 +965,7 @@
     <script src="/js/voice-call-utils.js"></script>
     <script src="/js/reading-buddy.js"></script>
     <script src="/js/sensitive-request-guard.js"></script>
-    <script src="/js/reader.js?v=3"></script>
+    <script src="/js/account-data.js"></script>
+    <script src="/js/reader.js?v=4"></script>
 </body>
 </html>

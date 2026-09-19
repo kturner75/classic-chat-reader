@@ -385,6 +385,43 @@ public class AccountAuthService {
         return new AuthResult(ResultStatus.SUCCESS, true, false, null, "Signed out.");
     }
 
+    /**
+     * Re-authentication before an irreversible account action (BL-043.6 account deletion).
+     * Everyone types their account email. Accounts with a password must also enter it; failures
+     * count toward the normal sign-in lockout. Google-only accounts rely on the typed email plus
+     * their live session.
+     */
+    @Transactional
+    public AuthResult confirmAccountOwner(String userId, String typedEmail, String password) {
+        Optional<UserEntity> user = userId == null ? Optional.empty() : userRepository.findById(userId);
+        String typed = normalizeEmail(typedEmail);
+        if (user.isEmpty() || typed == null || !typed.equals(normalizeEmail(user.get().getEmail()))) {
+            return AuthResult.error(ResultStatus.INVALID_CREDENTIALS, enabled, "Type your account email exactly to confirm.");
+        }
+        Optional<UserLocalCredentialEntity> credential = userLocalCredentialRepository.findByUserId(userId);
+        if (credential.isPresent()) {
+            LocalDateTime now = LocalDateTime.now();
+            AuthResult locked = lockoutResultIfLocked(credential.get(), now);
+            if (locked != null) {
+                return locked;
+            }
+            if (password == null || password.isBlank() || !BCrypt.checkpw(password, credential.get().getPasswordHash())) {
+                return recordInvalidCredentials(credential.get(), now);
+            }
+            clearLockoutStateIfNeeded(credential.get());
+        }
+        return AuthResult.success(enabled, user.get().getEmail(), "Confirmed.");
+    }
+
+    public boolean hasLocalPassword(String userId) {
+        return userId != null && userLocalCredentialRepository.findByUserId(userId).isPresent();
+    }
+
+    /** Expire the session cookie on this response (sessions themselves are deleted by the caller). */
+    public void clearSessionCookie(HttpServletResponse response) {
+        writeSessionCookie(response, "", 0);
+    }
+
     @Transactional
     public AuthResult status(HttpServletRequest request) {
         if (!isRolloutEnabled()) {

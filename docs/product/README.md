@@ -17,6 +17,7 @@ Use **Notion Tasks** for project **classic-chat-reader**:
 - `backlog.md`: pointer to the Notion Tasks backlog (not a living work queue).
 - `bl-023-qa-checklist.md`: mobile QA + desktop regression checklist for adaptive reader behavior, plus core chat, voice call, and My Chats checks.
 - `bl-021-auth-architecture-adr.md`: auth and security decision record for user registration/account rollout.
+- `account-deletion.md`: Download my data + account deletion (BL-043.6) — export-first notice, re-auth, teacher block, what is deleted vs pseudonymized.
 - `teacher-chat-export.md`: teacher Reading Buddy chat export API (BL-043.7) — scope, authorization, audit, formats.
 - `ferpa-access-logging.md`: implemented FERPA education-record access audit (BL-043.5) — surfaces, fail-closed rule, retention placeholder.
 - `bl-025-classroom-data-model.md`: classroom domain model + FERPA schema hooks / companion checklist (runtime policy owned by `BL-043` in Notion).
