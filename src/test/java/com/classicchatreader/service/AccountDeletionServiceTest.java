@@ -34,6 +34,7 @@ class AccountDeletionServiceTest {
             new String[]{"character_chat_conversations", "user_id"},
             new String[]{"character_chat_messages", "user_id"},
             new String[]{"enrollments", "user_id"},
+            new String[]{"assignment_progress", "user_id"},
             new String[]{"classroom_usage_events", "user_id"});
 
     private int count(String sql, Object... args) {
@@ -76,7 +77,7 @@ class AccountDeletionServiceTest {
 
     @Test
     void deletingAStudentRemovesAllTheirDataAndKeepsComplianceRowsUnderAPseudonym() {
-        assertEquals(14, owned("fx-alex"), "fixture seeds one row in each of the 14 owned tables");
+        assertEquals(15, owned("fx-alex"), "fixture seeds one row in each of the 15 owned tables");
         int samBefore = owned("fx-sam");
 
         AccountDeletionService.DeletionResult result = service.delete("fx-alex");

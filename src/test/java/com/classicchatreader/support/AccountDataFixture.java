@@ -21,6 +21,8 @@ public final class AccountDataFixture {
         jdbc.update("INSERT INTO class_sections (id, owner_user_id, name, status, created_at, updated_at) VALUES ('fx-class', ?, 'English 101', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
         jdbc.update("INSERT INTO terms (id, class_section_id, name, status, start_date, end_date, created_at, updated_at) "
                 + "VALUES ('fx-term', 'fx-class', 'Fall', 'ACTIVE', DATE '2026-08-24', DATE '2026-12-12', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO assignments (id, term_id, title, book_id, status, sort_order, created_by_user_id, created_at, updated_at) "
+                + "VALUES ('fx-assignment', 'fx-term', 'Read Chapter I', 'fx-book', 'PUBLISHED', 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
     }
 
     public static void user(JdbcTemplate jdbc, String userId) {
@@ -45,6 +47,7 @@ public final class AccountDataFixture {
         jdbc.update("INSERT INTO reading_buddy_memories (id, owner_key, book_id, persona_id, summary_text, summary_version, updated_at) VALUES (?, ?, 'fx-book', 'sage', ?, 1, CURRENT_TIMESTAMP)", "rbmem-" + tag, "user:" + userId, "memory " + tag);
         jdbc.update("INSERT INTO reading_buddy_preferences (id, owner_key, book_id, enabled, frequency, created_at, updated_at) VALUES (?, ?, 'fx-book', TRUE, 'rare', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "rbp-" + tag, "user:" + userId);
         jdbc.update("INSERT INTO enrollments (id, term_id, user_id, role, status, joined_date, created_at, updated_at) VALUES (?, 'fx-term', ?, 'STUDENT', 'ACTIVE', DATE '2026-08-24', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "enr-" + tag, userId);
+        jdbc.update("INSERT INTO assignment_progress (id, term_id, assignment_id, user_id, first_opened_at, created_at, updated_at) VALUES (?, 'fx-term', 'fx-assignment', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "ap-" + tag, userId);
         jdbc.update("INSERT INTO classroom_usage_events (id, user_id, term_id, event_type, book_id, duration_ms, occurred_at, created_at) VALUES (?, ?, 'fx-term', 'READING_HEARTBEAT', 'fx-book', 60000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "cue-" + tag, userId);
     }
 }
