@@ -115,16 +115,47 @@ public class AccountDataExportService {
 
     /** Holds student records, so readable by the server's own user only. */
     private static java.nio.file.Path privateTempFile() throws IOException {
-        try {
-            return java.nio.file.Files.createTempFile("account-export-", ".json",
-                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
-                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
-        } catch (UnsupportedOperationException notPosix) {
-            java.nio.file.Path file = java.nio.file.Files.createTempFile("account-export-", ".json");
-            file.toFile().setReadable(false, false);
-            file.toFile().setReadable(true, true);
+        return privateTempFile(java.nio.file.FileSystems.getDefault().supportedFileAttributeViews(),
+                java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+    }
+
+    /**
+     * Owner-only temp file, verified after creation. POSIX: {@code rw-------}. ACL filesystems
+     * (Windows): a single ACL entry for the owner. Fails closed: if neither can be enforced and
+     * verified, no file is created and the export is refused.
+     */
+    static java.nio.file.Path privateTempFile(java.util.Set<String> supportedViews, java.nio.file.Path dir) throws IOException {
+        if (supportedViews.contains("posix")) {
+            var ownerOnly = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------");
+            java.nio.file.Path file = java.nio.file.Files.createTempFile(dir, "account-export-", ".json",
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(ownerOnly));
+            if (!java.nio.file.Files.getPosixFilePermissions(file).equals(ownerOnly)) {
+                java.nio.file.Files.deleteIfExists(file);
+                throw new IOException("Could not restrict the export file to its owner");
+            }
             return file;
         }
+        if (supportedViews.contains("acl")) {
+            java.nio.file.Path file = java.nio.file.Files.createTempFile(dir, "account-export-", ".json");
+            try {
+                var view = java.nio.file.Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView.class);
+                var owner = java.nio.file.Files.getOwner(file);
+                var ownerOnly = java.util.List.of(java.nio.file.attribute.AclEntry.newBuilder()
+                        .setType(java.nio.file.attribute.AclEntryType.ALLOW)
+                        .setPrincipal(owner)
+                        .setPermissions(java.util.EnumSet.allOf(java.nio.file.attribute.AclEntryPermission.class))
+                        .build());
+                view.setAcl(ownerOnly);
+                if (!view.getAcl().equals(ownerOnly)) {
+                    throw new IOException("Could not restrict the export file to its owner");
+                }
+                return file;
+            } catch (IOException | RuntimeException e) {
+                java.nio.file.Files.deleteIfExists(file);
+                throw e instanceof IOException io ? io : new IOException("Could not restrict the export file to its owner", e);
+            }
+        }
+        throw new IOException("This filesystem cannot restrict export files to their owner; refusing to write student data");
     }
 
     /** Serves a finished export and deletes it when the response closes the stream (or the client disconnects). */
@@ -186,7 +217,8 @@ public class AccountDataExportService {
                 SELECT book_id, persona_id, role, kind, content, chapter_index, paragraph_index, created_at
                 FROM reading_buddy_messages WHERE owner_key = :k ORDER BY created_at, chronology_sequence, id""", user);
         array(g, "memories", """
-                SELECT book_id, persona_id, summary_text, updated_at
+                SELECT book_id, persona_id, summary_text, summary_version,
+                       summary_max_chapter_index, summary_max_paragraph_index, updated_at
                 FROM reading_buddy_memories WHERE owner_key = :k ORDER BY updated_at, id""", user);
         array(g, "preferences", """
                 SELECT book_id, enabled, frequency, default_persona_id, persona_id, suppress_until, updated_at
