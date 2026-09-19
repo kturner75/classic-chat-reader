@@ -37,7 +37,9 @@ import java.util.List;
  * account and {@value #MAX_CONCURRENT_EXPORTS} overall.
  *
  * <p>Explicit column lists only: credentials, sessions, sign-in identities, capability grants,
- * internal reader ids, and other people's data are never included. Soft-deleted rows the account
+ * internal reader ids, and other people's data are never included. Every column of every exported
+ * table is either exported or deliberately omitted; {@code AccountDataExportColumnPolicyTest} holds
+ * the omission list with reasons and fails when a new column is neither. Soft-deleted rows the account
  * still owns are included (with their {@code deleted_at}); they are held data until purged.
  */
 @Service
@@ -203,7 +205,7 @@ public class AccountDataExportService {
         g.writeStringField("exportedAt", Instant.now().toString());
         g.writeStringField("timestampNote", "Row timestamps are server times as stored, without a time zone.");
         g.writeFieldName("account");
-        object(g, "SELECT id, email, created_at FROM users WHERE id = :u", user);
+        object(g, "SELECT id, email, created_at, updated_at FROM users WHERE id = :u", user);
         g.writeFieldName("readerState");
         object(g, "SELECT state_json, updated_at FROM user_reader_states WHERE user_id = :u", user);
         array(g, "annotations", """
@@ -212,7 +214,7 @@ public class AccountDataExportService {
                 FROM paragraph_annotations a LEFT JOIN books b ON b.id = a.book_id
                 WHERE a.user_id = :u ORDER BY a.updated_at, a.id""", user);
         array(g, "quizAttempts", """
-                SELECT c.book_id, q.chapter_id, c.title AS chapter_title, q.assignment_id, q.correct_answers,
+                SELECT c.book_id, q.chapter_id, c.title AS chapter_title, q.assignment_id, q.legacy_unassigned, q.correct_answers,
                        q.total_questions, q.score_percent, q.perfect, q.difficulty_level, q.created_at
                 FROM quiz_attempts q LEFT JOIN chapters c ON c.id = q.chapter_id
                 WHERE q.user_id = :u ORDER BY q.created_at, q.id""", user);
@@ -222,37 +224,39 @@ public class AccountDataExportService {
         characterChats(g, user);
         g.writeObjectFieldStart("readingBuddy");
         array(g, "messages", """
-                SELECT book_id, persona_id, role, kind, content, chapter_index, paragraph_index, created_at
+                SELECT book_id, persona_id, role, kind, content, chapter_index, paragraph_index, proactive_position_key, created_at
                 FROM reading_buddy_messages WHERE owner_key = :k ORDER BY created_at, chronology_sequence, id""", user);
         array(g, "memories", """
                 SELECT book_id, persona_id, summary_text, summary_version,
-                       summary_max_chapter_index, summary_max_paragraph_index, updated_at
+                       summary_max_chapter_index, summary_max_paragraph_index, messages_at_last_summary, updated_at
                 FROM reading_buddy_memories WHERE owner_key = :k ORDER BY updated_at, id""", user);
         array(g, "preferences", """
-                SELECT book_id, enabled, frequency, default_persona_id, persona_id, suppress_until, updated_at
+                SELECT book_id, enabled, frequency, default_persona_id, persona_id, suppress_until, created_at, updated_at
                 FROM reading_buddy_preferences WHERE owner_key = :k ORDER BY updated_at, id""", user);
         g.writeEndObject();
         g.writeObjectFieldStart("classroom");
         array(g, "enrollments", """
                 SELECT e.term_id, t.name AS term_name, s.name AS class_name, e.role, e.status,
-                       e.joined_date, e.left_date, e.display_name_override, e.deleted_at
+                       e.joined_date, e.left_date, e.display_name_override, e.created_at, e.updated_at, e.deleted_at
                 FROM enrollments e JOIN terms t ON t.id = e.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
                 WHERE e.user_id = :u ORDER BY e.joined_date, e.id""", user);
         array(g, "assignmentProgress", """
-                SELECT term_id, assignment_id, first_opened_at
+                SELECT term_id, assignment_id, first_opened_at, created_at, updated_at
                 FROM assignment_progress WHERE user_id = :u ORDER BY first_opened_at, id""", user);
         array(g, "usageEvents", """
-                SELECT term_id, event_type, book_id, chapter_id, assignment_id, duration_ms, progress_percent, feature, occurred_at, deleted_at
+                SELECT term_id, class_section_id, school_id, event_type, book_id, chapter_id, paragraph_index, assignment_id,
+                       duration_ms, progress_percent, feature, provider, model_name, input_tokens, output_tokens,
+                       estimated_cost_micros, metadata_json, occurred_at, created_at, deleted_at
                 FROM classroom_usage_events WHERE user_id = :u ORDER BY occurred_at, id""", user);
         array(g, "teachingRoles", """
-                SELECT m.term_id, t.name AS term_name, s.name AS class_name, m.role, m.status, m.created_at, m.revoked_at
+                SELECT m.term_id, t.name AS term_name, s.name AS class_name, m.role, m.status, m.created_at, m.updated_at, m.revoked_at
                 FROM class_role_memberships m JOIN terms t ON t.id = m.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
                 WHERE m.user_id = :u ORDER BY m.created_at, m.id""", user);
         array(g, "ownedClasses", """
-                SELECT id AS class_id, name, code, status, created_at, deleted_at
+                SELECT id AS class_id, school_id, name, code, status, created_at, updated_at, deleted_at
                 FROM class_sections WHERE owner_user_id = :u ORDER BY created_at, id""", user);
         array(g, "schoolMemberships", """
-                SELECT school_id, role, status, created_at, revoked_at
+                SELECT school_id, role, status, created_at, updated_at, revoked_at
                 FROM school_memberships WHERE user_id = :u ORDER BY created_at, id""", user);
         teacherContent(g, user);
         g.writeEndObject();
@@ -272,7 +276,7 @@ public class AccountDataExportService {
         g.writeObjectFieldStart("teacherContent");
         array(g, "classTerms", """
                 SELECT t.id AS term_id, s.id AS class_id, s.name AS class_name, t.name, t.start_date, t.end_date, t.status,
-                       t.created_at, t.deleted_at
+                       t.retention_purge_after, t.created_at, t.updated_at, t.deleted_at
                 FROM terms t JOIN class_sections s ON s.id = t.class_section_id
                 WHERE s.owner_user_id = :u ORDER BY t.created_at, t.id""", user);
         array(g, "featureSettings", """
@@ -299,7 +303,7 @@ public class AccountDataExportService {
                        status, base_prompt_version, notes, created_at, updated_at, deleted_at
                 FROM quiz_question_overrides WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
         array(g, "inviteLinks", """
-                SELECT term_id, label, max_uses, use_count, expires_at, revoked_at, created_at
+                SELECT term_id, label, max_uses, use_count, expires_at, revoked_at, created_at, updated_at
                 FROM invite_links WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
         g.writeEndObject();
     }
