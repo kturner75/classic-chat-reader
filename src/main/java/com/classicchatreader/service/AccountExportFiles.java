@@ -61,71 +61,115 @@ public class AccountExportFiles {
         }
     }
 
-    private static final String INSTANCE_PREFIX = "pid-";
+    private static final String INSTANCE_PREFIX = "run-";
+    private static final String LOCK_SUFFIX = ".lock";
 
-    /** Shared, owner-only root; each JVM works only in its own {@code pid-<n>} subdirectory. */
+    /**
+     * Shared, owner-only root. Each JVM run works only in its own {@code run-<uuid>} directory and holds
+     * an exclusive OS file lock on {@code run-<uuid>.lock} for its lifetime. The OS drops that lock when
+     * the process dies, however it dies, so "lock can be taken" means "owner is gone"; unlike PID
+     * liveness this cannot be fooled by PID reuse.
+     */
     private final Path root;
+    private final String runId = INSTANCE_PREFIX + java.util.UUID.randomUUID();
     private final Path directory;
-    private final long pid;
-    private final java.util.function.LongPredicate processAlive;
+    private final Path lockFile;
     private final Clock clock;
     private final Map<String, Lease> leases = new HashMap<>();
+    private java.nio.channels.FileChannel ownerChannel;
+    private java.nio.channels.FileLock ownerLock;
 
     @Autowired
     public AccountExportFiles() {
-        this(Path.of(System.getProperty("java.io.tmpdir"), "ccr-account-exports"), Clock.systemUTC(),
-                ProcessHandle.current().pid(), other -> ProcessHandle.of(other).map(ProcessHandle::isAlive).orElse(false));
+        this(Path.of(System.getProperty("java.io.tmpdir"), "ccr-account-exports"), Clock.systemUTC());
     }
 
     AccountExportFiles(Path root, Clock clock) {
-        this(root, clock, ProcessHandle.current().pid(), other -> ProcessHandle.of(other).map(ProcessHandle::isAlive).orElse(false));
-    }
-
-    AccountExportFiles(Path root, Clock clock, long pid, java.util.function.LongPredicate processAlive) {
         this.root = root;
-        this.directory = root.resolve(INSTANCE_PREFIX + pid);
-        this.pid = pid;
-        this.processAlive = processAlive;
+        this.directory = root.resolve(runId);
+        this.lockFile = root.resolve(runId + LOCK_SUFFIX);
         this.clock = clock;
     }
 
+    Path directory() {
+        return directory;
+    }
+
     /**
-     * Startup cleanup that never touches another live instance's exports (JVMs sharing the same OS
-     * account and temp dir, e.g. during a rolling start). This instance's own directory cannot hold a
-     * live download yet, so it is emptied; another instance's directory is removed only when its
-     * process is no longer running.
+     * Take this run's ownership lock (before its directory exists, so a directory without a lock file
+     * is always an orphan), then remove every other run's files whose owner no longer holds its lock.
+     * Another live instance's exports (e.g. during a rolling start) are never touched.
      */
     @PostConstruct
     void removeOrphansFromEarlierRuns() throws IOException {
-        ensureDirectory();
+        secure(root);
+        ownerChannel = java.nio.channels.FileChannel.open(lockFile, java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE);
+        ownerLock = ownerChannel.lock();
+        secure(directory);
         int removed = 0;
-        try (DirectoryStream<Path> instances = Files.newDirectoryStream(root, INSTANCE_PREFIX + "*")) {
-            for (Path instance : instances) {
-                long owner;
-                try {
-                    owner = Long.parseLong(instance.getFileName().toString().substring(INSTANCE_PREFIX.length()));
-                } catch (NumberFormatException notOurs) {
-                    continue;
-                }
-                if (owner != pid && processAlive.test(owner)) continue;
-                if (!Files.isDirectory(instance, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
-                try (DirectoryStream<Path> files = Files.newDirectoryStream(instance, PREFIX + "*")) {
-                    for (Path file : files) {
-                        if (Files.deleteIfExists(file)) removed++;
-                    }
-                }
-                if (owner != pid) {
-                    try {
-                        Files.deleteIfExists(instance);
-                    } catch (java.nio.file.DirectoryNotEmptyException ignored) {
-                        // Unknown content: leave it rather than guess.
-                    }
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(root, INSTANCE_PREFIX + "*")) {
+            for (Path entry : entries) {
+                String name = entry.getFileName().toString();
+                if (name.equals(runId) || name.equals(runId + LOCK_SUFFIX) || name.endsWith(LOCK_SUFFIX)) continue;
+                if (!Files.isDirectory(entry, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
+                Path otherLock = root.resolve(name + LOCK_SUFFIX);
+                if (ownerIsLive(otherLock)) continue;
+                removed += deleteRunDirectory(entry);
+                Files.deleteIfExists(otherLock);
+            }
+        }
+        // Lock files whose directory is already gone and whose owner is dead.
+        try (DirectoryStream<Path> locks = Files.newDirectoryStream(root, INSTANCE_PREFIX + "*" + LOCK_SUFFIX)) {
+            for (Path lock : locks) {
+                if (lock.equals(lockFile)) continue;
+                String dirName = lock.getFileName().toString();
+                dirName = dirName.substring(0, dirName.length() - LOCK_SUFFIX.length());
+                if (!Files.exists(root.resolve(dirName), java.nio.file.LinkOption.NOFOLLOW_LINKS) && !ownerIsLive(lock)) {
+                    Files.deleteIfExists(lock);
                 }
             }
         }
         if (removed > 0) {
             log.warn("account_export removed {} orphaned export file(s) at startup", removed);
         }
+    }
+
+    /** True while another process (or another instance in this JVM) holds the run's lock. */
+    private static boolean ownerIsLive(Path lock) throws IOException {
+        if (!Files.exists(lock, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return false;
+        try (var channel = java.nio.channels.FileChannel.open(lock, java.nio.file.StandardOpenOption.WRITE)) {
+            java.nio.channels.FileLock probe = channel.tryLock();
+            if (probe == null) return true;
+            probe.release();
+            return false;
+        } catch (java.nio.channels.OverlappingFileLockException heldInThisJvm) {
+            return true;
+        }
+    }
+
+    private static int deleteRunDirectory(Path dir) throws IOException {
+        int removed = 0;
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, PREFIX + "*")) {
+            for (Path file : files) {
+                if (Files.deleteIfExists(file)) removed++;
+            }
+        }
+        try {
+            Files.deleteIfExists(dir);
+        } catch (java.nio.file.DirectoryNotEmptyException ignored) {
+            // Unknown content: leave it rather than guess.
+        }
+        return removed;
+    }
+
+    /** Graceful shutdown: remove this run's files and release its lock. */
+    @jakarta.annotation.PreDestroy
+    void shutdown() throws IOException {
+        deleteRunDirectory(directory);
+        if (ownerLock != null) ownerLock.release();
+        if (ownerChannel != null) ownerChannel.close();
+        Files.deleteIfExists(lockFile);
     }
 
     public synchronized Lease acquire(String userId) throws IOException {
