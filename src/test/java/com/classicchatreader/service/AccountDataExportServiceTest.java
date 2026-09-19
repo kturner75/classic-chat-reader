@@ -50,6 +50,7 @@ class AccountDataExportServiceTest {
         assertEquals("Pride and Prejudice", doc.at("/annotations/0/book_title").asText());
         assertEquals(80, doc.at("/quizAttempts/0/score_percent").asInt());
         assertEquals("first-alex", doc.at("/quizTrophies/0/code").asText());
+        assertEquals("Pride and Prejudice", doc.at("/quizTrophies/0/book_title").asText(), "a trophy names its book, not just an id");
         assertEquals("Mr. Darcy", doc.at("/characterChats/0/character_name").asText());
         assertEquals("character chat alex", doc.at("/characterChats/0/messages/0/content").asText());
         assertEquals("buddy chat alex", doc.at("/readingBuddy/messages/0/content").asText());

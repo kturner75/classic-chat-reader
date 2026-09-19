@@ -178,8 +178,9 @@ public class AccountDataExportService {
                 FROM quiz_attempts q LEFT JOIN chapters c ON c.id = q.chapter_id LEFT JOIN assignments qa ON qa.id = q.assignment_id
                 WHERE q.user_id = :u ORDER BY q.created_at, q.id""", user);
         array(g, "quizTrophies", """
-                SELECT book_id, code, title, description, unlocked_at
-                FROM quiz_trophies WHERE user_id = :u ORDER BY unlocked_at, id""", user);
+                SELECT t.book_id, b.title AS book_title, t.code, t.title, t.description, t.unlocked_at
+                FROM quiz_trophies t LEFT JOIN books b ON b.id = t.book_id
+                WHERE t.user_id = :u ORDER BY t.unlocked_at, t.id""", user);
         characterChats(g, user);
         g.writeObjectFieldStart("readingBuddy");
         array(g, "messages", """
