@@ -71,8 +71,10 @@ class AccountDataExportServiceTest {
     @Test
     void teacherExportIncludesTeachingRolesAndOwnedClasses() throws Exception {
         jdbc.update("INSERT INTO class_role_memberships (id, term_id, user_id, role, status, created_at, updated_at) VALUES ('crm-t', 'fx-term', 'fx-teacher', 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
-        jdbc.update("INSERT INTO class_feature_settings (term_id, quiz_enabled, recap_enabled, tts_enabled, illustration_enabled, character_enabled, chat_enabled, speed_reading_enabled, reading_buddy_enabled, updated_at, updated_by_user_id) "
-                + "VALUES ('fx-term', TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, CURRENT_TIMESTAMP, 'fx-teacher')");
+        jdbc.update("INSERT INTO class_feature_settings (term_id, quiz_enabled, recap_enabled, tts_enabled, illustration_enabled, character_enabled, chat_enabled, speed_reading_enabled, reading_buddy_enabled, "
+                + "default_quiz_question_count, default_quiz_option_count, default_quiz_pass_min_correct, default_quiz_max_retries, updated_at, updated_by_user_id) "
+                + "VALUES ('fx-term', TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, 7, 3, 5, 2, CURRENT_TIMESTAMP, 'fx-teacher')");
+        jdbc.update("UPDATE assignments SET quiz_rules_activated_at = CURRENT_TIMESTAMP WHERE id = 'fx-assignment'");
         jdbc.update("INSERT INTO assignment_chapters (id, assignment_id, chapter_id, chapter_index, sort_order) VALUES ('ac-1', 'fx-assignment', 'fx-ch', 0, 0)");
         jdbc.update("INSERT INTO assignment_quizzes (id, assignment_id, payload_json, created_by_user_id, created_at, updated_at) "
                 + "VALUES ('aq-1', 'fx-assignment', '{\"questions\":[{\"prompt\":\"Who is Darcy?\"}]}', 'fx-teacher', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
@@ -86,6 +88,11 @@ class AccountDataExportServiceTest {
         JsonNode teacher = doc.at("/classroom/teacherContent");
         assertEquals("Fall", teacher.at("/classTerms/0/name").asText());
         assertFalse(teacher.at("/featureSettings/0/recap_enabled").asBoolean());
+        assertEquals(7, teacher.at("/featureSettings/0/default_quiz_question_count").asInt());
+        assertEquals(3, teacher.at("/featureSettings/0/default_quiz_option_count").asInt());
+        assertEquals(5, teacher.at("/featureSettings/0/default_quiz_pass_min_correct").asInt());
+        assertEquals(2, teacher.at("/featureSettings/0/default_quiz_max_retries").asInt());
+        assertFalse(teacher.at("/assignments/0/quiz_rules_activated_at").isNull());
         assertEquals("Read Chapter I", teacher.at("/assignments/0/title").asText());
         assertEquals("fx-ch", teacher.at("/assignmentChapters/0/chapter_id").asText());
         assertEquals("Who is Darcy?", teacher.at("/assignmentQuizzes/0/payload_json/questions/0/prompt").asText(), "stored JSON is exported as JSON");
@@ -126,6 +133,23 @@ class AccountDataExportServiceTest {
         service.writeExport("fx-alex", out);
         assertFalse(closed[0], "the servlet owns the response stream");
         assertEquals(5001, new ObjectMapper().readTree(out.toByteArray()).at("/classroom/usageEvents").size());
+    }
+
+    @Test
+    void aCoTeachersQuizEditShipsWithTheAssignmentInBothExports() throws Exception {
+        AccountDataFixture.user(jdbc, "fx-coteacher");
+        jdbc.update("INSERT INTO assignment_quizzes (id, assignment_id, payload_json, created_by_user_id, created_at, updated_at) "
+                + "VALUES ('aq-co', 'fx-assignment', '{\"questions\":[{\"prompt\":\"Edited by co-teacher\"}]}', 'fx-coteacher', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+
+        JsonNode creator = export("fx-teacher").at("/classroom/teacherContent");
+        assertEquals("fx-assignment", creator.at("/assignments/0/assignment_id").asText());
+        assertEquals("Edited by co-teacher", creator.at("/assignmentQuizzes/0/payload_json/questions/0/prompt").asText(),
+                "the assignment creator still gets the quiz for their assignment");
+
+        JsonNode editor = export("fx-coteacher").at("/classroom/teacherContent");
+        assertEquals("fx-assignment", editor.at("/assignments/0/assignment_id").asText(),
+                "the editor gets the assignment their quiz belongs to");
+        assertEquals("fx-assignment", editor.at("/assignmentQuizzes/0/assignment_id").asText());
     }
 
     @Test
