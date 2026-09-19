@@ -50,4 +50,17 @@ public final class AccountDataFixture {
         jdbc.update("INSERT INTO assignment_progress (id, term_id, assignment_id, user_id, first_opened_at, created_at, updated_at) VALUES (?, 'fx-term', 'fx-assignment', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "ap-" + tag, userId);
         jdbc.update("INSERT INTO classroom_usage_events (id, user_id, term_id, event_type, book_id, duration_ms, occurred_at, created_at) VALUES (?, ?, 'fx-term', 'READING_HEARTBEAT', 'fx-book', 60000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "cue-" + tag, userId);
     }
+
+    /** Teacher-side rows for {@code teacherId}: a class role, settings, quiz, override, invite, and school membership. */
+    public static void seedTeacherContent(JdbcTemplate jdbc, String teacherId) {
+        jdbc.update("INSERT INTO class_role_memberships (id, term_id, user_id, role, status, created_at, updated_at) VALUES ('fx-crm', 'fx-term', ?, 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
+        jdbc.update("INSERT INTO class_feature_settings (term_id, updated_at, updated_by_user_id) VALUES ('fx-term', CURRENT_TIMESTAMP, ?)", teacherId);
+        jdbc.update("INSERT INTO assignment_chapters (id, assignment_id, chapter_id, chapter_index, sort_order) VALUES ('fx-ac', 'fx-assignment', 'fx-ch', 0, 0)");
+        jdbc.update("INSERT INTO assignment_quizzes (id, assignment_id, payload_json, created_by_user_id, created_at, updated_at) VALUES ('fx-aq', 'fx-assignment', '{}', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
+        jdbc.update("INSERT INTO quiz_question_overrides (id, term_id, book_id, chapter_id, operation, overlay_key, sort_order, question_json, status, created_by_user_id, created_at, updated_at) "
+                + "VALUES ('fx-qqo', 'fx-term', 'fx-book', 'fx-ch', 'ADD', 'fx-q', 0, '{}', 'ACTIVE', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
+        jdbc.update("INSERT INTO invite_links (id, term_id, code_hash, created_by_user_id, created_at, updated_at) VALUES ('fx-il', 'fx-term', 'fx-hash', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
+        jdbc.update("INSERT INTO schools (id, name, status, created_at, updated_at) VALUES ('fx-school', 'Columbia State', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO school_memberships (id, school_id, user_id, role, status, created_at, updated_at) VALUES ('fx-sm', 'fx-school', ?, 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", teacherId);
+    }
 }
