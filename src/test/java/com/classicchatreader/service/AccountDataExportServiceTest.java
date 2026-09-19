@@ -57,6 +57,8 @@ class AccountDataExportServiceTest {
         assertEquals("rare", doc.at("/readingBuddy/preferences/0/frequency").asText());
         assertEquals("English 101", doc.at("/classroom/enrollments/0/class_name").asText());
         assertEquals("fx-assignment", doc.at("/classroom/assignmentProgress/0/assignment_id").asText());
+        assertEquals("Read Chapter I", doc.at("/classroom/assignmentProgress/0/assignment_title").asText(), "progress carries its assignment's context");
+        assertEquals("Pride and Prejudice", doc.at("/classroom/assignmentProgress/0/book_title").asText());
         assertEquals(60000, doc.at("/classroom/usageEvents/0/duration_ms").asInt());
         assertEquals(0, doc.at("/classroom/teachingRoles").size());
 
@@ -150,6 +152,15 @@ class AccountDataExportServiceTest {
         assertEquals("fx-assignment", editor.at("/assignments/0/assignment_id").asText(),
                 "the editor gets the assignment their quiz belongs to");
         assertEquals("fx-assignment", editor.at("/assignmentQuizzes/0/assignment_id").asText());
+    }
+
+    @Test
+    void assignmentChaptersAreExportedForAssignmentsTheStudentWorkedOn() throws Exception {
+        jdbc.update("INSERT INTO assignment_chapters (id, assignment_id, chapter_id, chapter_index, sort_order) VALUES ('ac-s', 'fx-assignment', 'fx-ch', 0, 0)");
+        JsonNode chapters = export("fx-alex").at("/classroom/assignmentChapters");
+        assertEquals(1, chapters.size());
+        assertEquals("Chapter I", chapters.at("/0/chapter_title").asText());
+        assertEquals("fx-assignment", chapters.at("/0/assignment_id").asText());
     }
 
     @Test

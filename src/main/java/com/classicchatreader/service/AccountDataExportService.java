@@ -193,9 +193,20 @@ public class AccountDataExportService {
                        e.joined_date, e.left_date, e.display_name_override, e.created_at, e.updated_at, e.deleted_at
                 FROM enrollments e JOIN terms t ON t.id = e.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
                 WHERE e.user_id = :u ORDER BY e.joined_date, e.id""", user);
+        // Each progress row carries the assignment's descriptive context: a student has no copy of the
+        // assignment elsewhere in the file, and an opaque id is meaningless outside this database.
         array(g, "assignmentProgress", """
-                SELECT term_id, assignment_id, first_opened_at, created_at, updated_at
-                FROM assignment_progress WHERE user_id = :u ORDER BY first_opened_at, id""", user);
+                SELECT p.term_id, p.assignment_id, a.title AS assignment_title, a.book_id, b.title AS book_title,
+                       a.due_date, a.available_from_date, a.quiz_required, a.character_chat_required, a.status AS assignment_status,
+                       p.first_opened_at, p.created_at, p.updated_at
+                FROM assignment_progress p LEFT JOIN assignments a ON a.id = p.assignment_id LEFT JOIN books b ON b.id = a.book_id
+                WHERE p.user_id = :u ORDER BY p.first_opened_at, p.id""", user);
+        array(g, "assignmentChapters", """
+                SELECT c.assignment_id, c.chapter_id, ch.title AS chapter_title, c.chapter_index, c.sort_order
+                FROM assignment_chapters c LEFT JOIN chapters ch ON ch.id = c.chapter_id
+                WHERE c.assignment_id IN (SELECT assignment_id FROM assignment_progress WHERE user_id = :u
+                                          UNION SELECT assignment_id FROM quiz_attempts WHERE user_id = :u AND assignment_id IS NOT NULL)
+                ORDER BY c.assignment_id, c.sort_order, c.id""", user);
         array(g, "usageEvents", """
                 SELECT term_id, class_section_id, school_id, event_type, book_id, chapter_id, paragraph_index, assignment_id,
                        duration_ms, progress_percent, feature, provider, model_name, input_tokens, output_tokens,
