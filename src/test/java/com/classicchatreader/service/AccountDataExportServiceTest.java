@@ -164,6 +164,19 @@ class AccountDataExportServiceTest {
     }
 
     @Test
+    void anAttemptedAssignmentWithoutProgressIsStillDescribed() throws Exception {
+        jdbc.update("DELETE FROM assignment_progress WHERE user_id = 'fx-alex'");
+        jdbc.update("INSERT INTO quiz_attempts (id, chapter_id, user_id, assignment_id, correct_answers, total_questions, score_percent, perfect, difficulty_level, created_at) "
+                + "VALUES ('qa-graded', NULL, 'fx-alex', 'fx-assignment', 5, 5, 100, TRUE, 1, CURRENT_TIMESTAMP)");
+        JsonNode classroom = export("fx-alex").at("/classroom");
+        assertEquals(0, classroom.at("/assignmentProgress").size());
+        assertEquals("Read Chapter I", classroom.at("/assignments/0/title").asText());
+        assertEquals("English 101", classroom.at("/assignments/0/class_name").asText());
+        assertEquals("Fall", classroom.at("/assignments/0/term_name").asText());
+        assertEquals("Pride and Prejudice", classroom.at("/assignments/0/book_title").asText());
+    }
+
+    @Test
     void characterChatsKeepTheirResumeContext() throws Exception {
         jdbc.update("UPDATE character_chat_conversations SET context_chapter_id = 'fx-ch', context_chapter_index = 0, "
                 + "context_chapter_title = 'Chapter I', context_paragraph_index = 7 WHERE user_id = 'fx-alex'");
@@ -216,6 +229,7 @@ class AccountDataExportServiceTest {
         }
         assertNotNull(assigned);
         assertEquals("fx-book", assigned.at("/book_id").asText());
+        assertEquals("Read Chapter I", assigned.at("/assignment_title").asText());
     }
 
     @Test
