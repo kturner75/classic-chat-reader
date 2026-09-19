@@ -47,6 +47,11 @@ public class AccountExportFiles {
     private static final Logger log = LoggerFactory.getLogger(AccountExportFiles.class);
     static final int MAX_CONCURRENT = 2;
     static final Duration LEASE_TTL = Duration.ofHours(1);
+    /**
+     * Last-resort cap for a lease whose download stream is still open. A stalled client is normally
+     * cut off long before this by the container's socket write timeout, which closes the stream.
+     */
+    static final Duration MAX_DOWNLOAD_AGE = Duration.ofHours(24);
     private static final String PREFIX = "account-export-";
 
     /** Thrown when this account already has an export open or the server is at its limit. */
@@ -247,12 +252,15 @@ public class AccountExportFiles {
      */
     public final class Lease implements AutoCloseable {
         private final String userId;
+        private final Instant startedAt;
         private volatile Instant lastActivity;
         private Path file;
+        private InputStream rawDownload;
         private boolean closed;
 
         private Lease(String userId, Instant startedAt) {
             this.userId = userId;
+            this.startedAt = startedAt;
             this.lastActivity = startedAt;
         }
 
@@ -261,8 +269,24 @@ public class AccountExportFiles {
         }
 
         /** Atomic with {@link #touch()}: an idle check and its deletion cannot interleave with new activity. */
+        /**
+         * A lease whose download is still open is kept: its response is live and counts against the
+         * limits until the stream closes (normal end, client disconnect, or the container's write
+         * timeout for a stalled client). Only after {@link #MAX_DOWNLOAD_AGE} is such a lease forced
+         * shut, closing the file stream so the response fails rather than lingering uncounted.
+         * Leases without an open download are reclaimed after {@link #LEASE_TTL} of inactivity.
+         */
         private synchronized boolean reclaimIfIdle(Instant now) {
-            if (!lastActivity.plus(LEASE_TTL).isBefore(now)) return false;
+            if (rawDownload != null) {
+                if (!startedAt.plus(MAX_DOWNLOAD_AGE).isBefore(now)) return false;
+                try {
+                    rawDownload.close(); // the raw stream, not the wrapper: closing the wrapper would re-enter release()
+                } catch (IOException e) {
+                    log.warn("account_export could not close an expired download stream", e);
+                }
+            } else if (!lastActivity.plus(LEASE_TTL).isBefore(now)) {
+                return false;
+            }
             closed = true;
             deleteFile();
             return true;
@@ -297,7 +321,11 @@ public class AccountExportFiles {
         /** The download body. Closing it (end of response or client disconnect) ends the lease. */
         public InputStream openForDownload() throws IOException {
             touch();
-            return new FilterInputStream(Files.newInputStream(file)) {
+            InputStream raw = Files.newInputStream(file);
+            synchronized (this) {
+                rawDownload = raw;
+            }
+            return new FilterInputStream(raw) {
                 @Override
                 public int read() throws IOException {
                     touch();
