@@ -139,12 +139,44 @@ public class ClassroomProperties {
         return ferpa.getAccessLogRetainDays();
     }
 
+    public int termRetainDays() {
+        return ferpa.getTermRetainDays();
+    }
+
+    public boolean retentionPurgeEnabled() {
+        return ferpa.isPurgeEnabled();
+    }
+
     public LocalDateTime inviteDefaultExpiresAt() {
         return LocalDateTime.now(ZoneOffset.UTC).plusDays(invite.getDefaultTtlDays());
     }
 
     public static class Ferpa {
         private int accessLogRetainDays = 2555;
+        /** Days after a term's end date before its student records are purged (BL-043.6; placeholder 400). */
+        private int termRetainDays = 400;
+        private boolean purgeEnabled = true;
+
+        public int getTermRetainDays() {
+            return termRetainDays;
+        }
+
+        public void setTermRetainDays(int termRetainDays) {
+            if (termRetainDays < 1) {
+                log.warn("Invalid classroom.ferpa.term-retain-days={}; using 400", termRetainDays);
+                this.termRetainDays = 400;
+                return;
+            }
+            this.termRetainDays = termRetainDays;
+        }
+
+        public boolean isPurgeEnabled() {
+            return purgeEnabled;
+        }
+
+        public void setPurgeEnabled(boolean purgeEnabled) {
+            this.purgeEnabled = purgeEnabled;
+        }
 
         public int getAccessLogRetainDays() {
             return accessLogRetainDays;

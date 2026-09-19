@@ -41,6 +41,6 @@ in BL-043.3 / BL-043.13. Access logs are never soft-deleted with student content
 
 ## Open follow-ups
 
-- BL-043.6: retention/purge job and account-delete reconciliation, including these rows.
+- Retention: the nightly purge deletes rows only after `retain_until` (see `term-retention-purge.md`).
 - Any new teacher-facing surface that returns student records needs a writer call; there is no
   automatic interception.
