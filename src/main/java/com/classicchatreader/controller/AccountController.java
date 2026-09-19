@@ -13,6 +13,7 @@ import com.classicchatreader.service.ReaderProfileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.http.MediaType;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -61,12 +62,17 @@ public class AccountController {
      * records as JSON. Self-access, so no education-record access log row is written.
      */
     @GetMapping("/export")
-    public ResponseEntity<byte[]> exportMyData(HttpServletRequest request) {
+    public ResponseEntity<StreamingResponseBody> exportMyData(HttpServletRequest request) {
         var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
         if (principal.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        byte[] body = accountDataExportService.export(principal.get().userId());
+        String userId = principal.get().userId();
+        if (!accountDataExportService.accountExists(userId)) {
+            return ResponseEntity.notFound().build();
+        }
+        // Streamed row by row so a long history never has to fit in memory.
+        StreamingResponseBody body = out -> accountDataExportService.writeExport(userId, out);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename("classic-chat-reader-my-data.json").build().toString())
