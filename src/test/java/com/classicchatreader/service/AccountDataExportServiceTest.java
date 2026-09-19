@@ -187,6 +187,30 @@ class AccountDataExportServiceTest {
     }
 
     @Test
+    void privateTempFilesFailClosedWhenOwnerOnlyAccessCannotBeEnforced(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.io.IOException refused = assertThrows(java.io.IOException.class,
+                () -> AccountDataExportService.privateTempFile(java.util.Set.of("basic"), dir));
+        assertTrue(refused.getMessage().contains("refusing to write student data"));
+        try (var left = java.nio.file.Files.list(dir)) {
+            assertEquals(0, left.count(), "no export file is created when access cannot be restricted");
+        }
+        if (dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            java.nio.file.Path file = AccountDataExportService.privateTempFile(java.util.Set.of("basic", "posix"), dir);
+            assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(file)));
+        }
+    }
+
+    @Test
+    void readingBuddyMemoriesKeepTheirSummaryWatermark() throws Exception {
+        jdbc.update("UPDATE reading_buddy_memories SET summary_version = 3, summary_max_chapter_index = 4, summary_max_paragraph_index = 12 WHERE owner_key = 'user:fx-alex'");
+        JsonNode memory = export("fx-alex").at("/readingBuddy/memories/0");
+        assertEquals("memory alex", memory.at("/summary_text").asText());
+        assertEquals(3, memory.at("/summary_version").asInt());
+        assertEquals(4, memory.at("/summary_max_chapter_index").asInt());
+        assertEquals(12, memory.at("/summary_max_paragraph_index").asInt());
+    }
+
+    @Test
     void unknownAccountIsRejected() {
         assertFalse(service.accountExists("nobody"));
         assertThrows(IllegalArgumentException.class, () -> service.export("nobody"));
