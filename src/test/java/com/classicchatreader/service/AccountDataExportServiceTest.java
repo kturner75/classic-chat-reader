@@ -172,56 +172,38 @@ class AccountDataExportServiceTest {
     }
 
     @Test
-    void exportIsBuiltIntoAnOwnerOnlyTempFileThatDeletesItselfWhenServed() throws Exception {
-        java.nio.file.Path file = service.exportToTempFile("fx-alex");
-        try {
-            assertEquals(new ObjectMapper().readTree(service.export("fx-alex")).at("/account"),
-                    new ObjectMapper().readTree(file.toFile()).at("/account"));
-            if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-                assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(file)));
-            }
-            try (var in = new AccountDataExportService.DeleteOnCloseInputStream(file)) {
-                assertTrue(in.readAllBytes().length > 0);
-            }
-            assertFalse(java.nio.file.Files.exists(file), "served exports are deleted");
-        } finally {
-            java.nio.file.Files.deleteIfExists(file);
+    void exportFileIsWrittenIntoTheLeaseAndOversizedExportsAreRefused(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        AccountExportFiles files = new AccountExportFiles(dir, java.time.Clock.systemUTC());
+        try (AccountExportFiles.Lease lease = files.acquire("fx-alex")) {
+            java.nio.file.Path file = service.writeExportFile("fx-alex", lease);
+            assertEquals("fx-alex@example.test", new ObjectMapper().readTree(file.toFile()).at("/account/email").asText());
         }
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void concurrentExportsAreBoundedPerAccountAndOverall() throws Exception {
-        var inProgress = (java.util.Set<String>) org.springframework.test.util.ReflectionTestUtils.getField(service, "exportingAccounts");
-        inProgress.add("fx-alex");
-        try {
-            assertThrows(AccountDataExportService.ExportBusyException.class, () -> service.exportToTempFile("fx-alex"));
-        } finally {
-            inProgress.remove("fx-alex");
-        }
-        var slots = (java.util.concurrent.Semaphore) org.springframework.test.util.ReflectionTestUtils.getField(service, "exportSlots");
-        slots.acquire(AccountDataExportService.MAX_CONCURRENT_EXPORTS);
-        try {
-            assertThrows(AccountDataExportService.ExportBusyException.class, () -> service.exportToTempFile("fx-sam"));
-            assertFalse(inProgress.contains("fx-sam"), "a refused export does not leave the account marked busy");
-        } finally {
-            slots.release(AccountDataExportService.MAX_CONCURRENT_EXPORTS);
-        }
-        java.nio.file.Files.deleteIfExists(service.exportToTempFile("fx-sam"));
-    }
-
-    @Test
-    void privateTempFilesFailClosedWhenOwnerOnlyAccessCannotBeEnforced(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
-        java.io.IOException refused = assertThrows(java.io.IOException.class,
-                () -> AccountDataExportService.privateTempFile(java.util.Set.of("basic"), dir));
-        assertTrue(refused.getMessage().contains("refusing to write student data"));
+        AccountExportFiles.Lease small = files.acquire("fx-alex");
+        assertThrows(AccountDataExportService.ExportTooLargeException.class, () -> service.writeExportFile("fx-alex", small, 1024));
+        small.close();
         try (var left = java.nio.file.Files.list(dir)) {
-            assertEquals(0, left.count(), "no export file is created when access cannot be restricted");
+            assertEquals(0, left.count(), "closed leases leave no files, including refused oversized exports");
         }
-        if (dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-            java.nio.file.Path file = AccountDataExportService.privateTempFile(java.util.Set.of("basic", "posix"), dir);
-            assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(file)));
+    }
+
+    @Test
+    void theWholeExportReadsOneRepeatableReadSnapshot() {
+        var template = (org.springframework.transaction.support.TransactionTemplate)
+                org.springframework.test.util.ReflectionTestUtils.getField(service, "readOnly");
+        assertEquals(org.springframework.transaction.TransactionDefinition.ISOLATION_REPEATABLE_READ, template.getIsolationLevel());
+        assertTrue(template.isReadOnly());
+    }
+
+    @Test
+    void assignmentOnlyQuizAttemptsTakeTheirBookFromTheAssignment() throws Exception {
+        jdbc.update("INSERT INTO quiz_attempts (id, chapter_id, user_id, assignment_id, correct_answers, total_questions, score_percent, perfect, difficulty_level, created_at) "
+                + "VALUES ('qa-assigned', NULL, 'fx-alex', 'fx-assignment', 3, 5, 60, FALSE, 1, CURRENT_TIMESTAMP)");
+        JsonNode assigned = null;
+        for (JsonNode attempt : export("fx-alex").at("/quizAttempts")) {
+            if (attempt.at("/chapter_id").isNull()) assigned = attempt;
         }
+        assertNotNull(assigned);
+        assertEquals("fx-book", assigned.at("/book_id").asText());
     }
 
     @Test
