@@ -336,11 +336,17 @@ public class AccountExportFiles {
             }
         }
 
+        /**
+         * Lock order is always registry, then lease ({@code acquire} → {@code reclaimIfIdle}). Close
+         * therefore finishes with the lease lock before touching the registry, never holding both.
+         */
         @Override
-        public synchronized void close() {
-            if (closed) return;
-            closed = true;
-            deleteFile();
+        public void close() {
+            synchronized (this) {
+                if (closed) return;
+                closed = true;
+                deleteFile();
+            }
             release(this);
         }
     }
