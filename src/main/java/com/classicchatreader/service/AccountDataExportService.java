@@ -100,7 +100,8 @@ public class AccountDataExportService {
      */
     public java.nio.file.Path writeExportFile(String userId, AccountExportFiles.Lease lease, long maxBytes) throws IOException {
         java.nio.file.Path file = lease.createFile();
-        try (OutputStream out = new CappedOutputStream(new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file)), maxBytes)) {
+        // The lease's stream heartbeats on every write, so a long preparation is never reclaimed as idle.
+        try (OutputStream out = new CappedOutputStream(new java.io.BufferedOutputStream(lease.openForWriting()), maxBytes)) {
             writeExport(userId, out);
         }
         return file;

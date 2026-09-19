@@ -181,8 +181,9 @@ class AccountDataExportServiceTest {
         AccountExportFiles.Lease small = files.acquire("fx-alex");
         assertThrows(AccountDataExportService.ExportTooLargeException.class, () -> service.writeExportFile("fx-alex", small, 1024));
         small.close();
-        try (var left = java.nio.file.Files.list(dir)) {
-            assertEquals(0, left.count(), "closed leases leave no files, including refused oversized exports");
+        try (var left = java.nio.file.Files.walk(dir)) {
+            assertEquals(0, left.filter(java.nio.file.Files::isRegularFile).count(),
+                    "closed leases leave no files, including refused oversized exports");
         }
     }
 
