@@ -32,9 +32,9 @@ import java.util.List;
  * student (enrollments, progress, usage) and as a teacher (class roles, owned classes).
  *
  * <p>Rows are streamed from a cursor (fetch size 500) into a private temporary file inside one
- * read-only transaction, so a long history never has to fit in memory and the database connection
- * is released before the (possibly slow) download starts. Concurrent exports are bounded: one per
- * account and {@value #MAX_CONCURRENT_EXPORTS} overall.
+ * read-only, repeatable-read transaction, so a long history never has to fit in memory, the file is
+ * one consistent snapshot, and the database connection is released before the (possibly slow)
+ * download starts. File lifetime and concurrency live in {@link AccountExportFiles}.
  *
  * <p>Explicit column lists only: credentials, sessions, sign-in identities, capability grants,
  * internal reader ids, and other people's data are never included. Every column of every exported
@@ -46,17 +46,14 @@ import java.util.List;
 public class AccountDataExportService {
 
     private static final int FETCH_SIZE = 500;
-    static final int MAX_CONCURRENT_EXPORTS = 2;
+    /** Exports above this size are refused (413) rather than filling the temp volume. */
+    static final long DEFAULT_MAX_BYTES = 256L * 1024 * 1024;
 
-    /** Thrown when this account already has an export in progress or the server is at its limit. */
-    public static class ExportBusyException extends RuntimeException {
-        public ExportBusyException(String message) {
+    public static class ExportTooLargeException extends RuntimeException {
+        public ExportTooLargeException(String message) {
             super(message);
         }
     }
-
-    private final java.util.concurrent.Semaphore exportSlots = new java.util.concurrent.Semaphore(MAX_CONCURRENT_EXPORTS);
-    private final java.util.Set<String> exportingAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * The teacher's classwork: assignments they created, or whose custom quiz they last edited
@@ -76,6 +73,9 @@ public class AccountDataExportService {
         this.jdbc = new NamedParameterJdbcTemplate(template);
         this.readOnly = new TransactionTemplate(transactionManager);
         this.readOnly.setReadOnly(true);
+        // One snapshot for the whole file: a Reading Buddy summarization or assignment edit mid-export
+        // cannot pair old rows with new ones (PostgreSQL default READ COMMITTED would allow it).
+        this.readOnly.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 
     public boolean accountExists(String userId) {
@@ -94,96 +94,48 @@ public class AccountDataExportService {
     }
 
     /**
-     * Writes the export to an owner-only temporary file and returns it. The caller must delete it
-     * (see {@link DeleteOnCloseInputStream}). Throws {@link ExportBusyException} when this account is
-     * already exporting or {@value #MAX_CONCURRENT_EXPORTS} exports are being prepared.
+     * Writes the export into the lease's owner-only file and returns it. The lease (see
+     * {@link AccountExportFiles}) owns the file: closing it, or the download stream it opens, deletes
+     * the file. Throws {@link ExportTooLargeException} beyond {@code maxBytes}; the caller closes the lease.
      */
-    public java.nio.file.Path exportToTempFile(String userId) throws IOException {
-        if (!exportingAccounts.add(userId)) {
-            throw new ExportBusyException("Your data export is already being prepared. Try again when it finishes.");
+    public java.nio.file.Path writeExportFile(String userId, AccountExportFiles.Lease lease, long maxBytes) throws IOException {
+        java.nio.file.Path file = lease.createFile();
+        try (OutputStream out = new CappedOutputStream(new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file)), maxBytes)) {
+            writeExport(userId, out);
         }
-        try {
-            if (!exportSlots.tryAcquire()) {
-                throw new ExportBusyException("Data exports are busy right now. Try again in a minute.");
-            }
-            try {
-                java.nio.file.Path file = privateTempFile();
-                try (OutputStream out = new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file))) {
-                    writeExport(userId, out);
-                } catch (RuntimeException | IOException e) {
-                    java.nio.file.Files.deleteIfExists(file);
-                    throw e;
-                }
-                return file;
-            } finally {
-                exportSlots.release();
-            }
-        } finally {
-            exportingAccounts.remove(userId);
-        }
+        return file;
     }
 
-    /** Holds student records, so readable by the server's own user only. */
-    private static java.nio.file.Path privateTempFile() throws IOException {
-        return privateTempFile(java.nio.file.FileSystems.getDefault().supportedFileAttributeViews(),
-                java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+    public java.nio.file.Path writeExportFile(String userId, AccountExportFiles.Lease lease) throws IOException {
+        return writeExportFile(userId, lease, DEFAULT_MAX_BYTES);
     }
 
-    /**
-     * Owner-only temp file, verified after creation. POSIX: {@code rw-------}. ACL filesystems
-     * (Windows): a single ACL entry for the owner. Fails closed: if neither can be enforced and
-     * verified, no file is created and the export is refused.
-     */
-    static java.nio.file.Path privateTempFile(java.util.Set<String> supportedViews, java.nio.file.Path dir) throws IOException {
-        if (supportedViews.contains("posix")) {
-            var ownerOnly = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------");
-            java.nio.file.Path file = java.nio.file.Files.createTempFile(dir, "account-export-", ".json",
-                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(ownerOnly));
-            if (!java.nio.file.Files.getPosixFilePermissions(file).equals(ownerOnly)) {
-                java.nio.file.Files.deleteIfExists(file);
-                throw new IOException("Could not restrict the export file to its owner");
-            }
-            return file;
-        }
-        if (supportedViews.contains("acl")) {
-            java.nio.file.Path file = java.nio.file.Files.createTempFile(dir, "account-export-", ".json");
-            try {
-                var view = java.nio.file.Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView.class);
-                var owner = java.nio.file.Files.getOwner(file);
-                var ownerOnly = java.util.List.of(java.nio.file.attribute.AclEntry.newBuilder()
-                        .setType(java.nio.file.attribute.AclEntryType.ALLOW)
-                        .setPrincipal(owner)
-                        .setPermissions(java.util.EnumSet.allOf(java.nio.file.attribute.AclEntryPermission.class))
-                        .build());
-                view.setAcl(ownerOnly);
-                if (!view.getAcl().equals(ownerOnly)) {
-                    throw new IOException("Could not restrict the export file to its owner");
-                }
-                return file;
-            } catch (IOException | RuntimeException e) {
-                java.nio.file.Files.deleteIfExists(file);
-                throw e instanceof IOException io ? io : new IOException("Could not restrict the export file to its owner", e);
-            }
-        }
-        throw new IOException("This filesystem cannot restrict export files to their owner; refusing to write student data");
-    }
+    private static final class CappedOutputStream extends java.io.FilterOutputStream {
+        private final long max;
+        private long written;
 
-    /** Serves a finished export and deletes it when the response closes the stream (or the client disconnects). */
-    public static final class DeleteOnCloseInputStream extends java.io.FilterInputStream {
-        private final java.nio.file.Path file;
+        CappedOutputStream(OutputStream out, long max) {
+            super(out);
+            this.max = max;
+        }
 
-        public DeleteOnCloseInputStream(java.nio.file.Path file) throws IOException {
-            super(java.nio.file.Files.newInputStream(file));
-            this.file = file;
+        private void count(long n) {
+            written += n;
+            if (written > max) {
+                throw new ExportTooLargeException("This account's data is too large to download here. Contact support for a bulk export.");
+            }
         }
 
         @Override
-        public void close() throws IOException {
-            try {
-                super.close();
-            } finally {
-                java.nio.file.Files.deleteIfExists(file);
-            }
+        public void write(int b) throws IOException {
+            count(1);
+            out.write(b);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            count(len);
+            out.write(b, off, len);
         }
     }
 
@@ -214,9 +166,9 @@ public class AccountDataExportService {
                 FROM paragraph_annotations a LEFT JOIN books b ON b.id = a.book_id
                 WHERE a.user_id = :u ORDER BY a.updated_at, a.id""", user);
         array(g, "quizAttempts", """
-                SELECT c.book_id, q.chapter_id, c.title AS chapter_title, q.assignment_id, q.legacy_unassigned, q.correct_answers,
-                       q.total_questions, q.score_percent, q.perfect, q.difficulty_level, q.created_at
-                FROM quiz_attempts q LEFT JOIN chapters c ON c.id = q.chapter_id
+                SELECT COALESCE(c.book_id, qa.book_id) AS book_id, q.chapter_id, c.title AS chapter_title, q.assignment_id,
+                       q.legacy_unassigned, q.correct_answers, q.total_questions, q.score_percent, q.perfect, q.difficulty_level, q.created_at
+                FROM quiz_attempts q LEFT JOIN chapters c ON c.id = q.chapter_id LEFT JOIN assignments qa ON qa.id = q.assignment_id
                 WHERE q.user_id = :u ORDER BY q.created_at, q.id""", user);
         array(g, "quizTrophies", """
                 SELECT book_id, code, title, description, unlocked_at
