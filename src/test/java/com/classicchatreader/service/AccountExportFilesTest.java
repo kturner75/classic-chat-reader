@@ -80,6 +80,26 @@ class AccountExportFilesTest {
     }
 
     @Test
+    void aSlowDownloadThatIsStillReadingKeepsItsLeasePastTheTtl() throws Exception {
+        AccountExportFiles files = files();
+        AccountExportFiles.Lease lease = files.acquire("alex");
+        Path file = lease.createFile();
+        Files.writeString(file, "x".repeat(100));
+        InputStream download = lease.openForDownload();
+
+        now.set(now.get().plus(AccountExportFiles.LEASE_TTL).minusSeconds(60));
+        assertEquals('x', download.read(), "a byte read keeps the lease active");
+        now.set(now.get().plus(java.time.Duration.ofMinutes(20)));
+        assertThrows(AccountExportFiles.ExportBusyException.class, () -> files.acquire("alex"),
+                "past the TTL since start, but read 20 minutes ago: still active, still counted");
+        assertTrue(Files.exists(file));
+
+        now.set(now.get().plus(AccountExportFiles.LEASE_TTL).plusSeconds(1));
+        files.acquire("alex").close();
+        assertFalse(Files.exists(file), "no reads for the whole TTL: abandoned and reclaimed");
+    }
+
+    @Test
     void orphansAreRemovedAtStartupAndStaleFilesAreSwept() throws Exception {
         Path dir = tmp.resolve("exports");
         Files.createDirectories(dir);

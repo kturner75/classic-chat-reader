@@ -35,8 +35,9 @@ import java.util.Set;
  *       mid-download leaves nothing behind across restarts) and swept of stale files on every export;</li>
  *   <li>each file is created owner-only and verified, failing closed when that cannot be enforced;</li>
  *   <li>a {@link Lease} is held from preparation until the download stream closes: at most one per
- *       account and {@value #MAX_CONCURRENT} overall. Leases expire after {@link #LEASE_TTL} so a
- *       lost close cannot lock an account out forever.</li>
+ *       account and {@value #MAX_CONCURRENT} overall. A lease with no activity (preparation or bytes
+ *       read by the download) for {@link #LEASE_TTL} is abandoned and reclaimed, so a lost close
+ *       cannot lock an account out forever, while a slow download that is still reading keeps it.</li>
  * </ul>
  */
 @Component
@@ -85,9 +86,10 @@ public class AccountExportFiles {
 
     public synchronized Lease acquire(String userId) throws IOException {
         Instant now = clock.instant();
-        // Expired leases (a close that never came) are reclaimed along with their files.
+        // Only abandoned leases are reclaimed: no preparation or download activity for LEASE_TTL
+        // (a close that never came). A slow download that is still reading keeps its lease.
         leases.values().removeIf(lease -> {
-            if (lease.startedAt.plus(LEASE_TTL).isBefore(now)) {
+            if (lease.lastActivity.plus(LEASE_TTL).isBefore(now)) {
                 lease.deleteFile();
                 return true;
             }
@@ -132,7 +134,12 @@ public class AccountExportFiles {
      */
     private void ensureDirectory() throws IOException {
         if (!Files.exists(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-            Files.createDirectories(directory);
+            if (directory.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                // Created owner-only from the start: no umask window before the reset below.
+                Files.createDirectories(directory, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+            } else {
+                Files.createDirectories(directory);
+            }
         }
         if (!Files.isDirectory(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             throw new AccessDeniedException(directory.toString(), null, "export directory is not a real directory");
@@ -202,25 +209,43 @@ public class AccountExportFiles {
      */
     public final class Lease implements AutoCloseable {
         private final String userId;
-        private final Instant startedAt;
+        private volatile Instant lastActivity;
         private Path file;
         private boolean closed;
 
         private Lease(String userId, Instant startedAt) {
             this.userId = userId;
-            this.startedAt = startedAt;
+            this.lastActivity = startedAt;
+        }
+
+        private void touch() {
+            lastActivity = clock.instant();
         }
 
         public Path createFile() throws IOException {
             if (file != null) throw new IllegalStateException("Export file already created");
             ensureDirectory();
             file = privateFile(directory.getFileSystem().supportedFileAttributeViews(), directory);
+            touch();
             return file;
         }
 
         /** The download body. Closing it (end of response or client disconnect) ends the lease. */
         public InputStream openForDownload() throws IOException {
+            touch();
             return new FilterInputStream(Files.newInputStream(file)) {
+                @Override
+                public int read() throws IOException {
+                    touch();
+                    return super.read();
+                }
+
+                @Override
+                public int read(byte[] b, int off, int len) throws IOException {
+                    touch();
+                    return super.read(b, off, len);
+                }
+
                 @Override
                 public void close() throws IOException {
                     try {
