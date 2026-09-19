@@ -31,7 +31,8 @@ import java.util.Set;
 /**
  * Temporary "Download my data" files (BL-043.6). They hold student records, so:
  * <ul>
- *   <li>they live in one managed, owner-only directory that is emptied at startup (a process killed
+ *   <li>they live in an owner-only per-process directory under one owner-only root; at startup this
+ *       instance's directory and those of dead processes are cleared (a process killed
  *       mid-download leaves nothing behind across restarts) and swept of stale files on every export;</li>
  *   <li>each file is created owner-only and verified, failing closed when that cannot be enforced;</li>
  *   <li>a {@link Lease} is held from preparation until the download stream closes: at most one per
@@ -55,28 +56,66 @@ public class AccountExportFiles {
         }
     }
 
+    private static final String INSTANCE_PREFIX = "pid-";
+
+    /** Shared, owner-only root; each JVM works only in its own {@code pid-<n>} subdirectory. */
+    private final Path root;
     private final Path directory;
+    private final long pid;
+    private final java.util.function.LongPredicate processAlive;
     private final Clock clock;
     private final Map<String, Lease> leases = new HashMap<>();
 
     @Autowired
     public AccountExportFiles() {
-        this(Path.of(System.getProperty("java.io.tmpdir"), "ccr-account-exports"), Clock.systemUTC());
+        this(Path.of(System.getProperty("java.io.tmpdir"), "ccr-account-exports"), Clock.systemUTC(),
+                ProcessHandle.current().pid(), other -> ProcessHandle.of(other).map(ProcessHandle::isAlive).orElse(false));
     }
 
-    AccountExportFiles(Path directory, Clock clock) {
-        this.directory = directory;
+    AccountExportFiles(Path root, Clock clock) {
+        this(root, clock, ProcessHandle.current().pid(), other -> ProcessHandle.of(other).map(ProcessHandle::isAlive).orElse(false));
+    }
+
+    AccountExportFiles(Path root, Clock clock, long pid, java.util.function.LongPredicate processAlive) {
+        this.root = root;
+        this.directory = root.resolve(INSTANCE_PREFIX + pid);
+        this.pid = pid;
+        this.processAlive = processAlive;
         this.clock = clock;
     }
 
-    /** No download can be in progress at startup, so every file left here is an orphan. */
+    /**
+     * Startup cleanup that never touches another live instance's exports (JVMs sharing the same OS
+     * account and temp dir, e.g. during a rolling start). This instance's own directory cannot hold a
+     * live download yet, so it is emptied; another instance's directory is removed only when its
+     * process is no longer running.
+     */
     @PostConstruct
     void removeOrphansFromEarlierRuns() throws IOException {
         ensureDirectory();
         int removed = 0;
-        try (DirectoryStream<Path> files = Files.newDirectoryStream(directory, PREFIX + "*")) {
-            for (Path file : files) {
-                if (Files.deleteIfExists(file)) removed++;
+        try (DirectoryStream<Path> instances = Files.newDirectoryStream(root, INSTANCE_PREFIX + "*")) {
+            for (Path instance : instances) {
+                long owner;
+                try {
+                    owner = Long.parseLong(instance.getFileName().toString().substring(INSTANCE_PREFIX.length()));
+                } catch (NumberFormatException notOurs) {
+                    continue;
+                }
+                if (owner != pid && processAlive.test(owner)) continue;
+                if (!Files.isDirectory(instance, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
+                try (DirectoryStream<Path> files = Files.newDirectoryStream(instance, PREFIX + "*")) {
+                    for (Path file : files) {
+                        if (Files.deleteIfExists(file)) removed++;
+                    }
+                }
+                if (owner != pid) {
+                    try {
+                        Files.deleteIfExists(instance);
+                    } catch (java.nio.file.DirectoryNotEmptyException ignored) {
+                        // Unknown content: leave it rather than guess.
+                    }
+                }
             }
         }
         if (removed > 0) {
@@ -88,13 +127,7 @@ public class AccountExportFiles {
         Instant now = clock.instant();
         // Only abandoned leases are reclaimed: no preparation or download activity for LEASE_TTL
         // (a close that never came). A slow download that is still reading keeps its lease.
-        leases.values().removeIf(lease -> {
-            if (lease.lastActivity.plus(LEASE_TTL).isBefore(now)) {
-                lease.deleteFile();
-                return true;
-            }
-            return false;
-        });
+        leases.values().removeIf(lease -> lease.reclaimIfIdle(now));
         sweepStaleFiles(now);
         if (leases.containsKey(userId)) {
             throw new ExportBusyException("Your data export is already being prepared or downloaded. Try again when it finishes.");
@@ -133,6 +166,11 @@ public class AccountExportFiles {
      * are refused, since another local user could swap a file between preparation and download.
      */
     private void ensureDirectory() throws IOException {
+        secure(root);
+        secure(directory);
+    }
+
+    private static void secure(Path directory) throws IOException {
         if (!Files.exists(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             if (directory.getFileSystem().supportedFileAttributeViews().contains("posix")) {
                 // Created owner-only from the start: no umask window before the reset below.
@@ -218,8 +256,34 @@ public class AccountExportFiles {
             this.lastActivity = startedAt;
         }
 
-        private void touch() {
+        private synchronized void touch() {
             lastActivity = clock.instant();
+        }
+
+        /** Atomic with {@link #touch()}: an idle check and its deletion cannot interleave with new activity. */
+        private synchronized boolean reclaimIfIdle(Instant now) {
+            if (!lastActivity.plus(LEASE_TTL).isBefore(now)) return false;
+            closed = true;
+            deleteFile();
+            return true;
+        }
+
+        /** Where the export is written. Every write is a heartbeat, so a long preparation is never "idle". */
+        public java.io.OutputStream openForWriting() throws IOException {
+            touch();
+            return new java.io.FilterOutputStream(Files.newOutputStream(file)) {
+                @Override
+                public void write(int b) throws IOException {
+                    touch();
+                    out.write(b);
+                }
+
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    touch();
+                    out.write(b, off, len);
+                }
+            };
         }
 
         public Path createFile() throws IOException {
@@ -244,6 +308,12 @@ public class AccountExportFiles {
                 public int read(byte[] b, int off, int len) throws IOException {
                     touch();
                     return super.read(b, off, len);
+                }
+
+                @Override
+                public long skip(long n) throws IOException {
+                    touch();
+                    return super.skip(n);
                 }
 
                 @Override
