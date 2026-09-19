@@ -56,6 +56,47 @@ class AccountControllerTest {
     @MockitoBean
     private GoogleAccountOAuthService googleAccountOAuthService;
 
+    @MockitoBean
+    private com.classicchatreader.service.AccountDataExportService accountDataExportService;
+
+    @Test
+    void exportMyDataRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(accountDataExportService);
+    }
+
+    @Test
+    void exportMyDataStreamsOnlyTheSignedInAccountsFile() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            java.io.OutputStream out = invocation.getArgument(1);
+            out.write("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return null;
+        }).when(accountDataExportService).writeExport(eq("user-1"), any());
+
+        var started = mockMvc.perform(get("/api/account/export"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.account").exists());
+        verify(accountDataExportService).writeExport(eq("user-1"), any());
+    }
+
+    @Test
+    void exportMyDataReturns404WhenTheAccountIsGone() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(false);
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isNotFound());
+        verify(accountDataExportService, org.mockito.Mockito.never()).writeExport(any(), any());
+    }
+
     @Test
     void status_returnsUnauthenticatedWhenNoSession() throws Exception {
         when(accountAuthService.status(any()))
