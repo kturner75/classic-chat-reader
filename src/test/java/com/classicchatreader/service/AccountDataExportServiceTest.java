@@ -148,6 +148,45 @@ class AccountDataExportServiceTest {
     }
 
     @Test
+    void exportIsBuiltIntoAnOwnerOnlyTempFileThatDeletesItselfWhenServed() throws Exception {
+        java.nio.file.Path file = service.exportToTempFile("fx-alex");
+        try {
+            assertEquals(new ObjectMapper().readTree(service.export("fx-alex")).at("/account"),
+                    new ObjectMapper().readTree(file.toFile()).at("/account"));
+            if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(file)));
+            }
+            try (var in = new AccountDataExportService.DeleteOnCloseInputStream(file)) {
+                assertTrue(in.readAllBytes().length > 0);
+            }
+            assertFalse(java.nio.file.Files.exists(file), "served exports are deleted");
+        } finally {
+            java.nio.file.Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void concurrentExportsAreBoundedPerAccountAndOverall() throws Exception {
+        var inProgress = (java.util.Set<String>) org.springframework.test.util.ReflectionTestUtils.getField(service, "exportingAccounts");
+        inProgress.add("fx-alex");
+        try {
+            assertThrows(AccountDataExportService.ExportBusyException.class, () -> service.exportToTempFile("fx-alex"));
+        } finally {
+            inProgress.remove("fx-alex");
+        }
+        var slots = (java.util.concurrent.Semaphore) org.springframework.test.util.ReflectionTestUtils.getField(service, "exportSlots");
+        slots.acquire(AccountDataExportService.MAX_CONCURRENT_EXPORTS);
+        try {
+            assertThrows(AccountDataExportService.ExportBusyException.class, () -> service.exportToTempFile("fx-sam"));
+            assertFalse(inProgress.contains("fx-sam"), "a refused export does not leave the account marked busy");
+        } finally {
+            slots.release(AccountDataExportService.MAX_CONCURRENT_EXPORTS);
+        }
+        java.nio.file.Files.deleteIfExists(service.exportToTempFile("fx-sam"));
+    }
+
+    @Test
     void unknownAccountIsRejected() {
         assertFalse(service.accountExists("nobody"));
         assertThrows(IllegalArgumentException.class, () -> service.export("nobody"));

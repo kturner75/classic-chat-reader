@@ -142,25 +142,34 @@ class AccountControllerTest {
     }
 
     @Test
-    void exportMyDataStreamsOnlyTheSignedInAccountsFile() throws Exception {
+    void exportMyDataServesTheSignedInAccountsFileAndDeletesIt() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any()))
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(true);
-        org.mockito.Mockito.doAnswer(invocation -> {
-            java.io.OutputStream out = invocation.getArgument(1);
-            out.write("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return null;
-        }).when(accountDataExportService).writeExport(eq("user-1"), any());
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("export-test-", ".json");
+        java.nio.file.Files.writeString(file, "{\"account\":{}}");
+        when(accountDataExportService.exportToTempFile("user-1")).thenReturn(file);
 
-        var started = mockMvc.perform(get("/api/account/export"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
-                .andReturn();
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+        mockMvc.perform(get("/api/account/export"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
                 .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Content-Length", "14"))
                 .andExpect(jsonPath("$.account").exists());
-        verify(accountDataExportService).writeExport(eq("user-1"), any());
+        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(file), "the temp export is deleted once served");
+    }
+
+    @Test
+    void exportMyDataReturns429WhileAnotherExportIsBeingPrepared() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.exportToTempFile("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportBusyException("Your data export is already being prepared."));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "30"))
+                .andExpect(jsonPath("$.error").value("Your data export is already being prepared."));
     }
 
     @Test
@@ -169,7 +178,7 @@ class AccountControllerTest {
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(false);
         mockMvc.perform(get("/api/account/export")).andExpect(status().isNotFound());
-        verify(accountDataExportService, org.mockito.Mockito.never()).writeExport(any(), any());
+        verify(accountDataExportService, org.mockito.Mockito.never()).exportToTempFile(any());
     }
 
     @Test
