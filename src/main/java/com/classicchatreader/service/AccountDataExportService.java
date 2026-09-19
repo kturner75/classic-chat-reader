@@ -56,6 +56,14 @@ public class AccountDataExportService {
     private final java.util.concurrent.Semaphore exportSlots = new java.util.concurrent.Semaphore(MAX_CONCURRENT_EXPORTS);
     private final java.util.Set<String> exportingAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * The teacher's classwork: assignments they created, or whose custom quiz they last edited
+     * (editing rewrites assignment_quizzes.created_by_user_id). Assignments, their chapters, and
+     * their quizzes are all selected through this one set, so a quiz always ships with its assignment.
+     */
+    private static final String MY_ASSIGNMENTS =
+            "(a.created_by_user_id = :u OR a.id IN (SELECT mq.assignment_id FROM assignment_quizzes mq WHERE mq.created_by_user_id = :u))";
+
     private final NamedParameterJdbcTemplate jdbc;
     private final TransactionTemplate readOnly;
     private final ObjectMapper json = new ObjectMapper();
@@ -269,21 +277,23 @@ public class AccountDataExportService {
                 WHERE s.owner_user_id = :u ORDER BY t.created_at, t.id""", user);
         array(g, "featureSettings", """
                 SELECT f.term_id, f.quiz_enabled, f.recap_enabled, f.tts_enabled, f.illustration_enabled, f.character_enabled,
-                       f.chat_enabled, f.speed_reading_enabled, f.reading_buddy_enabled, f.updated_at
+                       f.chat_enabled, f.speed_reading_enabled, f.reading_buddy_enabled, f.default_quiz_question_count,
+                       f.default_quiz_option_count, f.default_quiz_pass_min_correct, f.default_quiz_max_retries, f.updated_at
                 FROM class_feature_settings f JOIN terms t ON t.id = f.term_id JOIN class_sections s ON s.id = t.class_section_id
                 WHERE s.owner_user_id = :u OR f.updated_by_user_id = :u ORDER BY f.term_id""", user);
         array(g, "assignments", """
-                SELECT id AS assignment_id, term_id, title, book_id, due_date, available_from_date, quiz_required,
-                       quiz_source, quiz_pass_min_correct, quiz_max_retries, character_chat_required, sort_order, status,
-                       created_at, updated_at, deleted_at
-                FROM assignments WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
+                SELECT a.id AS assignment_id, a.term_id, a.title, a.book_id, a.due_date, a.available_from_date, a.quiz_required,
+                       a.quiz_source, a.quiz_pass_min_correct, a.quiz_max_retries, a.quiz_rules_activated_at,
+                       a.character_chat_required, a.sort_order, a.status, a.created_at, a.updated_at, a.deleted_at
+                FROM assignments a WHERE """ + MY_ASSIGNMENTS + " ORDER BY a.created_at, a.id", user);
         array(g, "assignmentChapters", """
                 SELECT c.assignment_id, c.chapter_id, c.chapter_index, c.sort_order
                 FROM assignment_chapters c JOIN assignments a ON a.id = c.assignment_id
-                WHERE a.created_by_user_id = :u ORDER BY c.assignment_id, c.sort_order, c.id""", user);
+                WHERE """ + MY_ASSIGNMENTS + " ORDER BY c.assignment_id, c.sort_order, c.id", user);
         array(g, "assignmentQuizzes", """
-                SELECT assignment_id, payload_json, created_at, updated_at
-                FROM assignment_quizzes WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
+                SELECT q.assignment_id, q.payload_json, q.created_at, q.updated_at
+                FROM assignment_quizzes q JOIN assignments a ON a.id = q.assignment_id
+                WHERE """ + MY_ASSIGNMENTS + " ORDER BY q.created_at, q.id", user);
         array(g, "quizQuestionOverrides", """
                 SELECT term_id, book_id, chapter_id, operation, source_question_id, overlay_key, sort_order, question_json,
                        status, base_prompt_version, notes, created_at, updated_at, deleted_at
