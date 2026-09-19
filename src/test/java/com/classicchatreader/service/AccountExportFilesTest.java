@@ -131,9 +131,29 @@ class AccountExportFilesTest {
                 "past the TTL since start, but read 20 minutes ago: still active, still counted");
         assertTrue(Files.exists(file));
 
-        now.set(now.get().plus(AccountExportFiles.LEASE_TTL).plusSeconds(1));
+        download.close();
         files.acquire("alex").close();
-        assertFalse(Files.exists(file), "no reads for the whole TTL: abandoned and reclaimed");
+        assertFalse(Files.exists(file), "closing the download ends the lease and deletes the file");
+    }
+
+    @Test
+    void aStalledDownloadStaysCountedUntilItsStreamClosesOrTheHardCap() throws Exception {
+        AccountExportFiles files = files();
+        AccountExportFiles.Lease lease = files.acquire("alex");
+        Path file = lease.createFile();
+        Files.writeString(file, "x".repeat(100));
+        InputStream download = lease.openForDownload();
+
+        // The client stops accepting bytes: no reads for hours, but the response is still live.
+        now.set(now.get().plus(AccountExportFiles.LEASE_TTL.multipliedBy(5)));
+        assertThrows(AccountExportFiles.ExportBusyException.class, () -> files.acquire("alex"),
+                "an open download is never reclaimed as idle, so it keeps counting against the limits");
+        assertTrue(Files.exists(file));
+
+        now.set(now.get().plus(AccountExportFiles.MAX_DOWNLOAD_AGE));
+        files.acquire("alex").close();
+        assertFalse(Files.exists(file), "past the hard cap the lease is reclaimed");
+        assertThrows(java.io.IOException.class, download::read, "and its file stream is closed, so the response fails");
     }
 
     @Test
