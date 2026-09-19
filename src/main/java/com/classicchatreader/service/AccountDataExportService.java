@@ -63,6 +63,11 @@ public class AccountDataExportService {
     private static final String MY_ASSIGNMENTS =
             "(a.created_by_user_id = :u OR a.id IN (SELECT mq.assignment_id FROM assignment_quizzes mq WHERE mq.created_by_user_id = :u))";
 
+    /** Assignments a student's own records point at: opened (progress) or attempted (quiz attempts). */
+    private static final String STUDENT_ASSIGNMENTS =
+            "SELECT assignment_id FROM assignment_progress WHERE user_id = :u "
+                    + "UNION SELECT assignment_id FROM quiz_attempts WHERE user_id = :u AND assignment_id IS NOT NULL";
+
     private final NamedParameterJdbcTemplate jdbc;
     private final TransactionTemplate readOnly;
     private final ObjectMapper json = new ObjectMapper();
@@ -168,6 +173,7 @@ public class AccountDataExportService {
                 WHERE a.user_id = :u ORDER BY a.updated_at, a.id""", user);
         array(g, "quizAttempts", """
                 SELECT COALESCE(c.book_id, qa.book_id) AS book_id, q.chapter_id, c.title AS chapter_title, q.assignment_id,
+                       qa.title AS assignment_title,
                        q.legacy_unassigned, q.correct_answers, q.total_questions, q.score_percent, q.perfect, q.difficulty_level, q.created_at
                 FROM quiz_attempts q LEFT JOIN chapters c ON c.id = q.chapter_id LEFT JOIN assignments qa ON qa.id = q.assignment_id
                 WHERE q.user_id = :u ORDER BY q.created_at, q.id""", user);
@@ -201,12 +207,19 @@ public class AccountDataExportService {
                        p.first_opened_at, p.created_at, p.updated_at
                 FROM assignment_progress p LEFT JOIN assignments a ON a.id = p.assignment_id LEFT JOIN books b ON b.id = a.book_id
                 WHERE p.user_id = :u ORDER BY p.first_opened_at, p.id""", user);
+        // Every assignment the student's progress or quiz attempts refer to, described once, whether or
+        // not a progress row exists (grading can record an attempt without one).
+        array(g, "assignments", """
+                SELECT a.id AS assignment_id, a.title, s.name AS class_name, t.name AS term_name, a.term_id, a.book_id,
+                       b.title AS book_title, a.due_date, a.available_from_date, a.quiz_required, a.character_chat_required,
+                       a.status, a.deleted_at
+                FROM assignments a LEFT JOIN terms t ON t.id = a.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
+                LEFT JOIN books b ON b.id = a.book_id
+                WHERE a.id IN (""" + STUDENT_ASSIGNMENTS + ") ORDER BY a.created_at, a.id", user);
         array(g, "assignmentChapters", """
                 SELECT c.assignment_id, c.chapter_id, ch.title AS chapter_title, c.chapter_index, c.sort_order
                 FROM assignment_chapters c LEFT JOIN chapters ch ON ch.id = c.chapter_id
-                WHERE c.assignment_id IN (SELECT assignment_id FROM assignment_progress WHERE user_id = :u
-                                          UNION SELECT assignment_id FROM quiz_attempts WHERE user_id = :u AND assignment_id IS NOT NULL)
-                ORDER BY c.assignment_id, c.sort_order, c.id""", user);
+                WHERE c.assignment_id IN (""" + STUDENT_ASSIGNMENTS + ") ORDER BY c.assignment_id, c.sort_order, c.id", user);
         array(g, "usageEvents", """
                 SELECT term_id, class_section_id, school_id, event_type, book_id, chapter_id, paragraph_index, assignment_id,
                        duration_ms, progress_percent, feature, provider, model_name, input_tokens, output_tokens,
