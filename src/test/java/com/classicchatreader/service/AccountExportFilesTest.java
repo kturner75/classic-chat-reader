@@ -77,6 +77,36 @@ class AccountExportFilesTest {
     }
 
     @Test
+    void closingDownloadsWhileOthersAcquireNeverDeadlocks() throws Exception {
+        AccountExportFiles files = files();
+        java.util.concurrent.BlockingQueue<AccountExportFiles.Lease> open = new java.util.concurrent.LinkedBlockingQueue<>();
+        java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicInteger acquired = new java.util.concurrent.atomic.AtomicInteger();
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(20), () -> {
+            Thread closer = new Thread(() -> {
+                while (!done.get() || !open.isEmpty()) {
+                    AccountExportFiles.Lease lease = open.poll();
+                    if (lease != null) lease.close();
+                }
+            });
+            closer.start();
+            for (int i = 0; i < 20_000; i++) {
+                try {
+                    // The idle check in acquire() takes each open lease's lock while the closer thread closes them.
+                    now.set(now.get().plusMillis(1));
+                    open.add(files.acquire("user-" + (i % 2)));
+                    acquired.incrementAndGet();
+                } catch (AccountExportFiles.ExportBusyException busy) {
+                    Thread.onSpinWait();
+                }
+            }
+            done.set(true);
+            closer.join();
+        });
+        assertTrue(acquired.get() > 0);
+    }
+
+    @Test
     void expiredLeasesAreReclaimedWithTheirFiles() throws Exception {
         AccountExportFiles files = files();
         AccountExportFiles.Lease lost = files.acquire("alex");
