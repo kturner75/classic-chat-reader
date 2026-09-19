@@ -177,6 +177,15 @@ class AccountDataExportServiceTest {
     }
 
     @Test
+    void schoolMembershipsAndOwnedClassesNameTheirSchool() throws Exception {
+        AccountDataFixture.seedTeacherContent(jdbc, "fx-teacher");
+        jdbc.update("UPDATE class_sections SET school_id = 'fx-school' WHERE id = 'fx-class'");
+        JsonNode classroom = export("fx-teacher").at("/classroom");
+        assertEquals("Columbia State", classroom.at("/schoolMemberships/0/school_name").asText());
+        assertEquals("Columbia State", classroom.at("/ownedClasses/0/school_name").asText());
+    }
+
+    @Test
     void characterChatsKeepTheirResumeContext() throws Exception {
         jdbc.update("UPDATE character_chat_conversations SET context_chapter_id = 'fx-ch', context_chapter_index = 0, "
                 + "context_chapter_title = 'Chapter I', context_paragraph_index = 7 WHERE user_id = 'fx-alex'");

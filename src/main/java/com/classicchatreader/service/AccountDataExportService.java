@@ -230,11 +230,13 @@ public class AccountDataExportService {
                 FROM class_role_memberships m JOIN terms t ON t.id = m.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
                 WHERE m.user_id = :u ORDER BY m.created_at, m.id""", user);
         array(g, "ownedClasses", """
-                SELECT id AS class_id, school_id, name, code, status, created_at, updated_at, deleted_at
-                FROM class_sections WHERE owner_user_id = :u ORDER BY created_at, id""", user);
+                SELECT c.id AS class_id, c.school_id, sc.name AS school_name, c.name, c.code, c.status, c.created_at, c.updated_at, c.deleted_at
+                FROM class_sections c LEFT JOIN schools sc ON sc.id = c.school_id
+                WHERE c.owner_user_id = :u ORDER BY c.created_at, c.id""", user);
         array(g, "schoolMemberships", """
-                SELECT school_id, role, status, created_at, updated_at, revoked_at
-                FROM school_memberships WHERE user_id = :u ORDER BY created_at, id""", user);
+                SELECT m.school_id, sc.name AS school_name, m.role, m.status, m.created_at, m.updated_at, m.revoked_at
+                FROM school_memberships m LEFT JOIN schools sc ON sc.id = m.school_id
+                WHERE m.user_id = :u ORDER BY m.created_at, m.id""", user);
         teacherContent(g, user);
         g.writeEndObject();
         g.writeArrayFieldStart("notes");
