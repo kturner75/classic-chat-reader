@@ -124,16 +124,41 @@ public class AccountExportFiles {
         }
     }
 
+    /**
+     * Called before every use, not only at creation: an existing directory is trusted only if it is a
+     * real directory (not a symlink), owned by this process's user, and its permissions can be reset
+     * to owner-only and read back (POSIX {@code rwx------}, or an owner-only ACL). Otherwise exports
+     * are refused, since another local user could swap a file between preparation and download.
+     */
     private void ensureDirectory() throws IOException {
-        if (Files.isDirectory(directory)) return;
-        if (directory.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-            Files.createDirectories(directory, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
-            if (!Files.getPosixFilePermissions(directory).equals(EnumSet.of(PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE))) {
+        if (!Files.exists(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            Files.createDirectories(directory);
+        }
+        if (!Files.isDirectory(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new AccessDeniedException(directory.toString(), null, "export directory is not a real directory");
+        }
+        var owner = Files.getOwner(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+        if (!owner.getName().equals(System.getProperty("user.name"))
+                && !owner.getName().endsWith("\\" + System.getProperty("user.name"))) {
+            throw new AccessDeniedException(directory.toString(), null, "export directory is owned by " + owner.getName());
+        }
+        Set<String> views = directory.getFileSystem().supportedFileAttributeViews();
+        if (views.contains("posix")) {
+            var ownerOnly = EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
+            Files.setPosixFilePermissions(directory, ownerOnly);
+            if (!Files.getPosixFilePermissions(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS).equals(ownerOnly)) {
+                throw new AccessDeniedException(directory.toString(), null, "export directory is not owner-only");
+            }
+        } else if (views.contains("acl")) {
+            var view = Files.getFileAttributeView(directory, AclFileAttributeView.class, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+            var ownerOnly = List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
+                    .setPermissions(EnumSet.allOf(AclEntryPermission.class)).build());
+            view.setAcl(ownerOnly);
+            if (!view.getAcl().equals(ownerOnly)) {
                 throw new AccessDeniedException(directory.toString(), null, "export directory is not owner-only");
             }
         } else {
-            Files.createDirectories(directory);
+            throw new AccessDeniedException(directory.toString(), null, "cannot restrict the export directory to its owner");
         }
     }
 

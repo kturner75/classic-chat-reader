@@ -97,6 +97,24 @@ class AccountExportFilesTest {
     }
 
     @Test
+    void aPreExistingLooseDirectoryIsLockedDownAndASymlinkIsRefused() throws Exception {
+        Path dir = tmp.resolve("exports");
+        if (!dir.getFileSystem().supportedFileAttributeViews().contains("posix")) return;
+        Files.createDirectories(dir);
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxrwxrwx"));
+        AccountExportFiles files = files();
+        files.acquire("alex").close();
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(dir)),
+                "an existing world-writable directory is reset to owner-only before use");
+
+        Path real = Files.createDirectories(tmp.resolve("elsewhere"));
+        Path link = Files.createSymbolicLink(tmp.resolve("linked-exports"), real);
+        AccountExportFiles viaLink = new AccountExportFiles(link, clock);
+        assertThrows(java.nio.file.AccessDeniedException.class, viaLink::removeOrphansFromEarlierRuns);
+        assertThrows(java.nio.file.AccessDeniedException.class, () -> viaLink.acquire("alex"));
+    }
+
+    @Test
     void directoryAndFilesAreOwnerOnlyAndPermissionsFailClosed() throws Exception {
         AccountExportFiles files = files();
         Path dir = tmp.resolve("exports");
