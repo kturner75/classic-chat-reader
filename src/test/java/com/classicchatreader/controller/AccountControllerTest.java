@@ -30,7 +30,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AccountController.class)
-@org.springframework.context.annotation.Import(com.classicchatreader.service.AccountExportFiles.class)
 class AccountControllerTest {
 
     @Autowired
@@ -60,9 +59,6 @@ class AccountControllerTest {
     @MockitoBean
     private com.classicchatreader.service.AccountDataExportService accountDataExportService;
 
-    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
-    private com.classicchatreader.service.AccountExportFiles accountExportFiles;
-
     @Test
     void exportMyDataRequiresSignIn() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
@@ -71,53 +67,42 @@ class AccountControllerTest {
     }
 
     @Test
-    void exportMyDataServesTheSignedInAccountsFileAndDeletesIt() throws Exception {
+    void exportMyDataDownloadsTheSignedInAccountsFile() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any()))
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(true);
-        java.util.concurrent.atomic.AtomicReference<java.nio.file.Path> written = new java.util.concurrent.atomic.AtomicReference<>();
-        when(accountDataExportService.writeExportFile(eq("user-1"), any())).thenAnswer(invocation -> {
-            com.classicchatreader.service.AccountExportFiles.Lease lease = invocation.getArgument(1);
-            java.nio.file.Path file = lease.createFile();
-            java.nio.file.Files.writeString(file, "{\"account\":{}}");
-            written.set(file);
-            return file;
-        });
+        when(accountDataExportService.export("user-1")).thenReturn("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         mockMvc.perform(get("/api/account/export"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
                 .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(header().string("Content-Length", "14"))
                 .andExpect(jsonPath("$.account").exists());
-        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(written.get()), "the export is deleted once served");
-        accountExportFiles.acquire("user-1").close(); // and the account's lease was released
     }
 
     @Test
-    void exportMyDataReturns429WhileAnotherExportIsOpen() throws Exception {
+    void exportMyDataReturns429WhileAnotherExportIsRunning() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any()))
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(true);
-        try (var open = accountExportFiles.acquire("user-1")) {
-            mockMvc.perform(get("/api/account/export"))
-                    .andExpect(status().isTooManyRequests())
-                    .andExpect(header().string("Retry-After", "30"));
-        }
-        verify(accountDataExportService, org.mockito.Mockito.never()).writeExportFile(any(), any());
+        when(accountDataExportService.export("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportBusyException("already running"));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "30"))
+                .andExpect(jsonPath("$.error").value("already running"));
     }
 
     @Test
-    void exportMyDataReturns413AndReleasesTheLeaseWhenTooLarge() throws Exception {
+    void exportMyDataReturns413WhenTooLarge() throws Exception {
         when(accountAuthService.resolveAuthenticatedPrincipal(any()))
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(true);
-        when(accountDataExportService.writeExportFile(eq("user-1"), any()))
+        when(accountDataExportService.export("user-1"))
                 .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportTooLargeException("too large"));
         mockMvc.perform(get("/api/account/export"))
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.error").value("too large"));
-        accountExportFiles.acquire("user-1").close();
     }
 
     @Test
@@ -126,7 +111,7 @@ class AccountControllerTest {
                 .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
         when(accountDataExportService.accountExists("user-1")).thenReturn(false);
         mockMvc.perform(get("/api/account/export")).andExpect(status().isNotFound());
-        verify(accountDataExportService, org.mockito.Mockito.never()).writeExportFile(any(), any());
+        verify(accountDataExportService, org.mockito.Mockito.never()).export(any());
     }
 
     @Test

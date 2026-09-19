@@ -13,14 +13,12 @@ import com.classicchatreader.service.ReaderProfileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import java.io.IOException;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import com.classicchatreader.service.AccountDataExportService;
-import com.classicchatreader.service.AccountExportFiles;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +37,6 @@ public class AccountController {
     private final AccountAuthAuditService accountAuthAuditService;
     private final GoogleAccountOAuthService googleAccountOAuthService;
     private final AccountDataExportService accountDataExportService;
-    private final AccountExportFiles accountExportFiles;
 
     public AccountController(
             AccountAuthService accountAuthService,
@@ -49,8 +46,7 @@ public class AccountController {
             AccountAuthRateLimiter accountAuthRateLimiter,
             AccountAuthAuditService accountAuthAuditService,
             GoogleAccountOAuthService googleAccountOAuthService,
-            AccountDataExportService accountDataExportService,
-            AccountExportFiles accountExportFiles) {
+            AccountDataExportService accountDataExportService) {
         this.accountAuthService = accountAuthService;
         this.readerProfileService = readerProfileService;
         this.accountClaimSyncService = accountClaimSyncService;
@@ -59,7 +55,6 @@ public class AccountController {
         this.accountAuthAuditService = accountAuthAuditService;
         this.googleAccountOAuthService = googleAccountOAuthService;
         this.accountDataExportService = accountDataExportService;
-        this.accountExportFiles = accountExportFiles;
     }
 
     /**
@@ -67,7 +62,7 @@ public class AccountController {
      * records as JSON. Self-access, so no education-record access log row is written.
      */
     @GetMapping("/export")
-    public ResponseEntity<?> exportMyData(HttpServletRequest request) throws IOException {
+    public ResponseEntity<?> exportMyData(HttpServletRequest request) {
         var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
         if (principal.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -76,32 +71,21 @@ public class AccountController {
         if (!accountDataExportService.accountExists(userId)) {
             return ResponseEntity.notFound().build();
         }
-        AccountExportFiles.Lease lease;
+        byte[] body;
         try {
-            lease = accountExportFiles.acquire(userId);
-        } catch (AccountExportFiles.ExportBusyException busy) {
+            body = accountDataExportService.export(userId);
+        } catch (AccountDataExportService.ExportBusyException busy) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "30")
                     .body(Map.of("error", busy.getMessage()));
-        }
-        try {
-            // Built to a private file first: the database connection is released before the download.
-            // The lease (one per account, bounded overall) lasts until the download stream closes.
-            java.nio.file.Path file = accountDataExportService.writeExportFile(userId, lease);
-            long length = java.nio.file.Files.size(file);
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                            .filename("classic-chat-reader-my-data.json").build().toString())
-                    .cacheControl(CacheControl.noStore())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .contentLength(length)
-                    .body(new org.springframework.core.io.InputStreamResource(lease.openForDownload()));
         } catch (AccountDataExportService.ExportTooLargeException tooLarge) {
-            lease.close();
             return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("error", tooLarge.getMessage()));
-        } catch (IOException | RuntimeException e) {
-            lease.close();
-            throw e;
         }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename("classic-chat-reader-my-data.json").build().toString())
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body);
     }
 
     @GetMapping("/status")

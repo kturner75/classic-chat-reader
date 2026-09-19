@@ -11,7 +11,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -122,20 +121,11 @@ class AccountDataExportServiceTest {
     }
 
     @Test
-    void longHistoriesStreamCompletelyAndLeaveTheCallersStreamOpen() throws Exception {
+    void longHistoriesExportCompletely() throws Exception {
         for (int i = 0; i < 5000; i++) {
             jdbc.update("INSERT INTO classroom_usage_events (id, user_id, term_id, event_type, duration_ms, occurred_at, created_at) VALUES (?, 'fx-alex', 'fx-term', 'READING_HEARTBEAT', 60000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "hb-" + i);
         }
-        boolean[] closed = {false};
-        ByteArrayOutputStream out = new ByteArrayOutputStream() {
-            @Override
-            public void close() {
-                closed[0] = true;
-            }
-        };
-        service.writeExport("fx-alex", out);
-        assertFalse(closed[0], "the servlet owns the response stream");
-        assertEquals(5001, new ObjectMapper().readTree(out.toByteArray()).at("/classroom/usageEvents").size());
+        assertEquals(5001, export("fx-alex").at("/classroom/usageEvents").size());
     }
 
     @Test
@@ -206,19 +196,19 @@ class AccountDataExportServiceTest {
     }
 
     @Test
-    void exportFileIsWrittenIntoTheLeaseAndOversizedExportsAreRefused(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
-        AccountExportFiles files = new AccountExportFiles(dir, java.time.Clock.systemUTC());
-        try (AccountExportFiles.Lease lease = files.acquire("fx-alex")) {
-            java.nio.file.Path file = service.writeExportFile("fx-alex", lease);
-            assertEquals("fx-alex@example.test", new ObjectMapper().readTree(file.toFile()).at("/account/email").asText());
+    void oversizedExportsAreRefusedAndOneExportRunsPerAccountAtATime() throws Exception {
+        assertThrows(AccountDataExportService.ExportTooLargeException.class, () -> service.export("fx-alex", 1024));
+
+        @SuppressWarnings("unchecked")
+        var running = (java.util.Set<String>) org.springframework.test.util.ReflectionTestUtils.getField(service, "exporting");
+        assertTrue(running.isEmpty(), "a refused export does not leave the account marked busy");
+        running.add("fx-alex");
+        try {
+            assertThrows(AccountDataExportService.ExportBusyException.class, () -> service.export("fx-alex"));
+        } finally {
+            running.remove("fx-alex");
         }
-        AccountExportFiles.Lease small = files.acquire("fx-alex");
-        assertThrows(AccountDataExportService.ExportTooLargeException.class, () -> service.writeExportFile("fx-alex", small, 1024));
-        small.close();
-        try (var left = java.nio.file.Files.walk(dir)) {
-            assertEquals(0, left.filter(java.nio.file.Files::isRegularFile).count(),
-                    "closed leases leave no files, including refused oversized exports");
-        }
+        assertTrue(service.export("fx-alex").length > 0);
     }
 
     @Test

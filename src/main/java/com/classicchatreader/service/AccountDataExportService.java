@@ -31,29 +31,31 @@ import java.util.List;
  * quizzes, character chats, Reading Buddy, and the account's own classroom records, both as a
  * student (enrollments, progress, usage) and as a teacher (class roles, owned classes).
  *
- * <p>Rows are streamed from a cursor (fetch size 500) into a private temporary file inside one
- * read-only, repeatable-read transaction, so a long history never has to fit in memory, the file is
- * one consistent snapshot, and the database connection is released before the (possibly slow)
- * download starts. File lifetime and concurrency live in {@link AccountExportFiles}.
- *
- * <p>Explicit column lists only: credentials, sessions, sign-in identities, capability grants,
- * internal reader ids, and other people's data are never included. Every column of every exported
- * table is either exported or deliberately omitted; {@code AccountDataExportColumnPolicyTest} holds
- * the omission list with reasons and fails when a new column is neither. Soft-deleted rows the account
- * still owns are included (with their {@code deleted_at}); they are held data until purged.
+ * <p>Built in one read-only, repeatable-read transaction so the file is a consistent snapshot, with
+ * a hard size cap and one export at a time per account. At pilot scale an export is a few hundred
+ * kilobytes; the cap and the per-account guard keep that true.
  */
 @Service
 public class AccountDataExportService {
 
     private static final int FETCH_SIZE = 500;
-    /** Exports above this size are refused (413) rather than filling the temp volume. */
-    static final long DEFAULT_MAX_BYTES = 256L * 1024 * 1024;
+    /** Exports above this size are refused (413). Real exports are orders of magnitude smaller. */
+    static final long MAX_BYTES = 25L * 1024 * 1024;
 
     public static class ExportTooLargeException extends RuntimeException {
         public ExportTooLargeException(String message) {
             super(message);
         }
     }
+
+    /** Thrown when this account already has an export running. */
+    public static class ExportBusyException extends RuntimeException {
+        public ExportBusyException(String message) {
+            super(message);
+        }
+    }
+
+    private final java.util.Set<String> exporting = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * The teacher's classwork: assignments they created, or whose custom quiz they last edited
@@ -88,34 +90,31 @@ public class AccountDataExportService {
         return n != null && n > 0;
     }
 
-    /** Whole export in memory; for tests and small callers. The HTTP endpoint streams via {@link #writeExport}. */
+    /**
+     * The account's export as JSON. Runs inside the request, so the whole thing is done when the
+     * response starts: no temporary file, no background cleanup.
+     */
     public byte[] export(String userId) {
+        return export(userId, MAX_BYTES);
+    }
+
+    byte[] export(String userId, long maxBytes) {
         if (!accountExists(userId)) {
             throw new IllegalArgumentException("Account not found");
         }
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        writeExport(userId, out);
-        return out.toByteArray();
-    }
-
-    /**
-     * Writes the export into the lease's owner-only file and returns it. The lease (see
-     * {@link AccountExportFiles}) owns the file: closing it, or the download stream it opens, deletes
-     * the file. Throws {@link ExportTooLargeException} beyond {@code maxBytes}; the caller closes the lease.
-     */
-    public java.nio.file.Path writeExportFile(String userId, AccountExportFiles.Lease lease, long maxBytes) throws IOException {
-        java.nio.file.Path file = lease.createFile();
-        // The lease's stream heartbeats on every write, so a long preparation is never reclaimed as idle.
-        try (OutputStream out = new CappedOutputStream(new java.io.BufferedOutputStream(lease.openForWriting()), maxBytes)) {
-            writeExport(userId, out);
+        if (!exporting.add(userId)) {
+            throw new ExportBusyException("Your data export is already being prepared. Try again when it finishes.");
         }
-        return file;
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            writeExport(userId, new CappedOutputStream(out, maxBytes));
+            return out.toByteArray();
+        } finally {
+            exporting.remove(userId);
+        }
     }
 
-    public java.nio.file.Path writeExportFile(String userId, AccountExportFiles.Lease lease) throws IOException {
-        return writeExportFile(userId, lease, DEFAULT_MAX_BYTES);
-    }
-
+    /** Stops a runaway export at the cap instead of letting it consume the heap. */
     private static final class CappedOutputStream extends java.io.FilterOutputStream {
         private final long max;
         private long written;
