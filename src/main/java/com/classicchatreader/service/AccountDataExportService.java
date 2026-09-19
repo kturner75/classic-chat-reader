@@ -31,8 +31,10 @@ import java.util.List;
  * quizzes, character chats, Reading Buddy, and the account's own classroom records, both as a
  * student (enrollments, progress, usage) and as a teacher (class roles, owned classes).
  *
- * <p>Streams: rows are written to the response as they are read, in one read-only transaction with
- * a cursor fetch size, so a long usage history never has to fit in memory.
+ * <p>Rows are streamed from a cursor (fetch size 500) into a private temporary file inside one
+ * read-only transaction, so a long history never has to fit in memory and the database connection
+ * is released before the (possibly slow) download starts. Concurrent exports are bounded: one per
+ * account and {@value #MAX_CONCURRENT_EXPORTS} overall.
  *
  * <p>Explicit column lists only: credentials, sessions, sign-in identities, capability grants,
  * internal reader ids, and other people's data are never included. Soft-deleted rows the account
@@ -42,6 +44,17 @@ import java.util.List;
 public class AccountDataExportService {
 
     private static final int FETCH_SIZE = 500;
+    static final int MAX_CONCURRENT_EXPORTS = 2;
+
+    /** Thrown when this account already has an export in progress or the server is at its limit. */
+    public static class ExportBusyException extends RuntimeException {
+        public ExportBusyException(String message) {
+            super(message);
+        }
+    }
+
+    private final java.util.concurrent.Semaphore exportSlots = new java.util.concurrent.Semaphore(MAX_CONCURRENT_EXPORTS);
+    private final java.util.Set<String> exportingAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private final NamedParameterJdbcTemplate jdbc;
     private final TransactionTemplate readOnly;
@@ -68,6 +81,69 @@ public class AccountDataExportService {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeExport(userId, out);
         return out.toByteArray();
+    }
+
+    /**
+     * Writes the export to an owner-only temporary file and returns it. The caller must delete it
+     * (see {@link DeleteOnCloseInputStream}). Throws {@link ExportBusyException} when this account is
+     * already exporting or {@value #MAX_CONCURRENT_EXPORTS} exports are being prepared.
+     */
+    public java.nio.file.Path exportToTempFile(String userId) throws IOException {
+        if (!exportingAccounts.add(userId)) {
+            throw new ExportBusyException("Your data export is already being prepared. Try again when it finishes.");
+        }
+        try {
+            if (!exportSlots.tryAcquire()) {
+                throw new ExportBusyException("Data exports are busy right now. Try again in a minute.");
+            }
+            try {
+                java.nio.file.Path file = privateTempFile();
+                try (OutputStream out = new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file))) {
+                    writeExport(userId, out);
+                } catch (RuntimeException | IOException e) {
+                    java.nio.file.Files.deleteIfExists(file);
+                    throw e;
+                }
+                return file;
+            } finally {
+                exportSlots.release();
+            }
+        } finally {
+            exportingAccounts.remove(userId);
+        }
+    }
+
+    /** Holds student records, so readable by the server's own user only. */
+    private static java.nio.file.Path privateTempFile() throws IOException {
+        try {
+            return java.nio.file.Files.createTempFile("account-export-", ".json",
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+        } catch (UnsupportedOperationException notPosix) {
+            java.nio.file.Path file = java.nio.file.Files.createTempFile("account-export-", ".json");
+            file.toFile().setReadable(false, false);
+            file.toFile().setReadable(true, true);
+            return file;
+        }
+    }
+
+    /** Serves a finished export and deletes it when the response closes the stream (or the client disconnects). */
+    public static final class DeleteOnCloseInputStream extends java.io.FilterInputStream {
+        private final java.nio.file.Path file;
+
+        public DeleteOnCloseInputStream(java.nio.file.Path file) throws IOException {
+            super(java.nio.file.Files.newInputStream(file));
+            this.file = file;
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                super.close();
+            } finally {
+                java.nio.file.Files.deleteIfExists(file);
+            }
+        }
     }
 
     public void writeExport(String userId, OutputStream out) {

@@ -13,7 +13,8 @@ import com.classicchatreader.service.ReaderProfileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import java.io.IOException;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -62,7 +63,7 @@ public class AccountController {
      * records as JSON. Self-access, so no education-record access log row is written.
      */
     @GetMapping("/export")
-    public ResponseEntity<StreamingResponseBody> exportMyData(HttpServletRequest request) {
+    public ResponseEntity<?> exportMyData(HttpServletRequest request) throws IOException {
         var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
         if (principal.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -71,14 +72,22 @@ public class AccountController {
         if (!accountDataExportService.accountExists(userId)) {
             return ResponseEntity.notFound().build();
         }
-        // Streamed row by row so a long history never has to fit in memory.
-        StreamingResponseBody body = out -> accountDataExportService.writeExport(userId, out);
+        java.nio.file.Path file;
+        try {
+            // Built to a private temp file first: the database connection is released before the download.
+            file = accountDataExportService.exportToTempFile(userId);
+        } catch (AccountDataExportService.ExportBusyException busy) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "30")
+                    .body(Map.of("error", busy.getMessage()));
+        }
+        long length = java.nio.file.Files.size(file);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename("classic-chat-reader-my-data.json").build().toString())
                 .cacheControl(CacheControl.noStore())
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(body);
+                .contentLength(length)
+                .body(new org.springframework.core.io.InputStreamResource(new AccountDataExportService.DeleteOnCloseInputStream(file)));
     }
 
     @GetMapping("/status")
