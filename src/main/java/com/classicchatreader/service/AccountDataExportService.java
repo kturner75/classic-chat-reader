@@ -138,11 +138,51 @@ public class AccountDataExportService {
         array(g, "schoolMemberships", """
                 SELECT school_id, role, status, created_at, revoked_at
                 FROM school_memberships WHERE user_id = :u ORDER BY created_at, id""", user);
+        teacherContent(g, user);
         g.writeEndObject();
         g.writeArrayFieldStart("notes");
         g.writeString("Anything stored only in this browser (for example, reading position before you signed in) is not in this file.");
         g.writeString("Sign-in credentials and session data are not exported.");
         g.writeEndArray();
+        g.writeEndObject();
+    }
+
+    /**
+     * Classwork the account created or configures as a teacher: terms and settings of classes it
+     * owns, and assignments, assignment quizzes, question overrides, and invite links it created.
+     * Invite codes (hash and hint) are never exported. Student-owned data is not part of this section.
+     */
+    private void teacherContent(JsonGenerator g, MapSqlParameterSource user) throws IOException {
+        g.writeObjectFieldStart("teacherContent");
+        array(g, "classTerms", """
+                SELECT t.id AS term_id, s.id AS class_id, s.name AS class_name, t.name, t.start_date, t.end_date, t.status,
+                       t.created_at, t.deleted_at
+                FROM terms t JOIN class_sections s ON s.id = t.class_section_id
+                WHERE s.owner_user_id = :u ORDER BY t.created_at, t.id""", user);
+        array(g, "featureSettings", """
+                SELECT f.term_id, f.quiz_enabled, f.recap_enabled, f.tts_enabled, f.illustration_enabled, f.character_enabled,
+                       f.chat_enabled, f.speed_reading_enabled, f.reading_buddy_enabled, f.updated_at
+                FROM class_feature_settings f JOIN terms t ON t.id = f.term_id JOIN class_sections s ON s.id = t.class_section_id
+                WHERE s.owner_user_id = :u OR f.updated_by_user_id = :u ORDER BY f.term_id""", user);
+        array(g, "assignments", """
+                SELECT id AS assignment_id, term_id, title, book_id, due_date, available_from_date, quiz_required,
+                       quiz_source, quiz_pass_min_correct, quiz_max_retries, character_chat_required, sort_order, status,
+                       created_at, updated_at, deleted_at
+                FROM assignments WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
+        array(g, "assignmentChapters", """
+                SELECT c.assignment_id, c.chapter_id, c.chapter_index, c.sort_order
+                FROM assignment_chapters c JOIN assignments a ON a.id = c.assignment_id
+                WHERE a.created_by_user_id = :u ORDER BY c.assignment_id, c.sort_order, c.id""", user);
+        array(g, "assignmentQuizzes", """
+                SELECT assignment_id, payload_json, created_at, updated_at
+                FROM assignment_quizzes WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
+        array(g, "quizQuestionOverrides", """
+                SELECT term_id, book_id, chapter_id, operation, source_question_id, overlay_key, sort_order, question_json,
+                       status, base_prompt_version, notes, created_at, updated_at, deleted_at
+                FROM quiz_question_overrides WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
+        array(g, "inviteLinks", """
+                SELECT term_id, label, max_uses, use_count, expires_at, revoked_at, created_at
+                FROM invite_links WHERE created_by_user_id = :u ORDER BY created_at, id""", user);
         g.writeEndObject();
     }
 
@@ -152,6 +192,7 @@ public class AccountDataExportService {
         String[] current = {null};
         jdbc.query("""
                 SELECT cc.id AS conversation_id, cc.character_id, ch.name AS character_name, ch.book_id, b.title AS book_title,
+                       cc.context_chapter_id, cc.context_chapter_index, cc.context_chapter_title, cc.context_paragraph_index,
                        cc.created_at AS conversation_created_at, cc.updated_at AS conversation_updated_at,
                        m.sequence_number, m.role, m.content, m.created_at
                 FROM character_chat_conversations cc
@@ -167,7 +208,8 @@ public class AccountDataExportService {
                     }
                     current[0] = conversation;
                     g.writeStartObject();
-                    for (String column : List.of("character_id", "character_name", "book_id", "book_title")) {
+                    for (String column : List.of("character_id", "character_name", "book_id", "book_title", "context_chapter_id",
+                            "context_chapter_index", "context_chapter_title", "context_paragraph_index")) {
                         field(g, column, rs.getObject(column));
                     }
                     field(g, "created_at", rs.getObject("conversation_created_at"));
@@ -227,7 +269,8 @@ public class AccountDataExportService {
 
     private void field(JsonGenerator g, String name, Object value) throws IOException {
         Object portable = portable(value);
-        if ("state_json".equals(name) && portable instanceof String text && !text.isBlank()) {
+        // Stored JSON documents (reader state, quiz payloads, question overrides) are written as JSON, not strings.
+        if (name.endsWith("_json") && portable instanceof String text && !text.isBlank()) {
             g.writeFieldName(name);
             try {
                 g.writeTree(json.readTree(text));
