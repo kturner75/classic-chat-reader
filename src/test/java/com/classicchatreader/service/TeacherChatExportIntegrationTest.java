@@ -76,6 +76,7 @@ class TeacherChatExportIntegrationTest {
         assertEquals("READY", saved.getFirst().getStatus());
         assertNotNull(saved.getFirst().getCompletedAt());
         assertNull(saved.getFirst().getArtifactStorageKey());
+        assertNotNull(saved.getFirst().getExpiresAt(), "export records carry their own retention horizon");
         List<EducationRecordAccessLogEntity> audit = accessLogs.findBySubjectUserIdOrderByOccurredAtDesc("ex-student");
         assertEquals(1, audit.size());
         assertEquals("EXPORT_CHAT", audit.getFirst().getAccessType());

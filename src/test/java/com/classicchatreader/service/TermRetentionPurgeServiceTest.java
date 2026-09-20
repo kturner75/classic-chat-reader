@@ -68,7 +68,7 @@ class TermRetentionPurgeServiceTest {
         term("explicit-past", "2027-12-01", "2028-01-01 00:00:00", "ENDED", false); // explicit date passed
         term("explicit-future", "2020-01-01", "2029-01-01 00:00:00", "ENDED", false); // explicit date wins over old end date
         term("already-purged", "2025-01-01", null, "PURGED", false);
-        term("deleted", "2025-01-01", null, "ENDED", true);
+        term("deleted", "2025-01-01", null, "ENDED", true);   // hidden, but its records still purge
         for (String t : List.of("ended-long-ago", "ended-recently", "explicit-past")) {
             jdbc.update("INSERT INTO assignments (id, term_id, title, book_id, status, sort_order, created_by_user_id, created_at, updated_at) "
                     + "VALUES (?, ?, 'Read', 'p-book', 'PUBLISHED', 0, 'p-teacher', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "asg-" + t, t);
@@ -86,14 +86,15 @@ class TermRetentionPurgeServiceTest {
 
     @Test
     void eligibilityFollowsExplicitPurgeDatesThenEndDatePlusRetention() {
-        assertEquals(List.of("ended-long-ago", "explicit-past"), service(NOW).eligibleTermIds());
+        assertEquals(List.of("deleted", "ended-long-ago", "explicit-past"), service(NOW).eligibleTermIds(),
+                "a soft-deleted term past retention must not keep its student records forever");
     }
 
     @Test
     void purgeDeletesTheTermsStudentRecordsAndKeepsEverythingElse() {
         TermRetentionPurgeService.RunResult result = service(NOW).runOnce();
 
-        assertEquals(List.of("ended-long-ago", "explicit-past"), result.purgedTerms().stream().map(TermRetentionPurgeService.TermPurge::termId).toList());
+        assertEquals(List.of("deleted", "ended-long-ago", "explicit-past"), result.purgedTerms().stream().map(TermRetentionPurgeService.TermPurge::termId).toList());
         assertTrue(result.failedTermIds().isEmpty());
         for (String table : List.of("enrollments", "classroom_usage_events", "assignment_progress")) {
             assertEquals(0, count("SELECT COUNT(*) FROM " + table + " WHERE term_id = 'ended-long-ago'"), table);
@@ -127,8 +128,66 @@ class TermRetentionPurgeServiceTest {
     }
 
     @Test
+    void rowsWrittenIntoAnAlreadyPurgedTermAreSweptOnTheNextRun() {
+        service(NOW).runOnce();
+        // An in-flight request that passed its term check just before the term was marked PURGED.
+        jdbc.update("INSERT INTO enrollments (id, term_id, user_id, role, status, joined_date, created_at, updated_at) "
+                + "VALUES ('late-enr', 'ended-long-ago', 's-recent', 'STUDENT', 'ACTIVE', DATE '2026-08-24', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO classroom_usage_events (id, user_id, term_id, event_type, occurred_at, created_at) "
+                + "VALUES ('late-cue', 's-old', 'ended-long-ago', 'READING_HEARTBEAT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+
+        service(NOW).runOnce();
+
+        assertEquals(0, count("SELECT COUNT(*) FROM enrollments WHERE term_id = 'ended-long-ago'"));
+        assertEquals(0, count("SELECT COUNT(*) FROM classroom_usage_events WHERE term_id = 'ended-long-ago'"));
+        assertEquals(1, count("SELECT COUNT(*) FROM enrollments WHERE term_id = 'ended-recently'"), "terms still in retention are untouched");
+    }
+
+    @Test
+    void exportRecordsLeaveOnTheirOwnExpiry() {
+        jdbc.update("UPDATE chat_export_jobs SET expires_at = TIMESTAMP '2027-01-01 00:00:00', created_at = CURRENT_TIMESTAMP WHERE id = 'job-old'");
+        jdbc.update("UPDATE chat_export_jobs SET expires_at = TIMESTAMP '2030-01-01 00:00:00', created_at = TIMESTAMP '2020-01-01 00:00:00' WHERE id = 'job-kept'");
+
+        service(NOW).runOnce();
+
+        assertEquals(List.of("job-kept"), jdbc.queryForList("SELECT id FROM chat_export_jobs", String.class),
+                "expires_at decides, even when the row is older than the age fallback");
+    }
+
+    @Test
+    void theScheduledRunDoesNothingWhileThePurgeIsDisabled() {
+        ClassroomProperties disabled = new ClassroomProperties();
+        ClassroomProperties.Ferpa ferpa = new ClassroomProperties.Ferpa();
+        ferpa.setPurgeEnabled(false);
+        disabled.setFerpa(ferpa);
+        new TermRetentionPurgeService(dataSource, transactionManager, disabled, NOW).scheduledRun();
+
+        assertEquals(1, count("SELECT COUNT(*) FROM enrollments WHERE term_id = 'ended-long-ago'"));
+        assertEquals("ACTIVE", jdbc.queryForObject("SELECT status FROM terms WHERE id = 'ended-long-ago'", String.class));
+    }
+
+    @Test
+    void theCutoffFollowsTheClassroomCalendarZoneNotTheServerDate() {
+        // The 03:30 UTC run on 2028-01-17 is still the evening of 2028-01-16 in Los Angeles, the last
+        // local day of the 400-day window for a term that ended 2026-12-12.
+        Clock justAfterUtcMidnight = Clock.fixed(Instant.parse("2028-01-17T03:30:00Z"), ZoneOffset.UTC);
+        ClassroomProperties western = new ClassroomProperties();
+        western.setCalendarZone("America/Los_Angeles");
+        var service = new TermRetentionPurgeService(dataSource, transactionManager, western, justAfterUtcMidnight);
+        assertFalse(service.eligibleTermIds().contains("ended-long-ago"),
+                "the school's calendar day decides, so nothing purges before the local retention day ends");
+
+        ClassroomProperties utc = new ClassroomProperties();
+        utc.setCalendarZone("UTC");
+        assertTrue(new TermRetentionPurgeService(dataSource, transactionManager, utc, justAfterUtcMidnight)
+                .eligibleTermIds().contains("ended-long-ago"));
+    }
+
+    @Test
     void nothingPurgesBeforeTheRetentionPeriodEnds() {
+        // 2027-06-01: 'ended-long-ago' (ends 2026-12-12) and 'explicit-past' (2028-01-01) are both
+        // still inside their retention window. Only the long-ended soft-deleted term qualifies.
         Clock beforeAnyExpiry = Clock.fixed(Instant.parse("2027-06-01T00:00:00Z"), ZoneOffset.UTC);
-        assertTrue(service(beforeAnyExpiry).eligibleTermIds().isEmpty());
+        assertEquals(List.of("deleted"), service(beforeAnyExpiry).eligibleTermIds());
     }
 }

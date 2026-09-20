@@ -76,7 +76,7 @@ public class ChatExportJobEntity {
     }
 
     public ChatExportJobEntity(String requesterUserId, String subjectUserId, String termId, String format,
-                               String chatSources, LocalDateTime filterFrom, LocalDateTime filterTo) {
+                               String chatSources, LocalDateTime filterFrom, LocalDateTime filterTo, int retainDays) {
         this.requesterUserId = requesterUserId;
         this.subjectUserId = subjectUserId;
         this.termId = termId;
@@ -85,6 +85,9 @@ public class ChatExportJobEntity {
         this.filterFrom = filterFrom;
         this.filterTo = filterTo;
         this.status = STATUS_READY;
+        // When this record itself may be purged (BL-043.6 part 3). v1 stores no artifact, so this is
+        // the retention horizon for the record, not an artifact download deadline.
+        this.expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusDays(retainDays);
     }
 
     @PrePersist
@@ -111,4 +114,5 @@ public class ChatExportJobEntity {
     public String getArtifactStorageKey() { return artifactStorageKey; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getCompletedAt() { return completedAt; }
+    public LocalDateTime getExpiresAt() { return expiresAt; }
 }

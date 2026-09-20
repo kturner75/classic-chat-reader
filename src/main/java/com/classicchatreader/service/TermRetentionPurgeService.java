@@ -72,11 +72,15 @@ public class TermRetentionPurgeService {
 
     public List<String> eligibleTermIds() {
         LocalDateTime now = LocalDateTime.now(clock);
-        // end_date + N days is before today  <=>  end_date < today - N (dates, so the end day itself counts as term time).
-        LocalDate endedBefore = LocalDate.now(clock).minusDays(properties.termRetainDays());
+        // Calendar dates on terms are school-calendar dates, so the cutoff uses the classroom zone
+        // rather than the JVM/UTC date: end_date + N days is before today <=> end_date < today - N
+        // (the end day itself still counts as term time).
+        LocalDate endedBefore = LocalDate.ofInstant(clock.instant(), properties.calendarZoneId())
+                .minusDays(properties.termRetainDays());
+        // Soft-deleted terms are purged too: hiding a term must not keep its student records forever.
         return jdbc.queryForList("""
                 SELECT id FROM terms
-                WHERE status <> :purged AND deleted_at IS NULL
+                WHERE status <> :purged
                   AND ((retention_purge_after IS NOT NULL AND retention_purge_after <= :now)
                     OR (retention_purge_after IS NULL AND end_date IS NOT NULL AND end_date < :endedBefore))
                 ORDER BY id""",
@@ -100,31 +104,54 @@ public class TermRetentionPurgeService {
             }
         }
         LocalDateTime now = LocalDateTime.now(clock);
+        // Anything a writer inserted into an already-purged term (an in-flight request that started
+        // before the term was marked) is removed on the next run, so nothing outlives retention.
+        Integer late = transactions.execute(status -> deleteStudentRecords(
+                new MapSqlParameterSource("purged", STATUS_PURGED), " IN (SELECT id FROM terms WHERE status = :purged)").values()
+                .stream().mapToInt(Integer::intValue).sum());
+        if (late != null && late > 0) {
+            log.info("classroom_purge removed {} row(s) written into already-purged terms", late);
+        }
         Integer logs = transactions.execute(status -> jdbc.update(
                 "DELETE FROM education_record_access_logs WHERE retain_until IS NOT NULL AND retain_until < :now",
                 new MapSqlParameterSource("now", now)));
-        Integer exports = transactions.execute(status -> jdbc.update(
-                "DELETE FROM chat_export_jobs WHERE created_at < :cutoff",
-                new MapSqlParameterSource("cutoff", now.minusDays(properties.accessLogRetainDays()))));
+        // expires_at is set when the export is created; older rows without one fall back to age.
+        Integer exports = transactions.execute(status -> jdbc.update("""
+                DELETE FROM chat_export_jobs
+                WHERE (expires_at IS NOT NULL AND expires_at < :now)
+                   OR (expires_at IS NULL AND created_at < :cutoff)""",
+                new MapSqlParameterSource("now", now)
+                        .addValue("cutoff", now.minusDays(properties.accessLogRetainDays()))));
         return new RunResult(purged, failed, logs == null ? 0 : logs, exports == null ? 0 : exports);
+    }
+
+    /** The term-scoped student records this job removes; {@code match} selects the term(s). */
+    private Map<String, Integer> deleteStudentRecords(MapSqlParameterSource params, String match) {
+        Map<String, Integer> deleted = new LinkedHashMap<>();
+        for (String table : List.of("assignment_progress", "classroom_usage_events", "enrollments")) {
+            deleted.put(table, jdbc.update("DELETE FROM " + table + " WHERE term_id" + match, params));
+        }
+        return deleted;
     }
 
     private TermPurge purgeTerm(String termId) {
         MapSqlParameterSource p = new MapSqlParameterSource("t", termId)
                 .addValue("purged", STATUS_PURGED)
                 .addValue("now", LocalDateTime.now(clock));
-        // Re-check inside the transaction: a term marked PURGED or deleted since selection is skipped.
-        Integer live = jdbc.queryForObject("SELECT COUNT(*) FROM terms WHERE id = :t AND status <> :purged AND deleted_at IS NULL", p, Integer.class);
+        // Re-check inside the transaction: a term marked PURGED since selection is skipped. The row is
+        // locked so two runs (or a manual trigger during the nightly run) cannot purge it at once.
+        Integer live = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM (SELECT id FROM terms WHERE id = :t AND status <> :purged FOR UPDATE) locked", p, Integer.class);
         if (live == null || live == 0) {
             return null;
         }
-        Map<String, Integer> deleted = new LinkedHashMap<>();
-        deleted.put("assignment_progress", jdbc.update("DELETE FROM assignment_progress WHERE term_id = :t", p));
-        deleted.put("classroom_usage_events", jdbc.update("DELETE FROM classroom_usage_events WHERE term_id = :t", p));
-        deleted.put("enrollments", jdbc.update("DELETE FROM enrollments WHERE term_id = :t", p));
+        // Mark PURGED first, in the same transaction: once it commits, ClassroomAuthorizationService
+        // sees a non-ACTIVE term and new writers are refused. In-flight writers that already passed
+        // their check are cleaned up by the late-write sweep on the next run.
         jdbc.update("""
                 UPDATE terms SET status = :purged, retention_purge_after = COALESCE(retention_purge_after, :now), updated_at = :now
                 WHERE id = :t""", p);
+        Map<String, Integer> deleted = deleteStudentRecords(p, " = :t");
         log.info("classroom_purge term={} deleted={}", termId, deleted);
         return new TermPurge(termId, deleted);
     }
