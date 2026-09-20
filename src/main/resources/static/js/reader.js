@@ -2023,6 +2023,8 @@
         if (elements.accountSignOut) {
             elements.accountSignOut.classList.toggle('hidden', !authenticated);
         }
+        document.getElementById('account-data-section')?.classList.toggle('hidden', !authenticated);
+        window.AccountData?.reset();
         if (elements.accountGoogleSignIn) {
             const showGoogle = !authenticated && state.accountGoogleAuthEnabled;
             elements.accountGoogleSignIn.classList.toggle('hidden', !showGoogle);

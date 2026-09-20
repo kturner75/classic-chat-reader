@@ -2835,6 +2835,9 @@ kbd {
     border-radius: 12px;
     box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
     padding: 1rem 1.1rem 1.1rem;
+    /* Tall content (e.g. the account deletion notice) scrolls inside the card instead of clipping. */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
 }
 
 .auth-modal-header {
@@ -5023,4 +5026,58 @@ button.character-card {
         min-height: 1.55rem;
         padding: 0.26rem 0.2rem;
     }
+}
+
+/* Account data: Download my data + delete account (BL-043.6) */
+.account-data-section {
+    border-top: 1px solid var(--border-color);
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+}
+
+.account-data-section h4 {
+    font-size: 0.95rem;
+    margin: 0 0 0.35rem;
+}
+
+.account-data-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.account-data-actions a.chapter-recap-btn {
+    text-decoration: none;
+}
+
+.account-delete-start {
+    background: none;
+    border: none;
+    color: #8f2f2f;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.84rem;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.account-delete-panel {
+    margin-top: 0.8rem;
+}
+
+.account-delete-notice p {
+    font-size: 0.84rem;
+    margin: 0 0 0.55rem;
+}
+
+.chapter-recap-btn.account-delete-confirm {
+    background: #8f2f2f;
+    border-color: #8f2f2f;
+    color: #fff;
+}
+
+.chapter-recap-btn.account-delete-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
