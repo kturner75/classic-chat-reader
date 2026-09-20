@@ -144,7 +144,8 @@ public class AccountDataExportService {
         }
     }
 
-    public void writeExport(String userId, OutputStream out) {
+    /** Always reached through {@link #export}, which applies the cap and the per-account guard. */
+    private void writeExport(String userId, OutputStream out) {
         readOnly.executeWithoutResult(status -> {
             // The caller owns the stream (e.g. the servlet response); closing the generator only flushes it.
             try (JsonGenerator g = json.getFactory().createGenerator(out, JsonEncoding.UTF8)
@@ -237,6 +238,10 @@ public class AccountDataExportService {
                 SELECT m.school_id, sc.name AS school_name, m.role, m.status, m.created_at, m.updated_at, m.revoked_at
                 FROM school_memberships m LEFT JOIN schools sc ON sc.id = m.school_id
                 WHERE m.user_id = :u ORDER BY m.created_at, m.id""", user);
+        // Teaching entitlements are the account's own record, and exist before it owns any class.
+        array(g, "capabilities", """
+                SELECT capability, status, granted_at, updated_at, revoked_at
+                FROM account_capabilities WHERE user_id = :u ORDER BY granted_at, id""", user);
         teacherContent(g, user);
         g.writeEndObject();
         g.writeArrayFieldStart("notes");
@@ -265,13 +270,16 @@ public class AccountDataExportService {
                 FROM class_feature_settings f JOIN terms t ON t.id = f.term_id JOIN class_sections s ON s.id = t.class_section_id
                 WHERE s.owner_user_id = :u OR f.updated_by_user_id = :u ORDER BY f.term_id""", user);
         array(g, "assignments", """
-                SELECT a.id AS assignment_id, a.term_id, a.title, a.book_id, a.due_date, a.available_from_date, a.quiz_required,
-                       a.quiz_source, a.quiz_pass_min_correct, a.quiz_max_retries, a.quiz_rules_activated_at,
-                       a.character_chat_required, a.sort_order, a.status, a.created_at, a.updated_at, a.deleted_at
-                FROM assignments a WHERE """ + MY_ASSIGNMENTS + " ORDER BY a.created_at, a.id", user);
+                SELECT a.id AS assignment_id, a.term_id, t.name AS term_name, s.name AS class_name, a.title, a.book_id,
+                       b.title AS book_title, a.due_date, a.available_from_date, a.quiz_required, a.quiz_source,
+                       a.quiz_pass_min_correct, a.quiz_max_retries, a.quiz_rules_activated_at, a.character_chat_required,
+                       a.sort_order, a.status, a.created_at, a.updated_at, a.deleted_at
+                FROM assignments a LEFT JOIN terms t ON t.id = a.term_id LEFT JOIN class_sections s ON s.id = t.class_section_id
+                LEFT JOIN books b ON b.id = a.book_id
+                WHERE """ + MY_ASSIGNMENTS + " ORDER BY a.created_at, a.id", user);
         array(g, "assignmentChapters", """
-                SELECT c.assignment_id, c.chapter_id, c.chapter_index, c.sort_order
-                FROM assignment_chapters c JOIN assignments a ON a.id = c.assignment_id
+                SELECT c.assignment_id, c.chapter_id, ch.title AS chapter_title, c.chapter_index, c.sort_order
+                FROM assignment_chapters c JOIN assignments a ON a.id = c.assignment_id LEFT JOIN chapters ch ON ch.id = c.chapter_id
                 WHERE """ + MY_ASSIGNMENTS + " ORDER BY c.assignment_id, c.sort_order, c.id", user);
         array(g, "assignmentQuizzes", """
                 SELECT q.assignment_id, q.payload_json, q.created_at, q.updated_at
