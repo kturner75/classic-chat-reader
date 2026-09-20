@@ -56,6 +56,139 @@ class AccountControllerTest {
     @MockitoBean
     private GoogleAccountOAuthService googleAccountOAuthService;
 
+    @MockitoBean
+    private com.classicchatreader.service.AccountDataExportService accountDataExportService;
+
+    @MockitoBean
+    private com.classicchatreader.service.AccountDeletionService accountDeletionService;
+
+    private void signedIn() {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions deleteWith(String json) throws Exception {
+        return mockMvc.perform(post("/api/account/delete").contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(json));
+    }
+
+    @Test
+    void deleteAccountRequiresSignInAndExplicitConfirmation() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        deleteWith("{\"confirm\":true}").andExpect(status().isUnauthorized());
+        signedIn();
+        deleteWith("{\"email\":\"reader@example.com\"}").andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(accountDeletionService);
+    }
+
+    @Test
+    void deleteAccountRefusesFailedReauthenticationWithoutDeleting() throws Exception {
+        signedIn();
+        when(accountAuthService.confirmAccountOwner("user-1", "reader@example.com", "wrong"))
+                .thenReturn(AccountAuthService.AuthResult.error(AccountAuthService.ResultStatus.INVALID_CREDENTIALS, true, "Invalid email or password."));
+        deleteWith("{\"confirm\":true,\"email\":\"reader@example.com\",\"password\":\"wrong\"}")
+                .andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(accountDeletionService);
+    }
+
+    @Test
+    void deleteAccountReportsLockoutWithRetryAfter() throws Exception {
+        signedIn();
+        when(accountAuthService.confirmAccountOwner(any(), any(), any()))
+                .thenReturn(AccountAuthService.AuthResult.error(AccountAuthService.ResultStatus.ACCOUNT_LOCKED, true, "Too many failed sign-in attempts.", 120));
+        deleteWith("{\"confirm\":true,\"email\":\"reader@example.com\",\"password\":\"x\"}")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "120"));
+        org.mockito.Mockito.verifyNoInteractions(accountDeletionService);
+    }
+
+    @Test
+    void deleteAccountReportsTeacherAccountsAsConflictAndKeepsTheSession() throws Exception {
+        signedIn();
+        when(accountAuthService.confirmAccountOwner(any(), any(), any()))
+                .thenReturn(AccountAuthService.AuthResult.success(true, "reader@example.com", "Confirmed."));
+        when(accountDeletionService.delete("user-1")).thenThrow(new IllegalStateException("This account teaches or manages classes."));
+        deleteWith("{\"confirm\":true,\"email\":\"reader@example.com\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("This account teaches or manages classes."));
+        verify(accountAuthService, org.mockito.Mockito.never()).clearSessionCookie(any());
+    }
+
+    @Test
+    void deleteAccountDeletesAndClearsTheSessionCookie() throws Exception {
+        signedIn();
+        when(accountAuthService.confirmAccountOwner("user-1", "reader@example.com", "pw"))
+                .thenReturn(AccountAuthService.AuthResult.success(true, "reader@example.com", "Confirmed."));
+        when(accountDeletionService.delete("user-1"))
+                .thenReturn(new com.classicchatreader.service.AccountDeletionService.DeletionResult("deleted:abc", java.util.Map.of()));
+        deleteWith("{\"confirm\":true,\"email\":\"reader@example.com\",\"password\":\"pw\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deleted").value(true));
+        verify(accountDeletionService).delete("user-1");
+        verify(accountAuthService).clearSessionCookie(any());
+        verify(accountAuthAuditService).record(eq("account_delete"), eq("success"), any(), eq("reader@example.com"), eq("deleted:abc"), isNull(), isNull());
+    }
+
+    @Test
+    void deletePreviewRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/account/delete-preview")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void exportMyDataRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(accountDataExportService);
+    }
+
+    @Test
+    void exportMyDataDownloadsTheSignedInAccountsFile() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1")).thenReturn("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.account").exists());
+    }
+
+    @Test
+    void exportMyDataReturns429WhileAnotherExportIsRunning() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportBusyException("already running"));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "30"))
+                .andExpect(jsonPath("$.error").value("already running"));
+    }
+
+    @Test
+    void exportMyDataReturns413WhenTooLarge() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportTooLargeException("too large"));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.error").value("too large"));
+    }
+
+    @Test
+    void exportMyDataReturns404WhenTheAccountIsGone() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(false);
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isNotFound());
+        verify(accountDataExportService, org.mockito.Mockito.never()).export(any());
+    }
+
     @Test
     void status_returnsUnauthenticatedWhenNoSession() throws Exception {
         when(accountAuthService.status(any()))
