@@ -96,6 +96,10 @@ class AccountDataExportServiceTest {
         assertEquals(2, teacher.at("/featureSettings/0/default_quiz_max_retries").asInt());
         assertFalse(teacher.at("/assignments/0/quiz_rules_activated_at").isNull());
         assertEquals("Read Chapter I", teacher.at("/assignments/0/title").asText());
+        assertEquals("English 101", teacher.at("/assignments/0/class_name").asText(), "teacher assignments name their class");
+        assertEquals("Fall", teacher.at("/assignments/0/term_name").asText());
+        assertEquals("Pride and Prejudice", teacher.at("/assignments/0/book_title").asText());
+        assertEquals("Chapter I", teacher.at("/assignmentChapters/0/chapter_title").asText());
         assertEquals("fx-ch", teacher.at("/assignmentChapters/0/chapter_id").asText());
         assertEquals("Who is Darcy?", teacher.at("/assignmentQuizzes/0/payload_json/questions/0/prompt").asText(), "stored JSON is exported as JSON");
         assertEquals("Why Longbourn?", teacher.at("/quizQuestionOverrides/0/question_json/prompt").asText());
@@ -165,6 +169,15 @@ class AccountDataExportServiceTest {
         assertEquals("English 101", classroom.at("/assignments/0/class_name").asText());
         assertEquals("Fall", classroom.at("/assignments/0/term_name").asText());
         assertEquals("Pride and Prejudice", classroom.at("/assignments/0/book_title").asText());
+    }
+
+    @Test
+    void teachingCapabilitiesAreExportedBeforeAnyClassExists() throws Exception {
+        jdbc.update("UPDATE account_capabilities SET granted_by_user_id = 'fx-teacher' WHERE user_id = 'fx-alex'");
+        JsonNode capabilities = export("fx-alex").at("/classroom/capabilities");
+        assertEquals("CREATE_CLASSROOM", capabilities.at("/0/capability").asText());
+        assertEquals("ACTIVE", capabilities.at("/0/status").asText());
+        assertFalse(capabilities.toString().contains("fx-teacher"), "the granting operator's id is not the account's data");
     }
 
     @Test

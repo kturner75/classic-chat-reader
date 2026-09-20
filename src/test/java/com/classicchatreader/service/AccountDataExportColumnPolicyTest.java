@@ -66,6 +66,8 @@ class AccountDataExportColumnPolicyTest {
                     Map.of("id", INTERNAL, "user_id", SELF), Map.of()),
             new Section("teacher", "/classroom/ownedClasses/0", "class_sections",
                     Map.of("owner_user_id", SELF), Map.of("id", "class_id")),
+            new Section("student", "/classroom/capabilities/0", "account_capabilities",
+                    Map.of("id", INTERNAL, "user_id", SELF, "granted_by_user_id", "the granting operator's account id"), Map.of()),
             new Section("teacher", "/classroom/schoolMemberships/0", "school_memberships",
                     Map.of("id", INTERNAL, "user_id", SELF), Map.of()),
             new Section("teacher", "/classroom/teacherContent/classTerms/0", "terms",
