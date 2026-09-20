@@ -56,6 +56,64 @@ class AccountControllerTest {
     @MockitoBean
     private GoogleAccountOAuthService googleAccountOAuthService;
 
+    @MockitoBean
+    private com.classicchatreader.service.AccountDataExportService accountDataExportService;
+
+    @Test
+    void exportMyDataRequiresSignIn() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any())).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(accountDataExportService);
+    }
+
+    @Test
+    void exportMyDataDownloadsTheSignedInAccountsFile() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1")).thenReturn("{\"account\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"classic-chat-reader-my-data.json\""))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.account").exists());
+    }
+
+    @Test
+    void exportMyDataReturns429WhileAnotherExportIsRunning() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportBusyException("already running"));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "30"))
+                .andExpect(jsonPath("$.error").value("already running"));
+    }
+
+    @Test
+    void exportMyDataReturns413WhenTooLarge() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(true);
+        when(accountDataExportService.export("user-1"))
+                .thenThrow(new com.classicchatreader.service.AccountDataExportService.ExportTooLargeException("too large"));
+        mockMvc.perform(get("/api/account/export"))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.error").value("too large"));
+    }
+
+    @Test
+    void exportMyDataReturns404WhenTheAccountIsGone() throws Exception {
+        when(accountAuthService.resolveAuthenticatedPrincipal(any()))
+                .thenReturn(java.util.Optional.of(new AccountAuthService.AccountPrincipal("user-1", "reader@example.com")));
+        when(accountDataExportService.accountExists("user-1")).thenReturn(false);
+        mockMvc.perform(get("/api/account/export")).andExpect(status().isNotFound());
+        verify(accountDataExportService, org.mockito.Mockito.never()).export(any());
+    }
+
     @Test
     void status_returnsUnauthenticatedWhenNoSession() throws Exception {
         when(accountAuthService.status(any()))

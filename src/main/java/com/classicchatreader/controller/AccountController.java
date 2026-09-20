@@ -13,6 +13,12 @@ import com.classicchatreader.service.ReaderProfileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import java.util.Map;
+import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import com.classicchatreader.service.AccountDataExportService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +36,7 @@ public class AccountController {
     private final AccountAuthRateLimiter accountAuthRateLimiter;
     private final AccountAuthAuditService accountAuthAuditService;
     private final GoogleAccountOAuthService googleAccountOAuthService;
+    private final AccountDataExportService accountDataExportService;
 
     public AccountController(
             AccountAuthService accountAuthService,
@@ -38,7 +45,8 @@ public class AccountController {
             AccountMetricsService accountMetricsService,
             AccountAuthRateLimiter accountAuthRateLimiter,
             AccountAuthAuditService accountAuthAuditService,
-            GoogleAccountOAuthService googleAccountOAuthService) {
+            GoogleAccountOAuthService googleAccountOAuthService,
+            AccountDataExportService accountDataExportService) {
         this.accountAuthService = accountAuthService;
         this.readerProfileService = readerProfileService;
         this.accountClaimSyncService = accountClaimSyncService;
@@ -46,6 +54,38 @@ public class AccountController {
         this.accountAuthRateLimiter = accountAuthRateLimiter;
         this.accountAuthAuditService = accountAuthAuditService;
         this.googleAccountOAuthService = googleAccountOAuthService;
+        this.accountDataExportService = accountDataExportService;
+    }
+
+    /**
+     * "Download my data" (BL-043.6): the signed-in account's own reader, chat, and classroom
+     * records as JSON. Self-access, so no education-record access log row is written.
+     */
+    @GetMapping("/export")
+    public ResponseEntity<?> exportMyData(HttpServletRequest request) {
+        var principal = accountAuthService.resolveAuthenticatedPrincipal(request);
+        if (principal.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String userId = principal.get().userId();
+        if (!accountDataExportService.accountExists(userId)) {
+            return ResponseEntity.notFound().build();
+        }
+        byte[] body;
+        try {
+            body = accountDataExportService.export(userId);
+        } catch (AccountDataExportService.ExportBusyException busy) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "30")
+                    .body(Map.of("error", busy.getMessage()));
+        } catch (AccountDataExportService.ExportTooLargeException tooLarge) {
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("error", tooLarge.getMessage()));
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename("classic-chat-reader-my-data.json").build().toString())
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body);
     }
 
     @GetMapping("/status")
