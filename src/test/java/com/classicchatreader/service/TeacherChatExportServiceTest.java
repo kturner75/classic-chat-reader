@@ -41,7 +41,7 @@ class TeacherChatExportServiceTest {
     private final ChatExportJobRepository jobs = mock(ChatExportJobRepository.class);
     private final EducationRecordAccessLogService accessLog = mock(EducationRecordAccessLogService.class);
     private final TeacherChatExportService service = new TeacherChatExportService(
-            authorization, users, enrollments, terms, messages, books, jobs, accessLog);
+            authorization, users, enrollments, terms, messages, books, jobs, accessLog, new com.classicchatreader.config.ClassroomProperties());
     private final List<ReadingBuddyMessageEntity> stored = new ArrayList<>();
 
     private static ReadingBuddyMessageEntity message(String id, String role, String content, LocalDateTime at, long sequence) {
@@ -106,6 +106,7 @@ class TeacherChatExportServiceTest {
         verify(accessLog).recordAccessWithinTransaction("teacher-1", "student-1", "term-1", EducationRecordAccessLogEntity.ACCESS_EXPORT_CHAT,
                 EducationRecordAccessLogEntity.RESOURCE_CHAT_EXPORT_JOB, "export-1", null);
         verify(jobs).save(argThat(job -> "JSON".equals(job.getFormat()) && "READING_BUDDY".equals(job.getChatSources())
+                && job.getExpiresAt() != null
                 && LocalDateTime.of(2026, 8, 24, 0, 0).equals(job.getFilterFrom())
                 && LocalDateTime.of(2026, 12, 13, 0, 0).equals(job.getFilterTo())));
     }

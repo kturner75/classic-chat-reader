@@ -52,6 +52,7 @@ public class TeacherChatExportService {
     private final BookRepository bookRepository;
     private final ChatExportJobRepository chatExportJobRepository;
     private final EducationRecordAccessLogService accessLogService;
+    private final com.classicchatreader.config.ClassroomProperties classroomProperties;
     private final ObjectMapper json;
 
     public TeacherChatExportService(
@@ -62,7 +63,8 @@ public class TeacherChatExportService {
             ReadingBuddyMessageRepository readingBuddyMessageRepository,
             BookRepository bookRepository,
             ChatExportJobRepository chatExportJobRepository,
-            EducationRecordAccessLogService accessLogService) {
+            EducationRecordAccessLogService accessLogService,
+            com.classicchatreader.config.ClassroomProperties classroomProperties) {
         this.authorizationService = authorizationService;
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
@@ -71,6 +73,7 @@ public class TeacherChatExportService {
         this.bookRepository = bookRepository;
         this.chatExportJobRepository = chatExportJobRepository;
         this.accessLogService = accessLogService;
+        this.classroomProperties = classroomProperties;
         this.json = new ObjectMapper().registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .enable(SerializationFeature.INDENT_OUTPUT);
@@ -119,7 +122,7 @@ public class TeacherChatExportService {
             titles.put(book.getId(), book.getTitle());
         }
         ChatExportJobEntity job = chatExportJobRepository.save(new ChatExportJobEntity(teacherUserId, studentUserId, termId,
-                format, ChatExportJobEntity.SOURCE_READING_BUDDY, from, to));
+                format, ChatExportJobEntity.SOURCE_READING_BUDDY, from, to, classroomProperties.accessLogRetainDays()));
         byte[] bytes = "TXT".equals(format) ? text(job, term, messages, titles) : jsonDocument(job, term, messages, titles);
         // Fail-closed, and atomic with the job row: the audit row joins this transaction, so the job and
         // its EXPORT_CHAT row commit together or not at all, and nothing is returned without both.

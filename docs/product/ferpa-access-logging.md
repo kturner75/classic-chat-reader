@@ -46,6 +46,6 @@ pseudonym `deleted:<hash>`. See `account-deletion.md`.
 
 ## Open follow-ups
 
-- BL-043.6 part 3: the term retention purge job must not delete a row before its `retain_until`.
+- Retention: the nightly purge deletes rows only after `retain_until` (see `term-retention-purge.md`).
 - Any new teacher-facing surface that returns student records needs a writer call; there is no
   automatic interception.
