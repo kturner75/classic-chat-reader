@@ -35,7 +35,15 @@ class AccountDeletionServiceTest {
             new String[]{"character_chat_messages", "user_id"},
             new String[]{"enrollments", "user_id"},
             new String[]{"assignment_progress", "user_id"},
-            new String[]{"classroom_usage_events", "user_id"});
+            new String[]{"classroom_usage_events", "user_id"},
+            // FKs without ON DELETE CASCADE: production deletion fails on these if the service stops
+            // removing them, so the test must see them go.
+            new String[]{"school_memberships", "user_id"},
+            new String[]{"account_capabilities", "user_id"},
+            // CASCADE tables: still asserted so a change of FK or of the delete order is caught.
+            new String[]{"user_reader_claims", "user_id"},
+            new String[]{"user_auth_identities", "user_id"},
+            new String[]{"pending_external_identity_links", "user_id"});
 
     private int count(String sql, Object... args) {
         Integer n = jdbc.queryForObject(sql, Integer.class, args);
@@ -77,7 +85,7 @@ class AccountDeletionServiceTest {
 
     @Test
     void deletingAStudentRemovesAllTheirDataAndKeepsComplianceRowsUnderAPseudonym() {
-        assertEquals(15, owned("fx-alex"), "fixture seeds one row in each of the 15 owned tables");
+        assertEquals(20, owned("fx-alex"), "fixture seeds one row in each of the 20 owned tables");
         int samBefore = owned("fx-sam");
 
         AccountDeletionService.DeletionResult result = service.delete("fx-alex");
