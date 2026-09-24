@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,16 +21,18 @@ public class CuratedCatalogService {
      * changes the book, its covers, characters or illustrations.
      *
      * <p>This is read once per book on library listings, so active rows are held in memory, reloaded
-     * after every write here and at most {@link #SNAPSHOT_TTL_NANOS} after a change made elsewhere.
+     * on the next read after any write here and at most {@link #SNAPSHOT_TTL_NANOS} after a change made elsewhere.
      */
     private static final long SNAPSHOT_TTL_NANOS = TimeUnit.SECONDS.toNanos(60);
     private static final int MAX_TEXT = 512;
     private static final int MAX_LIST_ITEMS = 25;
     private static final int MAX_LIST_ITEM_LENGTH = 200;
 
-    private record Snapshot(List<CuratedCatalogBook> books, Set<Integer> ids, long loadedAt) {}
+    /** {@code generation} is the write count the rows were loaded under; any later write makes it stale. */
+    private record Snapshot(List<CuratedCatalogBook> books, Set<Integer> ids, long loadedAt, long generation) {}
 
     private final CuratedBookStore store;
+    private final AtomicLong writes = new AtomicLong();
     private volatile Snapshot snapshot;
 
     public CuratedCatalogService(CuratedBookStore store) {
@@ -106,7 +109,7 @@ public class CuratedCatalogService {
                 list("bookshelves", bookshelves, current == null ? List.of() : current.bookshelves()),
                 list("aliases", aliases, current == null ? List.of() : current.aliases()));
         CuratedBookStore.Entry saved = store.save(book, CuratedBookStore.STATUS_ACTIVE);
-        snapshot = null;
+        writes.incrementAndGet();
         return new AddResult(saved, existing.isEmpty());
     }
 
@@ -117,16 +120,21 @@ public class CuratedCatalogService {
             throw new IllegalArgumentException("status must be \"active\" or \"inactive\"");
         }
         Optional<CuratedBookStore.Entry> updated = store.updateStatus(gutenbergId, status);
-        snapshot = null;
+        writes.incrementAndGet();
         return updated;
     }
 
     private Snapshot active() {
         Snapshot current = snapshot;
-        if (current == null || System.nanoTime() - current.loadedAt() > SNAPSHOT_TTL_NANOS) {
+        long generation = writes.get();
+        if (current == null
+                || current.generation() != generation
+                || System.nanoTime() - current.loadedAt() > SNAPSHOT_TTL_NANOS) {
+            // Read the generation before loading: a write that lands mid-load leaves this snapshot
+            // stale, so the next call reloads instead of serving the pre-write rows until the TTL.
             List<CuratedCatalogBook> books = store.findActive().stream().sorted(POPULARITY_ORDER).toList();
             Set<Integer> ids = books.stream().map(CuratedCatalogBook::gutenbergId).collect(Collectors.toUnmodifiableSet());
-            current = new Snapshot(books, ids, System.nanoTime());
+            current = new Snapshot(books, ids, System.nanoTime(), generation);
             snapshot = current;
         }
         return current;
