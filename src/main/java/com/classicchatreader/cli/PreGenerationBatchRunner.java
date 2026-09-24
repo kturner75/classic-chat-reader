@@ -58,7 +58,8 @@ public class PreGenerationBatchRunner implements CommandLineRunner {
         log.info("========================================");
         log.info("Runner activated at process uptime {}", formatUptime());
         List<CuratedCatalogBook> curatedBooks = curatedCatalogService.getPopularBooks();
-        int effectiveLimit = Math.max(1, Math.min(batchLimit, curatedBooks.size()));
+        // Zero when every curated title has been unlisted: the run then completes with no work.
+        int effectiveLimit = Math.min(Math.max(1, batchLimit), curatedBooks.size());
         List<CuratedCatalogBook> booksToProcess = curatedBooks.subList(0, effectiveLimit);
         log.info("Mode: {}", mode);
         log.info("Processing {} books with {}min cooldown between books", booksToProcess.size(), cooldownMinutes);
