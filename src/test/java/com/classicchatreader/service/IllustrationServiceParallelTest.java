@@ -156,7 +156,8 @@ class IllustrationServiceParallelTest {
 
         verify(illustrationImageGenerator, timeout(2000).times(1))
                 .generateIllustration(anyString(), anyString(), anyString(), any());
-        verify(illustrationRepository, times(2)).claimGenerationLease(
+        // The second worker claims asynchronously and can finish after the first generation, so wait for it too.
+        verify(illustrationRepository, timeout(2000).times(2)).claimGenerationLease(
                 eq("chapter-1"), any(), any(), any(),
                 eq(IllustrationStatus.PENDING), eq(IllustrationStatus.GENERATING));
     }
