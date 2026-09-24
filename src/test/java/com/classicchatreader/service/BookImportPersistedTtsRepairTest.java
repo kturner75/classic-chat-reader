@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,7 +59,10 @@ class BookImportPersistedTtsRepairTest {
         stored.setSourceId("1513");
         stored.setTtsEnabled(false);
 
-        CuratedCatalogService curatedCatalogService = new CuratedCatalogService();
+        CuratedBookStore curatedBookStore = org.mockito.Mockito.mock(CuratedBookStore.class);
+        org.mockito.Mockito.when(curatedBookStore.findActive()).thenReturn(List.of(new CuratedCatalogService.CuratedCatalogBook(
+                1513, "Romeo and Juliet", "William Shakespeare", 36_000, List.of(), List.of("Plays"))));
+        CuratedCatalogService curatedCatalogService = new CuratedCatalogService(curatedBookStore);
         bookStorageService = new BookStorageService(
                 bookRepository,
                 bookCoverRepository,

@@ -20,6 +20,7 @@ Use **Notion Tasks** for project **classic-chat-reader**:
 - `account-deletion.md`: Download my data + account deletion (BL-043.6) — export-first notice, re-auth, teacher block, what is deleted vs pseudonymized.
 - `teacher-chat-export.md`: teacher Reading Buddy chat export API (BL-043.7) — scope, authorization, audit, formats.
 - `term-retention-purge.md`: nightly FERPA term retention purge (BL-043.6) — eligibility, what is deleted vs kept, compliance-row expiry.
+- `curated-catalog.md`: curated landing catalog membership in `curated_books` (BL-072) — active/inactive semantics, local Studio membership API, production transfer gap.
 - `subprocessors.md`: third parties that receive reader data, vendor terms, prompt minimization, and the student AI hold (BL-043.3) — what must be true before `classroom.ferpa.student-ai-covered` is set.
 - `ferpa-access-logging.md`: implemented FERPA education-record access audit (BL-043.5) — surfaces, fail-closed rule, retention placeholder.
 - `bl-025-classroom-data-model.md`: classroom domain model + FERPA schema hooks / companion checklist (runtime policy owned by `BL-043` in Notion).

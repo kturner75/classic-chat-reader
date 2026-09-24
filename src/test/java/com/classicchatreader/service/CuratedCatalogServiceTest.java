@@ -1,17 +1,96 @@
 package com.classicchatreader.service;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** Runs against the Flyway-migrated schema, so the catalog assertions also check the V34 seed. */
+@DataJpaTest
+@Import(CuratedBookStore.class)
 class CuratedCatalogServiceTest {
 
-    private final CuratedCatalogService curatedCatalogService = new CuratedCatalogService();
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private CuratedBookStore store;
+
+    private CuratedCatalogService curatedCatalogService;
+
+    /** A fresh service per test: its in-memory snapshot must not outlive a rolled-back test. */
+    @BeforeEach
+    void setUp() {
+        curatedCatalogService = new CuratedCatalogService(store);
+    }
+
+    @Test
+    void seedListsTheFormerJavaCatalogAsActive() {
+        assertEquals(91, curatedCatalogService.getPopularBooks().size());
+        assertEquals(91, jdbc.queryForObject("SELECT COUNT(*) FROM curated_books WHERE status = 'active'", Integer.class));
+        CuratedCatalogService.CuratedCatalogBook romeo = curatedCatalogService.getPopularBooks().stream()
+                .filter(book -> book.gutenbergId() == 1513).findFirst().orElseThrow();
+        assertEquals(List.of("Vendetta -- Drama", "Conflict of generations -- Drama"), romeo.subjects());
+        assertEquals(List.of("Plays", "Tragedy"), romeo.bookshelves());
+        assertEquals("Pride and Prejudice", curatedCatalogService.getPopularBooks().getFirst().title());
+    }
+
+    @Test
+    void unlistingRemovesATitleFromTheCatalogWithoutTouchingTheBookOrItsArt() {
+        jdbc.update("INSERT INTO books (id, source, source_id, title, author, character_enabled, illustration_enabled) "
+                + "VALUES ('romeo', 'gutenberg', '1513', 'Romeo and Juliet', 'William Shakespeare', TRUE, TRUE)");
+        jdbc.update("INSERT INTO book_covers (id, book_id, status, created_at) VALUES ('cover-1', 'romeo', 'COMPLETED', CURRENT_TIMESTAMP)");
+
+        assertTrue(curatedCatalogService.setStatus(1513, "inactive").isPresent());
+
+        assertFalse(curatedCatalogService.isCuratedGutenbergId(1513));
+        assertFalse(curatedCatalogService.search("romeo").stream().anyMatch(book -> book.gutenbergId() == 1513));
+        assertEquals(90, curatedCatalogService.getPopularBooks().size());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM books WHERE id = 'romeo' AND character_enabled = TRUE AND illustration_enabled = TRUE", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM book_covers WHERE book_id = 'romeo'", Integer.class));
+        assertEquals("inactive", curatedCatalogService.listMembership().stream()
+                .filter(entry -> entry.book().gutenbergId() == 1513).findFirst().orElseThrow().status());
+
+        CuratedCatalogService.AddResult relisted = curatedCatalogService.add(1513, null, null, null, null, null, null);
+        assertFalse(relisted.created());
+        assertTrue(curatedCatalogService.isCuratedGutenbergId(1513));
+        assertEquals(List.of("Plays", "Tragedy"), relisted.entry().book().bookshelves(), "reactivation keeps stored metadata");
+    }
+
+    @Test
+    void addingANewTitleListsItAndMakesItSearchableByAlias() {
+        CuratedCatalogService.AddResult added = curatedCatalogService.add(
+                2814, " Dubliners ", "James Joyce", 23_500, List.of("Dublin (Ireland) -- Fiction"),
+                List.of("Short Stories"), List.of("Araby", " ", "The Dead"));
+
+        assertTrue(added.created());
+        assertEquals("Dubliners", added.entry().book().title());
+        assertEquals(List.of("Araby", "The Dead"), added.entry().book().aliases());
+        assertTrue(curatedCatalogService.isCuratedGutenbergSource("gutenberg", "2814"));
+        assertTrue(curatedCatalogService.search("araby").stream().anyMatch(book -> book.gutenbergId() == 2814));
+    }
+
+    @Test
+    void rejectsIncompleteOrInvalidMembershipChanges() {
+        assertThrows(IllegalArgumentException.class, () -> curatedCatalogService.add(2814, null, "James Joyce", null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> curatedCatalogService.add(2814, "x".repeat(513), "James Joyce", null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> curatedCatalogService.add(0, "Dubliners", "James Joyce", null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> curatedCatalogService.add(2814, "Dubliners", "James Joyce", -1, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> curatedCatalogService.setStatus(1513, "hidden"));
+        assertTrue(curatedCatalogService.setStatus(999_999, "inactive").isEmpty());
+        assertFalse(curatedCatalogService.isCuratedGutenbergId(2814));
+    }
 
     @Test
     void searchFindsRecentlyAddedRecommendedTitles() {

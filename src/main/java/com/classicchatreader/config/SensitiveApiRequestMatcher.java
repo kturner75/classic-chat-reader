@@ -60,6 +60,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern LIBRARY_COVER_PATH = Pattern.compile("^/api/library/[^/]+/cover$");
     private static final Pattern LIBRARY_DELETE_BOOK_PATH = Pattern.compile("^/api/library/[^/]+$");
     private static final Pattern STUDIO_ROSTER_PATH = Pattern.compile("^/api/studio/roster/.+");
+    private static final Pattern CURATED_BOOK_PATH = Pattern.compile("^/api/curated-books/[^/]+/[^/]+$");
 
     private SensitiveApiRequestMatcher() {
     }
@@ -125,6 +126,11 @@ public final class SensitiveApiRequestMatcher {
         }
 
         if (("GET".equals(method) || "POST".equals(method)) && STUDIO_ROSTER_PATH.matcher(path).matches()) {
+            return EndpointType.ADMIN;
+        }
+
+        if ((("GET".equals(method) || "POST".equals(method)) && "/api/curated-books".equals(path))
+                || ("PATCH".equals(method) && CURATED_BOOK_PATH.matcher(path).matches())) {
             return EndpointType.ADMIN;
         }
 

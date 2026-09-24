@@ -133,6 +133,16 @@ class SensitiveApiRequestMatcherTest {
     }
 
     @Test
+    void classify_marksCuratedBookMembershipAsAdmin() {
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/curated-books"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("POST", "/api/curated-books"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PATCH", "/api/curated-books/gutenberg/1342"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("DELETE", "/api/curated-books/gutenberg/1342"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal("POST", "/api/curated-books"));
+        assertFalse(SensitiveApiRequestMatcher.acceptsAccountPrincipal("PATCH", "/api/curated-books/gutenberg/1342"));
+    }
+
+    @Test
     void classify_marksStudioRosterAsAdmin() {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/studio/roster/gutenberg/17396"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("POST", "/api/studio/roster/gutenberg/17396/replace"));
