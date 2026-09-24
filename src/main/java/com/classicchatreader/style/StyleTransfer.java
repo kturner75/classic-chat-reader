@@ -1,6 +1,7 @@
 package com.classicchatreader.style;
 
 import com.classicchatreader.model.IllustrationSettings;
+import com.classicchatreader.transfer.SerializableTransaction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.MessageDigest;
 import java.sql.*;
@@ -19,27 +20,8 @@ public final class StyleTransfer {
         public StalePlan(String message) { super(message); }
     }
 
-    @FunctionalInterface private interface Work<T> { T run() throws Exception; }
-    private static <T> T transaction(Connection c, Work<T> work) throws Exception {
-        if (!c.getAutoCommit()) throw new IllegalArgumentException("A dedicated connection is required");
-        int isolation = c.getTransactionIsolation();
-        c.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-        c.setAutoCommit(false);
-        try {
-            T result = work.run();
-            c.commit();
-            return result;
-        } catch (Exception e) {
-            c.rollback();
-            throw e;
-        } finally {
-            c.setAutoCommit(true);
-            c.setTransactionIsolation(isolation);
-        }
-    }
-
     public static Snapshot exportStyle(Connection c, String source, String sourceId) throws Exception {
-        return transaction(c, () -> snapshot(c, source, sourceId, false));
+        return SerializableTransaction.run(c, () -> snapshot(c, source, sourceId, false));
     }
 
     private static Snapshot snapshot(Connection c, String source, String sourceId, boolean lock) throws Exception {
@@ -66,7 +48,7 @@ public final class StyleTransfer {
     public static Snapshot apply(Connection c, Plan plan) throws Exception {
         if (plan == null || !plan.confirm()) throw new IllegalArgumentException("Explicit confirmation is required");
         Style wanted = normalize(plan.style());
-        return transaction(c, () -> {
+        return SerializableTransaction.run(c, () -> {
             Snapshot before = snapshot(c, plan.source(), plan.sourceId(), true);
             if (!Objects.equals(before.revision(), plan.expectedRevision())) throw new StalePlan("Book style changed. Refresh the preview before confirming.");
             try (PreparedStatement s = c.prepareStatement("""

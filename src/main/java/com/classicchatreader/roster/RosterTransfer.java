@@ -1,5 +1,6 @@
 package com.classicchatreader.roster;
 
+import com.classicchatreader.transfer.SerializableTransaction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -24,27 +25,8 @@ public final class RosterTransfer {
         public StalePlan(String message) { super(message); }
     }
 
-    @FunctionalInterface private interface Work<T> { T run() throws Exception; }
-    private static <T> T transaction(Connection c, Work<T> work) throws Exception {
-        if (!c.getAutoCommit()) throw new IllegalArgumentException("A dedicated connection is required");
-        int isolation = c.getTransactionIsolation();
-        c.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-        c.setAutoCommit(false);
-        try {
-            T result = work.run();
-            c.commit();
-            return result;
-        } catch (Exception e) {
-            c.rollback();
-            throw e;
-        } finally {
-            c.setAutoCommit(true);
-            c.setTransactionIsolation(isolation);
-        }
-    }
-
     public static Snapshot exportRoster(Connection c, String source, String sourceId) throws Exception {
-        return transaction(c, () -> snapshot(c, source, sourceId, bookId(c, source, sourceId, false)));
+        return SerializableTransaction.run(c, () -> snapshot(c, source, sourceId, bookId(c, source, sourceId, false)));
     }
 
     private static String bookId(Connection c, String source, String sourceId, boolean lock) throws SQLException {
@@ -114,7 +96,7 @@ public final class RosterTransfer {
 
     public static Snapshot apply(Connection c, Plan plan) throws Exception {
         if (plan == null || !plan.confirm()) throw new IllegalArgumentException("Explicit confirmation is required");
-        return transaction(c, () -> {
+        return SerializableTransaction.run(c, () -> {
             String bookId = bookId(c, plan.source(), plan.sourceId(), true);
             // Lock existing character rows as well as the book before comparing the revision.
             try (PreparedStatement s = c.prepareStatement("SELECT id FROM characters WHERE book_id = ? FOR UPDATE")) {

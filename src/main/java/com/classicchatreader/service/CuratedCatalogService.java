@@ -153,6 +153,16 @@ public class CuratedCatalogService {
         return popularity;
     }
 
+    /** Trimmed, required, at most {@link #MAX_TEXT} characters. Shared with the production transfer. */
+    public static String normalizeText(String field, String value) {
+        return text(field, value, null);
+    }
+
+    /** Trimmed entries with blanks dropped, within the list limits. Shared with the production transfer. */
+    public static List<String> normalizeList(String field, List<String> values) {
+        return list(field, values, List.of());
+    }
+
     private static String text(String field, String value, String fallback) {
         String resolved = value == null ? fallback : value.trim();
         if (resolved == null || resolved.isEmpty()) {
