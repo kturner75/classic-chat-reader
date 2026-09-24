@@ -124,7 +124,8 @@ public class ClassroomContextService {
     /**
      * BL-043.3 student AI hold: true when the user is an enrolled student in a live class and the AI
      * provider path is not yet covered for student content. Callers must then not send the user's
-     * text or audio to an AI provider. Teachers and readers outside a class are never held.
+     * text or audio to an AI provider. The hold is per account: it applies even when the account is
+     * also a teacher elsewhere. Readers with no live student enrollment are never held.
      */
     public boolean isStudentAiHeld(String userId) {
         if (classroomProperties.studentAiCovered()
@@ -232,11 +233,13 @@ public class ClassroomContextService {
         }
 
         String teacherName = resolveTeacherName(term.getId(), section.getOwnerUserId());
-        boolean studentView = ClassroomAuthorizationService.ROLE_STUDENT.equals(candidate.role());
         ClassroomFeatureStates features = resolveDbFeatures(term.getId());
-        if (studentView && !classroomProperties.studentAiCovered()) {
+        // The hold is account-wide: a teacher who is also enrolled as a student somewhere is held too,
+        // whichever membership this context shows. Account chat (My Chats) relies on these flags.
+        if (isStudentAiHeld(userId)) {
             features = features.withoutAiChat();
         }
+        boolean studentView = ClassroomAuthorizationService.ROLE_STUDENT.equals(candidate.role());
         List<ClassAssignment> assignments = buildDbAssignments(term.getId(), userId, studentView);
 
         return new ClassroomContextResponse(

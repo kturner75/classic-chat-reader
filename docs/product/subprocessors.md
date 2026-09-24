@@ -17,8 +17,10 @@ account is not funded yet. Until one is, **no student content goes to an AI prov
 
 - `classroom.ferpa.student-ai-covered` (env `CLASSROOM_STUDENT_AI_COVERED`, default **false**).
 - While it is false, any signed-in user with an `ACTIVE` enrollment in an `ACTIVE` term of a live
-  class section is **held** (`ClassroomContextService.isStudentAiHeld`). Teachers, and readers who
-  are not in a class, are not held.
+  class section is **held** (`ClassroomContextService.isStudentAiHeld`). The hold is per account:
+  someone who teaches one class and is enrolled as a student in another is held everywhere, including
+  when their teacher context is showing. Teachers with no student enrollment, and readers who are not
+  in a class, are not held.
 - Held students are refused with `403` (`CLASSROOM_AI_HELD`, "AI chat isn't available for classes
   yet.") **before** any provider call, on:
   - `POST /api/characters/{id}/chat`: character chat
@@ -26,8 +28,10 @@ account is not funded yet. Until one is, **no student content goes to an AI prov
   - `POST /api/recaps/book/{bookId}/chat`: recap chat
   - `POST /api/reading-buddy/chat` and `/check-comment`: Reading Buddy
 - The classroom context (`/api/classroom/context`) reports `chatEnabled` and `readingBuddyEnabled`
-  as false for a held student, so the reader and My Chats hide chat, voice, recap chat and Reading
-  Buddy. The class banner lists them under "Teacher controls active… off for this class", even
+  as false for a held account, whichever membership it shows, so the reader and My Chats hide chat,
+  voice, recap chat and Reading Buddy. My Chats' send and continue routes check these flags before
+  calling the provider, so they refuse held accounts too (`CHAT_UNAVAILABLE`, reason
+  `CLASSROOM_POLICY`). The class banner lists them under "Teacher controls active… off for this class", even
   though the teacher's own settings still show them on. Tell pilot teachers this.
 - Everything else still works for students: reading, quizzes, cached recaps, read-aloud (cached
   audio), illustrations, character profiles, assignments.
