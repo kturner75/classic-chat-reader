@@ -59,6 +59,7 @@ class CuratedTransferTest {
         try (Statement s = c.createStatement()) {
             s.execute("INSERT INTO books (id, source, source_id, title, author, character_enabled) VALUES ('romeo', 'gutenberg', '1513', 'Romeo and Juliet', 'William Shakespeare', TRUE)");
         }
+        String activeBefore = value("SELECT COUNT(*) FROM curated_books WHERE status = 'active'");
         var before = CuratedTransfer.exportMembership(c, "gutenberg", "1513");
         var m = before.membership();
         var inactive = new CuratedTransfer.Membership(m.title(), m.author(), m.popularity(), m.subjects(), m.bookshelves(), m.aliases(), "inactive");
@@ -67,7 +68,19 @@ class CuratedTransferTest {
 
         assertEquals("inactive", value("SELECT status FROM curated_books WHERE source_id = '1513'"));
         assertEquals("TRUE", value("SELECT character_enabled FROM books WHERE id = 'romeo'"));
-        assertEquals("90", value("SELECT COUNT(*) FROM curated_books WHERE status = 'active'"));
+        assertEquals(Integer.parseInt(activeBefore) - 1, Integer.parseInt(value("SELECT COUNT(*) FROM curated_books WHERE status = 'active'")));
+    }
+
+    @Test
+    void storesTheSameNormalizedValuesTheLocalApiWould() throws Exception {
+        var absent = CuratedTransfer.exportMembership(c, "gutenberg", "2814");
+        var messy = new CuratedTransfer.Membership("  Dubliners ", " James Joyce", 0, List.of(" Dublin "),
+                List.of("Short Stories", "  "), List.of(" Araby "), "active");
+
+        var applied = CuratedTransfer.apply(c, new CuratedTransfer.Plan("gutenberg", "2814", absent.revision(), messy, true));
+
+        assertEquals(new CuratedTransfer.Membership("Dubliners", "James Joyce", 0, List.of("Dublin"),
+                List.of("Short Stories"), List.of("Araby"), "active"), applied.membership());
     }
 
     @Test
@@ -89,6 +102,11 @@ class CuratedTransferTest {
                 new CuratedTransfer.Membership("x".repeat(513), "James Joyce", 0, List.of(), List.of(), List.of(), "active"), true)));
         assertThrows(IllegalArgumentException.class, () -> CuratedTransfer.exportMembership(c, "standardebooks", "2814"));
         assertThrows(IllegalArgumentException.class, () -> CuratedTransfer.exportMembership(c, "gutenberg", "abc"));
+        // Beyond int range: the catalog could never read such a row back.
+        assertThrows(IllegalArgumentException.class, () -> CuratedTransfer.exportMembership(c, "gutenberg", "2147483648"));
+        assertThrows(IllegalArgumentException.class, () -> CuratedTransfer.apply(c, new CuratedTransfer.Plan("gutenberg", "2147483648", revision, dubliners("active"), true)));
+        assertThrows(IllegalArgumentException.class, () -> CuratedTransfer.apply(c, new CuratedTransfer.Plan("gutenberg", "2814", revision,
+                new CuratedTransfer.Membership("Dubliners", "James Joyce", -1, List.of(), List.of(), List.of(), "active"), true)));
         assertNull(value("SELECT id FROM curated_books WHERE source_id = '2814'"));
     }
 }

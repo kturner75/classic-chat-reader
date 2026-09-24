@@ -103,7 +103,14 @@ public final class CuratedTransfer {
 
     private static void requireGutenberg(String source, String sourceId) {
         if (!CuratedBookStore.SOURCE_GUTENBERG.equals(source)) throw new IllegalArgumentException("source must be \"gutenberg\"");
-        if (sourceId == null || !sourceId.matches("[1-9][0-9]{0,9}")) throw new IllegalArgumentException("sourceId must be a Gutenberg number");
+        // Parse as the catalog does: a row whose id is not a positive int would break every catalog read.
+        int id;
+        try {
+            id = sourceId == null || !sourceId.matches("[1-9][0-9]*") ? 0 : Integer.parseInt(sourceId);
+        } catch (NumberFormatException e) {
+            id = 0;
+        }
+        if (id <= 0) throw new IllegalArgumentException("sourceId must be a Gutenberg number");
     }
 
     private static List<String> list(String json) throws Exception {
