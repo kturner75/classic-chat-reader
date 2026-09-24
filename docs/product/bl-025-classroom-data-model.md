@@ -710,7 +710,7 @@ Policy / Discovery (still open — keep `BL-025.6` / `.7` teacher bulk / `.10` g
 - [ ] Account-delete vs enrollment hold decision documented (`BL-043.6` / `BL-043.13`)
 - [ ] Purge job owner + runbook (`BL-043.6`)
 - [ ] Access log retention (`BL-043.5` / `BL-043.13`)
-- [ ] Data controller / DPA for pilot college + LLM subprocessors (`BL-043.3` / `BL-043.11`)
+- [ ] Data controller / DPA for pilot college + LLM subprocessors (`BL-043.3` / `BL-043.11`). **Engineering side done (BL-043.3):** subprocessors tracked in `subprocessors.md`; enrolled students get no AI chat or voice until `classroom.ferpa.student-ai-covered` is set. The school-side agreement and notice are still open (`BL-043.11`).
 - [ ] Teacher export access rules finalized (`BL-043.7` / `BL-043.13`)
 - [ ] School-admin education-record access remains deny-by-default unless policy explicitly allows (`KD-16`, `BL-043.13`)
 - [ ] K-12 / parental model explicitly out of pilot scope (`BL-043.20`)

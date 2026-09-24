@@ -8,6 +8,7 @@ import com.classicchatreader.service.ChapterRecapChatService;
 import com.classicchatreader.service.ChapterRecapService;
 import com.classicchatreader.service.RecapMetricsService;
 import com.classicchatreader.service.RecapRolloutService;
+import com.classicchatreader.service.StudentAiHold;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -27,6 +28,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
 
 @WebMvcTest(ChapterRecapController.class)
 @TestPropertySource(properties = {
@@ -49,6 +53,9 @@ class ChapterRecapControllerTest {
 
     @MockitoBean
     private RecapMetricsService recapMetricsService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void getStatus_returnsFeatureState() throws Exception {
@@ -246,5 +253,21 @@ class ChapterRecapControllerTest {
                 .andExpect(status().isAccepted());
 
         verify(recapMetricsService).recordModalViewed();
+    }
+
+    @Test
+    void chat_heldStudent_isRefusedBeforeTheProvider() throws Exception {
+        when(recapRolloutService.isBookAllowed("book-1")).thenReturn(true);
+        when(studentAiHold.isHeld(any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/recaps/book/book-1/chat")
+                        .contentType("application/json")
+                        .content("""
+                                {"message": "What happened?", "conversationHistory": [], "readerChapterIndex": 2}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.response", is(StudentAiHold.MESSAGE)));
+
+        verify(chapterRecapChatService, never()).chat(any(), any(), any(), anyInt());
     }
 }

@@ -4,6 +4,7 @@ import com.classicchatreader.service.ChapterRecapChatService;
 import com.classicchatreader.service.ChapterRecapService;
 import com.classicchatreader.service.RecapMetricsService;
 import com.classicchatreader.service.RecapRolloutService;
+import com.classicchatreader.service.StudentAiHold;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -39,6 +40,9 @@ class ChapterRecapControllerCacheOnlyTest {
 
     @MockitoBean
     private RecapMetricsService recapMetricsService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void getStatus_cacheOnlyMode_setsCacheOnlyFlag() throws Exception {

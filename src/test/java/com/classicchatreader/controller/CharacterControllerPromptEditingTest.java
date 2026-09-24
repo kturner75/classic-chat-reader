@@ -14,6 +14,7 @@ import com.classicchatreader.service.CharacterPrefetchService;
 import com.classicchatreader.service.CharacterService;
 import com.classicchatreader.service.CharacterVoiceCallService;
 import com.classicchatreader.service.ComfyUIService;
+import com.classicchatreader.service.StudentAiHold;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -75,6 +76,9 @@ class CharacterControllerPromptEditingTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void regeneratePortrait_promptEditingDisabled_returnsForbidden() throws Exception {

@@ -10,6 +10,7 @@ import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.ReadingBuddyTriggerPolicy;
 import com.classicchatreader.service.llm.LlmProvider;
+import com.classicchatreader.service.StudentAiHold;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -73,6 +74,9 @@ class ReadingBuddyControllerTest {
 
     @MockitoBean
     private ReaderIdentityService readerIdentityService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void status_whenAllGatesOpen_availableIsTrue() throws Exception {
@@ -495,5 +499,28 @@ class ReadingBuddyControllerTest {
 
         verify(memoryService).getHistory(eq("owner-A"), eq("book-1"), eq("humorist"), isNull(), eq(0), eq(0), eq(true));
         verify(memoryService, never()).getHistory(eq("owner-B"), any(), any(), any(), anyInt(), anyInt(), anyBoolean());
+    }
+
+    @Test
+    void chatAndCheckComment_heldStudent_areRefusedBeforeTheProvider() throws Exception {
+        when(studentAiHold.isHeld(any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/reading-buddy/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bookId": "book-1", "personaId": "humorist", "message": "Hi", "readerChapterIndex": 0, "readerParagraphIndex": 0}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", is(StudentAiHold.ERROR_CODE)));
+        mockMvc.perform(post("/api/reading-buddy/check-comment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bookId": "book-1", "personaId": "humorist", "readerChapterIndex": 0, "readerParagraphIndex": 0}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", is(StudentAiHold.ERROR_CODE)));
+
+        verify(chatService, never()).chat(any(), any(), any(), any(), anyInt(), anyInt());
+        verify(commentService, never()).checkComment(any(), any(), any(), anyInt(), anyInt(), any());
     }
 }

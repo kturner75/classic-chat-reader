@@ -121,6 +121,24 @@ public class ClassroomContextService {
         return getContext(null, null);
     }
 
+    /**
+     * BL-043.3 student AI hold: true when the user is an enrolled student in a live class and the AI
+     * provider path is not yet covered for student content. Callers must then not send the user's
+     * text or audio to an AI provider. Teachers and readers outside a class are never held.
+     */
+    public boolean isStudentAiHeld(String userId) {
+        if (classroomProperties.studentAiCovered()
+                || !classroomProperties.allowsDatabase()
+                || userId == null || userId.isBlank()) {
+            return false;
+        }
+        return enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE").stream()
+                .anyMatch(enrollment -> termRepository.findByIdAndDeletedAtIsNull(enrollment.getTermId())
+                        .filter(t -> "ACTIVE".equals(t.getStatus()))
+                        .filter(this::hasLiveSection)
+                        .isPresent());
+    }
+
     private Optional<MembershipCandidate> selectMembership(String userId, String preferredTermId) {
         List<MembershipCandidate> candidates = new ArrayList<>();
 
@@ -214,8 +232,11 @@ public class ClassroomContextService {
         }
 
         String teacherName = resolveTeacherName(term.getId(), section.getOwnerUserId());
-        ClassroomFeatureStates features = resolveDbFeatures(term.getId());
         boolean studentView = ClassroomAuthorizationService.ROLE_STUDENT.equals(candidate.role());
+        ClassroomFeatureStates features = resolveDbFeatures(term.getId());
+        if (studentView && !classroomProperties.studentAiCovered()) {
+            features = features.withoutAiChat();
+        }
         List<ClassAssignment> assignments = buildDbAssignments(term.getId(), userId, studentView);
 
         return new ClassroomContextResponse(

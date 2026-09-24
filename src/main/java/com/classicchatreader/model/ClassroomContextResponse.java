@@ -48,6 +48,12 @@ public record ClassroomContextResponse(
         public static ClassroomFeatureStates defaults() {
             return new ClassroomFeatureStates(true, true, true, true, true, true, true, true);
         }
+
+        /** Same states with AI chat (character chat, voice, recap chat) and Reading Buddy off (BL-043.3). */
+        public ClassroomFeatureStates withoutAiChat() {
+            return new ClassroomFeatureStates(quizEnabled, recapEnabled, ttsEnabled, illustrationEnabled,
+                    characterEnabled, false, speedReadingEnabled, false);
+        }
     }
 
     public record AssignmentChapterRef(

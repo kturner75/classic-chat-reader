@@ -147,6 +147,10 @@ public class ClassroomProperties {
         return ferpa.isPurgeEnabled();
     }
 
+    public boolean studentAiCovered() {
+        return ferpa.isStudentAiCovered();
+    }
+
     public LocalDateTime inviteDefaultExpiresAt() {
         return LocalDateTime.now(ZoneOffset.UTC).plusDays(invite.getDefaultTtlDays());
     }
@@ -156,6 +160,19 @@ public class ClassroomProperties {
         /** Days after a term's end date before its student records are purged (BL-043.6; placeholder 400). */
         private int termRetainDays = 400;
         private boolean purgeEnabled = true;
+        /**
+         * BL-043.3: whether the AI provider path is covered for student content (API account with
+         * a signed DPA, no training). Until then, enrolled students get no AI chat or voice.
+         */
+        private boolean studentAiCovered = false;
+
+        public boolean isStudentAiCovered() {
+            return studentAiCovered;
+        }
+
+        public void setStudentAiCovered(boolean studentAiCovered) {
+            this.studentAiCovered = studentAiCovered;
+        }
 
         public int getTermRetainDays() {
             return termRetainDays;

@@ -1,6 +1,5 @@
 package com.classicchatreader.controller;
 
-import jakarta.servlet.http.HttpServletRequest;
 import com.classicchatreader.config.RequestCorrelation;
 import com.classicchatreader.model.ChatMessage;
 import com.classicchatreader.model.ChapterRecapResponse;
@@ -9,6 +8,8 @@ import com.classicchatreader.service.ChapterRecapChatService;
 import com.classicchatreader.service.ChapterRecapService;
 import com.classicchatreader.service.RecapMetricsService;
 import com.classicchatreader.service.RecapRolloutService;
+import com.classicchatreader.service.StudentAiHold;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,16 +47,19 @@ public class ChapterRecapController {
     private final ChapterRecapChatService chapterRecapChatService;
     private final RecapRolloutService recapRolloutService;
     private final RecapMetricsService recapMetricsService;
+    private final StudentAiHold studentAiHold;
 
     public ChapterRecapController(
             ChapterRecapService chapterRecapService,
             ChapterRecapChatService chapterRecapChatService,
             RecapRolloutService recapRolloutService,
-            RecapMetricsService recapMetricsService) {
+            RecapMetricsService recapMetricsService,
+            StudentAiHold studentAiHold) {
         this.chapterRecapService = chapterRecapService;
         this.chapterRecapChatService = chapterRecapChatService;
         this.recapRolloutService = recapRolloutService;
         this.recapMetricsService = recapMetricsService;
+        this.studentAiHold = studentAiHold;
     }
 
     @GetMapping("/status")
@@ -201,7 +205,8 @@ public class ChapterRecapController {
     @PostMapping("/book/{bookId}/chat")
     public ResponseEntity<RecapChatResponse> chat(
             @PathVariable String bookId,
-            @RequestBody RecapChatRequest request) {
+            @RequestBody RecapChatRequest request,
+            HttpServletRequest servletRequest) {
         if (!isBookAvailableForRecap(bookId)) {
             return ResponseEntity.status(403).build();
         }
@@ -209,6 +214,14 @@ public class ChapterRecapController {
             recapMetricsService.recordChatRejected();
             return ResponseEntity.status(403).body(new RecapChatResponse(
                     "Chat is disabled in this environment.",
+                    bookId,
+                    System.currentTimeMillis()
+            ));
+        }
+        if (studentAiHold.isHeld(servletRequest)) {
+            recapMetricsService.recordChatRejected();
+            return ResponseEntity.status(403).body(new RecapChatResponse(
+                    StudentAiHold.MESSAGE,
                     bookId,
                     System.currentTimeMillis()
             ));

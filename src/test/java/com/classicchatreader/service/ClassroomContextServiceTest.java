@@ -4,6 +4,9 @@ import com.classicchatreader.config.ClassroomDemoProperties;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.ClassSectionEntity;
+import com.classicchatreader.entity.EnrollmentEntity;
+import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
@@ -204,5 +207,59 @@ class ClassroomContextServiceTest {
                 "2026-02-20",
                 ClassroomContextService.formatDueDate(java.time.LocalDate.of(2026, 2, 20)));
         assertEquals(null, ClassroomContextService.formatDueDate(null));
+    }
+
+    @Test
+    void enrolledStudentInLiveClassIsHeldUntilStudentAiIsCovered() {
+        enrollStudentInLiveClass("u1", "ACTIVE");
+
+        assertTrue(classroomContextService.isStudentAiHeld("u1"));
+
+        classroomProperties.getFerpa().setStudentAiCovered(true);
+        assertFalse(classroomContextService.isStudentAiHeld("u1"));
+    }
+
+    @Test
+    void readersOutsideALiveClassAreNeverHeld() {
+        assertFalse(classroomContextService.isStudentAiHeld(null));
+        assertFalse(classroomContextService.isStudentAiHeld("no-enrollment"));
+
+        enrollStudentInLiveClass("u2", "ENDED");
+        assertFalse(classroomContextService.isStudentAiHeld("u2"));
+    }
+
+    @Test
+    void heldStudentContextTurnsOffChatAndReadingBuddyOnly() {
+        enrollStudentInLiveClass("u1", "ACTIVE");
+
+        ClassroomContextResponse.ClassroomFeatureStates held = classroomContextService.getContext("u1").features();
+        assertFalse(held.chatEnabled());
+        assertFalse(held.readingBuddyEnabled());
+        assertTrue(held.characterEnabled());
+        assertTrue(held.quizEnabled());
+
+        classroomProperties.getFerpa().setStudentAiCovered(true);
+        ClassroomContextResponse.ClassroomFeatureStates covered = classroomContextService.getContext("u1").features();
+        assertTrue(covered.chatEnabled());
+        assertTrue(covered.readingBuddyEnabled());
+    }
+
+    private void enrollStudentInLiveClass(String userId, String termStatus) {
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setUserId(userId);
+        enrollment.setTermId("term-1");
+        enrollment.setStatus("ACTIVE");
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setClassSectionId("section-1");
+        term.setStatus(termStatus);
+        ClassSectionEntity section = new ClassSectionEntity();
+        section.setId("section-1");
+        section.setStatus("ACTIVE");
+        when(enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE")).thenReturn(List.of(enrollment));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        if ("ACTIVE".equals(termStatus)) {
+            when(classSectionRepository.findByIdAndDeletedAtIsNull("section-1")).thenReturn(Optional.of(section));
+        }
     }
 }
