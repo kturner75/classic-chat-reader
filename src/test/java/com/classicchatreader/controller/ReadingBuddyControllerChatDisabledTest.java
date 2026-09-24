@@ -9,6 +9,7 @@ import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
 import com.classicchatreader.service.llm.LlmProvider;
+import com.classicchatreader.service.StudentAiHold;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -61,6 +62,9 @@ class ReadingBuddyControllerChatDisabledTest {
 
     @MockitoBean
     private ReaderIdentityService readerIdentityService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void status_whenChatDisabled_availableIsFalseEvenIfBuddyAndProviderReady() throws Exception {

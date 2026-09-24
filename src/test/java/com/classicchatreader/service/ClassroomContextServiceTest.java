@@ -4,6 +4,10 @@ import com.classicchatreader.config.ClassroomDemoProperties;
 import com.classicchatreader.config.ClassroomProperties;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
+import com.classicchatreader.entity.ClassRoleMembershipEntity;
+import com.classicchatreader.entity.ClassSectionEntity;
+import com.classicchatreader.entity.EnrollmentEntity;
+import com.classicchatreader.entity.TermEntity;
 import com.classicchatreader.model.ClassroomContextResponse;
 import com.classicchatreader.repository.AssignmentRepository;
 import com.classicchatreader.repository.BookRepository;
@@ -21,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -204,5 +209,102 @@ class ClassroomContextServiceTest {
                 "2026-02-20",
                 ClassroomContextService.formatDueDate(java.time.LocalDate.of(2026, 2, 20)));
         assertEquals(null, ClassroomContextService.formatDueDate(null));
+    }
+
+    @Test
+    void enrolledStudentInLiveClassIsHeldUntilStudentAiIsCovered() {
+        enrollStudentInLiveClass("u1", "ACTIVE");
+
+        assertTrue(classroomContextService.isStudentAiHeld("u1"));
+
+        classroomProperties.getFerpa().setStudentAiCovered(true);
+        assertFalse(classroomContextService.isStudentAiHeld("u1"));
+    }
+
+    @Test
+    void readersOutsideALiveClassAreNeverHeld() {
+        assertFalse(classroomContextService.isStudentAiHeld(null));
+        assertFalse(classroomContextService.isStudentAiHeld("no-enrollment"));
+
+        enrollStudentInLiveClass("u2", "ENDED");
+        assertFalse(classroomContextService.isStudentAiHeld("u2"));
+    }
+
+    @Test
+    void heldStudentContextTurnsOffChatAndReadingBuddyOnly() {
+        enrollStudentInLiveClass("u1", "ACTIVE");
+
+        ClassroomContextResponse.ClassroomFeatureStates held = classroomContextService.getContext("u1").features();
+        assertFalse(held.chatEnabled());
+        assertFalse(held.readingBuddyEnabled());
+        assertTrue(held.characterEnabled());
+        assertTrue(held.quizEnabled());
+
+        classroomProperties.getFerpa().setStudentAiCovered(true);
+        ClassroomContextResponse.ClassroomFeatureStates covered = classroomContextService.getContext("u1").features();
+        assertTrue(covered.chatEnabled());
+        assertTrue(covered.readingBuddyEnabled());
+    }
+
+    @Test
+    void teacherWithNoStudentEnrollmentIsNotHeldAndKeepsChat() {
+        teachLiveClass("t1", "term-2", "section-2");
+
+        assertFalse(classroomContextService.isStudentAiHeld("t1"));
+        ClassroomContextResponse context = classroomContextService.getContext("t1");
+        assertEquals("TEACHER", context.role());
+        assertTrue(context.features().chatEnabled());
+        assertTrue(context.features().readingBuddyEnabled());
+    }
+
+    @Test
+    void teacherWhoIsAlsoAnEnrolledStudentIsHeldEvenInTheTeacherContext() {
+        // Account chat (My Chats) relies on these flags, so the teacher context must be stripped too.
+        enrollStudentInLiveClass("u1", "ACTIVE");
+        teachLiveClass("u1", "term-2", "section-2");
+
+        ClassroomContextResponse context = classroomContextService.getContext("u1", "term-2");
+        assertEquals("TEACHER", context.role());
+        assertTrue(classroomContextService.isStudentAiHeld("u1"));
+        assertFalse(context.features().chatEnabled());
+        assertFalse(context.features().readingBuddyEnabled());
+    }
+
+    private void teachLiveClass(String userId, String termId, String sectionId) {
+        ClassRoleMembershipEntity membership = new ClassRoleMembershipEntity();
+        membership.setUserId(userId);
+        membership.setTermId(termId);
+        membership.setRole("TEACHER");
+        membership.setStatus("ACTIVE");
+        membership.setCreatedAt(LocalDateTime.of(2026, 9, 1, 0, 0));
+        TermEntity term = new TermEntity();
+        term.setId(termId);
+        term.setClassSectionId(sectionId);
+        term.setStatus("ACTIVE");
+        ClassSectionEntity section = new ClassSectionEntity();
+        section.setId(sectionId);
+        section.setStatus("ACTIVE");
+        when(classRoleMembershipRepository.findByUserIdAndStatus(userId, "ACTIVE")).thenReturn(List.of(membership));
+        when(termRepository.findByIdAndDeletedAtIsNull(termId)).thenReturn(Optional.of(term));
+        when(classSectionRepository.findByIdAndDeletedAtIsNull(sectionId)).thenReturn(Optional.of(section));
+    }
+
+    private void enrollStudentInLiveClass(String userId, String termStatus) {
+        EnrollmentEntity enrollment = new EnrollmentEntity();
+        enrollment.setUserId(userId);
+        enrollment.setTermId("term-1");
+        enrollment.setStatus("ACTIVE");
+        TermEntity term = new TermEntity();
+        term.setId("term-1");
+        term.setClassSectionId("section-1");
+        term.setStatus(termStatus);
+        ClassSectionEntity section = new ClassSectionEntity();
+        section.setId("section-1");
+        section.setStatus("ACTIVE");
+        when(enrollmentRepository.findByUserIdAndStatusAndDeletedAtIsNull(userId, "ACTIVE")).thenReturn(List.of(enrollment));
+        when(termRepository.findByIdAndDeletedAtIsNull("term-1")).thenReturn(Optional.of(term));
+        if ("ACTIVE".equals(termStatus)) {
+            when(classSectionRepository.findByIdAndDeletedAtIsNull("section-1")).thenReturn(Optional.of(section));
+        }
     }
 }

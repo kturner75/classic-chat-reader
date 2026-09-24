@@ -15,6 +15,7 @@ import com.classicchatreader.service.CharacterExtractionService;
 import com.classicchatreader.service.CharacterPrefetchService;
 import com.classicchatreader.service.CharacterService;
 import com.classicchatreader.service.CharacterVoiceCallService;
+import com.classicchatreader.service.StudentAiHold;
 import com.classicchatreader.service.ComfyUIService;
 import com.classicchatreader.service.CdnAssetService;
 import com.classicchatreader.service.LiveAssetUploads;
@@ -78,6 +79,7 @@ public class CharacterController {
     private final ChapterRepository chapterRepository;
     private final AccountAuthService accountAuthService;
     private final AccountChatHistoryService accountChatHistoryService;
+    private final StudentAiHold studentAiHold;
 
     public CharacterController(
             CharacterService characterService,
@@ -90,7 +92,8 @@ public class CharacterController {
             BookRepository bookRepository,
             ChapterRepository chapterRepository,
             AccountAuthService accountAuthService,
-            AccountChatHistoryService accountChatHistoryService) {
+            AccountChatHistoryService accountChatHistoryService,
+            StudentAiHold studentAiHold) {
         this.characterService = characterService;
         this.chatService = chatService;
         this.voiceCallService = voiceCallService;
@@ -102,6 +105,7 @@ public class CharacterController {
         this.chapterRepository = chapterRepository;
         this.accountAuthService = accountAuthService;
         this.accountChatHistoryService = accountChatHistoryService;
+        this.studentAiHold = studentAiHold;
     }
 
     @GetMapping("/status")
@@ -487,6 +491,13 @@ public class CharacterController {
                     System.currentTimeMillis()
             ));
         }
+        if (studentAiHold.isHeld(servletRequest)) {
+            return ResponseEntity.status(403).body(new ChatResponse(
+                    StudentAiHold.MESSAGE,
+                    characterId,
+                    System.currentTimeMillis()
+            ));
+        }
 
         // Chat is PRIMARY only. Empty PRIMARY means nobody to call.
         Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);
@@ -539,11 +550,16 @@ public class CharacterController {
     @PostMapping("/{characterId}/call-session")
     public ResponseEntity<?> createCallSession(
             @PathVariable String characterId,
-            @RequestBody CallSessionRequest request) {
+            @RequestBody CallSessionRequest request,
+            HttpServletRequest servletRequest) {
 
         if (!characterEnabled || !chatEnabled || !voiceCallService.isVoiceCallAvailable()) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "Voice calls are not available."));
+        }
+        if (studentAiHold.isHeld(servletRequest)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", StudentAiHold.MESSAGE, "code", StudentAiHold.ERROR_CODE));
         }
 
         Optional<CharacterEntity> characterOpt = characterService.getCharacter(characterId);

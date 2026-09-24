@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import com.classicchatreader.entity.CharacterStatus;
 import com.classicchatreader.model.CharacterInfo;
 import com.classicchatreader.service.LiveAssetWriteResult;
+import com.classicchatreader.service.StudentAiHold;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.mock.web.MockMultipartFile;
@@ -96,6 +97,9 @@ class CharacterControllerTest {
 
     @MockitoBean
     private AccountChatHistoryService accountChatHistoryService;
+
+    @MockitoBean
+    private StudentAiHold studentAiHold;
 
     @Test
     void uploadPortrait_studioPng_replacesLiveBytesWithoutEnqueue() throws Exception {
@@ -1100,5 +1104,45 @@ class CharacterControllerTest {
                                 {"conversationHistory": [], "readerChapterIndex": 0, "readerParagraphIndex": 0}
                                 """))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void chat_heldStudent_isRefusedBeforeTheProvider() throws Exception {
+        when(studentAiHold.isHeld(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/characters/character-1/chat")
+                        .contentType("application/json")
+                        .content("""
+                                {"message": "Who are you?", "conversationHistory": [], "readerChapterIndex": 0, "readerParagraphIndex": 0}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.response", is(StudentAiHold.MESSAGE)));
+
+        verify(chatService, never()).chat(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void callSession_heldStudent_isRefusedBeforeMintingAToken() throws Exception {
+        when(voiceCallService.isVoiceCallAvailable()).thenReturn(true);
+        when(studentAiHold.isHeld(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/characters/character-1/call-session")
+                        .contentType("application/json")
+                        .content("""
+                                {"conversationHistory": [], "readerChapterIndex": 0, "readerParagraphIndex": 0}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code", is(StudentAiHold.ERROR_CODE)));
+
+        verify(voiceCallService, never()).createSession(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt());
     }
 }

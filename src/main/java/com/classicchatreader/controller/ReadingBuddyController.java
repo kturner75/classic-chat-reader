@@ -9,6 +9,7 @@ import com.classicchatreader.service.ReadingBuddyMemoryService;
 import com.classicchatreader.service.ReadingBuddyMetricsService;
 import com.classicchatreader.service.ReadingBuddyPersonaCatalog;
 import com.classicchatreader.service.ReadingBuddyPreferenceService;
+import com.classicchatreader.service.StudentAiHold;
 import com.classicchatreader.service.llm.LlmProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -46,6 +47,7 @@ public class ReadingBuddyController {
     private final ReadingBuddyMetricsService metricsService;
     private final ReaderIdentityService readerIdentityService;
     private final LlmProvider chatProvider;
+    private final StudentAiHold studentAiHold;
 
     @Value("${ai.chat.enabled:false}")
     private boolean chatEnabled;
@@ -59,7 +61,8 @@ public class ReadingBuddyController {
             ReadingBuddyMemoryService memoryService,
             ReadingBuddyMetricsService metricsService,
             ReaderIdentityService readerIdentityService,
-            @Qualifier("chatLlmProvider") LlmProvider chatProvider) {
+            @Qualifier("chatLlmProvider") LlmProvider chatProvider,
+            StudentAiHold studentAiHold) {
         this.properties = properties;
         this.personaCatalog = personaCatalog;
         this.preferenceService = preferenceService;
@@ -69,6 +72,7 @@ public class ReadingBuddyController {
         this.metricsService = metricsService;
         this.readerIdentityService = readerIdentityService;
         this.chatProvider = chatProvider;
+        this.studentAiHold = studentAiHold;
     }
 
     /**
@@ -155,6 +159,10 @@ public class ReadingBuddyController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(errorBody("CHAT_DISABLED", "Reading buddy is disabled in this environment."));
         }
+        if (studentAiHold.isHeld(request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody(StudentAiHold.ERROR_CODE, StudentAiHold.MESSAGE));
+        }
 
         ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);
         if (body == null) {
@@ -199,6 +207,11 @@ public class ReadingBuddyController {
             metricsService.recordChatRejected();
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(errorBody("CHAT_DISABLED", "Reading buddy chat is disabled in this environment."));
+        }
+        if (studentAiHold.isHeld(request)) {
+            metricsService.recordChatRejected();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(errorBody(StudentAiHold.ERROR_CODE, StudentAiHold.MESSAGE));
         }
 
         ReaderIdentityService.ReaderIdentity identity = readerIdentityService.resolve(request, response);

@@ -264,6 +264,37 @@ class AccountChatHistoryServiceTest {
     }
 
     @Test
+    void heldAccountCannotSendOrContinueEvenFromATeacherContext() {
+        // BL-043.3: an account held for student AI gets chat stripped from whichever context it resolves to.
+        Fixture fixture = sessionWithUserMessage("owner", "Book", "Author", "Alice", BASE);
+        flushAndClear();
+        when(classroomContextService.getContext(anyString())).thenReturn(new ClassroomContextResponse(
+                true, "class-1", "English 101", "teacher@example.test",
+                ClassroomContextResponse.ClassroomFeatureStates.defaults().withoutAiChat(),
+                List.of(), "term-1", "TEACHER"));
+
+        assertThat(service.get("owner", fixture.session().getId()).session().resume().unavailableReason())
+                .isEqualTo("CLASSROOM_POLICY");
+        assertThatThrownBy(() -> service.sendToCharacter(
+                "owner",
+                fixture.character().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Hello", null),
+                "request-held-send"))
+                .isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
+        assertThatThrownBy(() -> service.continueConversation(
+                "owner",
+                fixture.session().getId(),
+                new com.classicchatreader.model.AccountChatModels.ContinueRequest("Hello", null),
+                "request-held-continue"))
+                .isInstanceOf(ChatHistoryValidationException.class)
+                .extracting(ex -> ((ChatHistoryValidationException) ex).getCode())
+                .isEqualTo("CHAT_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(characterChatService);
+    }
+
+    @Test
     void soleSecondaryCharacterCannotContinueWhenBookHasNoPrimary() {
         Fixture fixture = createSession("owner", "Book", "Author", "Fortunato", BASE);
         fixture.character().setCharacterType(CharacterType.SECONDARY);
