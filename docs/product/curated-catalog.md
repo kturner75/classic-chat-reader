@@ -42,8 +42,36 @@ characters; lists at 25 entries of 200 characters.
 The service holds active rows in memory. A write through the API refreshes that snapshot at once;
 a change made directly in the database shows up within 60 seconds.
 
-## Production
+## Production (BL-072.4)
 
-Production listing still needs a transfer path (BL-072.4): export membership rows locally and
-apply them to production, like the roster and style transfer runners. Until then, change
-production rows deliberately with SQL, or ship the change as a migration.
+`com.classicchatreader.cli.CuratedTransferRunner` copies one title's membership row to production,
+the same way `StyleTransferRunner` ships a book style. It touches only that `curated_books` row:
+never the book, its art, characters, files or Spaces. Studio runs it; the local API above never
+reaches production.
+
+```
+export  --source gutenberg --source-id 2814 --output membership.json
+replace --source gutenberg --source-id 2814 --input reviewed-plan.json --output receipt.json --apply
+```
+
+Export returns `{source, sourceId, revision, membership}`. `membership` is `null` when production has
+no row for the title. Replace takes:
+
+```json
+{
+  "source": "gutenberg",
+  "sourceId": "2814",
+  "expectedRevision": "revision-from-export",
+  "membership": {"title": "Dubliners", "author": "James Joyce", "popularity": 23500,
+                 "subjects": [], "bookshelves": ["Short Stories"], "aliases": ["Araby"], "status": "active"},
+  "confirm": true
+}
+```
+
+Replace inserts the row, or replaces every field of the existing one; unlisting is `"status":
+"inactive"`. It applies the same rules as the local API (so a title accepted locally always ships),
+locks the row, compares the revision (exit 2 when it changed), and reads the row back; it must equal
+the plan before commit. Connection and exit codes match the style and roster runners
+(`PDR_DATABASE_*` or `--db-url/--db-user/--db-password`; any nonzero exit writes no receipt).
+
+The production app's in-memory catalog picks the change up within 60 seconds.
