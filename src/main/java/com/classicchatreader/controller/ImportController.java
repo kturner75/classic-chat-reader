@@ -1,6 +1,7 @@
 package com.classicchatreader.controller;
 
 import com.classicchatreader.service.BookImportService;
+import com.classicchatreader.service.BookImportService.BookLookup;
 import com.classicchatreader.service.BookImportService.CatalogModeStatus;
 import com.classicchatreader.service.BookImportService.ImportResult;
 import com.classicchatreader.service.BookImportService.SearchResult;
@@ -32,6 +33,14 @@ public class ImportController {
     @GetMapping("/catalog-mode")
     public CatalogModeStatus getCatalogMode() {
         return bookImportService.getCatalogModeStatus();
+    }
+
+    /** Read-only preview of a Gutenberg ID (title, author, importable, already imported). 404 when unknown. */
+    @GetMapping("/gutenberg/{gutenbergId}")
+    public ResponseEntity<BookLookup> lookupBook(@PathVariable int gutenbergId) {
+        return bookImportService.lookupGutenberg(gutenbergId)
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/gutenberg/{gutenbergId}")

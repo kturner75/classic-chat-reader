@@ -386,6 +386,68 @@ class BookImportServiceTest {
         assertEquals("1234", saved.getSourceId());
     }
 
+    @Test
+    void lookupGutenbergDescribesAnUnimportedBook() {
+        when(gutendexClient.getBook(13707)).thenReturn(Optional.of(createGutendexBook(13707, "Twice-Told Tales", "Hawthorne, Nathaniel")));
+        when(bookStorageService.findBySource("gutenberg", "13707")).thenReturn(Optional.empty());
+
+        BookImportService.BookLookup lookup = bookImportService.lookupGutenberg(13707).orElseThrow();
+
+        assertEquals(13707, lookup.gutenbergId());
+        assertEquals("Twice-Told Tales", lookup.title());
+        assertEquals("Hawthorne, Nathaniel", lookup.author());
+        assertEquals(List.of("en"), lookup.languages());
+        assertTrue(lookup.importable());
+        assertFalse(lookup.alreadyImported());
+        assertNull(lookup.localBookId());
+        verify(gutendexClient, never()).fetchContent(anyString());
+        verify(bookStorageService, never()).saveBook(any());
+    }
+
+    @Test
+    void lookupGutenbergMarksAlreadyImportedBooks() {
+        Book local = new Book("book-uuid", "Twice-Told Tales", "Hawthorne", "", null, List.of(), false, false, false);
+        when(gutendexClient.getBook(13707)).thenReturn(Optional.of(createGutendexBook(13707, "Twice-Told Tales", "Hawthorne, Nathaniel")));
+        when(bookStorageService.findBySource("gutenberg", "13707")).thenReturn(Optional.of(local));
+
+        BookImportService.BookLookup lookup = bookImportService.lookupGutenberg(13707).orElseThrow();
+
+        assertTrue(lookup.alreadyImported());
+        assertEquals("book-uuid", lookup.localBookId());
+    }
+
+    @Test
+    void lookupGutenbergFlagsBooksWithoutAnHtmlEdition() {
+        GutendexBook noHtml = new GutendexBook(99, "Audio Only", List.of(new GutendexBook.Author("Someone", null, null)),
+            List.of(), List.of(), List.of("en"), Map.of("audio/mpeg", "http://example.org/a.mp3"), 5);
+        when(gutendexClient.getBook(99)).thenReturn(Optional.of(noHtml));
+        when(bookStorageService.findBySource("gutenberg", "99")).thenReturn(Optional.empty());
+
+        BookImportService.BookLookup lookup = bookImportService.lookupGutenberg(99).orElseThrow();
+
+        assertFalse(lookup.importable());
+    }
+
+    @Test
+    void lookupGutenbergFallsBackToTheLocalLibraryWhenGutenbergIsSilent() {
+        Book local = new Book("book-uuid", "Twice-Told Tales", "Hawthorne", "", null, List.of(), false, false, false);
+        when(gutendexClient.getBook(13707)).thenReturn(Optional.empty());
+        when(bookStorageService.findBySource("gutenberg", "13707")).thenReturn(Optional.of(local));
+
+        BookImportService.BookLookup lookup = bookImportService.lookupGutenberg(13707).orElseThrow();
+
+        assertEquals("Twice-Told Tales", lookup.title());
+        assertTrue(lookup.alreadyImported());
+    }
+
+    @Test
+    void lookupGutenbergIsEmptyWhenNobodyKnowsTheId() {
+        when(gutendexClient.getBook(1)).thenReturn(Optional.empty());
+        when(bookStorageService.findBySource("gutenberg", "1")).thenReturn(Optional.empty());
+
+        assertTrue(bookImportService.lookupGutenberg(1).isEmpty());
+    }
+
     private GutendexBook createGutendexBook(int id, String title, String author) {
         return new GutendexBook(
             id, title,
