@@ -180,6 +180,7 @@ class ImportControllerTest {
         when(bookImportService.lookupGutenberg(1)).thenReturn(java.util.Optional.empty());
 
         mockMvc.perform(get("/api/import/gutenberg/1"))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("gutenberg_not_found"));
     }
 }
