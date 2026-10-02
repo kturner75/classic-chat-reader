@@ -163,7 +163,8 @@ class ImportControllerTest {
 
     @Test
     void lookupGutenbergReturnsTitleAndImportState() throws Exception {
-        when(bookImportService.lookupGutenberg(13707)).thenReturn(java.util.Optional.of(
+        when(bookImportService.lookupGutenberg(13707)).thenReturn(new BookImportService.LookupOutcome(
+            BookImportService.LookupStatus.FOUND,
             new BookImportService.BookLookup(13707, "Twice-Told Tales", "Hawthorne, Nathaniel", List.of("en"), true, false, null)));
 
         mockMvc.perform(get("/api/import/gutenberg/13707"))
@@ -176,11 +177,22 @@ class ImportControllerTest {
     }
 
     @Test
-    void lookupGutenbergReturns404WhenUnknown() throws Exception {
-        when(bookImportService.lookupGutenberg(1)).thenReturn(java.util.Optional.empty());
+    void lookupGutenbergReturns404WhenGutenbergHasNoSuchBook() throws Exception {
+        when(bookImportService.lookupGutenberg(1)).thenReturn(
+            new BookImportService.LookupOutcome(BookImportService.LookupStatus.NOT_FOUND, null));
 
         mockMvc.perform(get("/api/import/gutenberg/1"))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.error").value("gutenberg_not_found"));
+    }
+
+    @Test
+    void lookupGutenbergReturns503WhenGutenbergCannotBeReached() throws Exception {
+        when(bookImportService.lookupGutenberg(13707)).thenReturn(
+            new BookImportService.LookupOutcome(BookImportService.LookupStatus.UNAVAILABLE, null));
+
+        mockMvc.perform(get("/api/import/gutenberg/13707"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.error").value("gutenberg_unavailable"));
     }
 }
