@@ -78,6 +78,21 @@ public class BookImportService {
         }
     }
 
+    /**
+     * What Gutenberg (and the local library) know about one ID, before importing it.
+     * {@code importable} is true when an HTML edition exists, which is what
+     * {@link #importBook(int)} requires.
+     */
+    public record BookLookup(
+        int gutenbergId,
+        String title,
+        String author,
+        List<String> languages,
+        boolean importable,
+        boolean alreadyImported,
+        String localBookId
+    ) {}
+
     public record ImportResult(
         boolean success,
         String bookId,
@@ -229,6 +244,35 @@ public class BookImportService {
             .distinct()
             .limit(8)
             .toList();
+    }
+
+    /**
+     * Read-only preview of one Gutenberg ID. Empty when neither Gutenberg nor the
+     * local library knows it. Gutenberg being unreachable also reads as empty, so
+     * callers should treat empty as "could not confirm", not as proof it is wrong.
+     */
+    public Optional<BookLookup> lookupGutenberg(int gutenbergId) {
+        String sourceId = String.valueOf(gutenbergId);
+        Optional<GutendexBook> remote = gutendexClient.getBook(gutenbergId);
+        Optional<Book> local = bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId);
+        String localBookId = local.map(Book::id).orElse(null);
+
+        if (remote.isPresent()) {
+            GutendexBook book = remote.get();
+            return Optional.of(new BookLookup(
+                gutenbergId,
+                book.title(),
+                book.getPrimaryAuthor(),
+                book.languages() == null ? List.of() : book.languages(),
+                book.getHtmlUrl() != null,
+                local.isPresent(),
+                localBookId
+            ));
+        }
+        // Gutenberg did not answer, but we already hold the book: describe it from the library.
+        return local.map(book -> new BookLookup(
+            gutenbergId, book.title(), book.author(), List.of(), true, true, book.id()
+        ));
     }
 
     public ImportResult importBook(int gutenbergId) {

@@ -160,4 +160,27 @@ class ImportControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("No content could be parsed"));
     }
+
+    @Test
+    void lookupGutenbergReturnsTitleAndImportState() throws Exception {
+        when(bookImportService.lookupGutenberg(13707)).thenReturn(java.util.Optional.of(
+            new BookImportService.BookLookup(13707, "Twice-Told Tales", "Hawthorne, Nathaniel", List.of("en"), true, false, null)));
+
+        mockMvc.perform(get("/api/import/gutenberg/13707"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gutenbergId").value(13707))
+            .andExpect(jsonPath("$.title").value("Twice-Told Tales"))
+            .andExpect(jsonPath("$.author").value("Hawthorne, Nathaniel"))
+            .andExpect(jsonPath("$.importable").value(true))
+            .andExpect(jsonPath("$.alreadyImported").value(false));
+    }
+
+    @Test
+    void lookupGutenbergReturns404WhenUnknown() throws Exception {
+        when(bookImportService.lookupGutenberg(1)).thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(get("/api/import/gutenberg/1"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("gutenberg_not_found"));
+    }
 }
