@@ -120,7 +120,9 @@ public class CharacterPortraitImageGeneratorService {
         Optional<String> oauthToken = oauthTokenManager != null
                 ? oauthTokenManager.getAccessToken()
                 : Optional.empty();
-        String bearer = BookCoverImageGeneratorService.resolveXaiBearer(oauthToken, xaiApiKey);
+        String bearer = BookCoverImageGeneratorService.resolveXaiBearer(
+                oauthToken, xaiApiKey, "portrait generation",
+                () -> XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         boolean usingOAuth = oauthToken.isPresent();
         log.info("event=character_portrait_xai_request auth_source={}", usingOAuth ? "oauth" : "api_key");
 

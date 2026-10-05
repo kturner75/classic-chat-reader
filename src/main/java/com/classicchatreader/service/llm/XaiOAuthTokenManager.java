@@ -73,6 +73,10 @@ public class XaiOAuthTokenManager {
 
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
     private volatile Instant lastFailureAt;
+    // Why the last refresh failed, kept so error messages can say so instead of just "token missing".
+    // Holds only xAI's error code and description (never a token) and is cleared on success.
+    private volatile String lastFailureSummary;
+    private volatile boolean lastFailureRejected;
 
     public XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath) {
         this(refreshToken, enabled, refreshTokenFilePath, WebClient.builder().build());
@@ -140,6 +144,36 @@ public class XaiOAuthTokenManager {
         return refreshToken.get();
     }
 
+    /**
+     * One line, free of secrets, saying why no OAuth access token is available. Meant to be placed in
+     * the message of the error thrown when there is no token and no API key fallback, so the operator
+     * sees the real cause (not configured vs. rejected token vs. a transient failure) and the fix.
+     */
+    public String describeUnavailability() {
+        if (!enabled) {
+            return "SuperGrok OAuth is disabled (ai.xai.oauth.enabled=false)";
+        }
+        String token = refreshToken.get();
+        if (token == null || token.isBlank()) {
+            return "no SuperGrok OAuth refresh token is configured (set XAI_OAUTH_REFRESH_TOKEN; "
+                    + "mint one with scripts/xai_oauth_login.sh)";
+        }
+        String failure = lastFailureSummary;
+        if (failure == null) {
+            return "the SuperGrok OAuth access token is not available";
+        }
+        if (lastFailureRejected) {
+            return "xAI rejected the SuperGrok OAuth refresh token (" + failure + "). "
+                    + "Run scripts/xai_oauth_login.sh, set XAI_OAUTH_REFRESH_TOKEN, and restart CCR";
+        }
+        return "the last SuperGrok OAuth refresh failed (" + failure + "); it retries shortly";
+    }
+
+    /** Null-safe form for callers that may not have a token manager at all. */
+    public static String describeUnavailability(XaiOAuthTokenManager manager) {
+        return manager == null ? "SuperGrok OAuth is not set up" : manager.describeUnavailability();
+    }
+
     private Optional<String> refresh() {
         String currentRefreshToken = refreshToken.get();
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -181,20 +215,61 @@ public class XaiOAuthTokenManager {
             Instant expiresAt = Instant.now().plus(lifetime).minus(skew);
             cachedToken.set(new CachedToken(accessToken, expiresAt));
             lastFailureAt = null;
+            lastFailureSummary = null;
+            lastFailureRejected = false;
             log.info("event=xai_oauth_refreshed expires_in={}s", expiresInSeconds);
             return Optional.of(accessToken);
 
         } catch (WebClientResponseException e) {
             lastFailureAt = Instant.now();
             cachedToken.set(null);
+            recordFailure(summarize(e), isRejection(e));
             log.warn("event=xai_oauth_refresh_failed status={} body={}", e.getStatusCode(), e.getResponseBodyAsString());
             return Optional.empty();
         } catch (Exception e) {
             lastFailureAt = Instant.now();
             cachedToken.set(null);
+            recordFailure(truncate(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), 120), false);
             log.warn("event=xai_oauth_refresh_failed error={}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private void recordFailure(String summary, boolean rejected) {
+        lastFailureSummary = summary;
+        lastFailureRejected = rejected;
+    }
+
+    // 400/401 from the token endpoint means xAI refused the refresh token itself (invalid_grant and
+    // friends); a 5xx or a network error says nothing about the token, so it is retried later.
+    private static boolean isRejection(WebClientResponseException e) {
+        int status = e.getStatusCode().value();
+        return status == 400 || status == 401;
+    }
+
+    /** "HTTP 400 invalid_grant: Invalid or unknown refresh token", from xAI's error body when it has one. */
+    private String summarize(WebClientResponseException e) {
+        String code = null;
+        String description = null;
+        try {
+            JsonNode body = objectMapper.readTree(e.getResponseBodyAsString());
+            code = body.path("error").asText(null);
+            description = body.path("error_description").asText(null);
+        } catch (Exception ignored) {
+            // Not JSON: fall back to the status alone rather than echoing an arbitrary body.
+        }
+        StringBuilder summary = new StringBuilder("HTTP ").append(e.getStatusCode().value());
+        if (code != null && !code.isBlank()) {
+            summary.append(' ').append(truncate(code, 40));
+        }
+        if (description != null && !description.isBlank()) {
+            summary.append(": ").append(truncate(description, 120));
+        }
+        return summary.toString();
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max) + "…";
     }
 
     private PersistedState readPersistedState() {

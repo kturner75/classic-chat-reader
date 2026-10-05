@@ -70,7 +70,8 @@ public class XaiRealtimeSessionService {
 
         if (bearerToken == null || bearerToken.isBlank()) {
             throw new LlmProviderException(
-                    "xAI realtime unavailable: OAuth token unavailable and no API key configured as fallback");
+                    "xAI realtime unavailable and no API key is configured as a fallback: "
+                            + XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         }
 
         log.info("event=xai_realtime_mint auth_source={} model={}", usingOAuth ? "oauth" : "api_key", model);

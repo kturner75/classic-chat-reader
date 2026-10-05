@@ -29,4 +29,27 @@ class BookCoverImageGeneratorServiceTest {
                 IllegalStateException.class,
                 () -> BookCoverImageGeneratorService.resolveXaiBearer(Optional.empty(), "  "));
     }
+
+    @Test
+    void unavailableErrorNamesTheFeatureAndTheReason() {
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> BookCoverImageGeneratorService.resolveXaiBearer(
+                        Optional.empty(), null, "cover generation",
+                        () -> "xAI rejected the SuperGrok OAuth refresh token (HTTP 400 invalid_grant)"));
+
+        assertEquals(
+                "xAI cover generation unavailable and no XAI_API_KEY is set as a fallback: "
+                        + "xAI rejected the SuperGrok OAuth refresh token (HTTP 400 invalid_grant)",
+                error.getMessage());
+    }
+
+    @Test
+    void reasonIsNotEvaluatedWhenABearerIsAvailable() {
+        assertEquals(
+                "api-key",
+                BookCoverImageGeneratorService.resolveXaiBearer(
+                        Optional.empty(), "api-key", "cover generation",
+                        () -> { throw new AssertionError("reason must not be computed when a bearer exists"); }));
+    }
 }

@@ -182,6 +182,103 @@ class XaiOAuthTokenManagerTest {
         assertFalse(Files.exists(tokenFile));
     }
 
+    @Test
+    void describeUnavailability_disabled() {
+        XaiOAuthTokenManager manager = manager("refresh-token", false, countingWebClient(new AtomicInteger(), tokenResponse("a", 3600, null)));
+
+        assertEquals("SuperGrok OAuth is disabled (ai.xai.oauth.enabled=false)", manager.describeUnavailability());
+    }
+
+    @Test
+    void describeUnavailability_notConfigured_saysHowToMintOne() {
+        XaiOAuthTokenManager manager = manager("", true, countingWebClient(new AtomicInteger(), tokenResponse("a", 3600, null)));
+
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("no SuperGrok OAuth refresh token is configured"), message);
+        assertTrue(message.contains("XAI_OAUTH_REFRESH_TOKEN"), message);
+        assertTrue(message.contains("scripts/xai_oauth_login.sh"), message);
+    }
+
+    @Test
+    void describeUnavailability_rejectedRefreshToken_namesInvalidGrantAndTheFix() {
+        XaiOAuthTokenManager manager = manager("refresh-token-secret", true, statusWebClient(HttpStatus.BAD_REQUEST,
+                "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid or unknown refresh token\"}"));
+
+        assertEquals(Optional.empty(), manager.getAccessToken());
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("xAI rejected the SuperGrok OAuth refresh token"), message);
+        assertTrue(message.contains("HTTP 400 invalid_grant: Invalid or unknown refresh token"), message);
+        assertTrue(message.contains("scripts/xai_oauth_login.sh"), message);
+        assertFalse(message.contains("refresh-token-secret"), "the refresh token must never be in the message");
+    }
+
+    @Test
+    void describeUnavailability_serverError_isTransientNotARejection() {
+        XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.SERVICE_UNAVAILABLE,
+                "{\"error\":\"temporarily_unavailable\"}"));
+
+        manager.getAccessToken();
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("the last SuperGrok OAuth refresh failed (HTTP 503 temporarily_unavailable)"), message);
+        assertFalse(message.contains("rejected"), message);
+        assertFalse(message.contains("xai_oauth_login"), "no need to re-mint a token for a transient failure: " + message);
+    }
+
+    @Test
+    void describeUnavailability_networkError_isTransient() {
+        ExchangeFunction exchange = request -> Mono.error(new IllegalStateException("connection reset by peer"));
+        XaiOAuthTokenManager manager = manager("refresh-token", true, WebClient.builder().exchangeFunction(exchange).build());
+
+        manager.getAccessToken();
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("the last SuperGrok OAuth refresh failed (connection reset by peer)"), message);
+        assertFalse(message.contains("rejected"), message);
+    }
+
+    @Test
+    void describeUnavailability_echoesOnlyTheErrorCodeAndDescription() {
+        XaiOAuthTokenManager withExtraFields = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST,
+                "{\"error\":\"invalid_grant\",\"error_description\":\"bad\",\"refresh_token\":\"leak-me\",\"debug\":\"leak-too\"}"));
+        withExtraFields.getAccessToken();
+        String message = withExtraFields.describeUnavailability();
+        assertFalse(message.contains("leak-me") || message.contains("leak-too"), message);
+
+        XaiOAuthTokenManager notJson = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST,
+                "<html>secret internal page</html>"));
+        notJson.getAccessToken();
+        String htmlMessage = notJson.describeUnavailability();
+        assertTrue(htmlMessage.contains("HTTP 400"), htmlMessage);
+        assertFalse(htmlMessage.contains("secret internal page"), "a non-JSON body must not be echoed: " + htmlMessage);
+    }
+
+    @Test
+    void describeUnavailability_longDescriptionIsTruncated() {
+        String longText = "x".repeat(500);
+        XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST,
+                "{\"error\":\"invalid_grant\",\"error_description\":\"" + longText + "\"}"));
+
+        manager.getAccessToken();
+
+        assertTrue(manager.describeUnavailability().length() < 400, manager.describeUnavailability());
+    }
+
+    @Test
+    void describeUnavailability_staticFormHandlesNoManager() {
+        assertEquals("SuperGrok OAuth is not set up", XaiOAuthTokenManager.describeUnavailability(null));
+    }
+
+    private WebClient statusWebClient(HttpStatus status, String body) {
+        ExchangeFunction exchange = request -> Mono.just(ClientResponse.create(status)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .body(body)
+                .build());
+        return WebClient.builder().exchangeFunction(exchange).build();
+    }
+
     private XaiOAuthTokenManager manager(String refreshToken, boolean enabled, WebClient webClient) {
         return new XaiOAuthTokenManager(refreshToken, enabled, null, webClient);
     }

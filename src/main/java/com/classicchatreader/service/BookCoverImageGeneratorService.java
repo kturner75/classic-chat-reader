@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 
 
 @Service
@@ -112,7 +113,8 @@ public class BookCoverImageGeneratorService {
         Optional<String> oauthToken = oauthTokenManager != null
                 ? oauthTokenManager.getAccessToken()
                 : Optional.empty();
-        String bearer = resolveXaiBearer(oauthToken, xaiApiKey);
+        String bearer = resolveXaiBearer(oauthToken, xaiApiKey, "cover generation",
+                () -> XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         boolean usingOAuth = oauthToken.isPresent();
         log.info("event=book_cover_xai_request auth_source={}", usingOAuth ? "oauth" : "api_key");
         ObjectNode request = objectMapper.createObjectNode();
@@ -160,10 +162,20 @@ public class BookCoverImageGeneratorService {
     }
 
     static String resolveXaiBearer(Optional<String> oauthToken, String apiKey) {
+        return resolveXaiBearer(oauthToken, apiKey, "image generation", () -> "no SuperGrok OAuth token is available");
+    }
+
+    /**
+     * Prefer the SuperGrok OAuth token, fall back to the API key, and when neither exists say why
+     * in the error ({@code unavailableReason}, usually the token manager's own explanation).
+     */
+    static String resolveXaiBearer(
+            Optional<String> oauthToken, String apiKey, String feature, Supplier<String> unavailableReason) {
         String bearer = oauthToken == null ? apiKey : oauthToken.orElse(apiKey);
         if (bearer == null || bearer.isBlank()) {
             throw new IllegalStateException(
-                    "xAI cover generation unavailable: SuperGrok OAuth token missing and no XAI_API_KEY");
+                    "xAI " + feature + " unavailable and no XAI_API_KEY is set as a fallback: "
+                            + unavailableReason.get());
         }
         return bearer;
     }
