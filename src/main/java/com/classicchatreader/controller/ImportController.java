@@ -3,6 +3,7 @@ package com.classicchatreader.controller;
 import com.classicchatreader.service.BookImportService;
 import com.classicchatreader.service.BookImportService.CatalogModeStatus;
 import com.classicchatreader.service.BookImportService.ImportResult;
+import com.classicchatreader.service.BookImportService.LookupOutcome;
 import com.classicchatreader.service.BookImportService.SearchResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -42,7 +43,7 @@ public class ImportController {
      */
     @GetMapping("/gutenberg/{gutenbergId}")
     public ResponseEntity<?> lookupBook(@PathVariable int gutenbergId) {
-        BookImportService.LookupOutcome outcome = bookImportService.lookupGutenberg(gutenbergId);
+        LookupOutcome outcome = bookImportService.lookupGutenberg(gutenbergId);
         return switch (outcome.status()) {
             case FOUND -> ResponseEntity.ok(outcome.lookup());
             case NOT_FOUND -> ResponseEntity.status(404).body(Map.of(

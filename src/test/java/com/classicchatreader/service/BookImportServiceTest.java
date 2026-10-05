@@ -394,7 +394,7 @@ class BookImportServiceTest {
 
         BookImportService.LookupOutcome outcome = bookImportService.lookupGutenberg(13707);
 
-        assertEquals(BookImportService.LookupStatus.FOUND, outcome.status());
+        assertEquals(GutendexClient.LookupStatus.FOUND, outcome.status());
         BookImportService.BookLookup lookup = outcome.lookup();
         assertEquals(13707, lookup.gutenbergId());
         assertEquals("Twice-Told Tales", lookup.title());
@@ -414,7 +414,7 @@ class BookImportServiceTest {
 
         BookImportService.LookupOutcome outcome = bookImportService.lookupGutenberg(13707);
 
-        assertEquals(BookImportService.LookupStatus.FOUND, outcome.status());
+        assertEquals(GutendexClient.LookupStatus.FOUND, outcome.status());
         BookImportService.BookLookup lookup = outcome.lookup();
         assertEquals("Twice-told tales", lookup.title());
         assertEquals("Hawthorne, Nathaniel", lookup.author());
@@ -443,7 +443,7 @@ class BookImportServiceTest {
 
         BookImportService.LookupOutcome outcome = bookImportService.lookupGutenberg(1);
 
-        assertEquals(BookImportService.LookupStatus.NOT_FOUND, outcome.status());
+        assertEquals(GutendexClient.LookupStatus.NOT_FOUND, outcome.status());
         assertNull(outcome.lookup());
     }
 
@@ -454,7 +454,7 @@ class BookImportServiceTest {
 
         BookImportService.LookupOutcome outcome = bookImportService.lookupGutenberg(13707);
 
-        assertEquals(BookImportService.LookupStatus.UNAVAILABLE, outcome.status());
+        assertEquals(GutendexClient.LookupStatus.UNAVAILABLE, outcome.status());
         assertNull(outcome.lookup());
     }
 

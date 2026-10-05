@@ -1,5 +1,6 @@
 package com.classicchatreader.controller;
 
+import com.classicchatreader.gutendex.GutendexClient;
 import com.classicchatreader.service.BookImportService;
 import com.classicchatreader.service.BookImportService.CatalogModeStatus;
 import com.classicchatreader.service.BookImportService.ImportResult;
@@ -164,7 +165,7 @@ class ImportControllerTest {
     @Test
     void lookupGutenbergReturnsTitleAndImportState() throws Exception {
         when(bookImportService.lookupGutenberg(13707)).thenReturn(new BookImportService.LookupOutcome(
-            BookImportService.LookupStatus.FOUND,
+            GutendexClient.LookupStatus.FOUND,
             new BookImportService.BookLookup(13707, "Twice-Told Tales", "Hawthorne, Nathaniel", List.of("en"), true, false, null)));
 
         mockMvc.perform(get("/api/import/gutenberg/13707"))
@@ -179,7 +180,7 @@ class ImportControllerTest {
     @Test
     void lookupGutenbergReturns404WhenGutenbergHasNoSuchBook() throws Exception {
         when(bookImportService.lookupGutenberg(1)).thenReturn(
-            new BookImportService.LookupOutcome(BookImportService.LookupStatus.NOT_FOUND, null));
+            new BookImportService.LookupOutcome(GutendexClient.LookupStatus.NOT_FOUND, null));
 
         mockMvc.perform(get("/api/import/gutenberg/1"))
             .andExpect(status().isNotFound())
@@ -189,7 +190,7 @@ class ImportControllerTest {
     @Test
     void lookupGutenbergReturns503WhenGutenbergCannotBeReached() throws Exception {
         when(bookImportService.lookupGutenberg(13707)).thenReturn(
-            new BookImportService.LookupOutcome(BookImportService.LookupStatus.UNAVAILABLE, null));
+            new BookImportService.LookupOutcome(GutendexClient.LookupStatus.UNAVAILABLE, null));
 
         mockMvc.perform(get("/api/import/gutenberg/13707"))
             .andExpect(status().isServiceUnavailable())

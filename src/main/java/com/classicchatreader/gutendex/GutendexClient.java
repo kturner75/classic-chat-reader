@@ -42,7 +42,9 @@ public class GutendexClient {
     // Spring needs to be told which constructor to use now that the test-only one exists.
     @Autowired
     public GutendexClient(RestClient.Builder restClientBuilder) {
-        this(restClientBuilder.baseUrl(BASE_URL).build(), shortTimeoutClient());
+        // The lookup client is cloned from the injected builder so it keeps Boot's customizers.
+        this(restClientBuilder.baseUrl(BASE_URL).build(),
+            shortTimeoutClient(restClientBuilder, BASE_URL, LOOKUP_CONNECT_TIMEOUT, LOOKUP_READ_TIMEOUT));
     }
 
     // Visible for testing: lets a test bind both clients to mock servers.
@@ -51,19 +53,15 @@ public class GutendexClient {
         this.lookupClient = lookupClient;
     }
 
-    private static RestClient shortTimeoutClient() {
-        return shortTimeoutClient(BASE_URL, LOOKUP_CONNECT_TIMEOUT, LOOKUP_READ_TIMEOUT);
-    }
-
     // Visible for testing: a real client with real timeouts pointed at a local stalled server.
-    static RestClient shortTimeoutClient(String baseUrl, Duration connectTimeout, Duration readTimeout) {
+    static RestClient shortTimeoutClient(RestClient.Builder base, String baseUrl, Duration connectTimeout, Duration readTimeout) {
         HttpClient http = HttpClient.newBuilder()
             .connectTimeout(connectTimeout)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
         factory.setReadTimeout(readTimeout);
-        return RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        return base.clone().baseUrl(baseUrl).requestFactory(factory).build();
     }
 
     /** Metadata lookup for the ID preview. Never throws; tells "no such book" apart from "could not reach Gutenberg". */
@@ -73,7 +71,13 @@ public class GutendexClient {
                 .uri("/books/{id}/", gutenbergId)
                 .retrieve()
                 .body(GutendexBook.class);
-            return book == null ? BookLookupResult.notFound() : BookLookupResult.found(book);
+            // An empty successful response (204, or a 200 with no body) is an upstream fault, not a
+            // Gutenberg "no such book". Only a real 404 is NOT_FOUND.
+            if (book == null) {
+                log.warn("event=gutendex_lookup_empty_body gutenbergId={}", gutenbergId);
+                return BookLookupResult.unavailable();
+            }
+            return BookLookupResult.found(book);
         } catch (HttpClientErrorException.NotFound e) {
             return BookLookupResult.notFound();
         } catch (Exception e) {

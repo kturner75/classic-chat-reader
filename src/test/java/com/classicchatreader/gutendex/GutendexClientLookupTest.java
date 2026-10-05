@@ -62,6 +62,16 @@ class GutendexClientLookupTest {
     }
 
     @Test
+    void lookupReportsUnavailableForAnEmptySuccessfulResponse() {
+        // 204 and a 200 with no body are upstream faults, not a confirmed "no such book".
+        server.expect(requestTo("https://gutendex.com/books/13707/")).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        assertEquals(LookupStatus.UNAVAILABLE, client.lookupBook(13707).status());
+        server.reset();
+        server.expect(requestTo("https://gutendex.com/books/13707/")).andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+        assertEquals(LookupStatus.UNAVAILABLE, client.lookupBook(13707).status());
+    }
+
+    @Test
     void lookupReportsUnavailableForAServerError() {
         server.expect(requestTo("https://gutendex.com/books/13707/")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
 

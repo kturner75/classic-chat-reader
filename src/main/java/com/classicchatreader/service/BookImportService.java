@@ -246,10 +246,8 @@ public class BookImportService {
             .toList();
     }
 
-    public enum LookupStatus { FOUND, NOT_FOUND, UNAVAILABLE }
-
     /** {@code lookup} is set only when {@code status} is FOUND. */
-    public record LookupOutcome(LookupStatus status, BookLookup lookup) {}
+    public record LookupOutcome(GutendexClient.LookupStatus status, BookLookup lookup) {}
 
     /**
      * Read-only preview of one Gutenberg ID. A book already in the local library is answered from
@@ -264,26 +262,23 @@ public class BookImportService {
         if (local.isPresent()) {
             Book book = local.get();
             // Languages are not stored locally; an imported book is importable by definition.
-            return new LookupOutcome(LookupStatus.FOUND, new BookLookup(
+            return new LookupOutcome(GutendexClient.LookupStatus.FOUND, new BookLookup(
                 gutenbergId, book.title(), book.author(), List.of(), true, true, book.id()));
         }
 
         GutendexClient.BookLookupResult remote = gutendexClient.lookupBook(gutenbergId);
-        return switch (remote.status()) {
-            case FOUND -> {
-                GutendexBook book = remote.book();
-                yield new LookupOutcome(LookupStatus.FOUND, new BookLookup(
-                    gutenbergId,
-                    book.title(),
-                    book.getPrimaryAuthor(),
-                    book.languages() == null ? List.of() : book.languages(),
-                    book.getHtmlUrl() != null,
-                    false,
-                    null));
-            }
-            case NOT_FOUND -> new LookupOutcome(LookupStatus.NOT_FOUND, null);
-            case UNAVAILABLE -> new LookupOutcome(LookupStatus.UNAVAILABLE, null);
-        };
+        if (remote.status() != GutendexClient.LookupStatus.FOUND) {
+            return new LookupOutcome(remote.status(), null);
+        }
+        GutendexBook book = remote.book();
+        return new LookupOutcome(GutendexClient.LookupStatus.FOUND, new BookLookup(
+            gutenbergId,
+            book.title(),
+            book.getPrimaryAuthor(),
+            book.languages() == null ? List.of() : book.languages(),
+            book.getHtmlUrl() != null,
+            false,
+            null));
     }
 
     public ImportResult importBook(int gutenbergId) {
