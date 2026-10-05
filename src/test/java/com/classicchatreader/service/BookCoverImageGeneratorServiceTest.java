@@ -13,21 +13,24 @@ class BookCoverImageGeneratorServiceTest {
     void prefersSuperGrokOAuthOverApiKey() {
         assertEquals(
                 "oauth-token",
-                BookCoverImageGeneratorService.resolveXaiBearer(Optional.of("oauth-token"), "api-key"));
+                BookCoverImageGeneratorService.resolveXaiBearer(
+                        Optional.of("oauth-token"), "api-key", "cover generation", () -> "unused"));
     }
 
     @Test
     void fallsBackToApiKeyWhenOAuthMissing() {
         assertEquals(
                 "api-key",
-                BookCoverImageGeneratorService.resolveXaiBearer(Optional.empty(), "api-key"));
+                BookCoverImageGeneratorService.resolveXaiBearer(
+                        Optional.empty(), "api-key", "cover generation", () -> "unused"));
     }
 
     @Test
     void failsWhenNeitherOAuthNorApiKeyIsPresent() {
         assertThrows(
                 IllegalStateException.class,
-                () -> BookCoverImageGeneratorService.resolveXaiBearer(Optional.empty(), "  "));
+                () -> BookCoverImageGeneratorService.resolveXaiBearer(
+                        Optional.empty(), "  ", "cover generation", () -> "no token"));
     }
 
     @Test
@@ -39,7 +42,7 @@ class BookCoverImageGeneratorServiceTest {
                         () -> "xAI rejected the SuperGrok OAuth refresh token (HTTP 400 invalid_grant)"));
 
         assertEquals(
-                "xAI cover generation unavailable and no XAI_API_KEY is set as a fallback: "
+                "xAI cover generation unavailable and no API key is configured as a fallback: "
                         + "xAI rejected the SuperGrok OAuth refresh token (HTTP 400 invalid_grant)",
                 error.getMessage());
     }

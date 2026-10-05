@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -256,14 +257,89 @@ class XaiOAuthTokenManagerTest {
     }
 
     @Test
-    void describeUnavailability_longDescriptionIsTruncated() {
+    void describeUnavailability_longDescriptionIsCappedAt120CharsWithAnEllipsis() {
         String longText = "x".repeat(500);
         XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST,
                 "{\"error\":\"invalid_grant\",\"error_description\":\"" + longText + "\"}"));
 
         manager.getAccessToken();
+        String message = manager.describeUnavailability();
 
-        assertTrue(manager.describeUnavailability().length() < 400, manager.describeUnavailability());
+        assertTrue(message.contains("x".repeat(120) + "…"), message);
+        assertFalse(message.contains("x".repeat(121)), message);
+    }
+
+    @Test
+    void describeUnavailability_onlyInvalidGrantMeansTheTokenIsDead() {
+        for (String code : new String[] {"invalid_client", "invalid_request", "unsupported_grant_type"}) {
+            XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST,
+                    "{\"error\":\"" + code + "\",\"error_description\":\"something else\"}"));
+
+            manager.getAccessToken();
+            String message = manager.describeUnavailability();
+
+            // Minting a new token cannot fix these, so it must not be the advice.
+            assertFalse(message.contains("rejected the SuperGrok OAuth refresh token"), code + ": " + message);
+            assertFalse(message.contains("xai_oauth_login"), code + ": " + message);
+            assertTrue(message.contains("the last SuperGrok OAuth refresh failed (HTTP 400 " + code), code + ": " + message);
+        }
+    }
+
+    @Test
+    void describeUnavailability_401WithInvalidGrantIsStillARejection() {
+        XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.UNAUTHORIZED,
+                "{\"error\":\"invalid_grant\"}"));
+
+        manager.getAccessToken();
+
+        assertTrue(manager.describeUnavailability().contains("rejected the SuperGrok OAuth refresh token"));
+    }
+
+    @Test
+    void describeUnavailability_aBadRequestWithNoErrorCodeIsNotAssumedToBeARejection() {
+        XaiOAuthTokenManager manager = manager("refresh-token", true, statusWebClient(HttpStatus.BAD_REQUEST, "<html>nope</html>"));
+
+        manager.getAccessToken();
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("the last SuperGrok OAuth refresh failed (HTTP 400)"), message);
+        assertFalse(message.contains("rejected"), message);
+    }
+
+    @Test
+    void describeUnavailability_malformedSuccessBodyIsReportedByTypeNeverQuoted() {
+        XaiOAuthTokenManager manager = manager("refresh-token", true,
+                countingWebClient(new AtomicInteger(), "{\"access_token\": \"secret-abc-123"));
+
+        assertEquals(Optional.empty(), manager.getAccessToken());
+        String message = manager.describeUnavailability();
+
+        assertTrue(message.contains("malformed token response ("), message);
+        assertFalse(message.contains("secret-abc-123"), "a malformed body must never be quoted: " + message);
+    }
+
+    @Test
+    void describeUnavailability_isClearedByASuccessfulRefresh() {
+        AtomicInteger calls = new AtomicInteger();
+        ExchangeFunction exchange = request -> {
+            if (calls.incrementAndGet() == 1) {
+                return Mono.just(ClientResponse.create(HttpStatus.BAD_REQUEST)
+                        .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                        .body("{\"error\":\"invalid_grant\"}").build());
+            }
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .body(tokenResponse("access-token", 3600, null)).build());
+        };
+        // Zero cooldown so the second call refreshes straight away instead of waiting a minute.
+        XaiOAuthTokenManager manager = new XaiOAuthTokenManager(
+                "refresh-token", true, null, WebClient.builder().exchangeFunction(exchange).build(), Duration.ZERO);
+
+        assertEquals(Optional.empty(), manager.getAccessToken());
+        assertTrue(manager.describeUnavailability().contains("rejected"));
+
+        assertEquals(Optional.of("access-token"), manager.getAccessToken());
+        assertEquals("the SuperGrok OAuth access token is not available", manager.describeUnavailability());
     }
 
     @Test

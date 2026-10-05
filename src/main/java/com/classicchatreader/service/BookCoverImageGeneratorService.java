@@ -161,10 +161,6 @@ public class BookCoverImageGeneratorService {
         return httpClient.postAndDecodePng(client, request, providerName, bearerToken, timeoutSeconds);
     }
 
-    static String resolveXaiBearer(Optional<String> oauthToken, String apiKey) {
-        return resolveXaiBearer(oauthToken, apiKey, "image generation", () -> "no SuperGrok OAuth token is available");
-    }
-
     /**
      * Prefer the SuperGrok OAuth token, fall back to the API key, and when neither exists say why
      * in the error ({@code unavailableReason}, usually the token manager's own explanation).
@@ -174,7 +170,7 @@ public class BookCoverImageGeneratorService {
         String bearer = oauthToken == null ? apiKey : oauthToken.orElse(apiKey);
         if (bearer == null || bearer.isBlank()) {
             throw new IllegalStateException(
-                    "xAI " + feature + " unavailable and no XAI_API_KEY is set as a fallback: "
+                    "xAI " + feature + " unavailable and no API key is configured as a fallback: "
                             + unavailableReason.get());
         }
         return bearer;
