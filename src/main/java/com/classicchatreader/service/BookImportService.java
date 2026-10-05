@@ -246,33 +246,39 @@ public class BookImportService {
             .toList();
     }
 
-    /**
-     * Read-only preview of one Gutenberg ID. Empty when neither Gutenberg nor the
-     * local library knows it. Gutenberg being unreachable also reads as empty, so
-     * callers should treat empty as "could not confirm", not as proof it is wrong.
-     */
-    public Optional<BookLookup> lookupGutenberg(int gutenbergId) {
-        String sourceId = String.valueOf(gutenbergId);
-        Optional<GutendexBook> remote = gutendexClient.getBook(gutenbergId);
-        Optional<Book> local = bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId);
-        String localBookId = local.map(Book::id).orElse(null);
+    /** {@code lookup} is set only when {@code status} is FOUND. */
+    public record LookupOutcome(GutendexClient.LookupStatus status, BookLookup lookup) {}
 
-        if (remote.isPresent()) {
-            GutendexBook book = remote.get();
-            return Optional.of(new BookLookup(
-                gutenbergId,
-                book.title(),
-                book.getPrimaryAuthor(),
-                book.languages() == null ? List.of() : book.languages(),
-                book.getHtmlUrl() != null,
-                local.isPresent(),
-                localBookId
-            ));
+    /**
+     * Read-only preview of one Gutenberg ID. A book already in the local library is answered from
+     * the library without asking Gutenberg, so re-checking it is instant and works when
+     * gutendex.com is slow. Otherwise Gutenberg is asked with short timeouts: NOT_FOUND means it
+     * has no such book, UNAVAILABLE means it could not be reached in time (callers should treat
+     * that as "could not confirm", not as proof the ID is wrong).
+     */
+    public LookupOutcome lookupGutenberg(int gutenbergId) {
+        String sourceId = String.valueOf(gutenbergId);
+        Optional<Book> local = bookStorageService.findBySource(SOURCE_GUTENBERG, sourceId);
+        if (local.isPresent()) {
+            Book book = local.get();
+            // Languages are not stored locally; an imported book is importable by definition.
+            return new LookupOutcome(GutendexClient.LookupStatus.FOUND, new BookLookup(
+                gutenbergId, book.title(), book.author(), List.of(), true, true, book.id()));
         }
-        // Gutenberg did not answer, but we already hold the book: describe it from the library.
-        return local.map(book -> new BookLookup(
-            gutenbergId, book.title(), book.author(), List.of(), true, true, book.id()
-        ));
+
+        GutendexClient.BookLookupResult remote = gutendexClient.lookupBook(gutenbergId);
+        if (remote.status() != GutendexClient.LookupStatus.FOUND) {
+            return new LookupOutcome(remote.status(), null);
+        }
+        GutendexBook book = remote.book();
+        return new LookupOutcome(GutendexClient.LookupStatus.FOUND, new BookLookup(
+            gutenbergId,
+            book.title(),
+            book.getPrimaryAuthor(),
+            book.languages() == null ? List.of() : book.languages(),
+            book.getHtmlUrl() != null,
+            false,
+            null));
     }
 
     public ImportResult importBook(int gutenbergId) {

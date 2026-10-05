@@ -1,9 +1,9 @@
 package com.classicchatreader.controller;
 
 import com.classicchatreader.service.BookImportService;
-import com.classicchatreader.service.BookImportService.BookLookup;
 import com.classicchatreader.service.BookImportService.CatalogModeStatus;
 import com.classicchatreader.service.BookImportService.ImportResult;
+import com.classicchatreader.service.BookImportService.LookupOutcome;
 import com.classicchatreader.service.BookImportService.SearchResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -36,16 +36,23 @@ public class ImportController {
         return bookImportService.getCatalogModeStatus();
     }
 
-    /** Read-only preview of a Gutenberg ID (title, author, importable, already imported). 404 when unknown. */
+    /**
+     * Read-only preview of a Gutenberg ID (title, author, importable, already imported).
+     * 404 {@code gutenberg_not_found}: Gutenberg has no such book. 503 {@code gutenberg_unavailable}:
+     * it could not be reached in time, so the ID is unconfirmed rather than wrong.
+     */
     @GetMapping("/gutenberg/{gutenbergId}")
     public ResponseEntity<?> lookupBook(@PathVariable int gutenbergId) {
-        // The 404 carries an explicit error code so clients can tell "unknown ID" apart from
-        // an older CCR that has no such route (whose 404 has a different body).
-        return bookImportService.lookupGutenberg(gutenbergId)
-            .<ResponseEntity<?>>map(ResponseEntity::ok)
-            .orElseGet(() -> ResponseEntity.status(404).body(Map.of(
+        LookupOutcome outcome = bookImportService.lookupGutenberg(gutenbergId);
+        return switch (outcome.status()) {
+            case FOUND -> ResponseEntity.ok(outcome.lookup());
+            case NOT_FOUND -> ResponseEntity.status(404).body(Map.of(
                 "error", "gutenberg_not_found",
-                "message", "No Gutenberg book with ID " + gutenbergId)));
+                "message", "Gutenberg has no book with ID " + gutenbergId));
+            case UNAVAILABLE -> ResponseEntity.status(503).body(Map.of(
+                "error", "gutenberg_unavailable",
+                "message", "Could not reach Gutenberg to check ID " + gutenbergId + ". Try again shortly."));
+        };
     }
 
     @PostMapping("/gutenberg/{gutenbergId}")
