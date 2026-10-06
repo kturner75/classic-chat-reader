@@ -3,6 +3,7 @@ package com.classicchatreader.gutendex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -19,7 +20,7 @@ import java.util.Optional;
 @Service
 public class GutendexClient {
 
-    private static final String BASE_URL = "https://gutendex.com";
+    private static final String DEFAULT_BASE_URL = "https://gutendex.com";
 
     private static final Logger log = LoggerFactory.getLogger(GutendexClient.class);
     // The ID preview is a courtesy to the operator, so it gives up quickly instead of hanging
@@ -41,10 +42,12 @@ public class GutendexClient {
 
     // Spring needs to be told which constructor to use now that the test-only one exists.
     @Autowired
-    public GutendexClient(RestClient.Builder restClientBuilder) {
+    public GutendexClient(RestClient.Builder restClientBuilder,
+                          @Value("${gutendex.base-url:" + DEFAULT_BASE_URL + "}") String baseUrl) {
         // The lookup client is cloned from the injected builder so it keeps Boot's customizers.
-        this(restClientBuilder.baseUrl(BASE_URL).build(),
-            shortTimeoutClient(restClientBuilder, BASE_URL, LOOKUP_CONNECT_TIMEOUT, LOOKUP_READ_TIMEOUT));
+        // gutendex.base-url exists so end-to-end runs can point CCR at a local stand-in for Gutendex.
+        this(restClientBuilder.baseUrl(baseUrl).build(),
+            shortTimeoutClient(restClientBuilder, baseUrl, LOOKUP_CONNECT_TIMEOUT, LOOKUP_READ_TIMEOUT));
     }
 
     // Visible for testing: lets a test bind both clients to mock servers.
