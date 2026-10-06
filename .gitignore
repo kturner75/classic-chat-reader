@@ -69,3 +69,6 @@ test-results/
 
 ### Local agent / kanban worktrees ###
 .worktrees/
+
+# Local run logs (scripts/start_local.sh)
+logs/
