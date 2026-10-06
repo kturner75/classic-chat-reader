@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -97,10 +98,31 @@ class XaiLlmProviderTest {
         XaiLlmProvider provider = new XaiLlmProvider(
                 null, "grok-test", 10, oauthManager, recordingWebClient(authHeaders, chatResponse("unused")));
 
-        assertThrows(LlmProviderException.class,
+        LlmProviderException error = assertThrows(LlmProviderException.class,
                 () -> provider.generate("prompt", LlmOptions.withTemperature(0.5)));
         // No request should have been sent at all - never send "Bearer null".
         assertTrue(authHeaders.isEmpty());
+        // The message says what is wrong and how to fix it, not just "token unavailable".
+        assertTrue(error.getMessage().contains("no SuperGrok OAuth refresh token is configured"), error.getMessage());
+        assertTrue(error.getMessage().contains("scripts/xai_oauth_login.sh"), error.getMessage());
+    }
+
+    @Test
+    void generate_oauthRefreshRejectedAndNoApiKey_saysTheTokenWasRejected() {
+        XaiOAuthTokenManager oauthManager = new XaiOAuthTokenManager("stale-refresh-token", true, null,
+                WebClient.builder().exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.BAD_REQUEST)
+                        .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                        .body("{\"error\":\"invalid_grant\",\"error_description\":\"Invalid or unknown refresh token\"}")
+                        .build())).build());
+        XaiLlmProvider provider = new XaiLlmProvider(
+                null, "grok-test", 10, oauthManager, recordingWebClient(new ArrayList<>(), chatResponse("unused")));
+
+        LlmProviderException error = assertThrows(LlmProviderException.class,
+                () -> provider.generate("prompt", LlmOptions.withTemperature(0.5)));
+
+        assertTrue(error.getMessage().contains("xAI rejected the SuperGrok OAuth refresh token"), error.getMessage());
+        assertTrue(error.getMessage().contains("HTTP 400 invalid_grant: Invalid or unknown refresh token"), error.getMessage());
+        assertFalse(error.getMessage().contains("stale-refresh-token"), "the token itself must never appear in an error");
     }
 
     private String chatResponse(String content) {

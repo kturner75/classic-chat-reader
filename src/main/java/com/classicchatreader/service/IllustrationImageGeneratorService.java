@@ -132,7 +132,9 @@ public class IllustrationImageGeneratorService {
         Optional<String> oauthToken = oauthTokenManager != null
                 ? oauthTokenManager.getAccessToken()
                 : Optional.empty();
-        String bearer = BookCoverImageGeneratorService.resolveXaiBearer(oauthToken, xaiApiKey);
+        String bearer = BookCoverImageGeneratorService.resolveXaiBearer(
+                oauthToken, xaiApiKey, "illustration generation",
+                () -> XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         boolean usingOAuth = oauthToken.isPresent();
         if (!portraitRefs.isEmpty()) {
             log.info("event=illustration_xai_request skipping_portrait_bytes n={} reason=edits_would_reuse_portrait",

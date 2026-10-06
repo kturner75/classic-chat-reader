@@ -1,5 +1,6 @@
 package com.classicchatreader.service.llm;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Exchanges a long-lived xAI OAuth refresh token (obtained out-of-band via
- * scripts/xai-oauth-login.sh against a SuperGrok/X Premium+ subscription) for
+ * scripts/xai_oauth_login.sh against a SuperGrok/X Premium+ subscription) for
  * short-lived access tokens, so xAI calls can draw against subscription quota
  * instead of pay-per-token API billing.
  *
@@ -69,10 +70,17 @@ public class XaiOAuthTokenManager {
     private final String seedRefreshToken;
     private final Path refreshTokenFile;
     private final boolean enabled;
+    private final Duration failureCooldown;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
-    private volatile Instant lastFailureAt;
+    // The last refresh failure as one immutable value, so a reader never sees the time, summary and
+    // verdict from two different failures. Holds only xAI's error code and description (never a
+    // token); null means the last refresh succeeded or none has been tried.
+    private volatile RefreshFailure lastFailure;
+
+    private record RefreshFailure(Instant at, String summary, boolean rejected) {
+    }
 
     public XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath) {
         this(refreshToken, enabled, refreshTokenFilePath, WebClient.builder().build());
@@ -80,6 +88,13 @@ public class XaiOAuthTokenManager {
 
     // Visible for testing: allows injecting a WebClient stubbed against a fake exchange function.
     XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath, WebClient webClient) {
+        this(refreshToken, enabled, refreshTokenFilePath, webClient, FAILURE_COOLDOWN);
+    }
+
+    // Visible for testing: lets a test retry right after a failure instead of waiting out the cooldown.
+    XaiOAuthTokenManager(String refreshToken, boolean enabled, String refreshTokenFilePath, WebClient webClient,
+                         Duration failureCooldown) {
+        this.failureCooldown = failureCooldown;
         this.enabled = enabled;
         this.webClient = webClient;
         this.seedRefreshToken = refreshToken;
@@ -116,7 +131,8 @@ public class XaiOAuthTokenManager {
             return Optional.of(current.accessToken());
         }
 
-        if (lastFailureAt != null && Instant.now().isBefore(lastFailureAt.plus(FAILURE_COOLDOWN))) {
+        RefreshFailure failure = lastFailure;
+        if (failure != null && Instant.now().isBefore(failure.at().plus(failureCooldown))) {
             return Optional.empty();
         }
 
@@ -138,6 +154,36 @@ public class XaiOAuthTokenManager {
     // verify the seed-vs-persisted-cache selection logic without inspecting network traffic.
     String currentRefreshTokenForTesting() {
         return refreshToken.get();
+    }
+
+    /**
+     * One line, free of secrets, saying why no OAuth access token is available. Meant to be placed in
+     * the message of the error thrown when there is no token and no API key fallback, so the operator
+     * sees the real cause (not configured vs. rejected token vs. a transient failure) and the fix.
+     */
+    public String describeUnavailability() {
+        if (!enabled) {
+            return "SuperGrok OAuth is disabled (ai.xai.oauth.enabled=false)";
+        }
+        String token = refreshToken.get();
+        if (token == null || token.isBlank()) {
+            return "no SuperGrok OAuth refresh token is configured (set XAI_OAUTH_REFRESH_TOKEN; "
+                    + "mint one with scripts/xai_oauth_login.sh)";
+        }
+        RefreshFailure failure = lastFailure;
+        if (failure == null) {
+            return "the SuperGrok OAuth access token is not available";
+        }
+        if (failure.rejected()) {
+            return "xAI rejected the SuperGrok OAuth refresh token (" + failure.summary() + "). "
+                    + "Run scripts/xai_oauth_login.sh, set XAI_OAUTH_REFRESH_TOKEN, and restart CCR";
+        }
+        return "the last SuperGrok OAuth refresh failed (" + failure.summary() + "); it retries shortly";
+    }
+
+    /** Null-safe form for callers that may not have a token manager at all. */
+    public static String describeUnavailability(XaiOAuthTokenManager manager) {
+        return manager == null ? "SuperGrok OAuth is not set up" : manager.describeUnavailability();
     }
 
     private Optional<String> refresh() {
@@ -180,21 +226,72 @@ public class XaiOAuthTokenManager {
                     : MAX_REFRESH_SKEW;
             Instant expiresAt = Instant.now().plus(lifetime).minus(skew);
             cachedToken.set(new CachedToken(accessToken, expiresAt));
-            lastFailureAt = null;
+            lastFailure = null;
             log.info("event=xai_oauth_refreshed expires_in={}s", expiresInSeconds);
             return Optional.of(accessToken);
 
         } catch (WebClientResponseException e) {
-            lastFailureAt = Instant.now();
             cachedToken.set(null);
+            String code = errorCode(e);
+            recordFailure(summarize(e, code), isTokenRejection(code));
             log.warn("event=xai_oauth_refresh_failed status={} body={}", e.getStatusCode(), e.getResponseBodyAsString());
             return Optional.empty();
-        } catch (Exception e) {
-            lastFailureAt = Instant.now();
+        } catch (JsonProcessingException e) {
+            // A 200 with a body we cannot parse: say so by type only, never by quoting the body.
             cachedToken.set(null);
+            recordFailure("malformed token response (" + e.getClass().getSimpleName() + ")", false);
+            log.warn("event=xai_oauth_refresh_failed error=malformed_response type={}", e.getClass().getSimpleName());
+            return Optional.empty();
+        } catch (Exception e) {
+            cachedToken.set(null);
+            recordFailure(truncate(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), 120), false);
             log.warn("event=xai_oauth_refresh_failed error={}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private void recordFailure(String summary, boolean rejected) {
+        lastFailure = new RefreshFailure(Instant.now(), summary, rejected);
+    }
+
+    // Only "invalid_grant" (RFC 6749: the refresh token is invalid, expired or revoked) means the
+    // token itself is dead and a new one must be minted. Other 400/401 codes such as invalid_client,
+    // invalid_request or unsupported_grant_type are not fixed by minting a token, so they are
+    // reported as a general refresh failure.
+    private static boolean isTokenRejection(String errorCode) {
+        return "invalid_grant".equalsIgnoreCase(errorCode);
+    }
+
+    /** xAI's OAuth "error" code from the response body, or null when it is not JSON or has none. */
+    private String errorCode(WebClientResponseException e) {
+        try {
+            String code = objectMapper.readTree(e.getResponseBodyAsString()).path("error").asText(null);
+            return code == null || code.isBlank() ? null : code;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** "HTTP 400 invalid_grant: Invalid or unknown refresh token", from xAI's error body when it has one. */
+    private String summarize(WebClientResponseException e, String code) {
+        String description = null;
+        try {
+            description = objectMapper.readTree(e.getResponseBodyAsString()).path("error_description").asText(null);
+        } catch (Exception ignored) {
+            // Not JSON: fall back to the status alone rather than echoing an arbitrary body.
+        }
+        StringBuilder summary = new StringBuilder("HTTP ").append(e.getStatusCode().value());
+        if (code != null) {
+            summary.append(' ').append(truncate(code, 40));
+        }
+        if (description != null && !description.isBlank()) {
+            summary.append(": ").append(truncate(description, 120));
+        }
+        return summary.toString();
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max) + "…";
     }
 
     private PersistedState readPersistedState() {

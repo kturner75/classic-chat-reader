@@ -292,7 +292,8 @@ public class TtsService {
 
         if (bearerToken == null || bearerToken.isBlank()) {
             throw new IllegalStateException(
-                    "xAI TTS unavailable: OAuth token unavailable and no API key configured as fallback");
+                    "xAI TTS unavailable and no API key is configured as a fallback: "
+                            + XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         }
 
         Map<String, Object> requestBody = buildSpeechRequest(text, voice, speed);

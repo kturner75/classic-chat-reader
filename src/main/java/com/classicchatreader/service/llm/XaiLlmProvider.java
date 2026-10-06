@@ -80,8 +80,8 @@ public class XaiLlmProvider implements LlmProvider {
                     oauthTokenManager != null && oauthTokenManager.isConfigured(),
                     apiKey != null && !apiKey.isBlank());
             throw new LlmProviderException(
-                    "xAI provider unavailable: OAuth token unavailable (refresh failed or not configured) "
-                            + "and no API key configured as fallback");
+                    "xAI provider unavailable and no API key is configured as a fallback: "
+                            + XaiOAuthTokenManager.describeUnavailability(oauthTokenManager));
         }
 
         log.info("event=xai_request auth_source={} model={}", usingOAuth ? "oauth" : "api_key", model);
