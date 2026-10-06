@@ -93,4 +93,17 @@ class GutendexClientLookupTest {
 
         assertEquals(LookupStatus.UNAVAILABLE, client.lookupBook(13707).status());
     }
+
+    @Test
+    void publicConstructorSendsRequestsToTheConfiguredBaseUrl() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer configured = MockRestServiceServer.bindTo(builder).build();
+        GutendexClient overridden = new GutendexClient(builder, "http://gutendex.example.test");
+        configured.expect(requestTo("http://gutendex.example.test/books/5/")).andExpect(method(GET))
+            .andRespond(withSuccess("{\"id\":5,\"title\":\"Five\",\"authors\":[],\"formats\":{},\"download_count\":1}",
+                MediaType.APPLICATION_JSON));
+
+        assertEquals("Five", overridden.getBook(5).orElseThrow().title());
+        configured.verify();
+    }
 }

@@ -20,8 +20,6 @@ import java.util.Optional;
 @Service
 public class GutendexClient {
 
-    private static final String DEFAULT_BASE_URL = "https://gutendex.com";
-
     private static final Logger log = LoggerFactory.getLogger(GutendexClient.class);
     // The ID preview is a courtesy to the operator, so it gives up quickly instead of hanging
     // when gutendex.com is slow. Search, popular and import keep their existing behavior.
@@ -43,7 +41,7 @@ public class GutendexClient {
     // Spring needs to be told which constructor to use now that the test-only one exists.
     @Autowired
     public GutendexClient(RestClient.Builder restClientBuilder,
-                          @Value("${gutendex.base-url:" + DEFAULT_BASE_URL + "}") String baseUrl) {
+                          @Value("${gutendex.base-url}") String baseUrl) {
         // The lookup client is cloned from the injected builder so it keeps Boot's customizers.
         // gutendex.base-url exists so end-to-end runs can point CCR at a local stand-in for Gutendex.
         this(restClientBuilder.baseUrl(baseUrl).build(),
