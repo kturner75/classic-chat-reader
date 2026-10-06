@@ -1,5 +1,6 @@
 package com.classicchatreader.controller;
 
+import com.classicchatreader.config.DeploymentMode;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.CharacterEntity;
 import com.classicchatreader.entity.CharacterStatus;
@@ -49,6 +50,10 @@ import java.util.Optional;
 public class CharacterController {
 
     private static final Logger log = LoggerFactory.getLogger(CharacterController.class);
+
+    /** Failure reasons can carry operator hints (env vars, scripts); never serve them publicly. */
+    @Value("${deployment.mode:local}")
+    private String deploymentMode = "local";
 
     @Value("${character.enabled:true}")
     private boolean characterEnabled;
@@ -300,6 +305,11 @@ public class CharacterController {
         response.put("status", status != null ? status.name() : "NOT_FOUND");
         response.put("ready", status == CharacterStatus.COMPLETED);
         response.put("generatedPrompt", characterOpt.map(CharacterEntity::getPortraitPrompt).orElse(null));
+        if (status == CharacterStatus.FAILED && !DeploymentMode.isPublic(deploymentMode)) {
+            characterOpt.map(CharacterEntity::getErrorMessage)
+                    .filter(m -> !m.isBlank())
+                    .ifPresent(m -> response.put("errorMessage", m));
+        }
 
         return response;
     }
