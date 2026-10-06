@@ -61,6 +61,8 @@ if [[ -f "${LOG_FILE}" ]]; then
   mv "${LOG_FILE}" "${LOG_FILE}.prev"
 fi
 echo "Logging to ${LOG_FILE}"
-# A pipe (not exec) so output reaches both the terminal and the file; pipefail keeps mvn's exit code.
-# tee -i ignores Ctrl-C so Spring's shutdown lines still reach the file; mvn gets the interrupt itself.
-"${MAVEN_BIN}" spring-boot:run -Dspring-boot.run.profiles="${PROFILE}" "$@" 2>&1 | tee -i "${LOG_FILE}"
+# Send output to the terminal and the file via tee, then exec mvn so it stays this process (SIGTERM
+# to the script PID still reaches it, and its exit code is the script's). tee -i ignores Ctrl-C so
+# Spring's shutdown lines are still written; tee ends on its own when mvn closes the pipe.
+exec > >(tee -i "${LOG_FILE}") 2>&1
+exec "${MAVEN_BIN}" spring-boot:run -Dspring-boot.run.profiles="${PROFILE}" "$@"
