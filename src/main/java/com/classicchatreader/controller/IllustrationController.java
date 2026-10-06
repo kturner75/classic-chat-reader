@@ -1,5 +1,6 @@
 package com.classicchatreader.controller;
 
+import com.classicchatreader.config.DeploymentMode;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.IllustrationStatus;
 import com.classicchatreader.model.IllustrationSettings;
@@ -33,6 +34,10 @@ import java.util.Optional;
 public class IllustrationController {
 
     private static final Logger log = LoggerFactory.getLogger(IllustrationController.class);
+
+    /** Failure reasons can carry operator hints (env vars, scripts); never serve them publicly. */
+    @Value("${deployment.mode:local}")
+    private String deploymentMode = "local";
 
     @Value("${illustration.allow-prompt-editing:false}")
     private boolean allowPromptEditing;
@@ -252,6 +257,11 @@ public class IllustrationController {
         response.put("status", status != null ? status.name() : "NOT_REQUESTED");
         response.put("ready", status == IllustrationStatus.COMPLETED);
         response.put("generatedPrompt", illustrationService.getPrompt(chapterId));
+        if (status == IllustrationStatus.FAILED && !DeploymentMode.isPublic(deploymentMode)) {
+            illustrationService.getErrorMessage(chapterId)
+                    .filter(m -> !m.isBlank())
+                    .ifPresent(m -> response.put("errorMessage", m));
+        }
 
         return response;
     }

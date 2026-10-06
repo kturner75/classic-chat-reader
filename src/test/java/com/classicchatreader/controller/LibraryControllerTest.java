@@ -520,4 +520,29 @@ class LibraryControllerTest {
         mockMvc.perform(delete("/api/library/book-1/annotations/ch-1/2"))
                 .andExpect(status().isNoContent());
     }
+
+    @Autowired
+    private LibraryController controller;
+
+    @Test
+    void coverStatus_failed_exposesReasonLocallyButNotInPublicMode() throws Exception {
+        when(bookCoverService.getCoverStatus("book-1")).thenReturn(Optional.of(new BookCoverService.CoverStatus(
+                "book-1", com.classicchatreader.entity.IllustrationStatus.FAILED,
+                null, null, null, null, "xAI cover unavailable: token rejected", null)));
+
+        mockMvc.perform(get("/api/library/book-1/cover/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errorMessage", is("xAI cover unavailable: token rejected")));
+
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "deploymentMode", "public");
+        try {
+            mockMvc.perform(get("/api/library/book-1/cover/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("FAILED")))
+                    .andExpect(jsonPath("$.errorMessage").doesNotExist());
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(controller, "deploymentMode", "local");
+        }
+    }
+
 }

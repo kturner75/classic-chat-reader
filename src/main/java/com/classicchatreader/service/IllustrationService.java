@@ -172,6 +172,14 @@ public class IllustrationService {
     }
 
     /**
+     * Get the recorded failure reason for a chapter's illustration, if any.
+     */
+    public java.util.Optional<String> getErrorMessage(String chapterId) {
+        return illustrationRepository.findByChapterId(chapterId)
+                .map(IllustrationEntity::getErrorMessage);
+    }
+
+    /**
      * Get the illustration image bytes if available.
      */
     public byte[] getIllustration(String chapterId) {

@@ -1145,4 +1145,32 @@ class CharacterControllerTest {
                 org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.anyInt());
     }
+
+    @Test
+    void getPortraitStatus_failed_exposesReasonLocallyButNotInPublicMode() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-1");
+        character.setBook(book);
+        character.setStatus(CharacterStatus.FAILED);
+        character.setErrorMessage("xAI portrait unavailable: set XAI_OAUTH_REFRESH_TOKEN");
+        when(characterService.getCharacter("character-1")).thenReturn(Optional.of(character));
+        when(characterService.getPortraitStatus("character-1")).thenReturn(CharacterStatus.FAILED);
+
+        mockMvc.perform(get("/api/characters/character-1/portrait/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errorMessage", containsString("XAI_OAUTH_REFRESH_TOKEN")));
+
+        ReflectionTestUtils.setField(controller, "deploymentMode", "public");
+        try {
+            mockMvc.perform(get("/api/characters/character-1/portrait/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("FAILED")))
+                    .andExpect(jsonPath("$.errorMessage").doesNotExist());
+        } finally {
+            ReflectionTestUtils.setField(controller, "deploymentMode", "local");
+        }
+    }
+
 }

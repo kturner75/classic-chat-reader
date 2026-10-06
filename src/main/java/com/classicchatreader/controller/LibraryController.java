@@ -321,6 +321,10 @@ public class LibraryController {
 
     public record CitationResponse(String citation) {}
 
+    /** Failure reasons can carry operator hints (env vars, scripts); never serve them publicly. */
+    @org.springframework.beans.factory.annotation.Value("${deployment.mode:local}")
+    private String deploymentMode = "local";
+
     private CoverStatusResponse toCoverStatusResponse(String bookId) {
         return bookCoverService.getCoverStatus(bookId)
                 .map(status -> new CoverStatusResponse(
@@ -334,7 +338,9 @@ public class LibraryController {
                         status.generatedPrompt(),
                         status.promptOverride(),
                         status.coverSource(),
-                        status.errorMessage()
+                        com.classicchatreader.config.DeploymentMode.isPublic(deploymentMode)
+                                ? null
+                                : status.errorMessage()
                 ))
                 .orElseGet(() -> new CoverStatusResponse(
                         bookId,

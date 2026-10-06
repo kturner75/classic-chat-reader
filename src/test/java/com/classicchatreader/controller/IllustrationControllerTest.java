@@ -452,4 +452,32 @@ class IllustrationControllerTest {
 
         verify(illustrationService).regenerateWithPrompt("chapter-1", "   ");
     }
+
+    @Test
+    void getChapterStatus_failed_exposesReasonLocallyButNotInPublicMode() throws Exception {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setIllustrationEnabled(true);
+        ChapterEntity chapter = new ChapterEntity(0, "Chapter 1");
+        chapter.setId("chapter-1");
+        chapter.setBook(book);
+        when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
+        when(illustrationService.getStatus("chapter-1")).thenReturn(IllustrationStatus.FAILED);
+        when(illustrationService.getErrorMessage("chapter-1"))
+                .thenReturn(Optional.of("xAI illustration unavailable: token rejected"));
+
+        mockMvc.perform(get("/api/illustrations/chapter/chapter-1/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errorMessage", is("xAI illustration unavailable: token rejected")));
+
+        ReflectionTestUtils.setField(controller, "deploymentMode", "public");
+        try {
+            mockMvc.perform(get("/api/illustrations/chapter/chapter-1/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status", is("FAILED")))
+                    .andExpect(jsonPath("$.errorMessage").doesNotExist());
+        } finally {
+            ReflectionTestUtils.setField(controller, "deploymentMode", "local");
+        }
+    }
+
 }
