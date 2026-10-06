@@ -61,6 +61,10 @@ if [[ -f "${LOG_FILE}" ]]; then
   mv "${LOG_FILE}" "${LOG_FILE}.prev"
 fi
 echo "Logging to ${LOG_FILE}"
+
+# Rename the tab to ccr.
+printf '\e]1;%s\a' "ccr"
+
 # Send output to the terminal and the file via tee, then exec mvn so it stays this process (SIGTERM
 # to the script PID still reaches it, and its exit code is the script's). tee -i ignores Ctrl-C so
 # Spring's shutdown lines are still written; tee ends on its own when mvn closes the pipe.
