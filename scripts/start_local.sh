@@ -19,7 +19,7 @@ Starts the app locally with the local-dev Spring profile (PostgreSQL).
 Environment:
   MAVEN_BIN                 Maven executable (default: mvn)
   SPRING_PROFILES_ACTIVE    Override profile (default: local-dev)
-  CCR_LOG_FILE              Log file (default: logs/ccr-local.log)
+  CCR_LOG_FILE              Log file (default: logs/ccr-local.log; a relative path is from the repo root)
 
 Notes:
   - Loads .env.local from the repo root when present (KEY=value lines).
@@ -57,7 +57,10 @@ fi
 echo "Starting with profile: ${PROFILE}"
 echo "Open http://localhost:8080 when ready"
 mkdir -p "$(dirname "${LOG_FILE}")"
-[[ -f "${LOG_FILE}" ]] && mv "${LOG_FILE}" "${LOG_FILE}.prev"
+if [[ -f "${LOG_FILE}" ]]; then
+  mv "${LOG_FILE}" "${LOG_FILE}.prev"
+fi
 echo "Logging to ${LOG_FILE}"
 # A pipe (not exec) so output reaches both the terminal and the file; pipefail keeps mvn's exit code.
-"${MAVEN_BIN}" spring-boot:run -Dspring-boot.run.profiles="${PROFILE}" "$@" 2>&1 | tee "${LOG_FILE}"
+# tee -i ignores Ctrl-C so Spring's shutdown lines still reach the file; mvn gets the interrupt itself.
+"${MAVEN_BIN}" spring-boot:run -Dspring-boot.run.profiles="${PROFILE}" "$@" 2>&1 | tee -i "${LOG_FILE}"
