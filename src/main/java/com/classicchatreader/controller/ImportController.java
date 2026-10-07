@@ -55,6 +55,22 @@ public class ImportController {
         };
     }
 
+    /**
+     * Read-only: the contents list Gutenberg prints for this book (entries may be empty when the
+     * edition has none). 404 {@code gutenberg_not_found}, 502 {@code gutenberg_unavailable}.
+     */
+    @GetMapping("/gutenberg/{gutenbergId}/contents")
+    public ResponseEntity<?> gutenbergContents(@PathVariable int gutenbergId) {
+        BookImportService.ContentsOutcome outcome = bookImportService.getGutenbergContents(gutenbergId);
+        if (outcome.found()) {
+            return ResponseEntity.ok(Map.of("gutenbergId", gutenbergId, "entries", outcome.entries()));
+        }
+        boolean missing = "Book not found in Gutenberg".equals(outcome.message());
+        return ResponseEntity.status(missing ? 404 : 502).body(Map.of(
+            "error", missing ? "gutenberg_not_found" : "gutenberg_unavailable",
+            "message", outcome.message()));
+    }
+
     @PostMapping("/gutenberg/{gutenbergId}")
     public ResponseEntity<ImportResult> importBook(@PathVariable int gutenbergId) {
         ImportResult result = bookImportService.importBook(gutenbergId);

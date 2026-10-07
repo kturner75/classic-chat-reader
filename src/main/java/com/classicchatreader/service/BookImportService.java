@@ -4,6 +4,7 @@ import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
 import com.classicchatreader.gutendex.GutenbergContentParser;
+import com.classicchatreader.gutendex.GutenbergContentsExtractor;
 import com.classicchatreader.gutendex.GutenbergContentParser.ParsedBook;
 import com.classicchatreader.gutendex.GutenbergContentParser.ParsedChapter;
 import com.classicchatreader.gutendex.GutendexBook;
@@ -34,6 +35,7 @@ public class BookImportService {
     private final CatalogMode catalogMode;
     private final GutendexClient gutendexClient;
     private final GutenbergContentParser contentParser;
+    private final GutenbergContentsExtractor contentsExtractor = new GutenbergContentsExtractor();
     private final BookStorageService bookStorageService;
     private final CuratedCatalogService curatedCatalogService;
 
@@ -279,6 +281,29 @@ public class BookImportService {
             book.getHtmlUrl() != null,
             false,
             null));
+    }
+
+    public record ContentsOutcome(boolean found, List<GutenbergContentsExtractor.ContentsEntry> entries, String message) {}
+
+    /**
+     * Read-only: the table of contents Gutenberg's own HTML prints for this book, so the operator can
+     * check the parsed chapters against what the book says it contains. An empty list means the
+     * edition has no recognisable contents, which callers must treat as "cannot compare".
+     */
+    public ContentsOutcome getGutenbergContents(int gutenbergId) {
+        Optional<GutendexBook> gutendexBook = gutendexClient.getBook(gutenbergId);
+        if (gutendexBook.isEmpty()) {
+            return new ContentsOutcome(false, List.of(), "Book not found in Gutenberg");
+        }
+        String htmlUrl = gutendexBook.get().getHtmlUrl();
+        if (htmlUrl == null) {
+            return new ContentsOutcome(false, List.of(), "No HTML version available");
+        }
+        try {
+            return new ContentsOutcome(true, contentsExtractor.extract(gutendexClient.fetchContent(htmlUrl)), null);
+        } catch (Exception e) {
+            return new ContentsOutcome(false, List.of(), "Failed to fetch content: " + e.getMessage());
+        }
     }
 
     public ImportResult importBook(int gutenbergId) {
