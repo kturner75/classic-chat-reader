@@ -272,6 +272,7 @@ public class GutenbergContentParser {
         // title h2 ("THE GRAY CHAMPION") that none of the patterns above recognise. When the
         // strict matches are a minority of the content h2s, treat every content h2 as a chapter.
         List<Element> storyHeaders = unnumberedStoryHeaders(headers);
+        java.util.Set<Element> boundaryHeaders = new java.util.HashSet<>();
         if (storyHeaders.size() >= MIN_STORY_HEADERS && chapterHeaders.size() * 2 < storyHeaders.size()) {
             java.util.Set<Element> merged = new java.util.HashSet<>(chapterHeaders);
             merged.addAll(storyHeaders);
@@ -279,6 +280,9 @@ public class GutenbergContentParser {
             for (Element header : headers) {
                 if (merged.contains(header)) {
                     chapterHeaders.add(header);
+                } else if (header.tagName().equals("h2")) {
+                    // Contents/byline/license: ends the previous section so its text isn't absorbed
+                    boundaryHeaders.add(header);
                 }
             }
         }
@@ -291,7 +295,11 @@ public class GutenbergContentParser {
         Elements allParagraphs = doc.select("p");
 
         // Build a combined list of elements with their source positions
-        record ElementWithPos(Element element, int sourcePos, boolean isHeader) {}
+        record ElementWithPos(Element element, int sourcePos, boolean isHeader, boolean isBoundary) {
+            ElementWithPos(Element element, int sourcePos, boolean isHeader) {
+                this(element, sourcePos, isHeader, false);
+            }
+        }
         List<ElementWithPos> allElements = new ArrayList<>();
 
         // Headers - use their index in the filtered chapterHeaders list
@@ -303,6 +311,8 @@ public class GutenbergContentParser {
         for (Element el : doc.body().getAllElements()) {
             if (headerSet.contains(el)) {
                 allElements.add(new ElementWithPos(el, position++, true));
+            } else if (boundaryHeaders.contains(el)) {
+                allElements.add(new ElementWithPos(el, position++, true, true));
             } else if (el.tagName().equals("p")) {
                 allElements.add(new ElementWithPos(el, position++, false));
             } else if (el.tagName().equals("div") && el.hasClass("l")) {
@@ -322,7 +332,7 @@ public class GutenbergContentParser {
                     chapters.add(new ParsedChapter(currentTitle, splitLongParagraphs(new ArrayList<>(currentParagraphs))));
                 }
                 // Extract clean chapter title (handles headers with mixed content like captions)
-                currentTitle = extractChapterTitleFromHeader(ewp.element().text().trim());
+                currentTitle = ewp.isBoundary() ? null : extractChapterTitleFromHeader(ewp.element().text().trim());
                 currentParagraphs.clear();
             } else {
                 // Only add paragraphs if we're in a chapter
