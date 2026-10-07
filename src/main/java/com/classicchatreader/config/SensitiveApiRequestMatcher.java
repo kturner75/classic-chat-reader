@@ -28,6 +28,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern CHARACTER_RESOURCE_PATH = Pattern.compile("^/api/characters/[^/]+$");
     private static final Pattern ILLUSTRATION_CHAPTER_PATH = Pattern.compile("^/api/illustrations/chapter/[^/]+$");
 
+    private static final Pattern GUTENBERG_CONTENTS_PATH = Pattern.compile("^/api/import/gutenberg/[^/]+/contents$");
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
     private static final Pattern PREGEN_BOOK_COVERS_PATH = Pattern.compile("^/api/pregen/book/[^/]+/covers$");
@@ -123,6 +124,12 @@ public final class SensitiveApiRequestMatcher {
             if (PREGEN_JOB_STATUS_PATH.matcher(path).matches()) {
                 return EndpointType.GENERATION;
             }
+        }
+
+        // Downloads and parses a whole Gutenberg book per call; Studio is the only consumer.
+        // Spring serves HEAD through the GET handler, so HEAD must be guarded identically.
+        if (("GET".equals(method) || "HEAD".equals(method)) && GUTENBERG_CONTENTS_PATH.matcher(path).matches()) {
+            return EndpointType.ADMIN;
         }
 
         if (("GET".equals(method) || "POST".equals(method)) && STUDIO_ROSTER_PATH.matcher(path).matches()) {

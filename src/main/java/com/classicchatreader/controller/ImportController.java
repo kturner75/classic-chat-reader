@@ -2,6 +2,7 @@ package com.classicchatreader.controller;
 
 import com.classicchatreader.service.BookImportService;
 import com.classicchatreader.service.BookImportService.CatalogModeStatus;
+import com.classicchatreader.service.BookImportService.ContentsOutcome;
 import com.classicchatreader.service.BookImportService.ImportResult;
 import com.classicchatreader.service.BookImportService.LookupOutcome;
 import com.classicchatreader.service.BookImportService.SearchResult;
@@ -52,6 +53,25 @@ public class ImportController {
             case UNAVAILABLE -> ResponseEntity.status(503).body(Map.of(
                 "error", "gutenberg_unavailable",
                 "message", "Could not reach Gutenberg to check ID " + gutenbergId + ". Try again shortly."));
+        };
+    }
+
+    /**
+     * Read-only: the contents list Gutenberg prints for this book (entries may be empty when the
+     * edition has none). 404 {@code gutenberg_not_found}; 503 {@code gutenberg_unavailable}, as the
+     * lookup above. Operator-only (see SensitiveApiRequestMatcher): it downloads the whole book.
+     */
+    @GetMapping("/gutenberg/{gutenbergId}/contents")
+    public ResponseEntity<?> gutenbergContents(@PathVariable int gutenbergId) {
+        ContentsOutcome outcome = bookImportService.getGutenbergContents(gutenbergId);
+        return switch (outcome.status()) {
+            case FOUND -> ResponseEntity.ok(Map.of("gutenbergId", gutenbergId, "entries", outcome.entries()));
+            case NOT_FOUND -> ResponseEntity.status(404).body(Map.of(
+                "error", "gutenberg_not_found",
+                "message", "Gutenberg has no book with ID " + gutenbergId));
+            case UNAVAILABLE -> ResponseEntity.status(503).body(Map.of(
+                "error", "gutenberg_unavailable",
+                "message", "Could not read the contents of Gutenberg book " + gutenbergId + ". Try again shortly."));
         };
     }
 

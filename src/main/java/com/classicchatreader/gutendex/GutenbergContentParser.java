@@ -268,6 +268,29 @@ public class GutenbergContentParser {
             }
         }
 
+        // Collections of short stories (e.g. Twice-Told Tales) head every story with a plain
+        // title h2 ("THE GRAY CHAMPION") that none of the patterns above recognise. When the
+        // strict matches are a minority of the content h2s, treat every content h2 as a chapter.
+        StoryHeaders story = classifyH2Headers(headers);
+        java.util.Set<Element> boundaryHeaders = new java.util.HashSet<>();
+        // Front matter before the contents ("PREFACE", "INTRODUCTION") matches the strict patterns but is
+        // a boundary here: it must neither count toward the strict matches nor become a chapter.
+        List<Element> strictOutsideFrontMatter = new ArrayList<>();
+        for (Element header : chapterHeaders) {
+            if (!story.boundaries().contains(header)) strictOutsideFrontMatter.add(header);
+        }
+        if (story.stories().size() >= MIN_STORY_HEADERS && strictOutsideFrontMatter.size() * 2 < story.stories().size()) {
+            java.util.Set<Element> merged = new java.util.HashSet<>(strictOutsideFrontMatter);
+            merged.addAll(story.stories());
+            chapterHeaders = new ArrayList<>();
+            for (Element header : headers) {
+                if (merged.contains(header)) {
+                    chapterHeaders.add(header);
+                }
+            }
+            boundaryHeaders = story.boundaries();
+        }
+
         if (chapterHeaders.isEmpty()) {
             return chapters;
         }
@@ -276,7 +299,11 @@ public class GutenbergContentParser {
         Elements allParagraphs = doc.select("p");
 
         // Build a combined list of elements with their source positions
-        record ElementWithPos(Element element, int sourcePos, boolean isHeader) {}
+        record ElementWithPos(Element element, int sourcePos, boolean isHeader, boolean isBoundary) {
+            ElementWithPos(Element element, int sourcePos, boolean isHeader) {
+                this(element, sourcePos, isHeader, false);
+            }
+        }
         List<ElementWithPos> allElements = new ArrayList<>();
 
         // Headers - use their index in the filtered chapterHeaders list
@@ -288,6 +315,8 @@ public class GutenbergContentParser {
         for (Element el : doc.body().getAllElements()) {
             if (headerSet.contains(el)) {
                 allElements.add(new ElementWithPos(el, position++, true));
+            } else if (boundaryHeaders.contains(el)) {
+                allElements.add(new ElementWithPos(el, position++, true, true));
             } else if (el.tagName().equals("p")) {
                 allElements.add(new ElementWithPos(el, position++, false));
             } else if (el.tagName().equals("div") && el.hasClass("l")) {
@@ -307,7 +336,7 @@ public class GutenbergContentParser {
                     chapters.add(new ParsedChapter(currentTitle, splitLongParagraphs(new ArrayList<>(currentParagraphs))));
                 }
                 // Extract clean chapter title (handles headers with mixed content like captions)
-                currentTitle = extractChapterTitleFromHeader(ewp.element().text().trim());
+                currentTitle = ewp.isBoundary() ? null : extractChapterTitleFromHeader(ewp.element().text().trim());
                 currentParagraphs.clear();
             } else {
                 // Only add paragraphs if we're in a chapter
@@ -326,6 +355,96 @@ public class GutenbergContentParser {
         }
 
         return chapters;
+    }
+
+    private static final int MIN_STORY_HEADERS = 3;
+    private static final int MAX_STORY_TITLE = 100;
+
+    private record StoryHeaders(List<Element> stories, java.util.Set<Element> boundaries) {}
+
+    /**
+     * Splits the h2 headings into story/section titles and boundaries. A boundary ends the previous
+     * section without starting a chapter: the contents heading, the license, and any heading before
+     * the contents (title page, byline). Anything else stays a story title, even "By the Waters of
+     * Babylon" or "Contents of the Dead Man's Pocket". A heading too long to be a title is neither, so
+     * its text stays with the section before it, as it did before story mode existed.
+     */
+    private StoryHeaders classifyH2Headers(Elements headers) {
+        List<Element> h2s = new ArrayList<>();
+        for (Element header : headers) {
+            if (header.tagName().equals("h2")) h2s.add(header);
+        }
+        // The contents heading may be any of h1-h4 (the extractor accepts the same), while the stories
+        // are h2s. Everything up to and including it, in document order, is front matter.
+        java.util.Set<Element> frontMatter = new java.util.HashSet<>();
+        if (!h2s.isEmpty()) {
+            List<Element> all = new ArrayList<>();
+            for (Element h : h2s.get(0).ownerDocument().select("h1, h2, h3, h4")) all.add(h);
+            for (Element h : all) {
+                frontMatter.add(h);
+                if (isContentsTitle(h.text())) break;
+            }
+            if (all.stream().noneMatch(h -> isContentsTitle(h.text()))) frontMatter.clear();
+        }
+        boolean hasContents = !frontMatter.isEmpty();
+
+        List<Element> stories = new ArrayList<>();
+        java.util.Set<Element> boundaries = new java.util.HashSet<>();
+        for (int i = 0; i < h2s.size(); i++) {
+            Element header = h2s.get(i);
+            String title = header.text().trim();
+            boolean license = title.toUpperCase().contains("PROJECT GUTENBERG") || isEndMatterTitle(title);
+            if (frontMatter.contains(header) || license || (!hasContents && i == 0 && looksLikeByline(header))) {
+                boundaries.add(header);
+            } else if (!title.isEmpty() && title.length() <= MAX_STORY_TITLE) {
+                stories.add(header);
+            }
+        }
+        // Front matter headings of any level (an h3 PREFACE before an h2 book) are boundaries too, so
+        // they neither count as strict matches nor become chapters.
+        boundaries.addAll(frontMatter);
+        // End matter can be an h3 (a FOOTNOTES heading under an h2 book) just as well as an h2.
+        for (Element header : headers) {
+            if (!header.tagName().equals("h2") && isEndMatterTitle(header.text().trim())) boundaries.add(header);
+        }
+        return new StoryHeaders(stories, boundaries);
+    }
+
+    private static final int BYLINE_MAX_BODY_CHARS = 100;
+
+    /**
+     * With no contents heading to anchor on, only a leading "by ..." heading with almost no text under
+     * it is a byline. Any real story, even a short or verse one, has more body than that, and the
+     * text is measured over prose and verse lines alike, in document order.
+     */
+    private boolean looksLikeByline(Element header) {
+        if (!header.text().trim().toUpperCase().startsWith("BY ")) return false;
+        int chars = 0;
+        boolean after = false;
+        for (Element el : header.ownerDocument().select("h1, h2, h3, p, div.l")) {
+            if (el == header) {
+                after = true;
+            } else if (after) {
+                if (el.tagName().matches("h[1-3]")) break;
+                chars += el.text().length();
+            }
+        }
+        return chars < BYLINE_MAX_BODY_CHARS;
+    }
+
+    private static final java.util.Set<String> END_MATTER = java.util.Set.of(
+        "FOOTNOTES", "NOTES", "ENDNOTES", "TRANSCRIBER'S NOTES", "TRANSCRIBERS NOTES", "TRANSCRIBER NOTES",
+        "TRANSCRIBER'S NOTE", "TRANSCRIBERS NOTE", "INDEX", "APPENDIX", "GLOSSARY", "ERRATA");
+
+    /** Notes and indexes at the end of a collection are not stories; they end the last one. */
+    private boolean isEndMatterTitle(String title) {
+        String t = title.replace('\u2019', '\'').trim().replaceAll("[\\p{Punct}\\s]+$", "").toUpperCase();
+        return END_MATTER.contains(t);
+    }
+
+    private boolean isContentsTitle(String text) {
+        String t = text.trim().replaceAll("[\\p{Punct}\\s]+$", "").toUpperCase();
+        return t.equals("CONTENTS") || t.equals("TABLE OF CONTENTS");
     }
 
     // Pattern to find chapter markers anywhere in text (for headers with mixed content)
@@ -398,7 +517,7 @@ public class GutenbergContentParser {
         }
 
         // For other patterns (like roman numerals alone), return the trimmed text
-        return trimmed;
+        return GutenbergContentsExtractor.FOOTNOTE_MARKER.matcher(trimmed).replaceAll("").replaceAll("[,;:]+$", "").trim();
     }
 
     private List<ParsedChapter> extractChaptersFromParagraphs(Elements paragraphs) {

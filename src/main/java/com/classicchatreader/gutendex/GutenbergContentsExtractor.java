@@ -1,0 +1,182 @@
+package com.classicchatreader.gutendex;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+/**
+ * Reads the table of contents a Gutenberg HTML edition prints near its start: the linked
+ * entries under a "Contents" heading. Studio compares this list with the chapters
+ * {@link GutenbergContentParser} produced, so a parse that dropped stories is caught before
+ * anything is built on it. Returns an empty list when the book has no recognisable contents.
+ */
+@Service
+public class GutenbergContentsExtractor {
+
+    public record ContentsEntry(String title, boolean group) {}
+
+    /** Footnote markers Gutenberg appends to titles, e.g. "THE GREAT CARBUNCLE[4]". Shared with the parser. */
+    static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
+    private static final int MAX_ENTRIES = 500;
+    private static final Pattern PAGE_LINK_TEXT = Pattern.compile("^\\d{1,4}$");
+    private static final Pattern PAGE_ROMAN_TEXT = Pattern.compile("^[ivxlcdm]{1,8}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PAGE_LINK_HREF = Pattern.compile("#page_?[0-9ivxlcdm]+$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NUMBER_ONLY = Pattern.compile("^[IVXLCDMivxlcdm\\d.\\s]+$");
+
+    public List<ContentsEntry> extract(String html) {
+        Document doc = Jsoup.parse(html);
+        Element heading = findContentsHeading(doc);
+        if (heading == null) {
+            return List.of();
+        }
+
+        List<ContentsEntry> entries = new ArrayList<>();
+        for (Element sibling = startAfter(heading); sibling != null; sibling = sibling.nextElementSibling()) {
+            if (isHeading(sibling)) {
+                break;
+            }
+            // A wrapper div that itself holds a heading is the start of the book, not more contents.
+            if (!sibling.select("h1, h2, h3, h4").isEmpty()) {
+                break;
+            }
+            for (String title : entryTitles(sibling)) {
+                entries.add(new ContentsEntry(title, title.endsWith(":")));
+                if (entries.size() >= MAX_ENTRIES) {
+                    return entries;
+                }
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * One title per table row or list item: a row that links both its number and its title
+     * ("<a>I.</a> <a>Howe's Masquerade</a>") is one entry, "I. Howe's Masquerade". A row that links only page numbers is its own text. Elsewhere each
+     * link is its own entry.
+     */
+    private List<String> entryTitles(Element container) {
+        List<String> titles = new ArrayList<>();
+        Elements rows = container.select("tr, li");
+        // Without table rows or list items, each paragraph is its own entry, even inside a wrapper div.
+        Elements paragraphs = rows.isEmpty() ? container.select("p") : new Elements();
+        List<Element> units = !rows.isEmpty() ? rows : (!paragraphs.isEmpty() ? paragraphs : List.of(container));
+        for (Element unit : units) {
+            List<Element> allLinks = ownLinks(unit, !rows.isEmpty());
+            List<Element> links = withoutPageNumbers(allLinks);
+            if (links.isEmpty()) {
+                // Only page labels were linked ("<td>CHAPTER I</td><td><a href=#Page_1>1</a></td>"): the
+                // title is the row's own text. A unit with no links at all is not an entry.
+                if (!allLinks.isEmpty()) addTitle(titles, ownText(unit));
+                continue;
+            }
+            if (rows.isEmpty()) {
+                // "<p><a>I.</a> Howe's Masquerade</p>": a lone number link plus the text after it.
+                if (links.size() == 1 && NUMBER_ONLY.matcher(clean(links.get(0).text())).matches()) {
+                    addTitle(titles, ownText(unit));
+                } else {
+                    for (Element link : links) addTitle(titles, link.text());
+                }
+            } else {
+                StringBuilder joined = new StringBuilder();
+                for (Element link : links) joined.append(' ').append(link.text());
+                String linked = clean(joined.toString());
+                // A row that links only its number ("<a>I.</a>" then an unlinked title cell) is that
+                // number plus the rest of the row.
+                addTitle(titles, NUMBER_ONLY.matcher(linked).matches() ? ownText(unit) : linked);
+            }
+        }
+        return titles;
+    }
+
+    /**
+     * A row that links its title and also its page number ("<a>CHAPTER I</a> <a>1</a>") is the title.
+     * A #Page_N link whose text is a number is always a page label; bare-digit links are dropped when
+     * another link is the title.
+     */
+    private List<Element> withoutPageNumbers(List<Element> links) {
+        // A link to a #Page_N target whose text is just a number is a page label, wherever it sits.
+        List<Element> kept = new ArrayList<>();
+        for (Element link : links) {
+            String text = link.text().trim();
+            if (!(isPageTarget(link) && PAGE_LINK_TEXT.matcher(text).matches())) kept.add(link);
+        }
+        // Bare digits, or roman numerals pointing at a page, are page labels only when another link is
+        // the title. A book whose chapters are literally "1", "2", and a title that itself links to a
+        // page anchor ("<a href=#Page_1>CHAPTER I</a>"), both keep their entries.
+        List<Element> titles = new ArrayList<>();
+        for (Element link : kept) {
+            String text = link.text().trim();
+            boolean digits = PAGE_LINK_TEXT.matcher(text).matches();
+            boolean romanPage = isPageTarget(link) && PAGE_ROMAN_TEXT.matcher(text).matches();
+            if (!digits && !romanPage) titles.add(link);
+        }
+        return titles.isEmpty() ? kept : titles;
+    }
+
+    private boolean isPageTarget(Element link) {
+        return PAGE_LINK_HREF.matcher(link.attr("href")).find();
+    }
+
+    /** The links that belong to this row or item, not to a row or item nested inside it. */
+    private List<Element> ownLinks(Element unit, boolean isRow) {
+        List<Element> own = new ArrayList<>();
+        for (Element link : unit.select("a[href*=#]")) {
+            if (!isRow || link.closest("tr, li") == unit) own.add(link);
+        }
+        return own;
+    }
+
+    /** A row's text without nested rows or items and without its page-label links ("12", "xiv"). */
+    private String ownText(Element unit) {
+        Element copy = unit.clone();
+        copy.select("tr, li").forEach(Element::remove);
+        copy.select("a[href*=#]").stream()
+            .filter(a -> isPageTarget(a) && (PAGE_LINK_TEXT.matcher(a.text().trim()).matches()
+                || PAGE_ROMAN_TEXT.matcher(a.text().trim()).matches()))
+            .forEach(Element::remove);
+        return copy.text();
+    }
+
+    private void addTitle(List<String> titles, String raw) {
+        String title = clean(raw);
+        if (!title.isEmpty() && title.length() <= 150) titles.add(title);
+    }
+
+    /**
+     * Where the contents follow the heading. A heading wrapped alone in a div
+     * ({@code <div class="chapter"><h2>CONTENTS</h2></div><table>...}) has no sibling of its own, so
+     * the walk starts after its wrapper.
+     */
+    private Element startAfter(Element heading) {
+        Element anchor = heading;
+        while (anchor.nextElementSibling() == null && anchor.parent() instanceof Element parent
+                && parent.childrenSize() == 1 && !"body".equals(parent.tagName())) {
+            anchor = parent;
+        }
+        return anchor.nextElementSibling();
+    }
+
+    private Element findContentsHeading(Document doc) {
+        for (Element h : doc.select("h1, h2, h3, h4")) {
+            String text = h.text().trim().replaceAll("[\\p{Punct}\\s]+$", "").toUpperCase();
+            if (text.equals("CONTENTS") || text.equals("TABLE OF CONTENTS")) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    private boolean isHeading(Element el) {
+        return el.tagName().matches("h[1-4]");
+    }
+
+    private String clean(String text) {
+        return FOOTNOTE_MARKER.matcher(text).replaceAll("").replaceAll("\\s+", " ").trim();
+    }
+}

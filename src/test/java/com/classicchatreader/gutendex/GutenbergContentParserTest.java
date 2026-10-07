@@ -414,4 +414,247 @@ class GutenbergContentParserTest {
         assertEquals(1, book.chapters().get(0).paragraphs().size());
         assertFalse(book.chapters().get(0).paragraphs().get(0).contains("{11}"));
     }
+
+    @Test
+    void parseTreatsPlainTitleH2sAsChaptersInStoryCollections() {
+        String html = """
+            <html>
+            <body>
+                <h1>TWICE-TOLD TALES</h1>
+                <h2>by NATHANIEL HAWTHORNE</h2>
+                <h2>CONTENTS</h2>
+                <p><a href="#chap01">THE GRAY CHAMPION</a></p>
+                <h2>THE GRAY CHAMPION</h2>
+                <p>There was once a time when New England groaned under the actual pressure of heavier wrongs.</p>
+                <h2>THE MINISTER\u2019S BLACK VEIL</h2>
+                <h4>A PARABLE</h4>
+                <p>The sexton stood in the porch of Milford meeting-house, pulling lustily at the bell-rope.</p>
+                <h2>THE GREAT CARBUNCLE[4]</h2>
+                <p>At nightfall, after a toilsome and fruitless search, the adventurers sat down by a fire.</p>
+                <h2>Legends of the Province-House</h2>
+                <h2>I. HOWE\u2019S MASQUERADE</h2>
+                <p>One afternoon, last summer, while I was in the bar-room of the Province-House.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(
+            java.util.List.of("THE GRAY CHAMPION", "THE MINISTER\u2019S BLACK VEIL", "THE GREAT CARBUNCLE", "I. HOWE\u2019S MASQUERADE"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void storyTitlesThatLookLikeFrontMatterKeepTheirText() {
+        String html = """
+            <html>
+            <body>
+                <h1>STORIES</h1>
+                <h2>by A. WRITER</h2>
+                <h2>CONTENTS</h2>
+                <p><a href="#a">By the Waters of Babylon</a></p>
+                <h2>By the Waters of Babylon</h2>
+                <p>The north and the east and the south are good hunting ground, but the west is forbidden.</p>
+                <h2>Contents of the Dead Man's Pocket</h2>
+                <p>Tom Benecke stepped out of the window onto the ledge and looked down at the street.</p>
+                <h2>A Third Story</h2>
+                <p>There was once a third story with enough text to count as a real paragraph here.</p>
+                <h2>THE FULL PROJECT GUTENBERG LICENSE</h2>
+                <p>Please read this before you distribute or use this work under the license terms.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(
+            java.util.List.of("By the Waters of Babylon", "Contents of the Dead Man's Pocket", "A Third Story"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+        assertEquals(1, book.chapters().get(0).paragraphs().size());
+    }
+
+    @Test
+    void aLeadingBylineIsNotAChapterEvenWithNoContentsHeading() {
+        String html = """
+            <html><body>
+                <h2>by A. WRITER</h2>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void aFirstStoryTitledByKeepsItsTextWithNoContentsHeading() {
+        String html = """
+            <html><body>
+                <h2>By the Waters of Babylon</h2>
+                <p>The north and the east and the south are good hunting ground, but the west is forbidden.</p>
+                <p>My father is a priest and I am the son of a priest, and I have been taught the old ways.</p>
+                <p>When I was a boy I was taken to the place of the gods and I saw the great river there.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("By the Waters of Babylon", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void aWrappedFirstStoryTitledByKeepsItsText() {
+        String html = """
+            <html><body>
+                <div class="chapter"><h2>By the Waters of Babylon</h2></div>
+                <p>The north and the east and the south are good hunting ground, but the west is forbidden.</p>
+                <p>My father is a priest and I am the son of a priest, and I have been taught the old ways.</p>
+                <p>When I was a boy I was taken to the place of the gods and I saw the great river there.</p>
+                <div class="chapter"><h2>Second Story</h2></div>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <div class="chapter"><h2>Third Story</h2></div>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("By the Waters of Babylon", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void aShortOrVerseFirstStoryTitledByIsNotMistakenForABylineEither() {
+        String html = """
+            <html><body>
+                <h2>By Moonlight</h2>
+                <div class="l">The moon came up over the quiet bay tonight.</div>
+                <div class="l">And every boat was resting on the silver water.</div>
+                <div class="l">I walked the shore alone and thought of home.</div>
+                <div class="l">While far away the bells began to ring at last.</div>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("By Moonlight", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void anH3ContentsHeadingStillMarksTheFrontMatterAsBoundaries() {
+        String html = """
+            <html><body>
+                <h2>STORIES OF THE NORTH</h2>
+                <h3>CONTENTS</h3>
+                <p><a href="#a">First Story</a> and then a long list of the other stories in the book here.</p>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void prefatoryHeadingsBeforeTheContentsDoNotBlockOrPolluteStoryMode() {
+        String html = """
+            <html><body>
+                <h2>PREFACE</h2>
+                <p>A preface that talks about the stories collected here, written long ago by the author.</p>
+                <h2>INTRODUCTION</h2>
+                <p>An introduction that also talks about the stories collected here at some length too.</p>
+                <h2>CONTENTS</h2>
+                <p><a href="#a">First Story</a> and so on through the other stories of the book here.</p>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void h3FrontMatterBeforeTheContentsIsABoundaryToo() {
+        String html = """
+            <html><body>
+                <h3>PREFACE</h3>
+                <p>A preface that talks about the stories collected here, written long ago by the author.</p>
+                <h3>INTRODUCTION</h3>
+                <p>An introduction that also talks about the stories collected here at some length too.</p>
+                <h2>CONTENTS</h2>
+                <p><a href="#a">First Story</a> and so on through the other stories of the book here.</p>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void endMatterAfterTheStoriesIsNotAnotherStory() {
+        String html = """
+            <html><body>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>FOOTNOTES</h2>
+                <p>Footnote one explains an old word that appears in the second story above at length.</p>
+                <h2>TRANSCRIBER\u2019S NOTES</h2>
+                <p>Obvious typographical errors were corrected, and the spelling was left as printed.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void h3EndMatterAfterTheStoriesIsABoundaryToo() {
+        String html = """
+            <html><body>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+                <h3>FOOTNOTES</h3>
+                <p>Footnote one explains an old word that appears in the second story above at length.</p>
+            </body></html>
+            """;
+
+        var book = parser.parse(html);
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+        assertEquals(1, book.chapters().get(2).paragraphs().size(), "the footnote did not join the last story");
+    }
 }

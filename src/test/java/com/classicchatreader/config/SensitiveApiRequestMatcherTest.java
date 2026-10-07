@@ -176,4 +176,14 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("DELETE", "/api/reading-buddy/history"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/preferences"));
     }
+
+    @Test
+    void gutenbergContentsIsOperatorOnly() {
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/13707/contents"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("HEAD", "/api/import/gutenberg/13707/contents"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/13707"));
+        // Spring binds "+13707" and "0x35DB" as ints, so every id spelling must stay guarded.
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/+13707/contents"));
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/0x35DB/contents"));
+    }
 }

@@ -467,4 +467,48 @@ class BookImportServiceTest {
             1000
         );
     }
+
+    @Test
+    void contentsAreReadFromTheBooksHtml() {
+        GutendexBook book = createGutendexBook(13707, "Twice-Told Tales", "Hawthorne, Nathaniel");
+        when(gutendexClient.lookupBook(13707)).thenReturn(GutendexClient.BookLookupResult.found(book));
+        when(gutendexClient.fetchContent(anyString())).thenReturn(
+            "<html><body><h2>CONTENTS</h2><table><tr><td><a href=\"#c1\">THE GRAY CHAMPION</a></td></tr></table></body></html>");
+
+        BookImportService.ContentsOutcome outcome = bookImportService.getGutenbergContents(13707);
+
+        assertEquals(GutendexClient.LookupStatus.FOUND, outcome.status());
+        assertEquals("THE GRAY CHAMPION", outcome.entries().get(0).title());
+    }
+
+    @Test
+    void contentsDistinguishAnUnknownIdFromAnOutage() {
+        when(gutendexClient.lookupBook(1)).thenReturn(GutendexClient.BookLookupResult.notFound());
+        when(gutendexClient.lookupBook(2)).thenReturn(GutendexClient.BookLookupResult.unavailable());
+
+        assertEquals(GutendexClient.LookupStatus.NOT_FOUND, bookImportService.getGutenbergContents(1).status());
+        assertEquals(GutendexClient.LookupStatus.UNAVAILABLE, bookImportService.getGutenbergContents(2).status());
+        verify(gutendexClient, never()).fetchContent(anyString());
+    }
+
+    @Test
+    void contentsOfABookWithoutAnHtmlEditionAreFoundButEmpty() {
+        GutendexBook noHtml = new GutendexBook(99, "Audio Only", List.of(new GutendexBook.Author("Someone", null, null)),
+            List.of(), List.of(), List.of("en"), Map.of("audio/mpeg", "http://example.org/a.mp3"), 5);
+        when(gutendexClient.lookupBook(99)).thenReturn(GutendexClient.BookLookupResult.found(noHtml));
+
+        BookImportService.ContentsOutcome outcome = bookImportService.getGutenbergContents(99);
+
+        assertEquals(GutendexClient.LookupStatus.FOUND, outcome.status());
+        assertTrue(outcome.entries().isEmpty());
+    }
+
+    @Test
+    void aFailedContentFetchIsAnOutageNotAMissingBook() {
+        GutendexBook book = createGutendexBook(13707, "Twice-Told Tales", "Hawthorne, Nathaniel");
+        when(gutendexClient.lookupBook(13707)).thenReturn(GutendexClient.BookLookupResult.found(book));
+        when(gutendexClient.fetchContent(anyString())).thenThrow(new RuntimeException("connect timed out"));
+
+        assertEquals(GutendexClient.LookupStatus.UNAVAILABLE, bookImportService.getGutenbergContents(13707).status());
+    }
 }
