@@ -397,9 +397,16 @@ public class GutenbergContentParser {
      */
     private boolean looksLikeByline(Element header) {
         if (!header.text().trim().toUpperCase().startsWith("BY ")) return false;
+        // Document order, not siblings: a heading wrapped alone in a div has none of its own.
         int paragraphs = 0;
-        for (Element el = header.nextElementSibling(); el != null && !el.tagName().matches("h[1-3]"); el = el.nextElementSibling()) {
-            if (el.tagName().equals("p") && el.text().length() > 20) paragraphs++;
+        boolean after = false;
+        for (Element el : header.ownerDocument().select("h1, h2, h3, p")) {
+            if (el == header) {
+                after = true;
+            } else if (after) {
+                if (el.tagName().matches("h[1-3]")) break;
+                if (el.text().length() > 20) paragraphs++;
+            }
         }
         return paragraphs < 3;
     }
