@@ -160,4 +160,34 @@ class GutenbergContentsExtractorTest {
         assertEquals(List.of("CHAPTER I", "CHAPTER II. The Garden", "I. Howe's Masquerade"),
             extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void paragraphStyleContentsDropLinkedPageNumbersToo() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <p><a href="#CHAPTER_I">CHAPTER I</a> <a href="#Page_1">1</a></p>
+            <p><a href="#CHAPTER_II">CHAPTER II</a> <a href="#Page_17">17</a></p>
+            <p><a href="#Page_30">30</a></p>
+            <h2>CHAPTER I</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("CHAPTER I", "CHAPTER II"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
+
+    @Test
+    void chaptersThatAreLiterallyNumbersAreKept() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <p><a href="#c1">1</a></p>
+            <p><a href="#c2">2</a></p>
+            <h2>1</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("1", "2"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }

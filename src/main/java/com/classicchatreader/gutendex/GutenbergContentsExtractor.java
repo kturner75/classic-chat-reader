@@ -65,8 +65,8 @@ public class GutenbergContentsExtractor {
         List<Element> units = rows.isEmpty() ? List.of(container) : rows;
         for (Element unit : units) {
             List<Element> links = ownLinks(unit, !rows.isEmpty());
-            if (!rows.isEmpty()) links = withoutPageNumbers(links);
-            if (!rows.isEmpty() && links.isEmpty()) continue;
+            links = withoutPageNumbers(links);
+            if (links.isEmpty()) continue;
             if (rows.isEmpty()) {
                 for (Element link : links) addTitle(titles, link.text());
             } else {
@@ -88,11 +88,15 @@ public class GutenbergContentsExtractor {
     private List<Element> withoutPageNumbers(List<Element> links) {
         List<Element> kept = new ArrayList<>();
         for (Element link : links) {
-            if (!PAGE_LINK_TEXT.matcher(link.text().trim()).matches() && !PAGE_LINK_HREF.matcher(link.attr("href")).find()) {
-                kept.add(link);
-            }
+            if (!PAGE_LINK_HREF.matcher(link.attr("href")).find()) kept.add(link);
         }
-        return kept.isEmpty() ? links : kept;
+        // A bare-digit link is a page number only when something else in the row is the title; a
+        // book whose chapters are literally "1", "2" keeps them.
+        List<Element> nonDigits = new ArrayList<>();
+        for (Element link : kept) {
+            if (!PAGE_LINK_TEXT.matcher(link.text().trim()).matches()) nonDigits.add(link);
+        }
+        return nonDigits.isEmpty() ? kept : nonDigits;
     }
 
     /** The links that belong to this row or item, not to a row or item nested inside it. */
