@@ -549,4 +549,24 @@ class GutenbergContentParserTest {
         assertEquals(java.util.List.of("By Moonlight", "Second Story", "Third Story"),
             parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void anH3ContentsHeadingStillMarksTheFrontMatterAsBoundaries() {
+        String html = """
+            <html><body>
+                <h2>STORIES OF THE NORTH</h2>
+                <h3>CONTENTS</h3>
+                <p><a href="#a">First Story</a> and then a long list of the other stories in the book here.</p>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
 }

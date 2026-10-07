@@ -368,13 +368,19 @@ public class GutenbergContentParser {
         for (Element header : headers) {
             if (header.tagName().equals("h2")) h2s.add(header);
         }
-        int contentsAt = -1;
-        for (int i = 0; i < h2s.size(); i++) {
-            if (isContentsTitle(h2s.get(i).text())) {
-                contentsAt = i;
-                break;
+        // The contents heading may be any of h1-h4 (the extractor accepts the same), while the stories
+        // are h2s. Everything up to and including it, in document order, is front matter.
+        java.util.Set<Element> frontMatter = new java.util.HashSet<>();
+        if (!h2s.isEmpty()) {
+            List<Element> all = new ArrayList<>();
+            for (Element h : h2s.get(0).ownerDocument().select("h1, h2, h3, h4")) all.add(h);
+            for (Element h : all) {
+                frontMatter.add(h);
+                if (isContentsTitle(h.text())) break;
             }
+            if (all.stream().noneMatch(h -> isContentsTitle(h.text()))) frontMatter.clear();
         }
+        boolean hasContents = !frontMatter.isEmpty();
 
         List<Element> stories = new ArrayList<>();
         java.util.Set<Element> boundaries = new java.util.HashSet<>();
@@ -382,7 +388,7 @@ public class GutenbergContentParser {
             Element header = h2s.get(i);
             String title = header.text().trim();
             boolean license = title.toUpperCase().contains("PROJECT GUTENBERG");
-            if (i <= contentsAt || license || (contentsAt < 0 && i == 0 && looksLikeByline(header))) {
+            if (frontMatter.contains(header) || license || (!hasContents && i == 0 && looksLikeByline(header))) {
                 boundaries.add(header);
             } else if (!title.isEmpty() && title.length() <= MAX_STORY_TITLE) {
                 stories.add(header);
