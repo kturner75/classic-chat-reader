@@ -473,4 +473,41 @@ class GutenbergContentParserTest {
             book.chapters().stream().map(ParsedChapter::title).toList());
         assertEquals(1, book.chapters().get(0).paragraphs().size());
     }
+
+    @Test
+    void aLeadingBylineIsNotAChapterEvenWithNoContentsHeading() {
+        String html = """
+            <html><body>
+                <h2>by A. WRITER</h2>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
+
+    @Test
+    void aFirstStoryTitledByKeepsItsTextWithNoContentsHeading() {
+        String html = """
+            <html><body>
+                <h2>By the Waters of Babylon</h2>
+                <p>The north and the east and the south are good hunting ground, but the west is forbidden.</p>
+                <p>My father is a priest and I am the son of a priest, and I have been taught the old ways.</p>
+                <p>When I was a boy I was taken to the place of the gods and I saw the great river there.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("By the Waters of Babylon", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
 }
