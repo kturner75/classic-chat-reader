@@ -1,6 +1,7 @@
 package com.classicchatreader.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.util.UrlPathHelper;
 import jakarta.servlet.http.HttpServletResponse;
 import com.classicchatreader.service.AccountAuthService;
 import com.classicchatreader.service.PublicSessionAuthService;
@@ -160,13 +161,20 @@ public class PublicApiGuardInterceptor implements HandlerInterceptor {
         return DeploymentMode.isPublic(deploymentMode);
     }
 
+    /**
+     * The path Spring MVC routes on: context path removed, then {@code ;params} dropped and
+     * percent-escapes decoded, in the same order as {@link UrlPathHelper}. Classifying the raw URI
+     * instead let {@code /api/import/gutenberg/13707;x=1/contents} or a percent-encoded segment reach a
+     * protected handler while the guard saw no match.
+     */
     private String stripContextPath(HttpServletRequest request) {
         String path = request.getRequestURI();
         String contextPath = request.getContextPath();
         if (contextPath != null && !contextPath.isBlank() && path.startsWith(contextPath)) {
-            return path.substring(contextPath.length());
+            path = path.substring(contextPath.length());
         }
-        return path;
+        UrlPathHelper helper = UrlPathHelper.defaultInstance;
+        return helper.decodeRequestString(request, helper.removeSemicolonContent(path));
     }
 
     private String resolveClientIp(HttpServletRequest request) {

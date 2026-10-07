@@ -28,7 +28,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern CHARACTER_RESOURCE_PATH = Pattern.compile("^/api/characters/[^/]+$");
     private static final Pattern ILLUSTRATION_CHAPTER_PATH = Pattern.compile("^/api/illustrations/chapter/[^/]+$");
 
-    private static final Pattern GUTENBERG_CONTENTS_PATH = Pattern.compile("^/api/import/gutenberg/\\d+/contents$");
+    private static final Pattern GUTENBERG_CONTENTS_PATH = Pattern.compile("^/api/import/gutenberg/[^/]+/contents$");
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
     private static final Pattern PREGEN_BOOK_COVERS_PATH = Pattern.compile("^/api/pregen/book/[^/]+/covers$");

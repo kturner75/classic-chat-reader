@@ -33,7 +33,7 @@ public class GutenbergContentsExtractor {
         }
 
         List<ContentsEntry> entries = new ArrayList<>();
-        for (Element sibling = heading.nextElementSibling(); sibling != null; sibling = sibling.nextElementSibling()) {
+        for (Element sibling = startAfter(heading); sibling != null; sibling = sibling.nextElementSibling()) {
             if (isHeading(sibling)) {
                 break;
             }
@@ -76,6 +76,20 @@ public class GutenbergContentsExtractor {
     private void addTitle(List<String> titles, String raw) {
         String title = clean(raw);
         if (!title.isEmpty() && title.length() <= 150) titles.add(title);
+    }
+
+    /**
+     * Where the contents follow the heading. A heading wrapped alone in a div
+     * ({@code <div class="chapter"><h2>CONTENTS</h2></div><table>...}) has no sibling of its own, so
+     * the walk starts after its wrapper.
+     */
+    private Element startAfter(Element heading) {
+        Element anchor = heading;
+        while (anchor.nextElementSibling() == null && anchor.parent() instanceof Element parent
+                && parent.childrenSize() == 1 && !"body".equals(parent.tagName())) {
+            anchor = parent;
+        }
+        return anchor.nextElementSibling();
     }
 
     private Element findContentsHeading(Document doc) {

@@ -127,22 +127,34 @@ public class GutendexClient {
             .body(GutendexResponse.class);
     }
 
+    private static final Duration CONTENT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration CONTENT_REQUEST_TIMEOUT = Duration.ofSeconds(60);
+
     public String fetchContent(String url) {
         // Use Java HttpClient which follows redirects
         HttpClient client = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.ALWAYS)
+            .connectTimeout(CONTENT_CONNECT_TIMEOUT)
             .build();
 
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
+            .timeout(CONTENT_REQUEST_TIMEOUT)
             .GET()
             .build();
 
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            // An error page is not the book: parsing it would report "no chapters" or an empty contents list.
+            if (response.statusCode() / 100 != 2) {
+                throw new RuntimeException("Failed to fetch content from " + url + " (HTTP " + response.statusCode() + ")");
+            }
             return response.body();
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             throw new RuntimeException("Failed to fetch content from " + url, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted fetching content from " + url, e);
         }
     }
 }

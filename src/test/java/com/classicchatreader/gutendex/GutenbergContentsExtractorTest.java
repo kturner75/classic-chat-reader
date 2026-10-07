@@ -87,4 +87,17 @@ class GutenbergContentsExtractorTest {
 
         assertEquals(List.of("One"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void aHeadingWrappedAloneInADivStillFindsTheTableAfterIt() {
+        String html = """
+            <html><body>
+            <div class="chapter"><h2>CONTENTS</h2></div>
+            <table><tr><td><a href="#c1">THE GRAY CHAMPION</a></td></tr></table>
+            <div class="chapter"><h2>THE GRAY CHAMPION</h2></div>
+            </body></html>
+            """;
+
+        assertEquals(List.of("THE GRAY CHAMPION"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }
