@@ -403,6 +403,10 @@ public class GutenbergContentParser {
         // Front matter headings of any level (an h3 PREFACE before an h2 book) are boundaries too, so
         // they neither count as strict matches nor become chapters.
         boundaries.addAll(frontMatter);
+        // End matter can be an h3 (a FOOTNOTES heading under an h2 book) just as well as an h2.
+        for (Element header : headers) {
+            if (!header.tagName().equals("h2") && isEndMatterTitle(header.text().trim())) boundaries.add(header);
+        }
         return new StoryHeaders(stories, boundaries);
     }
 

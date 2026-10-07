@@ -636,4 +636,25 @@ class GutenbergContentParserTest {
         assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
             parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void h3EndMatterAfterTheStoriesIsABoundaryToo() {
+        String html = """
+            <html><body>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+                <h3>FOOTNOTES</h3>
+                <p>Footnote one explains an old word that appears in the second story above at length.</p>
+            </body></html>
+            """;
+
+        var book = parser.parse(html);
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+        assertEquals(1, book.chapters().get(2).paragraphs().size(), "the footnote did not join the last story");
+    }
 }

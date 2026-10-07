@@ -63,7 +63,9 @@ public class GutenbergContentsExtractor {
     private List<String> entryTitles(Element container) {
         List<String> titles = new ArrayList<>();
         Elements rows = container.select("tr, li");
-        List<Element> units = rows.isEmpty() ? List.of(container) : rows;
+        // Without table rows or list items, each paragraph is its own entry, even inside a wrapper div.
+        Elements paragraphs = rows.isEmpty() ? container.select("p") : new Elements();
+        List<Element> units = !rows.isEmpty() ? rows : (!paragraphs.isEmpty() ? paragraphs : List.of(container));
         for (Element unit : units) {
             List<Element> links = ownLinks(unit, !rows.isEmpty());
             links = withoutPageNumbers(links);

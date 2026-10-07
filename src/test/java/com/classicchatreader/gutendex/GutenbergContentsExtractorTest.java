@@ -221,4 +221,21 @@ class GutenbergContentsExtractorTest {
         assertEquals(List.of("I. Howe's Masquerade", "II. Edward Randolph's Portrait"),
             extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void paragraphsInsideAWrapperAreSeparateEntries() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <div>
+              <p><a href="#c1">I.</a> First Story</p>
+              <p><a href="#c2">II.</a> Second Story</p>
+            </div>
+            <h2>I. First Story</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("I. First Story", "II. Second Story"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }
