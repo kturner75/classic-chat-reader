@@ -62,19 +62,36 @@ public class GutenbergContentsExtractor {
         Elements rows = container.select("tr, li");
         List<Element> units = rows.isEmpty() ? List.of(container) : rows;
         for (Element unit : units) {
-            if (!rows.isEmpty() && unit.select("a[href*=#]").isEmpty()) continue;
+            List<Element> links = ownLinks(unit, !rows.isEmpty());
+            if (!rows.isEmpty() && links.isEmpty()) continue;
             if (rows.isEmpty()) {
-                for (Element link : unit.select("a[href*=#]")) addTitle(titles, link.text());
+                for (Element link : links) addTitle(titles, link.text());
             } else {
                 StringBuilder joined = new StringBuilder();
-                for (Element link : unit.select("a[href*=#]")) joined.append(' ').append(link.text());
+                for (Element link : links) joined.append(' ').append(link.text());
                 String linked = clean(joined.toString());
                 // A row that links only its number ("<a>I.</a>" then an unlinked title cell) is that
                 // number plus the rest of the row.
-                addTitle(titles, NUMBER_ONLY.matcher(linked).matches() ? unit.text() : linked);
+                addTitle(titles, NUMBER_ONLY.matcher(linked).matches() ? ownText(unit) : linked);
             }
         }
         return titles;
+    }
+
+    /** The links that belong to this row or item, not to a row or item nested inside it. */
+    private List<Element> ownLinks(Element unit, boolean isRow) {
+        List<Element> own = new ArrayList<>();
+        for (Element link : unit.select("a[href*=#]")) {
+            if (!isRow || link.closest("tr, li") == unit) own.add(link);
+        }
+        return own;
+    }
+
+    /** A row's text without the text of rows or items nested inside it. */
+    private String ownText(Element unit) {
+        Element copy = unit.clone();
+        copy.select("tr, li").forEach(Element::remove);
+        return copy.text();
     }
 
     private void addTitle(List<String> titles, String raw) {

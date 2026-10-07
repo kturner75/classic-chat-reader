@@ -117,4 +117,29 @@ class GutenbergContentsExtractorTest {
         assertEquals(List.of("I. Howe's Masquerade", "II. Edward Randolph's Portrait"),
             extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void aNestedListKeepsTheGroupAndItsChildrenAsSeparateEntries() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <ul>
+              <li><a href="#p1">PART I:</a>
+                <ul>
+                  <li><a href="#c1">Chapter 1</a></li>
+                  <li><a href="#c2">Chapter 2</a></li>
+                </ul>
+              </li>
+              <li><a href="#c3">Epilogue</a></li>
+            </ul>
+            <h2>PART I</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of(
+            new ContentsEntry("PART I:", true),
+            new ContentsEntry("Chapter 1", false),
+            new ContentsEntry("Chapter 2", false),
+            new ContentsEntry("Epilogue", false)), extractor.extract(html));
+    }
 }

@@ -273,8 +273,14 @@ public class GutenbergContentParser {
         // strict matches are a minority of the content h2s, treat every content h2 as a chapter.
         StoryHeaders story = classifyH2Headers(headers);
         java.util.Set<Element> boundaryHeaders = new java.util.HashSet<>();
-        if (story.stories().size() >= MIN_STORY_HEADERS && chapterHeaders.size() * 2 < story.stories().size()) {
-            java.util.Set<Element> merged = new java.util.HashSet<>(chapterHeaders);
+        // Front matter before the contents ("PREFACE", "INTRODUCTION") matches the strict patterns but is
+        // a boundary here: it must neither count toward the strict matches nor become a chapter.
+        List<Element> strictOutsideFrontMatter = new ArrayList<>();
+        for (Element header : chapterHeaders) {
+            if (!story.boundaries().contains(header)) strictOutsideFrontMatter.add(header);
+        }
+        if (story.stories().size() >= MIN_STORY_HEADERS && strictOutsideFrontMatter.size() * 2 < story.stories().size()) {
+            java.util.Set<Element> merged = new java.util.HashSet<>(strictOutsideFrontMatter);
             merged.addAll(story.stories());
             chapterHeaders = new ArrayList<>();
             for (Element header : headers) {
