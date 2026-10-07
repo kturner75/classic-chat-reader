@@ -238,4 +238,37 @@ class GutenbergContentsExtractorTest {
         assertEquals(List.of("I. First Story", "II. Second Story"),
             extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void anUnlinkedTitleWithALinkedPageNumberIsKept() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <table>
+              <tr><td>CHAPTER I</td><td><a href="#Page_1">1</a></td></tr>
+              <tr><td>CHAPTER II. The Garden</td><td><a href="#Page_17">17</a></td></tr>
+              <tr><td>PREFACE</td><td><a href="#Page_xiv">xiv</a></td></tr>
+            </table>
+            <h2>CHAPTER I</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("CHAPTER I", "CHAPTER II. The Garden", "PREFACE"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
+
+    @Test
+    void aTrailingPageLinkDoesNotLeakIntoAnUnlinkedParagraphTitle() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <p><a href="#c1">I.</a> Howe's Masquerade <a href="#Page_5">5</a></p>
+            <p>CHAPTER II <a href="#Page_17">17</a></p>
+            <h2>I. Howe's Masquerade</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("I. Howe's Masquerade", "CHAPTER II"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }

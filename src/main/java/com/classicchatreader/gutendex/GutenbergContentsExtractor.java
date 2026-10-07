@@ -57,8 +57,8 @@ public class GutenbergContentsExtractor {
 
     /**
      * One title per table row or list item: a row that links both its number and its title
-     * ("<a>I.</a> <a>Howe's Masquerade</a>") is one entry, "I. Howe's Masquerade". Elsewhere each link
-     * is its own entry.
+     * ("<a>I.</a> <a>Howe's Masquerade</a>") is one entry, "I. Howe's Masquerade". A row that links only page numbers is its own text. Elsewhere each
+     * link is its own entry.
      */
     private List<String> entryTitles(Element container) {
         List<String> titles = new ArrayList<>();
@@ -67,9 +67,14 @@ public class GutenbergContentsExtractor {
         Elements paragraphs = rows.isEmpty() ? container.select("p") : new Elements();
         List<Element> units = !rows.isEmpty() ? rows : (!paragraphs.isEmpty() ? paragraphs : List.of(container));
         for (Element unit : units) {
-            List<Element> links = ownLinks(unit, !rows.isEmpty());
-            links = withoutPageNumbers(links);
-            if (links.isEmpty()) continue;
+            List<Element> allLinks = ownLinks(unit, !rows.isEmpty());
+            List<Element> links = withoutPageNumbers(allLinks);
+            if (links.isEmpty()) {
+                // Only page labels were linked ("<td>CHAPTER I</td><td><a href=#Page_1>1</a></td>"): the
+                // title is the row's own text. A unit with no links at all is not an entry.
+                if (!allLinks.isEmpty()) addTitle(titles, ownText(unit));
+                continue;
+            }
             if (rows.isEmpty()) {
                 // "<p><a>I.</a> Howe's Masquerade</p>": a lone number link plus the text after it.
                 if (links.size() == 1 && NUMBER_ONLY.matcher(clean(links.get(0).text())).matches()) {
@@ -91,7 +96,8 @@ public class GutenbergContentsExtractor {
 
     /**
      * A row that links its title and also its page number ("<a>CHAPTER I</a> <a>1</a>") is the title.
-     * Page-number links (bare digits, or a #Page_N target) are dropped when something else is linked.
+     * A #Page_N link whose text is a number is always a page label; bare-digit links are dropped when
+     * another link is the title.
      */
     private List<Element> withoutPageNumbers(List<Element> links) {
         // A link to a #Page_N target whose text is just a number is a page label, wherever it sits.
@@ -126,10 +132,14 @@ public class GutenbergContentsExtractor {
         return own;
     }
 
-    /** A row's text without the text of rows or items nested inside it. */
+    /** A row's text without nested rows or items and without its page-label links ("12", "xiv"). */
     private String ownText(Element unit) {
         Element copy = unit.clone();
         copy.select("tr, li").forEach(Element::remove);
+        copy.select("a[href*=#]").stream()
+            .filter(a -> isPageTarget(a) && (PAGE_LINK_TEXT.matcher(a.text().trim()).matches()
+                || PAGE_ROMAN_TEXT.matcher(a.text().trim()).matches()))
+            .forEach(Element::remove);
         return copy.text();
     }
 
