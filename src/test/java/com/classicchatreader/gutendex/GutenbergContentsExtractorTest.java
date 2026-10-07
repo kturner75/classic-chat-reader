@@ -190,4 +190,20 @@ class GutenbergContentsExtractorTest {
 
         assertEquals(List.of("1", "2"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void aTitleThatLinksToAPageAnchorIsKept() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <p><a href="#Page_1">CHAPTER I</a></p>
+            <p><a href="#Page_9">CHAPTER II</a> <a href="#Page_9">9</a></p>
+            <p><a href="#Page_xiv">PREFACE</a> <a href="#Page_xiv">xiv</a></p>
+            <h2>CHAPTER I</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("CHAPTER I", "CHAPTER II", "PREFACE"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }

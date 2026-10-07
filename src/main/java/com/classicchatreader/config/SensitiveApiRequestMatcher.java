@@ -127,7 +127,8 @@ public final class SensitiveApiRequestMatcher {
         }
 
         // Downloads and parses a whole Gutenberg book per call; Studio is the only consumer.
-        if ("GET".equals(method) && GUTENBERG_CONTENTS_PATH.matcher(path).matches()) {
+        // Spring serves HEAD through the GET handler, so HEAD must be guarded identically.
+        if (("GET".equals(method) || "HEAD".equals(method)) && GUTENBERG_CONTENTS_PATH.matcher(path).matches()) {
             return EndpointType.ADMIN;
         }
 

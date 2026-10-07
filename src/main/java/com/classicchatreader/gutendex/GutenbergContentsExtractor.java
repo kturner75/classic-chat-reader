@@ -25,7 +25,8 @@ public class GutenbergContentsExtractor {
     static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
     private static final int MAX_ENTRIES = 500;
     private static final Pattern PAGE_LINK_TEXT = Pattern.compile("^\\d{1,4}$");
-    private static final Pattern PAGE_LINK_HREF = Pattern.compile("#page_?\\d+$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PAGE_ROMAN_TEXT = Pattern.compile("^[ivxlcdm]{1,8}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PAGE_LINK_HREF = Pattern.compile("#page_?[0-9ivxlcdm]+$", Pattern.CASE_INSENSITIVE);
     private static final Pattern NUMBER_ONLY = Pattern.compile("^[IVXLCDMivxlcdm\\d.\\s]+$");
 
     public List<ContentsEntry> extract(String html) {
@@ -86,17 +87,27 @@ public class GutenbergContentsExtractor {
      * Page-number links (bare digits, or a #Page_N target) are dropped when something else is linked.
      */
     private List<Element> withoutPageNumbers(List<Element> links) {
+        // A link to a #Page_N target whose text is just a number is a page label, wherever it sits.
         List<Element> kept = new ArrayList<>();
         for (Element link : links) {
-            if (!PAGE_LINK_HREF.matcher(link.attr("href")).find()) kept.add(link);
+            String text = link.text().trim();
+            if (!(isPageTarget(link) && PAGE_LINK_TEXT.matcher(text).matches())) kept.add(link);
         }
-        // A bare-digit link is a page number only when something else in the row is the title; a
-        // book whose chapters are literally "1", "2" keeps them.
-        List<Element> nonDigits = new ArrayList<>();
+        // Bare digits, or roman numerals pointing at a page, are page labels only when another link is
+        // the title. A book whose chapters are literally "1", "2", and a title that itself links to a
+        // page anchor ("<a href=#Page_1>CHAPTER I</a>"), both keep their entries.
+        List<Element> titles = new ArrayList<>();
         for (Element link : kept) {
-            if (!PAGE_LINK_TEXT.matcher(link.text().trim()).matches()) nonDigits.add(link);
+            String text = link.text().trim();
+            boolean digits = PAGE_LINK_TEXT.matcher(text).matches();
+            boolean romanPage = isPageTarget(link) && PAGE_ROMAN_TEXT.matcher(text).matches();
+            if (!digits && !romanPage) titles.add(link);
         }
-        return nonDigits.isEmpty() ? kept : nonDigits;
+        return titles.isEmpty() ? kept : titles;
+    }
+
+    private boolean isPageTarget(Element link) {
+        return PAGE_LINK_HREF.matcher(link.attr("href")).find();
     }
 
     /** The links that belong to this row or item, not to a row or item nested inside it. */
