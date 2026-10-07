@@ -444,4 +444,33 @@ class GutenbergContentParserTest {
             java.util.List.of("THE GRAY CHAMPION", "THE MINISTER\u2019S BLACK VEIL", "THE GREAT CARBUNCLE", "I. HOWE\u2019S MASQUERADE"),
             book.chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void storyTitlesThatLookLikeFrontMatterKeepTheirText() {
+        String html = """
+            <html>
+            <body>
+                <h1>STORIES</h1>
+                <h2>by A. WRITER</h2>
+                <h2>CONTENTS</h2>
+                <p><a href="#a">By the Waters of Babylon</a></p>
+                <h2>By the Waters of Babylon</h2>
+                <p>The north and the east and the south are good hunting ground, but the west is forbidden.</p>
+                <h2>Contents of the Dead Man's Pocket</h2>
+                <p>Tom Benecke stepped out of the window onto the ledge and looked down at the street.</p>
+                <h2>A Third Story</h2>
+                <p>There was once a third story with enough text to count as a real paragraph here.</p>
+                <h2>THE FULL PROJECT GUTENBERG LICENSE</h2>
+                <p>Please read this before you distribute or use this work under the license terms.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(
+            java.util.List.of("By the Waters of Babylon", "Contents of the Dead Man's Pocket", "A Third Story"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+        assertEquals(1, book.chapters().get(0).paragraphs().size());
+    }
 }

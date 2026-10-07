@@ -56,4 +56,35 @@ class GutenbergContentsExtractorTest {
     void returnsNothingWhenThereIsNoContentsHeading() {
         assertTrue(extractor.extract("<html><body><h2>Chapter I</h2><p>text</p></body></html>").isEmpty());
     }
+
+    @Test
+    void aRowLinkingBothItsNumberAndItsTitleIsOneEntry() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS:</h2>
+            <table>
+              <tr><td><a href="#c1">I.</a></td><td><a href="#c1">Howe's Masquerade</a></td></tr>
+              <tr><td><a href="#c2">II.</a></td><td><a href="#c2">Edward Randolph's Portrait</a></td></tr>
+            </table>
+            <h2>I. Howe's Masquerade</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("I. Howe's Masquerade", "II. Edward Randolph's Portrait"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
+
+    @Test
+    void anH4ContentsHeadingStopsAtTheNextH4() {
+        String html = """
+            <html><body>
+            <h4>Contents</h4>
+            <p><a href="#c1">One</a></p>
+            <h4>Preface</h4>
+            <p><a href="#c9">Not contents</a></p>
+            </body></html>
+            """;
+
+        assertEquals(List.of("One"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }

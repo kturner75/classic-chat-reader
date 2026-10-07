@@ -176,4 +176,11 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(CHAT, SensitiveApiRequestMatcher.classify("DELETE", "/api/reading-buddy/history"));
         assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/reading-buddy/preferences"));
     }
+
+    @Test
+    void gutenbergContentsIsOperatorOnly() {
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/13707/contents"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/13707"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/abc/contents"));
+    }
 }

@@ -196,4 +196,32 @@ class ImportControllerTest {
             .andExpect(status().isServiceUnavailable())
             .andExpect(jsonPath("$.error").value("gutenberg_unavailable"));
     }
+
+    @Test
+    void contentsReturnsTheEntries() throws Exception {
+        when(bookImportService.getGutenbergContents(13707)).thenReturn(new BookImportService.ContentsOutcome(
+            GutendexClient.LookupStatus.FOUND,
+            List.of(new com.classicchatreader.gutendex.GutenbergContentsExtractor.ContentsEntry("THE GRAY CHAMPION", false))));
+
+        mockMvc.perform(get("/api/import/gutenberg/13707/contents"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gutenbergId").value(13707))
+            .andExpect(jsonPath("$.entries[0].title").value("THE GRAY CHAMPION"))
+            .andExpect(jsonPath("$.entries[0].group").value(false));
+    }
+
+    @Test
+    void contentsAnswersLikeTheLookupForAMissingBookAndAnOutage() throws Exception {
+        when(bookImportService.getGutenbergContents(1)).thenReturn(
+            new BookImportService.ContentsOutcome(GutendexClient.LookupStatus.NOT_FOUND, List.of()));
+        when(bookImportService.getGutenbergContents(2)).thenReturn(
+            new BookImportService.ContentsOutcome(GutendexClient.LookupStatus.UNAVAILABLE, List.of()));
+
+        mockMvc.perform(get("/api/import/gutenberg/1/contents"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("gutenberg_not_found"));
+        mockMvc.perform(get("/api/import/gutenberg/2/contents"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.error").value("gutenberg_unavailable"));
+    }
 }

@@ -35,18 +35,29 @@ public class BookImportService {
     private final CatalogMode catalogMode;
     private final GutendexClient gutendexClient;
     private final GutenbergContentParser contentParser;
-    private final GutenbergContentsExtractor contentsExtractor = new GutenbergContentsExtractor();
+    private final GutenbergContentsExtractor contentsExtractor;
     private final BookStorageService bookStorageService;
     private final CuratedCatalogService curatedCatalogService;
 
-    @Autowired
     public BookImportService(GutendexClient gutendexClient,
                              GutenbergContentParser contentParser,
                              BookStorageService bookStorageService,
                              CuratedCatalogService curatedCatalogService,
                              @Value("${library.catalog.mode:curated}") String catalogMode) {
+        this(gutendexClient, contentParser, new GutenbergContentsExtractor(), bookStorageService,
+            curatedCatalogService, catalogMode);
+    }
+
+    @Autowired
+    public BookImportService(GutendexClient gutendexClient,
+                             GutenbergContentParser contentParser,
+                             GutenbergContentsExtractor contentsExtractor,
+                             BookStorageService bookStorageService,
+                             CuratedCatalogService curatedCatalogService,
+                             @Value("${library.catalog.mode:curated}") String catalogMode) {
         this.gutendexClient = gutendexClient;
         this.contentParser = contentParser;
+        this.contentsExtractor = contentsExtractor;
         this.bookStorageService = bookStorageService;
         this.curatedCatalogService = curatedCatalogService;
         this.catalogMode = CatalogMode.from(catalogMode);
@@ -283,26 +294,30 @@ public class BookImportService {
             null));
     }
 
-    public record ContentsOutcome(boolean found, List<GutenbergContentsExtractor.ContentsEntry> entries, String message) {}
+    public record ContentsOutcome(GutendexClient.LookupStatus status, List<GutenbergContentsExtractor.ContentsEntry> entries) {}
 
     /**
      * Read-only: the table of contents Gutenberg's own HTML prints for this book, so the operator can
-     * check the parsed chapters against what the book says it contains. An empty list means the
-     * edition has no recognisable contents, which callers must treat as "cannot compare".
+     * check the parsed chapters against what the book says it contains. Answers like
+     * {@link #lookupGutenberg}: NOT_FOUND means Gutenberg has no such book, UNAVAILABLE means it could
+     * not be reached (callers must not read that as a wrong ID). An edition without an HTML version
+     * or without a contents list is FOUND with no entries, which callers treat as "cannot compare".
      */
     public ContentsOutcome getGutenbergContents(int gutenbergId) {
-        Optional<GutendexBook> gutendexBook = gutendexClient.getBook(gutenbergId);
-        if (gutendexBook.isEmpty()) {
-            return new ContentsOutcome(false, List.of(), "Book not found in Gutenberg");
+        GutendexClient.BookLookupResult remote = gutendexClient.lookupBook(gutenbergId);
+        if (remote.status() != GutendexClient.LookupStatus.FOUND) {
+            return new ContentsOutcome(remote.status(), List.of());
         }
-        String htmlUrl = gutendexBook.get().getHtmlUrl();
+        String htmlUrl = remote.book().getHtmlUrl();
         if (htmlUrl == null) {
-            return new ContentsOutcome(false, List.of(), "No HTML version available");
+            return new ContentsOutcome(GutendexClient.LookupStatus.FOUND, List.of());
         }
         try {
-            return new ContentsOutcome(true, contentsExtractor.extract(gutendexClient.fetchContent(htmlUrl)), null);
+            return new ContentsOutcome(GutendexClient.LookupStatus.FOUND,
+                contentsExtractor.extract(gutendexClient.fetchContent(htmlUrl)));
         } catch (Exception e) {
-            return new ContentsOutcome(false, List.of(), "Failed to fetch content: " + e.getMessage());
+            log.warn("event=gutenberg_contents_unavailable gutenbergId={} reason={}", gutenbergId, e.toString());
+            return new ContentsOutcome(GutendexClient.LookupStatus.UNAVAILABLE, List.of());
         }
     }
 

@@ -271,20 +271,18 @@ public class GutenbergContentParser {
         // Collections of short stories (e.g. Twice-Told Tales) head every story with a plain
         // title h2 ("THE GRAY CHAMPION") that none of the patterns above recognise. When the
         // strict matches are a minority of the content h2s, treat every content h2 as a chapter.
-        List<Element> storyHeaders = unnumberedStoryHeaders(headers);
+        StoryHeaders story = classifyH2Headers(headers);
         java.util.Set<Element> boundaryHeaders = new java.util.HashSet<>();
-        if (storyHeaders.size() >= MIN_STORY_HEADERS && chapterHeaders.size() * 2 < storyHeaders.size()) {
+        if (story.stories().size() >= MIN_STORY_HEADERS && chapterHeaders.size() * 2 < story.stories().size()) {
             java.util.Set<Element> merged = new java.util.HashSet<>(chapterHeaders);
-            merged.addAll(storyHeaders);
+            merged.addAll(story.stories());
             chapterHeaders = new ArrayList<>();
             for (Element header : headers) {
                 if (merged.contains(header)) {
                     chapterHeaders.add(header);
-                } else if (header.tagName().equals("h2")) {
-                    // Contents/byline/license: ends the previous section so its text isn't absorbed
-                    boundaryHeaders.add(header);
                 }
             }
+            boundaryHeaders = story.boundaries();
         }
 
         if (chapterHeaders.isEmpty()) {
@@ -354,23 +352,48 @@ public class GutenbergContentParser {
     }
 
     private static final int MIN_STORY_HEADERS = 3;
+    private static final int MAX_STORY_TITLE = 100;
 
-    // Footnote markers Gutenberg appends to titles, e.g. "THE GREAT CARBUNCLE[4]"
-    private static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
+    private record StoryHeaders(List<Element> stories, java.util.Set<Element> boundaries) {}
 
-    /** h2 headings that could be a story/section title: not the contents, byline or license. */
-    private List<Element> unnumberedStoryHeaders(Elements headers) {
-        List<Element> result = new ArrayList<>();
+    /**
+     * Splits the h2 headings into story/section titles and boundaries. A boundary ends the previous
+     * section without starting a chapter: the contents heading, the license, and any heading before
+     * the contents (title page, byline). Anything else stays a story title, even "By the Waters of
+     * Babylon" or "Contents of the Dead Man's Pocket". A heading too long to be a title is neither, so
+     * its text stays with the section before it, as it did before story mode existed.
+     */
+    private StoryHeaders classifyH2Headers(Elements headers) {
+        List<Element> h2s = new ArrayList<>();
         for (Element header : headers) {
-            if (!header.tagName().equals("h2")) continue;
-            String title = header.text().trim();
-            if (title.isEmpty() || title.length() > 100) continue;
-            String upper = title.toUpperCase();
-            if (upper.contains("CONTENTS") || upper.contains("TABLE OF")) continue;
-            if (upper.startsWith("BY ") || upper.contains("GUTENBERG")) continue;
-            result.add(header);
+            if (header.tagName().equals("h2")) h2s.add(header);
         }
-        return result;
+        int contentsAt = -1;
+        for (int i = 0; i < h2s.size(); i++) {
+            if (isContentsTitle(h2s.get(i).text())) {
+                contentsAt = i;
+                break;
+            }
+        }
+
+        List<Element> stories = new ArrayList<>();
+        java.util.Set<Element> boundaries = new java.util.HashSet<>();
+        for (int i = 0; i < h2s.size(); i++) {
+            Element header = h2s.get(i);
+            String title = header.text().trim();
+            boolean license = title.toUpperCase().contains("PROJECT GUTENBERG");
+            if (i <= contentsAt || license) {
+                boundaries.add(header);
+            } else if (!title.isEmpty() && title.length() <= MAX_STORY_TITLE) {
+                stories.add(header);
+            }
+        }
+        return new StoryHeaders(stories, boundaries);
+    }
+
+    private boolean isContentsTitle(String text) {
+        String t = text.trim().replaceAll("[\\p{Punct}\\s]+$", "").toUpperCase();
+        return t.equals("CONTENTS") || t.equals("TABLE OF CONTENTS");
     }
 
     // Pattern to find chapter markers anywhere in text (for headers with mixed content)
@@ -443,7 +466,7 @@ public class GutenbergContentParser {
         }
 
         // For other patterns (like roman numerals alone), return the trimmed text
-        return FOOTNOTE_MARKER.matcher(trimmed).replaceAll("").replaceAll("[,;:]+$", "").trim();
+        return GutenbergContentsExtractor.FOOTNOTE_MARKER.matcher(trimmed).replaceAll("").replaceAll("[,;:]+$", "").trim();
     }
 
     private List<ParsedChapter> extractChaptersFromParagraphs(Elements paragraphs) {
