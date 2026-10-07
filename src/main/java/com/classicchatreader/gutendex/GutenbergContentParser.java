@@ -391,24 +391,26 @@ public class GutenbergContentParser {
         return new StoryHeaders(stories, boundaries);
     }
 
+    private static final int BYLINE_MAX_BODY_CHARS = 100;
+
     /**
-     * With no contents heading to anchor on, only a leading "by ..." heading that holds almost no text
-     * is a byline. A story that really is titled "By the Waters of Babylon" has a full body under it.
+     * With no contents heading to anchor on, only a leading "by ..." heading with almost no text under
+     * it is a byline. Any real story, even a short or verse one, has more body than that, and the
+     * text is measured over prose and verse lines alike, in document order.
      */
     private boolean looksLikeByline(Element header) {
         if (!header.text().trim().toUpperCase().startsWith("BY ")) return false;
-        // Document order, not siblings: a heading wrapped alone in a div has none of its own.
-        int paragraphs = 0;
+        int chars = 0;
         boolean after = false;
-        for (Element el : header.ownerDocument().select("h1, h2, h3, p")) {
+        for (Element el : header.ownerDocument().select("h1, h2, h3, p, div.l")) {
             if (el == header) {
                 after = true;
             } else if (after) {
                 if (el.tagName().matches("h[1-3]")) break;
-                if (el.text().length() > 20) paragraphs++;
+                chars += el.text().length();
             }
         }
-        return paragraphs < 3;
+        return chars < BYLINE_MAX_BODY_CHARS;
     }
 
     private boolean isContentsTitle(String text) {

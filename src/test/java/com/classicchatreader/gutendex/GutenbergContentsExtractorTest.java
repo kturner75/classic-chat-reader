@@ -100,4 +100,21 @@ class GutenbergContentsExtractorTest {
 
         assertEquals(List.of("THE GRAY CHAMPION"), extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void aRowLinkingOnlyItsNumberTakesTheUnlinkedTitleCell() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <table>
+              <tr><td><a href="#c1">I.</a></td><td>Howe's Masquerade</td></tr>
+              <tr><td><a href="#c2">II.</a></td><td>Edward Randolph's Portrait</td></tr>
+            </table>
+            <h2>I. Howe's Masquerade</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("I. Howe's Masquerade", "II. Edward Randolph's Portrait"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }

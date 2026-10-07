@@ -529,4 +529,24 @@ class GutenbergContentParserTest {
         assertEquals(java.util.List.of("By the Waters of Babylon", "Second Story", "Third Story"),
             parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void aShortOrVerseFirstStoryTitledByIsNotMistakenForABylineEither() {
+        String html = """
+            <html><body>
+                <h2>By Moonlight</h2>
+                <div class="l">The moon came up over the quiet bay tonight.</div>
+                <div class="l">And every boat was resting on the silver water.</div>
+                <div class="l">I walked the shore alone and thought of home.</div>
+                <div class="l">While far away the bells began to ring at last.</div>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("By Moonlight", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
 }

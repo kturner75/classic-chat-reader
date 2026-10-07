@@ -24,6 +24,7 @@ public class GutenbergContentsExtractor {
     /** Footnote markers Gutenberg appends to titles, e.g. "THE GREAT CARBUNCLE[4]". Shared with the parser. */
     static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
     private static final int MAX_ENTRIES = 500;
+    private static final Pattern NUMBER_ONLY = Pattern.compile("^[IVXLCDMivxlcdm\\d.\\s]+$");
 
     public List<ContentsEntry> extract(String html) {
         Document doc = Jsoup.parse(html);
@@ -67,7 +68,10 @@ public class GutenbergContentsExtractor {
             } else {
                 StringBuilder joined = new StringBuilder();
                 for (Element link : unit.select("a[href*=#]")) joined.append(' ').append(link.text());
-                addTitle(titles, joined.toString());
+                String linked = clean(joined.toString());
+                // A row that links only its number ("<a>I.</a>" then an unlinked title cell) is that
+                // number plus the rest of the row.
+                addTitle(titles, NUMBER_ONLY.matcher(linked).matches() ? unit.text() : linked);
             }
         }
         return titles;
