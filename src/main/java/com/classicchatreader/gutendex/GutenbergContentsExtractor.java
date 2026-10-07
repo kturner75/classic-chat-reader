@@ -24,6 +24,8 @@ public class GutenbergContentsExtractor {
     /** Footnote markers Gutenberg appends to titles, e.g. "THE GREAT CARBUNCLE[4]". Shared with the parser. */
     static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
     private static final int MAX_ENTRIES = 500;
+    private static final Pattern PAGE_LINK_TEXT = Pattern.compile("^\\d{1,4}$");
+    private static final Pattern PAGE_LINK_HREF = Pattern.compile("#page_?\\d+$", Pattern.CASE_INSENSITIVE);
     private static final Pattern NUMBER_ONLY = Pattern.compile("^[IVXLCDMivxlcdm\\d.\\s]+$");
 
     public List<ContentsEntry> extract(String html) {
@@ -63,6 +65,7 @@ public class GutenbergContentsExtractor {
         List<Element> units = rows.isEmpty() ? List.of(container) : rows;
         for (Element unit : units) {
             List<Element> links = ownLinks(unit, !rows.isEmpty());
+            if (!rows.isEmpty()) links = withoutPageNumbers(links);
             if (!rows.isEmpty() && links.isEmpty()) continue;
             if (rows.isEmpty()) {
                 for (Element link : links) addTitle(titles, link.text());
@@ -76,6 +79,20 @@ public class GutenbergContentsExtractor {
             }
         }
         return titles;
+    }
+
+    /**
+     * A row that links its title and also its page number ("<a>CHAPTER I</a> <a>1</a>") is the title.
+     * Page-number links (bare digits, or a #Page_N target) are dropped when something else is linked.
+     */
+    private List<Element> withoutPageNumbers(List<Element> links) {
+        List<Element> kept = new ArrayList<>();
+        for (Element link : links) {
+            if (!PAGE_LINK_TEXT.matcher(link.text().trim()).matches() && !PAGE_LINK_HREF.matcher(link.attr("href")).find()) {
+                kept.add(link);
+            }
+        }
+        return kept.isEmpty() ? links : kept;
     }
 
     /** The links that belong to this row or item, not to a row or item nested inside it. */

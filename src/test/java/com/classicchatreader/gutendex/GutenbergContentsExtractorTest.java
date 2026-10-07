@@ -142,4 +142,22 @@ class GutenbergContentsExtractorTest {
             new ContentsEntry("Chapter 2", false),
             new ContentsEntry("Epilogue", false)), extractor.extract(html));
     }
+
+    @Test
+    void linkedPageNumbersAreNotPartOfTheTitle() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <table>
+              <tr><td><a href="#CHAPTER_I">CHAPTER I</a></td><td><a href="#Page_1">1</a></td></tr>
+              <tr><td><a href="#CHAPTER_II">CHAPTER II. The Garden</a></td><td><a href="#Page_17">17</a></td></tr>
+              <tr><td><a href="#c3">I.</a></td><td><a href="#c3">Howe's Masquerade</a></td></tr>
+            </table>
+            <h2>CHAPTER I</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("CHAPTER I", "CHAPTER II. The Garden", "I. Howe's Masquerade"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }
