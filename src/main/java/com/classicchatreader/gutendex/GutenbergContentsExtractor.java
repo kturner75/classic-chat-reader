@@ -69,7 +69,12 @@ public class GutenbergContentsExtractor {
             links = withoutPageNumbers(links);
             if (links.isEmpty()) continue;
             if (rows.isEmpty()) {
-                for (Element link : links) addTitle(titles, link.text());
+                // "<p><a>I.</a> Howe's Masquerade</p>": a lone number link plus the text after it.
+                if (links.size() == 1 && NUMBER_ONLY.matcher(clean(links.get(0).text())).matches()) {
+                    addTitle(titles, ownText(unit));
+                } else {
+                    for (Element link : links) addTitle(titles, link.text());
+                }
             } else {
                 StringBuilder joined = new StringBuilder();
                 for (Element link : links) joined.append(' ').append(link.text());

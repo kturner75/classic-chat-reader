@@ -592,4 +592,27 @@ class GutenbergContentParserTest {
         assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
             parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void h3FrontMatterBeforeTheContentsIsABoundaryToo() {
+        String html = """
+            <html><body>
+                <h3>PREFACE</h3>
+                <p>A preface that talks about the stories collected here, written long ago by the author.</p>
+                <h3>INTRODUCTION</h3>
+                <p>An introduction that also talks about the stories collected here at some length too.</p>
+                <h2>CONTENTS</h2>
+                <p><a href="#a">First Story</a> and so on through the other stories of the book here.</p>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
 }

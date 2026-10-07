@@ -206,4 +206,19 @@ class GutenbergContentsExtractorTest {
         assertEquals(List.of("CHAPTER I", "CHAPTER II", "PREFACE"),
             extractor.extract(html).stream().map(ContentsEntry::title).toList());
     }
+
+    @Test
+    void aParagraphWithALinkedNumberAndUnlinkedTitleIsOneEntry() {
+        String html = """
+            <html><body>
+            <h2>CONTENTS</h2>
+            <p><a href="#c1">I.</a> Howe's Masquerade</p>
+            <p><a href="#c2">II.</a> Edward Randolph's Portrait</p>
+            <h2>I. Howe's Masquerade</h2>
+            </body></html>
+            """;
+
+        assertEquals(List.of("I. Howe's Masquerade", "II. Edward Randolph's Portrait"),
+            extractor.extract(html).stream().map(ContentsEntry::title).toList());
+    }
 }
