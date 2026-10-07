@@ -268,6 +268,21 @@ public class GutenbergContentParser {
             }
         }
 
+        // Collections of short stories (e.g. Twice-Told Tales) head every story with a plain
+        // title h2 ("THE GRAY CHAMPION") that none of the patterns above recognise. When the
+        // strict matches are a minority of the content h2s, treat every content h2 as a chapter.
+        List<Element> storyHeaders = unnumberedStoryHeaders(headers);
+        if (storyHeaders.size() >= MIN_STORY_HEADERS && chapterHeaders.size() * 2 < storyHeaders.size()) {
+            java.util.Set<Element> merged = new java.util.HashSet<>(chapterHeaders);
+            merged.addAll(storyHeaders);
+            chapterHeaders = new ArrayList<>();
+            for (Element header : headers) {
+                if (merged.contains(header)) {
+                    chapterHeaders.add(header);
+                }
+            }
+        }
+
         if (chapterHeaders.isEmpty()) {
             return chapters;
         }
@@ -326,6 +341,26 @@ public class GutenbergContentParser {
         }
 
         return chapters;
+    }
+
+    private static final int MIN_STORY_HEADERS = 3;
+
+    // Footnote markers Gutenberg appends to titles, e.g. "THE GREAT CARBUNCLE[4]"
+    private static final Pattern FOOTNOTE_MARKER = Pattern.compile("\\s*\\[\\d+\\]");
+
+    /** h2 headings that could be a story/section title: not the contents, byline or license. */
+    private List<Element> unnumberedStoryHeaders(Elements headers) {
+        List<Element> result = new ArrayList<>();
+        for (Element header : headers) {
+            if (!header.tagName().equals("h2")) continue;
+            String title = header.text().trim();
+            if (title.isEmpty() || title.length() > 100) continue;
+            String upper = title.toUpperCase();
+            if (upper.contains("CONTENTS") || upper.contains("TABLE OF")) continue;
+            if (upper.startsWith("BY ") || upper.contains("GUTENBERG")) continue;
+            result.add(header);
+        }
+        return result;
     }
 
     // Pattern to find chapter markers anywhere in text (for headers with mixed content)
@@ -398,7 +433,7 @@ public class GutenbergContentParser {
         }
 
         // For other patterns (like roman numerals alone), return the trimmed text
-        return trimmed;
+        return FOOTNOTE_MARKER.matcher(trimmed).replaceAll("").replaceAll("[,;:]+$", "").trim();
     }
 
     private List<ParsedChapter> extractChaptersFromParagraphs(Elements paragraphs) {

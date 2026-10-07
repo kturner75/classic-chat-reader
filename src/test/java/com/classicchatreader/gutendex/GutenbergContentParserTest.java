@@ -414,4 +414,34 @@ class GutenbergContentParserTest {
         assertEquals(1, book.chapters().get(0).paragraphs().size());
         assertFalse(book.chapters().get(0).paragraphs().get(0).contains("{11}"));
     }
+
+    @Test
+    void parseTreatsPlainTitleH2sAsChaptersInStoryCollections() {
+        String html = """
+            <html>
+            <body>
+                <h1>TWICE-TOLD TALES</h1>
+                <h2>by NATHANIEL HAWTHORNE</h2>
+                <h2>CONTENTS</h2>
+                <p><a href="#chap01">THE GRAY CHAMPION</a></p>
+                <h2>THE GRAY CHAMPION</h2>
+                <p>There was once a time when New England groaned under the actual pressure of heavier wrongs.</p>
+                <h2>THE MINISTER\u2019S BLACK VEIL</h2>
+                <h4>A PARABLE</h4>
+                <p>The sexton stood in the porch of Milford meeting-house, pulling lustily at the bell-rope.</p>
+                <h2>THE GREAT CARBUNCLE[4]</h2>
+                <p>At nightfall, after a toilsome and fruitless search, the adventurers sat down by a fire.</p>
+                <h2>Legends of the Province-House</h2>
+                <h2>I. HOWE\u2019S MASQUERADE</h2>
+                <p>One afternoon, last summer, while I was in the bar-room of the Province-House.</p>
+            </body>
+            </html>
+            """;
+
+        ParsedBook book = parser.parse(html);
+
+        assertEquals(
+            java.util.List.of("THE GRAY CHAMPION", "THE MINISTER\u2019S BLACK VEIL", "THE GREAT CARBUNCLE", "I. HOWE\u2019S MASQUERADE"),
+            book.chapters().stream().map(ParsedChapter::title).toList());
+    }
 }
