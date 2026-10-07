@@ -615,4 +615,25 @@ class GutenbergContentParserTest {
         assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
             parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
     }
+
+    @Test
+    void endMatterAfterTheStoriesIsNotAnotherStory() {
+        String html = """
+            <html><body>
+                <h2>First Story</h2>
+                <p>The first story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Second Story</h2>
+                <p>The second story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>Third Story</h2>
+                <p>The third story begins here with a good deal of ordinary narrative text to read.</p>
+                <h2>FOOTNOTES</h2>
+                <p>Footnote one explains an old word that appears in the second story above at length.</p>
+                <h2>TRANSCRIBER\u2019S NOTES</h2>
+                <p>Obvious typographical errors were corrected, and the spelling was left as printed.</p>
+            </body></html>
+            """;
+
+        assertEquals(java.util.List.of("First Story", "Second Story", "Third Story"),
+            parser.parse(html).chapters().stream().map(ParsedChapter::title).toList());
+    }
 }

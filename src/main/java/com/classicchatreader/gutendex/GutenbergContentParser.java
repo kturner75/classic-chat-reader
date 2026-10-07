@@ -393,7 +393,7 @@ public class GutenbergContentParser {
         for (int i = 0; i < h2s.size(); i++) {
             Element header = h2s.get(i);
             String title = header.text().trim();
-            boolean license = title.toUpperCase().contains("PROJECT GUTENBERG");
+            boolean license = title.toUpperCase().contains("PROJECT GUTENBERG") || isEndMatterTitle(title);
             if (frontMatter.contains(header) || license || (!hasContents && i == 0 && looksLikeByline(header))) {
                 boundaries.add(header);
             } else if (!title.isEmpty() && title.length() <= MAX_STORY_TITLE) {
@@ -426,6 +426,16 @@ public class GutenbergContentParser {
             }
         }
         return chars < BYLINE_MAX_BODY_CHARS;
+    }
+
+    private static final java.util.Set<String> END_MATTER = java.util.Set.of(
+        "FOOTNOTES", "NOTES", "ENDNOTES", "TRANSCRIBER'S NOTES", "TRANSCRIBERS NOTES", "TRANSCRIBER NOTES",
+        "TRANSCRIBER'S NOTE", "TRANSCRIBERS NOTE", "INDEX", "APPENDIX", "GLOSSARY", "ERRATA");
+
+    /** Notes and indexes at the end of a collection are not stories; they end the last one. */
+    private boolean isEndMatterTitle(String title) {
+        String t = title.replace('\u2019', '\'').trim().replaceAll("[\\p{Punct}\\s]+$", "").toUpperCase();
+        return END_MATTER.contains(t);
     }
 
     private boolean isContentsTitle(String text) {
