@@ -186,4 +186,10 @@ class SensitiveApiRequestMatcherTest {
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/+13707/contents"));
         assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("GET", "/api/import/gutenberg/0x35DB/contents"));
     }
+
+    @Test
+    void ttsSettingsOverrideIsOperatorOnly() {
+        assertEquals(ADMIN, SensitiveApiRequestMatcher.classify("PUT", "/api/tts/settings/book-1"));
+        assertEquals(NONE, SensitiveApiRequestMatcher.classify("GET", "/api/tts/settings/book-1"));
+    }
 }

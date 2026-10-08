@@ -216,4 +216,54 @@ class CharacterServicePatchTest {
         chapter.setBook(book);
         return chapter;
     }
+
+    @Test
+    void patchCharacter_callVoice_isStoredForAPrimaryCharacterAndExposed() {
+        grandma.setCharacterType(CharacterType.PRIMARY);
+        when(characterRepository.findByIdWithBookAndChapter("character-grandma"))
+                .thenReturn(Optional.of(grandma));
+        when(characterRepository.save(grandma)).thenReturn(grandma);
+
+        CharacterInfo info = service.patchCharacter("character-grandma", null, null, null, " Eve ");
+
+        assertThat(grandma.getCallVoice()).isEqualTo("eve");
+        assertThat(grandma.getCallVoiceProvider()).isEqualTo("xai");
+        assertThat(info.callVoice()).isEqualTo("eve");
+    }
+
+    @Test
+    void patchCharacter_callVoice_isRefusedForASecondaryCharacter() {
+        when(characterRepository.findByIdWithBookAndChapter("character-grandma"))
+                .thenReturn(Optional.of(grandma));
+
+        assertThatThrownBy(() -> service.patchCharacter("character-grandma", null, null, null, "eve"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PRIMARY");
+        verify(characterRepository, never()).save(grandma);
+    }
+
+    @Test
+    void patchCharacter_blankCallVoice_clearsItSoTheNextCallPicksAgain() {
+        grandma.setCharacterType(CharacterType.PRIMARY);
+        grandma.setCallVoice("eve");
+        grandma.setCallVoiceProvider("xai");
+        when(characterRepository.findByIdWithBookAndChapter("character-grandma"))
+                .thenReturn(Optional.of(grandma));
+        when(characterRepository.save(grandma)).thenReturn(grandma);
+
+        CharacterInfo info = service.patchCharacter("character-grandma", null, null, null, "");
+
+        assertThat(grandma.getCallVoice()).isNull();
+        assertThat(grandma.getCallVoiceProvider()).isNull();
+        assertThat(info.callVoice()).isNull();
+    }
+
+    @Test
+    void characterInfo_hidesACallVoiceFromAnotherProvider() {
+        grandma.setCharacterType(CharacterType.PRIMARY);
+        grandma.setCallVoice("alloy");
+        grandma.setCallVoiceProvider("openai");
+
+        assertThat(CharacterInfo.from(grandma).callVoice()).isNull();
+    }
 }

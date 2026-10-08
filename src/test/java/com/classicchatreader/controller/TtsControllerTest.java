@@ -34,6 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -444,5 +445,66 @@ class TtsControllerTest {
         when(chapterRepository.findById("chapter-1")).thenReturn(Optional.of(chapter));
         when(paragraphRepository.findByChapterIdOrderByParagraphIndex("chapter-1")).thenReturn(List.of(paragraph));
         when(assetKeyService.buildBookKey(book)).thenReturn("book-one");
+    }
+
+    private BookEntity ttsBook() {
+        BookEntity book = new BookEntity("Book One", "Author One", "gutenberg");
+        book.setId("book-1");
+        book.setTtsEnabled(true);
+        return book;
+    }
+
+    @Test
+    void putSettings_savesAnOperatorChosenVoiceAndLeavesSpeedAndInstructionsAlone() throws Exception {
+        BookEntity book = ttsBook();
+        book.setTtsSpeed(0.95);
+        book.setTtsInstructions("Slow and sombre.");
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.currentProvider()).thenReturn("xai");
+        when(ttsService.isServedByCurrentProvider("Eve")).thenReturn(true);
+        when(ttsService.isCompatibleWithCurrentProvider("eve", "xai")).thenReturn(true);
+        when(ttsService.resolveVoice("eve")).thenReturn("eve");
+        when(ttsService.clampSpeed(org.mockito.ArgumentMatchers.anyDouble())).thenAnswer(i -> i.getArgument(0));
+
+        mockMvc.perform(put("/api/tts/settings/book-1")
+                        .header("X-API-Key", "test-api-key")
+                        .contentType("application/json")
+                        // An older caller may still send speed and instructions; they are ignored.
+                        .content("{\"voice\": \"Eve\", \"speed\": 2.0, \"instructions\": \"Shout.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.voice", is("eve")))
+                .andExpect(jsonPath("$.speed", is(0.95)))
+                .andExpect(jsonPath("$.instructions", is("Slow and sombre.")))
+                .andExpect(jsonPath("$.reasoning", is("Set by operator")));
+
+        org.assertj.core.api.Assertions.assertThat(book.getTtsVoice()).isEqualTo("eve");
+        org.assertj.core.api.Assertions.assertThat(book.getTtsVoiceProvider()).isEqualTo("xai");
+        org.assertj.core.api.Assertions.assertThat(book.getTtsSpeed()).isEqualTo(0.95);
+        org.assertj.core.api.Assertions.assertThat(book.getTtsInstructions()).isEqualTo("Slow and sombre.");
+        verify(bookRepository).save(book);
+    }
+
+    @Test
+    void putSettings_rejectsAVoiceTheProviderDoesNotServe() throws Exception {
+        when(bookRepository.findById("book-1")).thenReturn(Optional.of(ttsBook()));
+        when(ttsService.isCacheOnly()).thenReturn(false);
+        when(ttsService.isServedByCurrentProvider("nope")).thenReturn(false);
+
+        mockMvc.perform(put("/api/tts/settings/book-1")
+                        .header("X-API-Key", "test-api-key")
+                        .contentType("application/json")
+                        .content("{\"voice\": \"nope\"}"))
+                .andExpect(status().isBadRequest());
+        verify(bookRepository, never()).save(org.mockito.ArgumentMatchers.any(BookEntity.class));
+    }
+
+    @Test
+    void putSettings_needsTheAdminKeyInPublicMode() throws Exception {
+        mockMvc.perform(put("/api/tts/settings/book-1")
+                        .contentType("application/json")
+                        .content("{\"voice\": \"eve\"}"))
+                .andExpect(status().isUnauthorized());
+        verify(bookRepository, never()).save(org.mockito.ArgumentMatchers.any(BookEntity.class));
     }
 }

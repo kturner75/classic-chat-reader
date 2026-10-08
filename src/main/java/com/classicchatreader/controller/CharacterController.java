@@ -26,6 +26,8 @@ import com.classicchatreader.service.llm.LlmProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.classicchatreader.service.TtsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -72,6 +74,10 @@ public class CharacterController {
 
     @Value("${illustration.allow-prompt-editing:false}")
     private boolean allowPromptEditing;
+
+    /** Optional so the controller still wires in slices that do not load TTS; only call-voice patches need it. */
+    @Autowired(required = false)
+    private TtsService ttsService;
 
     private final CharacterService characterService;
     private final CharacterChatService chatService;
@@ -236,12 +242,24 @@ public class CharacterController {
         if (!isCharacterEnabled(characterOpt.get().getBook())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+        String callVoice = request != null ? request.callVoice() : null;
+        if (callVoice != null && !callVoice.isBlank()
+                && (ttsService == null || !ttsService.isServedByCurrentProvider(callVoice))) {
+            return ResponseEntity.badRequest().build();
+        }
         try {
-            CharacterInfo updated = characterService.patchCharacter(
-                    characterId,
-                    request != null ? request.characterType() : null,
-                    request != null ? request.firstChapterIndex() : null,
-                    request != null ? request.firstParagraphIndex() : null);
+            CharacterInfo updated = callVoice == null
+                    ? characterService.patchCharacter(
+                            characterId,
+                            request != null ? request.characterType() : null,
+                            request != null ? request.firstChapterIndex() : null,
+                            request != null ? request.firstParagraphIndex() : null)
+                    : characterService.patchCharacter(
+                            characterId,
+                            request.characterType(),
+                            request.firstChapterIndex(),
+                            request.firstParagraphIndex(),
+                            callVoice);
             return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
@@ -627,7 +645,8 @@ public class CharacterController {
     public record CharacterPatchRequest(
             String characterType,
             Integer firstChapterIndex,
-            Integer firstParagraphIndex
+            Integer firstParagraphIndex,
+            String callVoice
     ) {}
 
     public record ChatResponse(
