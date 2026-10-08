@@ -126,7 +126,10 @@ public class TtsController {
 
   /**
    * Operator override of the book's read-aloud voice, so a voice can be chosen by hand instead of
-   * re-running the analysis. The voice must be one the current provider serves.
+   * re-running the analysis. The voice must be one the current provider serves. Only the voice is
+   * settable: speed does not reach audio that is already cached (its cache is keyed by voice) and
+   * delivery instructions are not sent to synthesis, so neither is offered here. The saved speed and
+   * instructions are left exactly as the analysis stored them.
    */
   @PutMapping("/settings/{bookId}")
   public ResponseEntity<VoiceSettings> putVoiceSettings(
@@ -147,21 +150,17 @@ public class TtsController {
       return ResponseEntity.badRequest().build();
     }
 
-    double speed = ttsService.clampSpeed(request.speed() != null && request.speed() > 0 ? request.speed() : 1.0);
     String voice = request.voice().trim().toLowerCase(java.util.Locale.ROOT);
     book.setTtsVoice(voice);
     book.setTtsVoiceProvider(ttsService.currentProvider());
-    book.setTtsSpeed(speed);
-    book.setTtsInstructions(request.instructions() == null || request.instructions().isBlank()
-        ? null : request.instructions().trim());
     book.setTtsReasoning("Set by operator");
     bookRepository.save(book);
-    log.info("Operator set voice settings for book {}: voice={}, speed={}", book.getTitle(), voice, speed);
+    log.info("Operator set voice for book {}: voice={}", book.getTitle(), voice);
 
     return ResponseEntity.ok(savedVoiceSettings(book));
   }
 
-  public record VoiceSettingsRequest(String voice, Double speed, String instructions) {}
+  public record VoiceSettingsRequest(String voice) {}
 
   @PostMapping("/analyze/{bookId}")
   public ResponseEntity<VoiceSettings> analyzeBook(

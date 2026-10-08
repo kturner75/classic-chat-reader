@@ -455,13 +455,14 @@ class TtsControllerTest {
     }
 
     @Test
-    void putSettings_savesAnOperatorChosenVoice() throws Exception {
+    void putSettings_savesAnOperatorChosenVoiceAndLeavesSpeedAndInstructionsAlone() throws Exception {
         BookEntity book = ttsBook();
+        book.setTtsSpeed(0.95);
+        book.setTtsInstructions("Slow and sombre.");
         when(bookRepository.findById("book-1")).thenReturn(Optional.of(book));
         when(ttsService.isCacheOnly()).thenReturn(false);
         when(ttsService.currentProvider()).thenReturn("xai");
         when(ttsService.isServedByCurrentProvider("Eve")).thenReturn(true);
-        when(ttsService.clampSpeed(1.1)).thenReturn(1.1);
         when(ttsService.isCompatibleWithCurrentProvider("eve", "xai")).thenReturn(true);
         when(ttsService.resolveVoice("eve")).thenReturn("eve");
         when(ttsService.clampSpeed(org.mockito.ArgumentMatchers.anyDouble())).thenAnswer(i -> i.getArgument(0));
@@ -469,14 +470,18 @@ class TtsControllerTest {
         mockMvc.perform(put("/api/tts/settings/book-1")
                         .header("X-API-Key", "test-api-key")
                         .contentType("application/json")
-                        .content("{\"voice\": \"Eve\", \"speed\": 1.1, \"instructions\": \"  Warm and slow. \"}"))
+                        // An older caller may still send speed and instructions; they are ignored.
+                        .content("{\"voice\": \"Eve\", \"speed\": 2.0, \"instructions\": \"Shout.\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.voice", is("eve")))
-                .andExpect(jsonPath("$.instructions", is("Warm and slow.")))
+                .andExpect(jsonPath("$.speed", is(0.95)))
+                .andExpect(jsonPath("$.instructions", is("Slow and sombre.")))
                 .andExpect(jsonPath("$.reasoning", is("Set by operator")));
 
         org.assertj.core.api.Assertions.assertThat(book.getTtsVoice()).isEqualTo("eve");
         org.assertj.core.api.Assertions.assertThat(book.getTtsVoiceProvider()).isEqualTo("xai");
+        org.assertj.core.api.Assertions.assertThat(book.getTtsSpeed()).isEqualTo(0.95);
+        org.assertj.core.api.Assertions.assertThat(book.getTtsInstructions()).isEqualTo("Slow and sombre.");
         verify(bookRepository).save(book);
     }
 
