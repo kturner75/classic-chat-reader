@@ -308,6 +308,20 @@ public class CharacterService {
             String characterType,
             Integer firstChapterIndex,
             Integer firstParagraphIndex) {
+        return patchCharacter(characterId, characterType, firstChapterIndex, firstParagraphIndex, null);
+    }
+
+    /**
+     * As above, plus an operator-chosen call voice. {@code callVoice} null leaves it alone, blank clears it
+     * (the next call picks one again), anything else is stored for the current provider. The caller has
+     * already checked the id against the provider's catalog; only a PRIMARY character can be called.
+     */
+    public CharacterInfo patchCharacter(
+            String characterId,
+            String characterType,
+            Integer firstChapterIndex,
+            Integer firstParagraphIndex,
+            String callVoice) {
         if (cacheOnly) {
             log.info("Skipping character patch in cache-only mode for character {}", characterId);
             throw new IllegalStateException("Character roster cannot be patched in cache-only mode");
@@ -331,6 +345,18 @@ public class CharacterService {
 
         if (parsedType != null) {
             character.setCharacterType(parsedType);
+        }
+        if (callVoice != null) {
+            if (callVoice.isBlank()) {
+                character.setCallVoice(null);
+                character.setCallVoiceProvider(null);
+            } else {
+                if (character.getCharacterType() != CharacterType.PRIMARY) {
+                    throw new IllegalArgumentException("Only a PRIMARY character can have a call voice");
+                }
+                character.setCallVoice(callVoice.trim().toLowerCase(java.util.Locale.ROOT));
+                character.setCallVoiceProvider("xai");
+            }
         }
         if (newChapter != null) {
             character.setFirstChapter(newChapter);

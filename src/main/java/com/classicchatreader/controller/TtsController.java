@@ -124,6 +124,45 @@ public class TtsController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Operator override of the book's read-aloud voice, so a voice can be chosen by hand instead of
+   * re-running the analysis. The voice must be one the current provider serves.
+   */
+  @PutMapping("/settings/{bookId}")
+  public ResponseEntity<VoiceSettings> putVoiceSettings(
+      @PathVariable String bookId,
+      @RequestBody VoiceSettingsRequest request) {
+    Optional<BookEntity> bookOpt = bookRepository.findById(bookId);
+    if (bookOpt.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    BookEntity book = bookOpt.get();
+    if (!isTtsEnabled(book)) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    if (ttsService.isCacheOnly()) {
+      return ResponseEntity.status(HttpStatus.CONFLICT).build();
+    }
+    if (request == null || !ttsService.isServedByCurrentProvider(request.voice())) {
+      return ResponseEntity.badRequest().build();
+    }
+
+    double speed = ttsService.clampSpeed(request.speed() != null && request.speed() > 0 ? request.speed() : 1.0);
+    String voice = request.voice().trim().toLowerCase(java.util.Locale.ROOT);
+    book.setTtsVoice(voice);
+    book.setTtsVoiceProvider(ttsService.currentProvider());
+    book.setTtsSpeed(speed);
+    book.setTtsInstructions(request.instructions() == null || request.instructions().isBlank()
+        ? null : request.instructions().trim());
+    book.setTtsReasoning("Set by operator");
+    bookRepository.save(book);
+    log.info("Operator set voice settings for book {}: voice={}, speed={}", book.getTitle(), voice, speed);
+
+    return ResponseEntity.ok(savedVoiceSettings(book));
+  }
+
+  public record VoiceSettingsRequest(String voice, Double speed, String instructions) {}
+
   @PostMapping("/analyze/{bookId}")
   public ResponseEntity<VoiceSettings> analyzeBook(
       @PathVariable String bookId,

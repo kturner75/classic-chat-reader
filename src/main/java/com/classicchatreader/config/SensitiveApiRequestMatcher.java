@@ -29,6 +29,7 @@ public final class SensitiveApiRequestMatcher {
     private static final Pattern ILLUSTRATION_CHAPTER_PATH = Pattern.compile("^/api/illustrations/chapter/[^/]+$");
 
     private static final Pattern GUTENBERG_CONTENTS_PATH = Pattern.compile("^/api/import/gutenberg/[^/]+/contents$");
+    private static final Pattern TTS_SETTINGS_PATH = Pattern.compile("^/api/tts/settings/[^/]+$");
     private static final Pattern PREGEN_BOOK_PATH = Pattern.compile("^/api/pregen/book/[^/]+$");
     private static final Pattern PREGEN_GUTENBERG_PATH = Pattern.compile("^/api/pregen/gutenberg/\\d+$");
     private static final Pattern PREGEN_BOOK_COVERS_PATH = Pattern.compile("^/api/pregen/book/[^/]+/covers$");
@@ -143,6 +144,10 @@ public final class SensitiveApiRequestMatcher {
 
         if ("PATCH".equals(method) && (LIBRARY_FEATURES_PATH.matcher(path).matches()
                 || CHARACTER_RESOURCE_PATH.matcher(path).matches())) {
+            return EndpointType.ADMIN;
+        }
+
+        if ("PUT".equals(method) && TTS_SETTINGS_PATH.matcher(path).matches()) {
             return EndpointType.ADMIN;
         }
 

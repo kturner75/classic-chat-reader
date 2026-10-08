@@ -1173,4 +1173,48 @@ class CharacterControllerTest {
         }
     }
 
+
+    @MockitoBean
+    private com.classicchatreader.service.TtsService ttsService;
+
+    @Test
+    void patchCharacter_callVoice_isValidatedAgainstTheProviderAndPassedToTheService() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+        CharacterInfo updated = new CharacterInfo(
+                "character-grandma", "Grandma", "Sydney's grandmother", "chapter-1", "Chapter I", 1, 0,
+                "COMPLETED", true, "PRIMARY", true, "eve");
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(ttsService.isServedByCurrentProvider("eve")).thenReturn(true);
+        when(characterService.patchCharacter("character-grandma", null, null, null, "eve")).thenReturn(updated);
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("{\"callVoice\": \"eve\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.callVoice", is("eve")));
+    }
+
+    @Test
+    void patchCharacter_unknownCallVoice_isRejectedBeforeTheService() throws Exception {
+        BookEntity book = new BookEntity("An Old-Fashioned Girl", "Louisa May Alcott", "gutenberg");
+        book.setCharacterEnabled(true);
+        CharacterEntity character = new CharacterEntity();
+        character.setId("character-grandma");
+        character.setBook(book);
+        when(characterService.getCharacter("character-grandma")).thenReturn(Optional.of(character));
+        when(ttsService.isServedByCurrentProvider("nope")).thenReturn(false);
+
+        mockMvc.perform(patch("/api/characters/character-grandma")
+                        .contentType("application/json")
+                        .content("{\"callVoice\": \"nope\"}"))
+                .andExpect(status().isBadRequest());
+        verify(characterService, never()).patchCharacter(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
 }
