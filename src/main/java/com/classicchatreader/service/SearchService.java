@@ -20,6 +20,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
+import com.classicchatreader.model.ParagraphText;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 public class SearchService {
@@ -38,46 +40,72 @@ public class SearchService {
     private final Directory index;
     private final StandardAnalyzer analyzer;
     /**
-     * One writer for the life of the index. Opening a writer per paragraph made the startup
-     * rebuild take ~15 minutes in prod; IndexWriter is thread-safe, and searches see whatever was
-     * last committed.
+     * Every change to the index takes this lock, so a live save or delete waits for a running
+     * rebuild instead of being wiped by its {@code deleteAll()} or overtaken by its stale snapshot.
      */
-    private final IndexWriter writer;
+    private final ReentrantLock writeLock = new ReentrantLock();
+    /**
+     * One writer for the life of the index (reopened only after a failed rebuild). Opening a
+     * writer per paragraph made the startup rebuild take ~15 minutes in prod. Searches see
+     * whatever was last committed.
+     */
+    private volatile IndexWriter writer;
 
     public SearchService() {
         this.index = new ByteBuffersDirectory();
         this.analyzer = new StandardAnalyzer();
         try {
-            this.writer = new IndexWriter(index, new IndexWriterConfig(analyzer));
+            this.writer = openWriter();
             this.writer.commit();
         } catch (IOException e) {
             throw new IllegalStateException("Could not open the in-memory search index", e);
         }
     }
 
-    @PreDestroy
-    void close() throws IOException {
-        writer.close();
+    private IndexWriter openWriter() throws IOException {
+        return new IndexWriter(index, new IndexWriterConfig(analyzer));
     }
 
-    /** A paragraph to index: its chapter, position and text. */
-    public record ParagraphText(String chapterId, int paragraphIndex, String content) {}
+    @PreDestroy
+    void close() throws IOException {
+        writeLock.lock();
+        try {
+            writer.close();
+        } finally {
+            writeLock.unlock();
+        }
+    }
 
     public void indexBook(String bookId, String title, String author) throws IOException {
-        writer.addDocument(bookDocument(bookId, title, author));
-        writer.commit();
+        writeLock.lock();
+        try {
+            writer.addDocument(bookDocument(bookId, title, author));
+            writer.commit();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     public void indexParagraph(String bookId, String chapterId, int paragraphIndex, String content) throws IOException {
-        writer.addDocument(paragraphDocument(bookId, new ParagraphText(chapterId, paragraphIndex, content)));
-        writer.commit();
+        writeLock.lock();
+        try {
+            writer.addDocument(paragraphDocument(bookId, new ParagraphText(chapterId, paragraphIndex, content)));
+            writer.commit();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     /** Replaces everything indexed for this book with its title, author and paragraphs, in one commit. */
     public void indexBookContent(String bookId, String title, String author, List<ParagraphText> paragraphs)
             throws IOException {
-        addBookContent(bookId, title, author, paragraphs);
-        writer.commit();
+        writeLock.lock();
+        try {
+            addBookContent(bookId, title, author, paragraphs);
+            writer.commit();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     /** Receives each book's content during {@link #rebuild}. */
@@ -85,20 +113,30 @@ public class SearchService {
         void addBook(String bookId, String title, String author, List<ParagraphText> paragraphs) throws IOException;
     }
 
-    /** Callback that feeds every book to the rebuild. */
+    /** Feeds every book to the rebuild. It runs under the write lock, so it should read its book list itself. */
     public interface RebuildSource {
         void feed(RebuildSink sink) throws IOException;
     }
 
     /**
      * Rebuilds the whole index in one pass and one commit. Searches keep seeing the previous
-     * commit until it finishes (unless a book is saved meanwhile, whose commit would also publish
-     * the rebuild so far; the rebuild still completes).
+     * commit until it finishes; saves and deletes made meanwhile wait and apply afterwards. If the
+     * rebuild fails, its partial work is discarded and the previous commit stays in place.
      */
     public void rebuild(RebuildSource source) throws IOException {
-        writer.deleteAll();
-        source.feed(this::addBookContent);
-        writer.commit();
+        writeLock.lock();
+        try {
+            writer.deleteAll();
+            source.feed(this::addBookContent);
+            writer.commit();
+        } catch (IOException | RuntimeException e) {
+            // rollback() discards the uncommitted deleteAll and partial adds, and closes the writer.
+            writer.rollback();
+            writer = openWriter();
+            throw e;
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     private void addBookContent(String bookId, String title, String author, List<ParagraphText> paragraphs)
@@ -255,8 +293,13 @@ public class SearchService {
     }
 
     public void deleteByBookId(String bookId) throws IOException {
-        writer.deleteDocuments(new Term("bookId", bookId));
-        writer.commit();
+        writeLock.lock();
+        try {
+            writer.deleteDocuments(new Term("bookId", bookId));
+            writer.commit();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     public record SearchResult(

@@ -7,6 +7,7 @@ import com.classicchatreader.repository.BookRepository;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -50,9 +51,8 @@ class SearchIndexRebuilderTest {
         TestTransaction.flagForCommit();
         TestTransaction.end();
 
-        try {
-            Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-            stats.clear();
+        Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        stats.clear();
             assertEquals(3, rebuilder.rebuild());
             assertEquals(1 + titles.length, stats.getPrepareStatementCount(), "books + one paragraph query per book");
 
@@ -62,11 +62,17 @@ class SearchIndexRebuilderTest {
             List<SearchService.SearchResult> hits = searchService.search("paragraph2", persuasion.getId(), 50);
             assertEquals(4, hits.size());
             assertTrue(hits.stream().allMatch(hit -> hit.paragraphIndex() == 2));
-        } finally {
-            TestTransaction.start();
-            bookRepository.deleteAll();
-            TestTransaction.flagForCommit();
+    }
+
+    /** The books were committed, so remove them even when an assertion fails. */
+    @AfterEach
+    void clean() {
+        if (TestTransaction.isActive()) {
             TestTransaction.end();
         }
+        TestTransaction.start();
+        bookRepository.deleteAll();
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
     }
 }

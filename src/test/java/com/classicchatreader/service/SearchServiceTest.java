@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.model.ParagraphText;
 import com.classicchatreader.service.SearchService.SearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -146,10 +147,10 @@ class SearchServiceTest {
     @Test
     void indexBookContent_replacesEarlierCopyOfTheSameBook() throws Exception {
         searchService.indexBookContent("moby-dick", "Moby Dick", "Herman Melville",
-                List.of(new SearchService.ParagraphText("ch1", 0, "Call me Ishmael.")));
+                List.of(new ParagraphText("ch1", 0, "Call me Ishmael.")));
         searchService.indexBookContent("moby-dick", "Moby Dick", "Herman Melville",
-                List.of(new SearchService.ParagraphText("ch1", 0, "Call me Ishmael."),
-                        new SearchService.ParagraphText("ch1", 1, "Ishmael again.")));
+                List.of(new ParagraphText("ch1", 0, "Call me Ishmael."),
+                        new ParagraphText("ch1", 1, "Ishmael again.")));
 
         assertEquals(2, searchService.search("Ishmael", 10).size(), "re-saving a book does not duplicate it");
         assertEquals(1, searchService.search("Melville", 10).size());
@@ -161,9 +162,9 @@ class SearchServiceTest {
 
         searchService.rebuild(sink -> {
             sink.addBook("emma", "Emma", "Jane Austen",
-                    List.of(new SearchService.ParagraphText("ch1", 0, "Emma Woodhouse, handsome, clever, and rich.")));
+                    List.of(new ParagraphText("ch1", 0, "Emma Woodhouse, handsome, clever, and rich.")));
             sink.addBook("persuasion", "Persuasion", "Jane Austen",
-                    List.of(new SearchService.ParagraphText("ch3", 4, "Anne Elliot was nobody with either father or sister.")));
+                    List.of(new ParagraphText("ch3", 4, "Anne Elliot was nobody with either father or sister.")));
         });
 
         assertTrue(searchService.search("Stale", 10).isEmpty());
@@ -189,5 +190,90 @@ class SearchServiceTest {
         assertEquals(1, midRebuildHits[0], "mid-rebuild searches see the previous index");
 
         assertEquals(1, searchService.search("Emma", 10).size());
+    }
+
+    /** Runs a rebuild that pauses inside its feed until {@code release} opens, so a live write can race it. */
+    private Thread pausedRebuild(java.util.concurrent.CountDownLatch inFeed, java.util.concurrent.CountDownLatch release,
+                                 String bookId, String title) {
+        Thread rebuild = new Thread(() -> {
+            try {
+                searchService.rebuild(sink -> {
+                    inFeed.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    sink.addBook(bookId, title, "Jane Austen", List.of());
+                });
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        rebuild.start();
+        return rebuild;
+    }
+
+    @Test
+    void bookSavedDuringARebuildIsStillSearchableAfterIt() throws Exception {
+        var inFeed = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        Thread rebuild = pausedRebuild(inFeed, release, "emma", "Emma");
+        inFeed.await();
+
+        Thread save = new Thread(() -> {
+            try {
+                searchService.indexBookContent("persuasion", "Persuasion", "Jane Austen", List.of());
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        save.start();
+        Thread.sleep(100); // the save is now waiting on the rebuild
+        release.countDown();
+        rebuild.join(5000);
+        save.join(5000);
+
+        assertEquals(1, searchService.search("Persuasion", 10).size(), "a save racing a rebuild is not wiped");
+        assertEquals(1, searchService.search("Emma", 10).size());
+    }
+
+    @Test
+    void bookDeletedDuringARebuildStaysDeleted() throws Exception {
+        var inFeed = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        Thread rebuild = pausedRebuild(inFeed, release, "emma", "Emma");
+        inFeed.await();
+
+        Thread delete = new Thread(() -> {
+            try {
+                searchService.deleteByBookId("emma");
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        delete.start();
+        Thread.sleep(100);
+        release.countDown();
+        rebuild.join(5000);
+        delete.join(5000);
+
+        assertTrue(searchService.search("Emma", 10).isEmpty(), "a delete racing a rebuild is not undone");
+    }
+
+    @Test
+    void failedRebuildKeepsThePreviousIndexAndTheServiceUsable() throws Exception {
+        searchService.indexBook("emma", "Emma", "Jane Austen");
+
+        assertThrows(IllegalStateException.class, () -> searchService.rebuild(sink -> {
+            sink.addBook("half", "Half Built", "Nobody", List.of());
+            throw new IllegalStateException("database went away");
+        }));
+
+        assertEquals(1, searchService.search("Emma", 10).size());
+        assertTrue(searchService.search("Half", 10).isEmpty());
+        searchService.indexBookContent("persuasion", "Persuasion", "Jane Austen", List.of());
+        assertEquals(1, searchService.search("Persuasion", 10).size(), "the writer was reopened");
+        assertEquals(1, searchService.search("Emma", 10).size(), "the failed rebuild's deleteAll was not published");
     }
 }

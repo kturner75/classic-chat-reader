@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.model.ParagraphText;
 import com.classicchatreader.entity.BookCoverEntity;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
@@ -20,7 +21,10 @@ import com.classicchatreader.repository.QuizAttemptRepository;
 import com.classicchatreader.repository.QuizTrophyRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -174,11 +178,7 @@ public class BookStorageService {
         }
         deleteBookDependents(bookId);
         bookRepository.deleteById(bookId);
-        try {
-            searchService.deleteByBookId(bookId);
-        } catch (Exception e) {
-            System.err.println("Failed to remove book from search index: " + e.getMessage());
-        }
+        removeFromSearchAfterCommit(bookId);
         return true;
     }
 
@@ -188,12 +188,8 @@ public class BookStorageService {
         int count = books.size();
         for (BookEntity book : books) {
             deleteBookDependents(book.getId());
-            try {
-                searchService.deleteByBookId(book.getId());
-            } catch (Exception e) {
-                System.err.println("Failed to remove book from search index: " + e.getMessage());
-            }
             bookRepository.deleteById(book.getId());
+            removeFromSearchAfterCommit(book.getId());
         }
         return count;
     }
@@ -282,10 +278,10 @@ public class BookStorageService {
     // Index a book and its content in the search index
     private void indexBook(BookEntity book) {
         try {
-            List<SearchService.ParagraphText> paragraphs = new java.util.ArrayList<>();
+            List<ParagraphText> paragraphs = new ArrayList<>();
             for (ChapterEntity chapter : book.getChapters()) {
                 for (ParagraphEntity paragraph : chapter.getParagraphs()) {
-                    paragraphs.add(new SearchService.ParagraphText(
+                    paragraphs.add(new ParagraphText(
                         chapter.getId(), paragraph.getParagraphIndex(), paragraph.getContent()));
                 }
             }
@@ -293,6 +289,30 @@ public class BookStorageService {
         } catch (Exception e) {
             // Log but don't fail the save operation
             System.err.println("Failed to index book: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Drops the book from search once its delete has committed. Done earlier, a search rebuild
+     * running at the same moment could still read the uncommitted-delete book and put it back.
+     */
+    private void removeFromSearchAfterCommit(String bookId) {
+        Runnable remove = () -> {
+            try {
+                searchService.deleteByBookId(bookId);
+            } catch (Exception e) {
+                System.err.println("Failed to remove book from search index: " + e.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    remove.run();
+                }
+            });
+        } else {
+            remove.run();
         }
     }
 
