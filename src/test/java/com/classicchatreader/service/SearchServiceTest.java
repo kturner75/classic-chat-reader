@@ -142,4 +142,52 @@ class SearchServiceTest {
         assertEquals(1, results.size());
         assertEquals("ch2", results.get(0).chapterId());
     }
+
+    @Test
+    void indexBookContent_replacesEarlierCopyOfTheSameBook() throws Exception {
+        searchService.indexBookContent("moby-dick", "Moby Dick", "Herman Melville",
+                List.of(new SearchService.ParagraphText("ch1", 0, "Call me Ishmael.")));
+        searchService.indexBookContent("moby-dick", "Moby Dick", "Herman Melville",
+                List.of(new SearchService.ParagraphText("ch1", 0, "Call me Ishmael."),
+                        new SearchService.ParagraphText("ch1", 1, "Ishmael again.")));
+
+        assertEquals(2, searchService.search("Ishmael", 10).size(), "re-saving a book does not duplicate it");
+        assertEquals(1, searchService.search("Melville", 10).size());
+    }
+
+    @Test
+    void rebuild_replacesTheWholeIndexAndDropsBooksNoLongerFed() throws Exception {
+        searchService.indexBook("stale-book", "Stale Book", "Nobody");
+
+        searchService.rebuild(sink -> {
+            sink.addBook("emma", "Emma", "Jane Austen",
+                    List.of(new SearchService.ParagraphText("ch1", 0, "Emma Woodhouse, handsome, clever, and rich.")));
+            sink.addBook("persuasion", "Persuasion", "Jane Austen",
+                    List.of(new SearchService.ParagraphText("ch3", 4, "Anne Elliot was nobody with either father or sister.")));
+        });
+
+        assertTrue(searchService.search("Stale", 10).isEmpty());
+        assertEquals(2, searchService.search("Austen", 10).size());
+        SearchResult anne = searchService.search("Elliot", "persuasion", 10).get(0);
+        assertEquals("ch3", anne.chapterId());
+        assertEquals(4, anne.paragraphIndex());
+    }
+
+    @Test
+    void rebuild_isInvisibleToSearchesUntilItCommits() throws Exception {
+        searchService.indexBook("emma", "Emma", "Jane Austen");
+
+        int[] midRebuildHits = {-1};
+        searchService.rebuild(sink -> {
+            try {
+                midRebuildHits[0] = searchService.search("Emma", 10).size();
+            } catch (org.apache.lucene.queryparser.classic.ParseException e) {
+                throw new IllegalStateException(e);
+            }
+            sink.addBook("emma", "Emma", "Jane Austen", List.of());
+        });
+        assertEquals(1, midRebuildHits[0], "mid-rebuild searches see the previous index");
+
+        assertEquals(1, searchService.search("Emma", 10).size());
+    }
 }

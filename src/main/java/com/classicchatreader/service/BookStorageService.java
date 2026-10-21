@@ -282,28 +282,18 @@ public class BookStorageService {
     // Index a book and its content in the search index
     private void indexBook(BookEntity book) {
         try {
-            searchService.indexBook(book.getId(), book.getTitle(), book.getAuthor());
-
+            List<SearchService.ParagraphText> paragraphs = new java.util.ArrayList<>();
             for (ChapterEntity chapter : book.getChapters()) {
                 for (ParagraphEntity paragraph : chapter.getParagraphs()) {
-                    searchService.indexParagraph(
-                        book.getId(),
-                        chapter.getId(),
-                        paragraph.getParagraphIndex(),
-                        paragraph.getContent()
-                    );
+                    paragraphs.add(new SearchService.ParagraphText(
+                        chapter.getId(), paragraph.getParagraphIndex(), paragraph.getContent()));
                 }
             }
+            searchService.indexBookContent(book.getId(), book.getTitle(), book.getAuthor(), paragraphs);
         } catch (Exception e) {
             // Log but don't fail the save operation
             System.err.println("Failed to index book: " + e.getMessage());
         }
-    }
-
-    // Reindex all books (useful after application restart)
-    @Transactional(readOnly = true)
-    public void reindexAll() {
-        bookRepository.findAll().forEach(this::indexBook);
     }
 
     private void deleteBookDependents(String bookId) {
