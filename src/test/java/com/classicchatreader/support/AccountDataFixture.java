@@ -55,6 +55,8 @@ public final class AccountDataFixture {
                 + "VALUES (?, ?, 'google', ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "uai-" + tag, userId, "subject-" + tag, userId + "@example.test");
         jdbc.update("INSERT INTO pending_external_identity_links (id, token_hash, user_id, provider, provider_subject, email, expires_at, created_at) "
                 + "VALUES (?, ?, ?, 'google', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "peil-" + tag, "token-hash-" + tag, userId, "subject-" + tag, userId + "@example.test");
+        jdbc.update("INSERT INTO password_reset_tokens (id, token_hash, user_id, expires_at, created_at) "
+                + "VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "prt-" + tag, "reset-hash-" + tag, userId);
         jdbc.update("INSERT INTO account_capabilities (id, user_id, capability, status, granted_at, updated_at) VALUES (?, ?, 'CREATE_CLASSROOM', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "cap-" + tag, userId);
         jdbc.update("INSERT INTO classroom_usage_events (id, user_id, term_id, event_type, book_id, duration_ms, occurred_at, created_at) VALUES (?, ?, 'fx-term', 'READING_HEARTBEAT', 'fx-book', 60000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", "cue-" + tag, userId);
     }

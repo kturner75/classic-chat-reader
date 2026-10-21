@@ -413,6 +413,62 @@ public class AccountAuthService {
         return AuthResult.success(enabled, user.get().getEmail(), "Confirmed.");
     }
 
+    /**
+     * The normalized email when accounts are on and this address may use them, else empty.
+     * Password reset uses it so a reset is never offered to an address sign-in would refuse.
+     */
+    public Optional<String> eligibleAccountEmail(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        if (!isRolloutEnabled() || normalizedEmail == null || !isEmailAllowedForRollout(normalizedEmail)) {
+            return Optional.empty();
+        }
+        return Optional.of(normalizedEmail);
+    }
+
+    /**
+     * Sets a new password after the caller has proven control of the account email (a reset link).
+     * Creates the password for a Google-only account. Clears any lockout, ends every other session
+     * and any half-finished Google link, then signs this browser in.
+     */
+    @Transactional
+    public AuthResult resetPassword(String userId, String newPassword, HttpServletResponse response) {
+        if (!isRolloutEnabled()) {
+            return disabledResult();
+        }
+        if (!isValidPassword(newPassword)) {
+            return AuthResult.error(
+                    ResultStatus.INVALID_PASSWORD,
+                    enabled,
+                    "Password must be at least " + minPasswordLength + " characters.");
+        }
+        Optional<UserEntity> userOptional = userId == null ? Optional.empty() : userRepository.findById(userId);
+        if (userOptional.isEmpty()) {
+            return AuthResult.error(ResultStatus.INVALID_CREDENTIALS, enabled, "This reset link is invalid or has expired.");
+        }
+        UserEntity user = userOptional.get();
+        if (!isEmailAllowedForRollout(user.getEmail())) {
+            return rolloutRestrictedResult();
+        }
+
+        Optional<UserLocalCredentialEntity> credentialOptional = userLocalCredentialRepository.findByUserId(user.getId());
+        if (credentialOptional.isPresent()) {
+            UserLocalCredentialEntity credential = credentialOptional.get();
+            credential.setPasswordHash(BCrypt.hashpw(newPassword, BCrypt.gensalt(bcryptStrength)));
+            credential.setFailedLoginAttempts(0);
+            credential.setLoginLockedUntil(null);
+            userLocalCredentialRepository.save(credential);
+        } else {
+            createLocalCredentials(user, newPassword);
+        }
+
+        invalidateSessions(user);
+        pendingExternalIdentityLinkRepository.deleteByUserId(user.getId());
+        writeNamedCookie(response, PENDING_LINK_COOKIE, "", 0);
+        createSession(user, response);
+        cleanupIfNeeded();
+        return AuthResult.success(enabled, user.getEmail(), "Your password has been reset.");
+    }
+
     public boolean hasLocalPassword(String userId) {
         return userId != null && userLocalCredentialRepository.findByUserId(userId).isPresent();
     }

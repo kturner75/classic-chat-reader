@@ -22,6 +22,8 @@ public class AccountAuthRateLimiter {
     private final int registerEmailMaxRequests;
     private final int loginIpMaxRequests;
     private final int loginEmailMaxRequests;
+    private final int passwordResetIpMaxRequests;
+    private final int passwordResetEmailMaxRequests;
     private final int maxKeys;
 
     private final AtomicInteger cleanupTicker = new AtomicInteger();
@@ -33,12 +35,16 @@ public class AccountAuthRateLimiter {
             @Value("${account.auth.rate-limit.register.email-max-requests:6}") int registerEmailMaxRequests,
             @Value("${account.auth.rate-limit.login.ip-max-requests:40}") int loginIpMaxRequests,
             @Value("${account.auth.rate-limit.login.email-max-requests:12}") int loginEmailMaxRequests,
+            @Value("${account.auth.rate-limit.password-reset.ip-max-requests:20}") int passwordResetIpMaxRequests,
+            @Value("${account.auth.rate-limit.password-reset.email-max-requests:3}") int passwordResetEmailMaxRequests,
             @Value("${account.auth.rate-limit.max-keys:20000}") int maxKeys) {
         this.windowSeconds = Math.max(1, windowSeconds);
         this.registerIpMaxRequests = Math.max(1, registerIpMaxRequests);
         this.registerEmailMaxRequests = Math.max(1, registerEmailMaxRequests);
         this.loginIpMaxRequests = Math.max(1, loginIpMaxRequests);
         this.loginEmailMaxRequests = Math.max(1, loginEmailMaxRequests);
+        this.passwordResetIpMaxRequests = Math.max(1, passwordResetIpMaxRequests);
+        this.passwordResetEmailMaxRequests = Math.max(1, passwordResetEmailMaxRequests);
         this.maxKeys = Math.max(1000, maxKeys);
     }
 
@@ -48,6 +54,11 @@ public class AccountAuthRateLimiter {
 
     public RateLimitResult checkLogin(HttpServletRequest request, String email) {
         return check("login", request, email, loginIpMaxRequests, loginEmailMaxRequests);
+    }
+
+    /** Both forgot-password calls: asking for a link (keyed by email) and spending one (no email). */
+    public RateLimitResult checkPasswordReset(HttpServletRequest request, String email) {
+        return check("password_reset", request, email, passwordResetIpMaxRequests, passwordResetEmailMaxRequests);
     }
 
     private RateLimitResult check(

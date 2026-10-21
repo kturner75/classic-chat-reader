@@ -26,7 +26,10 @@ async function installApiMocks(page) {
     accountAuthenticated: false,
     accountEmail: null,
     claimSyncRequests: [],
-    classroomContextRequests: []
+    classroomContextRequests: [],
+    resetRequests: [],
+    resetCompletions: [],
+    liveResetToken: 'live-reset-token'
   };
 
   await page.route('**/api/**', async (route) => {
@@ -129,6 +132,26 @@ async function installApiMocks(page) {
         rolloutMode: 'optional',
         accountRequired: false
       });
+    }
+    if (method === 'POST' && path === '/api/account/password-reset/request') {
+      state.resetRequests.push(request.postDataJSON());
+      return json(route, 202, {
+        message: "If an account uses that email, we've sent it a link to reset the password. Check your inbox and spam folder."
+      });
+    }
+    if (method === 'POST' && path === '/api/account/password-reset/validate') {
+      return json(route, 200, { valid: request.postDataJSON().token === state.liveResetToken });
+    }
+    if (method === 'POST' && path === '/api/account/password-reset/complete') {
+      const body = request.postDataJSON();
+      state.resetCompletions.push(body);
+      if (body.token !== state.liveResetToken) {
+        return json(route, 410, { message: 'This reset link is invalid or has expired. Request a new one.' });
+      }
+      state.liveResetToken = null;
+      state.accountAuthenticated = true;
+      state.accountEmail = 'student@columbiastate.edu';
+      return json(route, 200, { message: 'Your password has been reset.' });
     }
     if (method === 'POST' && path === '/api/account/logout') {
       state.accountAuthenticated = false;
@@ -334,4 +357,59 @@ test('account login reloads classroom context and shows published assignment wit
     && mockState.classroomContextRequests.indexOf(req) > 0)).toBe(true);
   await expect(page.locator('#classroom-banner')).toBeHidden();
   await expect(page.locator('#classroom-assignments')).toBeHidden();
+});
+
+test('forgot password sends a reset link for the typed email', async ({ page }) => {
+  const mockState = await installApiMocks(page);
+
+  await page.goto('/');
+  await page.click('#account-toggle-library');
+  await page.fill('#account-email', 'Student@ColumbiaState.edu');
+  await page.click('#account-forgot');
+
+  await expect(page.locator('#account-modal-title')).toHaveText('Reset Password');
+  await expect(page.locator('#account-password-row')).toBeHidden();
+  await expect(page.locator('#account-register')).toBeHidden();
+  await expect(page.locator('#account-email')).toHaveValue('Student@ColumbiaState.edu');
+  await page.click('#account-reset-send');
+
+  await expect.poll(() => mockState.resetRequests.length).toBe(1);
+  expect(mockState.resetRequests[0]).toEqual({ email: 'Student@ColumbiaState.edu' });
+  await expect(page.locator('#account-modal-status')).toContainText("we've sent it a link");
+
+  await page.click('#account-reset-back');
+  await expect(page.locator('#account-modal-title')).toHaveText('Sign In');
+  await expect(page.locator('#account-password-row')).toBeVisible();
+  await expect(page.locator('#account-register')).toBeVisible();
+});
+
+test('reset link lets the reader choose a new password and signs them in', async ({ page }) => {
+  const mockState = await installApiMocks(page);
+
+  await page.goto('/?password_reset=live-reset-token');
+  await expect(page.locator('#account-modal-title')).toHaveText('Choose a New Password');
+  expect(new URL(page.url()).searchParams.has('password_reset')).toBe(false);
+
+  await page.fill('#account-new-password', 'brand-new-password');
+  await page.fill('#account-new-password-confirm', 'not-the-same');
+  await page.click('#account-reset-save');
+  await expect(page.locator('#account-modal-status')).toContainText('do not match');
+  expect(mockState.resetCompletions.length).toBe(0);
+
+  await page.fill('#account-new-password-confirm', 'brand-new-password');
+  await page.press('#account-new-password-confirm', 'Enter');
+
+  await expect.poll(() => mockState.resetCompletions.length).toBe(1);
+  expect(mockState.resetCompletions[0]).toEqual({ token: 'live-reset-token', password: 'brand-new-password' });
+  await expect(page.locator('#account-modal')).toBeHidden();
+  await expect(page.locator('#account-library-status')).toContainText('Signed in as student@columbiastate.edu');
+});
+
+test('a spent reset link offers to send a new one', async ({ page }) => {
+  await installApiMocks(page);
+
+  await page.goto('/?password_reset=spent-token');
+  await expect(page.locator('#account-modal-title')).toHaveText('Reset Password');
+  await expect(page.locator('#account-modal-status')).toContainText('expired or was already used');
+  await expect(page.locator('#account-reset-send')).toBeVisible();
 });

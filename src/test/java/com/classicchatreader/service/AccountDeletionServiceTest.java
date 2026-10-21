@@ -43,7 +43,8 @@ class AccountDeletionServiceTest {
             // CASCADE tables: still asserted so a change of FK or of the delete order is caught.
             new String[]{"user_reader_claims", "user_id"},
             new String[]{"user_auth_identities", "user_id"},
-            new String[]{"pending_external_identity_links", "user_id"});
+            new String[]{"pending_external_identity_links", "user_id"},
+            new String[]{"password_reset_tokens", "user_id"});
 
     private int count(String sql, Object... args) {
         Integer n = jdbc.queryForObject(sql, Integer.class, args);
@@ -85,7 +86,7 @@ class AccountDeletionServiceTest {
 
     @Test
     void deletingAStudentRemovesAllTheirDataAndKeepsComplianceRowsUnderAPseudonym() {
-        assertEquals(20, owned("fx-alex"), "fixture seeds one row in each of the 20 owned tables");
+        assertEquals(21, owned("fx-alex"), "fixture seeds one row in each of the 21 owned tables");
         int samBefore = owned("fx-sam");
 
         AccountDeletionService.DeletionResult result = service.delete("fx-alex");

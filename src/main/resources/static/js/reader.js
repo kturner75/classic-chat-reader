@@ -171,6 +171,9 @@
         accountRolloutMode: 'optional',
         accountRequired: false,
         pendingGoogleLink: false,
+        // 'signin' | 'forgot' (ask for a reset email) | 'reset' (choose a new password from an emailed link)
+        accountModalMode: 'signin',
+        passwordResetToken: null,
         accountClaimSyncedFor: null,
         accountSyncInFlight: false,
         accountSyncPromise: null,
@@ -496,6 +499,15 @@
         accountPassword: document.getElementById('account-password'),
         accountSignIn: document.getElementById('account-signin'),
         accountRegister: document.getElementById('account-register'),
+        accountEmailRow: document.getElementById('account-email-row'),
+        accountPasswordRow: document.getElementById('account-password-row'),
+        accountForgot: document.getElementById('account-forgot'),
+        accountResetRow: document.getElementById('account-reset-row'),
+        accountNewPassword: document.getElementById('account-new-password'),
+        accountNewPasswordConfirm: document.getElementById('account-new-password-confirm'),
+        accountResetBack: document.getElementById('account-reset-back'),
+        accountResetSend: document.getElementById('account-reset-send'),
+        accountResetSave: document.getElementById('account-reset-save'),
         accountSignOut: document.getElementById('account-signout'),
         authToggle: document.getElementById('auth-toggle'),
         authModal: document.getElementById('auth-modal'),
@@ -2063,11 +2075,202 @@
             }
         }
 
+        setAccountModalMode('signin');
         setAccountStatusMessage(message || (authenticated
             ? 'Your account is active in this browser.'
             : (state.accountRequired
                 ? 'Sign in is required in this rollout.'
                 : 'Sign in or register to sync your reader data.')));
+    }
+
+    /**
+     * Switches the open account modal between sign-in and the two forgot-password steps.
+     * Sign-in mode only un-hides the shared rows; openAccountModal decides the sign-in buttons.
+     */
+    function setAccountModalMode(mode) {
+        state.accountModalMode = mode;
+        const signin = mode === 'signin';
+        const authenticated = state.accountAuthenticated;
+        elements.accountEmailRow?.classList.toggle('hidden', mode === 'reset');
+        elements.accountPasswordRow?.classList.toggle('hidden', !signin);
+        elements.accountForgot?.classList.toggle('hidden', !signin || authenticated);
+        elements.accountResetRow?.classList.toggle('hidden', mode !== 'reset');
+        elements.accountResetBack?.classList.toggle('hidden', signin);
+        elements.accountResetSend?.classList.toggle('hidden', mode !== 'forgot');
+        elements.accountResetSave?.classList.toggle('hidden', mode !== 'reset');
+        if (signin) {
+            return;
+        }
+
+        [elements.accountGoogleSignIn, elements.accountAuthDivider, elements.accountSignIn,
+            elements.accountRegister, elements.accountSignOut, elements.accountModalEmail]
+            .filter(Boolean)
+            .forEach(node => node.classList.add('hidden'));
+        document.getElementById('account-data-section')?.classList.add('hidden');
+        if (elements.accountModalTitle) {
+            elements.accountModalTitle.textContent = mode === 'reset' ? 'Choose a New Password' : 'Reset Password';
+        }
+        if (elements.accountModalHelp) {
+            elements.accountModalHelp.textContent = mode === 'reset'
+                ? 'Choose a new password for your reader account. You will be signed in afterwards.'
+                : 'Enter the email you registered with and we will send you a link to choose a new password.';
+        }
+        if (mode === 'forgot') {
+            if (elements.accountEmail) {
+                elements.accountEmail.disabled = false;
+                elements.accountEmail.focus();
+            }
+            if (elements.accountResetSend) {
+                elements.accountResetSend.disabled = false;
+                elements.accountResetSend.textContent = 'Email Me a Link';
+            }
+        } else {
+            if (elements.accountNewPassword) elements.accountNewPassword.value = '';
+            if (elements.accountNewPasswordConfirm) elements.accountNewPasswordConfirm.value = '';
+            if (elements.accountResetSave) {
+                elements.accountResetSave.disabled = false;
+                elements.accountResetSave.textContent = 'Set Password';
+            }
+            elements.accountNewPassword?.focus();
+        }
+        setAccountStatusMessage('');
+    }
+
+    function startForgotPassword() {
+        // Keep whatever the reader already typed so they do not have to enter it twice.
+        const typedEmail = (elements.accountEmail?.value || '').trim();
+        setAccountModalMode('forgot');
+        if (elements.accountEmail && typedEmail) {
+            elements.accountEmail.value = typedEmail;
+        }
+    }
+
+    async function submitPasswordResetRequest() {
+        const email = (elements.accountEmail?.value || '').trim();
+        if (!email) {
+            setAccountStatusMessage('Enter the email you registered with.', 'error');
+            return;
+        }
+        if (elements.accountResetSend) {
+            elements.accountResetSend.disabled = true;
+            elements.accountResetSend.textContent = 'Sending...';
+        }
+        try {
+            const response = await nativeFetch('/api/account/password-reset/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const payload = await readErrorPayload(response);
+            const message = firstMessageFromPayload(payload);
+            if (!response.ok) {
+                setAccountStatusMessage(message || 'Unable to send a reset link right now.', 'error');
+                return;
+            }
+            setAccountStatusMessage(message || 'Check your email for a link to reset your password.', 'success');
+        } catch (error) {
+            console.debug('Password reset request failed:', error);
+            setAccountStatusMessage('Unable to send a reset link right now.', 'error');
+        } finally {
+            if (elements.accountResetSend) {
+                elements.accountResetSend.disabled = false;
+                elements.accountResetSend.textContent = 'Email Me a Link';
+            }
+        }
+    }
+
+    /** Reads and removes ?password_reset= so the token never lingers in history or a shared URL. */
+    function takePasswordResetToken() {
+        const url = new URL(window.location.href);
+        const token = url.searchParams.get('password_reset');
+        if (!token) {
+            return null;
+        }
+        url.searchParams.delete('password_reset');
+        window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+        return token;
+    }
+
+    async function openPasswordResetFromLink(token) {
+        state.passwordResetToken = token;
+        openAccountModal();
+        let valid = false;
+        try {
+            const response = await nativeFetch('/api/account/password-reset/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+            const payload = response.ok ? await response.json().catch(() => null) : null;
+            valid = payload?.valid === true;
+        } catch (error) {
+            console.debug('Password reset link check failed:', error);
+        }
+        if (valid) {
+            setAccountModalMode('reset');
+            return;
+        }
+        state.passwordResetToken = null;
+        setAccountModalMode('forgot');
+        setAccountStatusMessage('That reset link has expired or was already used. Enter your email to get a new one.', 'error');
+    }
+
+    async function submitPasswordResetComplete() {
+        const password = elements.accountNewPassword?.value || '';
+        const confirm = elements.accountNewPasswordConfirm?.value || '';
+        if (!password) {
+            setAccountStatusMessage('Enter a new password.', 'error');
+            return;
+        }
+        if (password !== confirm) {
+            setAccountStatusMessage('The two passwords do not match.', 'error');
+            return;
+        }
+        if (!state.passwordResetToken) {
+            setAccountModalMode('forgot');
+            setAccountStatusMessage('That reset link has expired. Enter your email to get a new one.', 'error');
+            return;
+        }
+        if (elements.accountResetSave) {
+            elements.accountResetSave.disabled = true;
+            elements.accountResetSave.textContent = 'Saving...';
+        }
+        try {
+            const response = await nativeFetch('/api/account/password-reset/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: state.passwordResetToken, password })
+            });
+            const payload = await readErrorPayload(response);
+            const message = firstMessageFromPayload(payload);
+            if (response.status === 410) {
+                state.passwordResetToken = null;
+                setAccountModalMode('forgot');
+                setAccountStatusMessage(message || 'That reset link has expired. Enter your email to get a new one.', 'error');
+                return;
+            }
+            if (!response.ok) {
+                setAccountStatusMessage(message || 'Unable to reset your password right now.', 'error');
+                return;
+            }
+            state.passwordResetToken = null;
+            resetAccountClaimSyncGate();
+            await accountCheckStatus({ triggerSync: true });
+            closeAccountModal();
+            showAppToast({
+                title: 'Reader account',
+                message: 'Your password has been reset and you are signed in.',
+                autoDismissMs: 4000
+            });
+        } catch (error) {
+            console.debug('Password reset failed:', error);
+            setAccountStatusMessage('Unable to reset your password right now.', 'error');
+        } finally {
+            if (elements.accountResetSave) {
+                elements.accountResetSave.disabled = false;
+                elements.accountResetSave.textContent = 'Set Password';
+            }
+        }
     }
 
     function closeAccountModal() {
@@ -2853,6 +3056,7 @@
 
     // Initialize
     async function init() {
+        const passwordResetToken = takePasswordResetToken();
         installAuthAwareFetch();
         state.readerPreferences = loadStoredReaderPreferences();
         applyReaderPreferences();
@@ -2868,6 +3072,9 @@
         await loadLibrary();
         await accountCheckStatus();
         consumeAccountNotice();
+        if (passwordResetToken && state.accountAuthEnabled) {
+            await openPasswordResetFromLink(passwordResetToken);
+        }
         await authCheckStatus();
         await speedReadingCheckAvailability();
         applyLayoutCapabilities();
@@ -11589,6 +11796,25 @@
         if (elements.accountSignOut) {
             elements.accountSignOut.addEventListener('click', submitAccountLogout);
         }
+        elements.accountForgot?.addEventListener('click', startForgotPassword);
+        elements.accountResetBack?.addEventListener('click', () => {
+            state.passwordResetToken = null;
+            openAccountModal();
+        });
+        elements.accountResetSend?.addEventListener('click', submitPasswordResetRequest);
+        elements.accountResetSave?.addEventListener('click', submitPasswordResetComplete);
+        elements.accountEmail?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && state.accountModalMode === 'forgot') {
+                e.preventDefault();
+                submitPasswordResetRequest();
+            }
+        });
+        elements.accountNewPasswordConfirm?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && state.accountModalMode === 'reset') {
+                e.preventDefault();
+                submitPasswordResetComplete();
+            }
+        });
         if (elements.accountPassword) {
             elements.accountPassword.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !state.accountAuthenticated) {
