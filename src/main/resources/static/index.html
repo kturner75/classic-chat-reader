@@ -897,14 +897,28 @@
             <div id="account-auth-divider" class="auth-modal-divider hidden">
                 <span>or use email</span>
             </div>
-            <label for="account-email" class="auth-modal-label">Email</label>
-            <input id="account-email" class="auth-modal-input" type="email" autocomplete="email" />
-            <label for="account-password" class="auth-modal-label">Password</label>
-            <input id="account-password" class="auth-modal-input" type="password" autocomplete="current-password" />
+            <div id="account-email-row">
+                <label for="account-email" class="auth-modal-label">Email</label>
+                <input id="account-email" class="auth-modal-input" type="email" autocomplete="email" />
+            </div>
+            <div id="account-password-row">
+                <label for="account-password" class="auth-modal-label">Password</label>
+                <input id="account-password" class="auth-modal-input" type="password" autocomplete="current-password" />
+                <button id="account-forgot" class="account-forgot-link" type="button">Forgot password?</button>
+            </div>
+            <div id="account-reset-row" class="hidden">
+                <label for="account-new-password" class="auth-modal-label">New password</label>
+                <input id="account-new-password" class="auth-modal-input" type="password" autocomplete="new-password" />
+                <label for="account-new-password-confirm" class="auth-modal-label">Type it again</label>
+                <input id="account-new-password-confirm" class="auth-modal-input" type="password" autocomplete="new-password" />
+            </div>
             <div class="auth-modal-actions">
                 <button id="account-signout" class="chapter-recap-btn chapter-recap-btn-secondary hidden">Sign Out</button>
+                <button id="account-reset-back" class="chapter-recap-btn chapter-recap-btn-secondary hidden" type="button">Back to Sign In</button>
                 <button id="account-register" class="chapter-recap-btn chapter-recap-btn-secondary">Register</button>
                 <button id="account-signin" class="chapter-recap-btn chapter-recap-btn-primary">Sign In</button>
+                <button id="account-reset-send" class="chapter-recap-btn chapter-recap-btn-primary hidden" type="button">Email Me a Link</button>
+                <button id="account-reset-save" class="chapter-recap-btn chapter-recap-btn-primary hidden" type="button">Set Password</button>
             </div>
             <section id="account-data-section" class="account-data-section hidden" aria-labelledby="account-data-title">
                 <h4 id="account-data-title">Your data</h4>

@@ -47,6 +47,7 @@ public class AccountDeletionService {
             new String[]{"user_reader_states", "user_id"},
             new String[]{"user_sessions", "user_id"},
             new String[]{"pending_external_identity_links", "user_id"},
+            new String[]{"password_reset_tokens", "user_id"},
             new String[]{"user_auth_identities", "user_id"},
             new String[]{"user_local_credentials", "user_id"});
 
