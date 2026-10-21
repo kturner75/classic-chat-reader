@@ -10,6 +10,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -24,16 +25,14 @@ class StaticAndApiResponseHeadersTest {
     @Value("${local.server.port}")
     private int port;
 
-    private HttpResponse<byte[]> get(String path, String... headers) throws Exception {
+    private HttpResponse<byte[]> get(String path, Map<String, String> headers) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path));
-        for (int i = 0; i + 1 < headers.length; i += 2) {
-            request.header(headers[i], headers[i + 1]);
-        }
+        headers.forEach(request::header);
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
     }
 
     private String contentEncoding(String path) throws Exception {
-        HttpResponse<byte[]> response = get(path, "Accept-Encoding", "gzip");
+        HttpResponse<byte[]> response = get(path, Map.of("Accept-Encoding", "gzip"));
         assertEquals(200, response.statusCode(), path);
         return response.headers().firstValue("Content-Encoding").orElse("none");
     }
@@ -47,13 +46,14 @@ class StaticAndApiResponseHeadersTest {
 
     @Test
     void staticFilesAskBrowsersToRevalidateAndAnswerUnchangedWith304() throws Exception {
-        for (String path : List.of("/js/reader.js", "/css/reader.css", "/index.html")) {
-            HttpResponse<byte[]> first = get(path);
+        // "/" is what people load; Spring forwards it to index.html, and the header must survive that.
+        for (String path : List.of("/", "/js/reader.js", "/css/reader.css", "/index.html")) {
+            HttpResponse<byte[]> first = get(path, Map.of());
             assertEquals(200, first.statusCode(), path);
             assertEquals("no-cache", first.headers().firstValue("Cache-Control").orElse("none"), path);
             String lastModified = first.headers().firstValue("Last-Modified").orElseThrow();
 
-            HttpResponse<byte[]> again = get(path, "If-Modified-Since", lastModified);
+            HttpResponse<byte[]> again = get(path, Map.of("If-Modified-Since", lastModified));
             assertEquals(304, again.statusCode(), path + " unchanged since the last visit");
             assertEquals(0, again.body().length, path);
         }
