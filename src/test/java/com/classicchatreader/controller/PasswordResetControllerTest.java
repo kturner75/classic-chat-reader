@@ -13,7 +13,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,7 +33,7 @@ class PasswordResetControllerTest {
     @Test
     void requestAnswersTheSameWhetherOrNotTheAccountExists() throws Exception {
         when(accountAuthService.isAccountAuthEnabled()).thenReturn(true);
-        when(accountAuthRateLimiter.checkPasswordReset(any(), eq("anyone@school.edu")))
+        when(accountAuthRateLimiter.checkPasswordResetRequest(any(), eq("anyone@school.edu")))
                 .thenReturn(AccountAuthRateLimiter.RateLimitResult.permitted());
 
         mockMvc.perform(post("/api/account/password-reset/request")
@@ -48,7 +47,7 @@ class PasswordResetControllerTest {
     @Test
     void rateLimitedRequestSendsNothing() throws Exception {
         when(accountAuthService.isAccountAuthEnabled()).thenReturn(true);
-        when(accountAuthRateLimiter.checkPasswordReset(any(), eq("anyone@school.edu")))
+        when(accountAuthRateLimiter.checkPasswordResetRequest(any(), eq("anyone@school.edu")))
                 .thenReturn(AccountAuthRateLimiter.RateLimitResult.limited(60, "email"));
 
         mockMvc.perform(post("/api/account/password-reset/request")
@@ -61,7 +60,8 @@ class PasswordResetControllerTest {
 
     @Test
     void spentLinkIsGone() throws Exception {
-        when(accountAuthRateLimiter.checkPasswordReset(any(), isNull()))
+        when(accountAuthService.isAccountAuthEnabled()).thenReturn(true);
+        when(accountAuthRateLimiter.checkPasswordResetToken(any()))
                 .thenReturn(AccountAuthRateLimiter.RateLimitResult.permitted());
         when(passwordResetService.completeReset(eq("old-token"), eq("new-password-1"), any()))
                 .thenReturn(AccountAuthService.AuthResult.error(
@@ -75,7 +75,8 @@ class PasswordResetControllerTest {
 
     @Test
     void successfulResetReturnsOk() throws Exception {
-        when(accountAuthRateLimiter.checkPasswordReset(any(), isNull()))
+        when(accountAuthService.isAccountAuthEnabled()).thenReturn(true);
+        when(accountAuthRateLimiter.checkPasswordResetToken(any()))
                 .thenReturn(AccountAuthRateLimiter.RateLimitResult.permitted());
         when(passwordResetService.completeReset(eq("live-token"), eq("new-password-1"), any()))
                 .thenReturn(AccountAuthService.AuthResult.success(true, "student@columbiastate.edu", "Your password has been reset."));

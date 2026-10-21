@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Forgot password for reader accounts. The token travels in POST bodies, never in a query
- * string, so it stays out of access logs.
+ * Forgot password for reader accounts. The token reaches the page in the URL fragment and the
+ * server only in POST bodies, never in a query string, so it stays out of access logs.
  */
 @RestController
 @RequestMapping("/api/account/password-reset")
@@ -48,13 +48,13 @@ public class PasswordResetController {
             @RequestBody(required = false) ResetRequest body,
             HttpServletRequest request) {
         if (!accountAuthService.isAccountAuthEnabled()) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", "Account auth is disabled."));
+            return disabled();
         }
         String email = body == null ? null : body.email();
         if (email == null || email.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Enter the email you registered with."));
         }
-        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordReset(request, email);
+        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordResetRequest(request, email);
         if (!rateLimit.allowed()) {
             accountAuthAuditService.record("password_reset_request", "rate_limited", request, email, null,
                     rateLimit.retryAfterSeconds(), rateLimit.scope());
@@ -71,7 +71,10 @@ public class PasswordResetController {
     public ResponseEntity<Map<String, Object>> validate(
             @RequestBody(required = false) TokenRequest body,
             HttpServletRequest request) {
-        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordReset(request, null);
+        if (!accountAuthService.isAccountAuthEnabled()) {
+            return disabled();
+        }
+        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordResetToken(request);
         if (!rateLimit.allowed()) {
             return rateLimited(rateLimit.retryAfterSeconds());
         }
@@ -84,11 +87,14 @@ public class PasswordResetController {
             @RequestBody(required = false) CompleteRequest body,
             HttpServletRequest request,
             HttpServletResponse response) {
+        if (!accountAuthService.isAccountAuthEnabled()) {
+            return disabled();
+        }
         if (body == null || body.token() == null || body.token().isBlank()
                 || body.password() == null || body.password().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Enter a new password."));
         }
-        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordReset(request, null);
+        AccountAuthRateLimiter.RateLimitResult rateLimit = accountAuthRateLimiter.checkPasswordResetToken(request);
         if (!rateLimit.allowed()) {
             accountAuthAuditService.record("password_reset_complete", "rate_limited", request, null, null,
                     rateLimit.retryAfterSeconds(), rateLimit.scope());
@@ -106,6 +112,10 @@ public class PasswordResetController {
         };
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore())
                 .body(Map.of("message", result.message() == null ? "" : result.message()));
+    }
+
+    private ResponseEntity<Map<String, Object>> disabled() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", "Account auth is disabled."));
     }
 
     private ResponseEntity<Map<String, Object>> rateLimited(Integer retryAfterSeconds) {

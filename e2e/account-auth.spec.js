@@ -386,9 +386,9 @@ test('forgot password sends a reset link for the typed email', async ({ page }) 
 test('reset link lets the reader choose a new password and signs them in', async ({ page }) => {
   const mockState = await installApiMocks(page);
 
-  await page.goto('/?password_reset=live-reset-token');
+  await page.goto('/#password_reset=live-reset-token');
   await expect(page.locator('#account-modal-title')).toHaveText('Choose a New Password');
-  expect(new URL(page.url()).searchParams.has('password_reset')).toBe(false);
+  expect(page.url()).not.toContain('password_reset');
 
   await page.fill('#account-new-password', 'brand-new-password');
   await page.fill('#account-new-password-confirm', 'not-the-same');
@@ -408,7 +408,7 @@ test('reset link lets the reader choose a new password and signs them in', async
 test('a spent reset link offers to send a new one', async ({ page }) => {
   await installApiMocks(page);
 
-  await page.goto('/?password_reset=spent-token');
+  await page.goto('/#password_reset=spent-token');
   await expect(page.locator('#account-modal-title')).toHaveText('Reset Password');
   await expect(page.locator('#account-modal-status')).toContainText('expired or was already used');
   await expect(page.locator('#account-reset-send')).toBeVisible();

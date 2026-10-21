@@ -8,6 +8,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -43,7 +44,7 @@ public class ResendEmailSender implements TransactionalEmailSender {
         }
     }
 
-    @Override
+    /** True when a provider key and sender address are configured, so mail can actually leave. */
     public boolean isConfigured() {
         return !apiKey.isEmpty() && !from.isEmpty();
     }
@@ -68,9 +69,12 @@ public class ResendEmailSender implements TransactionalEmailSender {
                     .retrieve()
                     .toBodilessEntity();
             return true;
+        } catch (RestClientResponseException e) {
+            // Only the status: Resend's error body can quote the recipient, which is personal data.
+            log.warn("Resend rejected an account email: HTTP {}", e.getStatusCode().value());
+            return false;
         } catch (RestClientException e) {
-            // The recipient is personal data, so it stays out of the log.
-            log.warn("Resend rejected an account email: {}", e.getMessage());
+            log.warn("Could not reach Resend to send an account email: {}", e.getClass().getSimpleName());
             return false;
         }
     }

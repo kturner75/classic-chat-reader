@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.util.HtmlUtils;
@@ -29,9 +30,13 @@ import java.util.concurrent.Executors;
 /**
  * Forgot-password flow: email a single-use link, then let its holder set a new password.
  *
- * <p>Requesting a reset always looks the same to the caller, whether or not the address has an
- * account, so it cannot be used to find out who is registered. The email is sent off the request
- * thread for the same reason: a real send would otherwise take measurably longer.
+ * <p>Requesting a reset returns the same response whether or not the address has an account.
+ * The email is sent off the request thread so a real send does not make known addresses
+ * noticeably slower; a known address still does a little extra database work, which the
+ * per-email and per-IP rate limits keep from being useful for enumeration.
+ *
+ * <p>The token travels in the URL fragment ({@code /#password_reset=...}), which browsers never
+ * send to the server or put in a Referer header, so it stays out of access and proxy logs.
  */
 @Service
 public class PasswordResetService {
@@ -39,7 +44,7 @@ public class PasswordResetService {
     private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
     /** One email per account per cooldown, so the form cannot be used to flood someone's inbox. */
     private static final int RESEND_COOLDOWN_SECONDS = 120;
-    static final String RESET_QUERY_PARAM = "password_reset";
+    static final String RESET_FRAGMENT_PARAM = "password_reset";
 
     private final PasswordResetTokenRepository tokenRepository;
     private final UserRepository userRepository;
@@ -66,7 +71,7 @@ public class PasswordResetService {
                 }));
     }
 
-    // Visible for testing: a direct executor makes the send synchronous.
+    // Visible for testing: a direct executor makes the send synchronous (still after commit).
     PasswordResetService(
             PasswordResetTokenRepository tokenRepository,
             UserRepository userRepository,
@@ -120,7 +125,7 @@ public class PasswordResetService {
         tokenRepository.save(entity);
 
         String recipient = user.get().getEmail();
-        String link = publicBaseUrl + "/?" + RESET_QUERY_PARAM + "=" + token;
+        String link = publicBaseUrl + "/#" + RESET_FRAGMENT_PARAM + "=" + token;
         afterCommit(() -> mailExecutor.execute(() -> sendResetEmail(recipient, link)));
     }
 
@@ -130,20 +135,24 @@ public class PasswordResetService {
         return findLiveToken(token).isPresent();
     }
 
-    /** Spends the link: sets the new password and signs this browser in. */
+    /**
+     * Spends the link: sets the new password and signs this browser in. The token row is deleted
+     * first and only the request that actually deleted it goes on, so two simultaneous submits of
+     * one link cannot both succeed. A rejected password rolls the delete back, keeping the link usable.
+     */
     @Transactional
     public AccountAuthService.AuthResult completeReset(String token, String newPassword, HttpServletResponse response) {
         Optional<PasswordResetTokenEntity> live = findLiveToken(token);
-        if (live.isEmpty()) {
+        if (live.isEmpty() || tokenRepository.claimByTokenHash(live.get().getTokenHash()) != 1) {
             return AccountAuthService.AuthResult.error(
                     AccountAuthService.ResultStatus.INVALID_CREDENTIALS,
                     accountAuthService.isAccountAuthEnabled(),
                     "This reset link is invalid or has expired. Request a new one.");
         }
-        String userId = live.get().getUserId();
-        AccountAuthService.AuthResult result = accountAuthService.resetPassword(userId, newPassword, response);
-        if (result.status() == AccountAuthService.ResultStatus.SUCCESS) {
-            tokenRepository.deleteByUserId(userId);
+        AccountAuthService.AuthResult result =
+                accountAuthService.resetPassword(live.get().getUserId(), newPassword, response);
+        if (result.status() != AccountAuthService.ResultStatus.SUCCESS) {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
         }
         return result;
     }

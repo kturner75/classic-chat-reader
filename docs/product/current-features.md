@@ -56,7 +56,7 @@ This inventory reflects implemented behavior in backend controllers/services and
   - Production defaults to `optional` (anyone can register); set `ACCOUNT_AUTH_ROLLOUT_MODE=internal` to go back to the allow-list.
 - Forgot password: "Forgot password?" in the account modal emails a single-use link (30 minutes) through Resend.
   - `POST /api/account/password-reset/request` answers the same whether or not the email has an account; one email per account per 2 minutes.
-  - `POST /api/account/password-reset/validate` and `POST /api/account/password-reset/complete` take the token in the body. Completing sets the password (or creates one for a Google-only account), clears lockout, ends other sessions, and signs the browser in.
+  - `POST /api/account/password-reset/validate` and `POST /api/account/password-reset/complete` take the token in the body; the emailed link carries it in the URL fragment (`/#password_reset=...`), which never reaches the server. Completing sets the password (or creates one for a Google-only account), clears lockout, ends other sessions, and signs the browser in.
   - Config: `RESEND_API_KEY`, `EMAIL_FROM` (prod default `Classic Chat Reader <no-reply@classicchatreader.com>`), `APP_PUBLIC_BASE_URL` (prod default `https://classicchatreader.com`). Without a key, reset emails are skipped with a warning.
 - Account status payload includes rollout metadata (`rolloutMode`, `accountRequired`) and provider availability (`googleAuthEnabled`) for staged client behavior.
 - Reader account UI is available in both library and reader flows, with one-time claim/sync to migrate anonymous/local state into the signed-in account.

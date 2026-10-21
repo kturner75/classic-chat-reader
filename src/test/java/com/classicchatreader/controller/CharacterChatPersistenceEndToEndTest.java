@@ -44,9 +44,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// Its own in-memory DB: the smoke profile's shared smokedb is create-drop, so when the context cache
+// evicts another smoke context, that context's shutdown would drop these tables mid-run.
 @SpringBootTest(properties = {
         "ai.chat.enabled=true",
-        "character.enabled=true"
+        "character.enabled=true",
+        "spring.datasource.url=jdbc:h2:mem:character-chat-e2e;DB_CLOSE_DELAY=-1"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("smoke")

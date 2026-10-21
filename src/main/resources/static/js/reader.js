@@ -2179,21 +2179,30 @@
         }
     }
 
-    /** Reads and removes ?password_reset= so the token never lingers in history or a shared URL. */
+    /**
+     * Reads and removes #password_reset= so the token never lingers in history or a shared URL.
+     * The emailed link uses the fragment because browsers never send it to the server.
+     */
     function takePasswordResetToken() {
         const url = new URL(window.location.href);
-        const token = url.searchParams.get('password_reset');
+        const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+        const token = fragment.get('password_reset');
         if (!token) {
             return null;
         }
-        url.searchParams.delete('password_reset');
-        window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+        fragment.delete('password_reset');
+        const remaining = fragment.toString();
+        window.history.replaceState({}, document.title, `${url.pathname}${url.search}${remaining ? `#${remaining}` : ''}`);
         return token;
     }
 
     async function openPasswordResetFromLink(token) {
         state.passwordResetToken = token;
         openAccountModal();
+        // Show the reset step straight away, locked until the link checks out, so the sign-in form never flashes.
+        setAccountModalMode('reset');
+        setAccountStatusMessage('Checking your reset link...');
+        if (elements.accountResetSave) elements.accountResetSave.disabled = true;
         let valid = false;
         try {
             const response = await nativeFetch('/api/account/password-reset/validate', {
@@ -2207,7 +2216,8 @@
             console.debug('Password reset link check failed:', error);
         }
         if (valid) {
-            setAccountModalMode('reset');
+            if (elements.accountResetSave) elements.accountResetSave.disabled = false;
+            setAccountStatusMessage('');
             return;
         }
         state.passwordResetToken = null;

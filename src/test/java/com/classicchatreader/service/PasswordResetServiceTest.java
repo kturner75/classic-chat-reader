@@ -1,6 +1,7 @@
 package com.classicchatreader.service;
 
 import com.classicchatreader.entity.UserEntity;
+import com.classicchatreader.repository.PasswordResetTokenRepository;
 import com.classicchatreader.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,20 +33,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Real Flyway schema and real transactions (no test transaction), so the email only goes out
- * after the token row commits, exactly as in production.
+ * after the token row commits, exactly as in production. A direct executor sends it on the
+ * calling thread, so "no mail" assertions need no waiting.
  */
 @DataJpaTest
-@Import({AccountAuthService.class, PasswordResetService.class, PasswordResetServiceTest.MailConfig.class})
+@Import({AccountAuthService.class, PasswordResetServiceTest.MailConfig.class})
 @TestPropertySource(properties = {
         "account.auth.enabled=true",
         "account.auth.rollout.mode=optional",
-        "account.auth.password.bcrypt-strength=10",
-        "account.auth.password-reset.public-base-url=https://reader.example/"
+        "account.auth.password.bcrypt-strength=10"
 })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PasswordResetServiceTest {
 
-    private static final Pattern LINK = Pattern.compile("https://reader\\.example/\\?password_reset=([A-Za-z0-9_-]+)");
+    private static final Pattern LINK = Pattern.compile("https://reader\\.example/#password_reset=([A-Za-z0-9_-]+)");
 
     @Autowired private PasswordResetService passwordResetService;
     @Autowired private AccountAuthService accountAuthService;
@@ -63,10 +69,9 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void unknownEmailGetsNoMailAndNoToken() throws Exception {
+    void unknownEmailGetsNoMailAndNoToken() {
         passwordResetService.requestReset("nobody@school.edu");
 
-        Thread.sleep(200);
         assertTrue(sender.sent.isEmpty());
         assertEquals(0, tokenCount());
     }
@@ -109,9 +114,36 @@ class PasswordResetServiceTest {
         awaitToken();
         passwordResetService.requestReset("teacher@columbiastate.edu");
 
-        Thread.sleep(200);
         assertEquals(1, sender.sent.size());
         assertEquals(1, tokenCount());
+    }
+
+    @Test
+    void simultaneousSubmitsOfOneLinkSucceedOnce() throws Exception {
+        register("race@example.com", "original-password");
+        passwordResetService.requestReset("race@example.com");
+        String token = awaitToken();
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<AccountAuthService.ResultStatus>> results = List.of("first-new-password", "second-new-password").stream()
+                    .map(password -> pool.submit(() -> {
+                        start.await();
+                        return passwordResetService.completeReset(token, password, new MockHttpServletResponse()).status();
+                    }))
+                    .toList();
+            start.countDown();
+            long successes = 0;
+            for (Future<AccountAuthService.ResultStatus> result : results) {
+                if (result.get(10, TimeUnit.SECONDS) == AccountAuthService.ResultStatus.SUCCESS) {
+                    successes++;
+                }
+            }
+            assertEquals(1, successes, "a reset link is single-use even when submitted twice at once");
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -157,12 +189,8 @@ class PasswordResetServiceTest {
                 accountAuthService.register(email, password, new MockHttpServletResponse()).status());
     }
 
-    /** Mail goes out on a background thread after commit; wait for it and pull the token from the link. */
-    private String awaitToken() throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (sender.sent.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+    /** Pulls the token out of the link in the last email sent. */
+    private String awaitToken() {
         assertFalse(sender.sent.isEmpty(), "reset email was sent");
         Matcher matcher = LINK.matcher(sender.sent.get(sender.sent.size() - 1).text());
         assertTrue(matcher.find(), "email carries the reset link on the configured base URL");
@@ -184,11 +212,6 @@ class PasswordResetServiceTest {
         final List<Mail> sent = new CopyOnWriteArrayList<>();
 
         @Override
-        public boolean isConfigured() {
-            return true;
-        }
-
-        @Override
         public boolean send(String to, String subject, String textBody, String htmlBody) {
             sent.add(new Mail(to, subject, textBody, htmlBody));
             return true;
@@ -200,6 +223,25 @@ class PasswordResetServiceTest {
         @Bean
         CapturingSender capturingSender() {
             return new CapturingSender();
+        }
+
+        @Bean
+        PasswordResetService passwordResetService(
+                PasswordResetTokenRepository tokenRepository,
+                UserRepository userRepository,
+                AccountAuthService accountAuthService,
+                CapturingSender sender) {
+            ExecutorService direct = new AbstractExecutorService() {
+                private volatile boolean shutdown;
+                @Override public void execute(Runnable command) { command.run(); }
+                @Override public void shutdown() { shutdown = true; }
+                @Override public List<Runnable> shutdownNow() { shutdown = true; return List.of(); }
+                @Override public boolean isShutdown() { return shutdown; }
+                @Override public boolean isTerminated() { return shutdown; }
+                @Override public boolean awaitTermination(long timeout, TimeUnit unit) { return true; }
+            };
+            return new PasswordResetService(tokenRepository, userRepository, accountAuthService, sender,
+                    "https://reader.example/", 30, direct);
         }
     }
 }

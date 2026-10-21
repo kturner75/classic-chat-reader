@@ -56,9 +56,17 @@ public class AccountAuthRateLimiter {
         return check("login", request, email, loginIpMaxRequests, loginEmailMaxRequests);
     }
 
-    /** Both forgot-password calls: asking for a link (keyed by email) and spending one (no email). */
-    public RateLimitResult checkPasswordReset(HttpServletRequest request, String email) {
+    /** Asking for a reset email, keyed by IP and by the email asked about. */
+    public RateLimitResult checkPasswordResetRequest(HttpServletRequest request, String email) {
         return check("password_reset", request, email, passwordResetIpMaxRequests, passwordResetEmailMaxRequests);
+    }
+
+    /**
+     * Checking or spending a reset link. Its own per-IP bucket, so a class on one campus IP that
+     * opens links and submits new passwords does not use up the budget for asking for emails.
+     */
+    public RateLimitResult checkPasswordResetToken(HttpServletRequest request) {
+        return check("password_reset_token", request, null, passwordResetIpMaxRequests, passwordResetEmailMaxRequests);
     }
 
     private RateLimitResult check(
