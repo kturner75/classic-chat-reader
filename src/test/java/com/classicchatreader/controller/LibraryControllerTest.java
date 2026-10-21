@@ -45,6 +45,9 @@ class LibraryControllerTest {
     private BookStorageService bookStorageService;
 
     @MockitoBean
+    private com.classicchatreader.service.LibraryListingCache libraryListingCache;
+
+    @MockitoBean
     private BookCoverService bookCoverService;
 
     @MockitoBean
@@ -62,7 +65,7 @@ class LibraryControllerTest {
             new Book("book-1", "Pride and Prejudice", "Jane Austen", "A romantic novel.", null, List.of(), false, false, false),
             new Book("book-2", "Moby Dick", "Herman Melville", "A whale tale.", null, List.of(), false, false, false)
         );
-        when(bookStorageService.getAllBooks()).thenReturn(books);
+        when(libraryListingCache.books()).thenReturn(books);
 
         mockMvc.perform(get("/api/library"))
             .andExpect(status().isOk())
@@ -81,7 +84,7 @@ class LibraryControllerTest {
             new Book("book-1", "Romeo and Juliet", "William Shakespeare", null, null, List.of(), false, false, false, true, 1513),
             new Book("book-2", "Class Packet", "Teacher", null, null, List.of(), false, false, false, false, null)
         );
-        when(bookStorageService.getAllBooks()).thenReturn(books);
+        when(libraryListingCache.books()).thenReturn(books);
 
         mockMvc.perform(get("/api/library"))
             .andExpect(status().isOk())
@@ -99,7 +102,7 @@ class LibraryControllerTest {
         List<Book> books = List.of(
             new Book("book-1", "Pride and Prejudice", "Jane Austen", null, null, chapters, false, false, false)
         );
-        when(bookStorageService.getAllBooks()).thenReturn(books);
+        when(libraryListingCache.books()).thenReturn(books);
 
         mockMvc.perform(get("/api/library"))
             .andExpect(status().isOk())

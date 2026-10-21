@@ -3078,13 +3078,14 @@
         }
         setupEventListeners();
         setDesktopSearchExpanded(false);
+        // A reset link opens its dialog right away; it needs nothing the library load provides.
+        if (passwordResetToken) {
+            void openPasswordResetFromLink(passwordResetToken);
+        }
         await loadClassroomContext();
         await loadLibrary();
         await accountCheckStatus();
         consumeAccountNotice();
-        if (passwordResetToken && state.accountAuthEnabled) {
-            await openPasswordResetFromLink(passwordResetToken);
-        }
         await authCheckStatus();
         await speedReadingCheckAvailability();
         applyLayoutCapabilities();

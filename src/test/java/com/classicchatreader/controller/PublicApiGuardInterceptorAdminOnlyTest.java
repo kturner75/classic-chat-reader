@@ -55,6 +55,9 @@ class PublicApiGuardInterceptorAdminOnlyTest {
     private BookStorageService bookStorageService;
 
     @MockitoBean
+    private com.classicchatreader.service.LibraryListingCache libraryListingCache;
+
+    @MockitoBean
     private BookCoverService bookCoverService;
 
     @MockitoBean

@@ -16,6 +16,11 @@ public interface ChapterRepository extends JpaRepository<ChapterEntity, String> 
 
     List<ChapterEntity> findByBookIdOrderByChapterIndex(String bookId);
 
+    /** Every chapter's id and title in one query, for listing the whole library without N+1 loads. */
+    @Query("SELECT new com.classicchatreader.repository.ChapterTitle(c.book.id, c.id, c.title) "
+            + "FROM ChapterEntity c ORDER BY c.book.id, c.chapterIndex")
+    List<ChapterTitle> findAllChapterTitles();
+
     Optional<ChapterEntity> findByBookIdAndChapterIndex(String bookId, int chapterIndex);
 
     @Query("SELECT c FROM ChapterEntity c JOIN FETCH c.book WHERE c.id = :id")

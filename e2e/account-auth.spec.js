@@ -20,7 +20,7 @@ function json(route, status, payload) {
   });
 }
 
-async function installApiMocks(page) {
+async function installApiMocks(page, options = {}) {
   const state = {
     accountEnabled: true,
     accountAuthenticated: false,
@@ -90,6 +90,9 @@ async function installApiMocks(page) {
       });
     }
     if (method === 'GET' && path === '/api/library') {
+      if (options.libraryDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.libraryDelayMs));
+      }
       return json(route, 200, [TEST_BOOK]);
     }
     if (method === 'GET' && path === '/api/import/popular') {
@@ -412,4 +415,12 @@ test('a spent reset link offers to send a new one', async ({ page }) => {
   await expect(page.locator('#account-modal-title')).toHaveText('Reset Password');
   await expect(page.locator('#account-modal-status')).toContainText('expired or was already used');
   await expect(page.locator('#account-reset-send')).toBeVisible();
+});
+
+test('reset link dialog does not wait for a slow library load', async ({ page }) => {
+  await installApiMocks(page, { libraryDelayMs: 15000 });
+
+  await page.goto('/#password_reset=live-reset-token');
+  await expect(page.locator('#account-modal-title')).toHaveText('Choose a New Password', { timeout: 3000 });
+  await expect(page.locator('#account-reset-save')).toBeEnabled({ timeout: 3000 });
 });

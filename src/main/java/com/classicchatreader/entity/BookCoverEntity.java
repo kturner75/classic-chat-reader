@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "book_covers")
+@EntityListeners(LibraryChangeListener.class)
 public class BookCoverEntity {
 
     @Id
