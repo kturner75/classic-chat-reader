@@ -9,6 +9,7 @@ import com.classicchatreader.model.ParagraphAnnotation;
 import com.classicchatreader.service.BookCoverService;
 import com.classicchatreader.service.BookStorageService;
 import com.classicchatreader.service.CdnAssetService;
+import com.classicchatreader.service.LibraryListingCache;
 import com.classicchatreader.service.LiveAssetWriteResult;
 import com.classicchatreader.service.ParagraphAnnotationService;
 import com.classicchatreader.service.ReaderIdentityService;
@@ -38,6 +39,7 @@ import java.util.List;
 public class LibraryController {
 
     private final BookStorageService bookStorageService;
+    private final LibraryListingCache libraryListingCache;
     private final BookCoverService bookCoverService;
     private final CdnAssetService cdnAssetService;
     private final ParagraphAnnotationService paragraphAnnotationService;
@@ -47,6 +49,7 @@ public class LibraryController {
 
     public LibraryController(
             BookStorageService bookStorageService,
+            LibraryListingCache libraryListingCache,
             BookCoverService bookCoverService,
             CdnAssetService cdnAssetService,
             ParagraphAnnotationService paragraphAnnotationService,
@@ -54,6 +57,7 @@ public class LibraryController {
             @org.springframework.beans.factory.annotation.Value("${book-cover.cdn.enabled:false}") boolean bookCoverCdnEnabled,
             @org.springframework.beans.factory.annotation.Value("${generation.cache-only:false}") boolean cacheOnly) {
         this.bookStorageService = bookStorageService;
+        this.libraryListingCache = libraryListingCache;
         this.bookCoverService = bookCoverService;
         this.cdnAssetService = cdnAssetService;
         this.paragraphAnnotationService = paragraphAnnotationService;
@@ -64,7 +68,7 @@ public class LibraryController {
 
     @GetMapping
     public List<Book> listBooks() {
-        return bookStorageService.getAllBooks();
+        return libraryListingCache.books();
     }
 
     @GetMapping("/{bookId}")

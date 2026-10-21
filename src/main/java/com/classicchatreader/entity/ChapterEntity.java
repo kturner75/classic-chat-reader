@@ -6,6 +6,7 @@ import java.util.List;
 
 @Entity
 @Table(name = "chapters")
+@EntityListeners(LibraryChangeListener.class)
 public class ChapterEntity {
 
     @Id

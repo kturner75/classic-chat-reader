@@ -47,6 +47,15 @@ public class CuratedCatalogService {
         return active().books();
     }
 
+    /**
+     * Changes whenever curated membership may have changed: every reload of the snapshot (after a
+     * write here, or after its TTL for changes made elsewhere) gets a new value. The library listing
+     * keys its cache on it, since a book's curated flag and TTS default come from this catalog.
+     */
+    public long generation() {
+        return active().loadedAt();
+    }
+
     public boolean isCuratedGutenbergId(int gutenbergId) {
         return active().ids().contains(gutenbergId);
     }
