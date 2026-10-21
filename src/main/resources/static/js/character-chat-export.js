@@ -55,26 +55,48 @@
         return messages.some((message) => asText(message && message.content).length > 0);
     }
 
-    function formatCharacterChatMarkdown(options) {
+    /** "October 21, 2026, 9:14 AM" in the reader's own time zone (or {@code timeZone}, for tests). */
+    function formatReadableDate(value, timeZone) {
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+        try {
+            return date.toLocaleString('en-US', {
+                dateStyle: 'long',
+                timeStyle: 'short',
+                ...(timeZone ? { timeZone } : {})
+            });
+        } catch (error) {
+            return formatTimestamp(date);
+        }
+    }
+
+    /**
+     * The conversation as plain text, for students to upload to a course dropbox and quote in a
+     * paper: opens in Notepad, Word, Google Docs or a browser with no stray formatting marks.
+     */
+    function formatCharacterChatTranscript(options) {
         const opts = options && typeof options === 'object' ? options : {};
         const bookTitle = asText(opts.bookTitle) || 'Unknown book';
         const bookAuthor = asText(opts.bookAuthor);
         const characterName = asText(opts.characterName) || 'Character';
-        const exportedAt = formatTimestamp(opts.exportedAt || Date.now()) || new Date().toISOString();
+        const exportedAt = formatReadableDate(opts.exportedAt || Date.now(), opts.timeZone)
+            || formatReadableDate(Date.now(), opts.timeZone);
         const chapterLabel = asText(opts.chapterLabel);
         const messages = Array.isArray(opts.messages) ? opts.messages : [];
 
         const lines = [
-            '# Character conversation',
+            'Character conversation (Classic Chat Reader)',
             '',
-            `- Book: ${bookTitle}${bookAuthor ? ` (${bookAuthor})` : ''}`,
-            `- Character: ${characterName}`,
-            `- Exported: ${exportedAt}`
+            `Book: ${bookTitle}${bookAuthor ? ` (${bookAuthor})` : ''}`,
+            `Character: ${characterName}`,
+            `Date: ${exportedAt}`
         ];
         if (chapterLabel) {
-            lines.push(`- Reader position: ${chapterLabel}`);
+            lines.push(`Reader position: ${chapterLabel}`);
         }
-        lines.push('', '## Transcript', '');
+        lines.push('', '--------------------------------------------------', '');
 
         let wroteMessage = false;
         for (const message of messages) {
@@ -83,11 +105,11 @@
                 continue;
             }
             const label = speakerLabel(message && message.role, characterName);
-            lines.push(`**${label}:** ${content}`, '');
+            lines.push(`${label}: ${content}`, '');
             wroteMessage = true;
         }
         if (!wroteMessage) {
-            lines.push('_No messages in this conversation yet._', '');
+            lines.push('(No messages in this conversation yet.)', '');
         }
 
         return lines.join('\n').trim() + '\n';
@@ -103,14 +125,16 @@
         const day = Number.isNaN(date.getTime())
             ? new Date().toISOString().slice(0, 10)
             : date.toISOString().slice(0, 10);
-        return `character-chat_${bookSlug}_${characterSlug}_${day}.md`;
+        return `character-chat_${bookSlug}_${characterSlug}_${day}.txt`;
     }
 
     function downloadTextFile(filename, content, mimeType) {
         const safeName = asText(filename) || 'download.txt';
-        const blob = new Blob([content == null ? '' : String(content)], {
-            type: mimeType || 'text/markdown;charset=utf-8'
-        });
+        const type = mimeType || 'text/plain;charset=utf-8';
+        const text = content == null ? '' : String(content);
+        // A byte-order mark makes Word and older Notepad read the file as UTF-8, so the curly
+        // quotes and dashes in character replies don't turn into garbage characters.
+        const blob = new Blob([type.startsWith('text/plain') ? '\uFEFF' + text : text], { type });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
@@ -129,7 +153,8 @@
         slugify,
         speakerLabel,
         hasDownloadableTranscript,
-        formatCharacterChatMarkdown,
+        formatReadableDate,
+        formatCharacterChatTranscript,
         buildCharacterChatFilename,
         downloadTextFile
     };

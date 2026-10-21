@@ -194,13 +194,21 @@ async function installApiMocks(page, options = {}) {
       return json(route, 200, options.bookmarks || []);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}/up-to`) {
-      return json(route, 200, characters);
+      return json(route, 200, options.upToCharacters || characters);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}`) {
       return json(route, 200, characters);
     }
     if (method === 'GET' && path === `/api/characters/book/${book.id}/new-since`) {
       return json(route, 200, []);
+    }
+    if (method === 'GET' && path.startsWith('/api/account/chats/characters/') && path !== `/api/account/chats/characters/${character.id}`) {
+      return json(route, 200, { session: null, messages: [] });
+    }
+    if (method === 'POST' && /^\/api\/account\/chats\/characters\/[^/]+\/messages$/.test(path)) {
+      state.chatSends = state.chatSends || [];
+      state.chatSends.push(request.postDataJSON());
+      return json(route, 202, {});
     }
     if (method === 'GET' && path === `/api/account/chats/characters/${character.id}`) {
       return json(route, 200, {
@@ -1348,4 +1356,68 @@ test('exhausted quiz attempts hide Take Quiz and Retry Quiz', async ({ page }) =
   await expect(assignment.locator('.assignment-open-action')).toHaveText('Open');
   await expect(assignment.locator('.assignment-quiz-action')).toHaveCount(0);
   await expect(assignment.locator('.assignment-chat-action')).toHaveCount(0);
+});
+
+test('a reader who finished the book can reveal later characters and chat about the whole story', async ({ page }) => {
+  const laterCharacter = {
+    ...TEST_CHARACTER,
+    id: 'character-later',
+    name: 'Bram',
+    firstChapterId: 'chapter-3',
+    firstChapterTitle: 'Chapter Three',
+    firstChapterIndex: 2
+  };
+  const state = await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    characters: [TEST_CHARACTER, laterCharacter],
+    upToCharacters: [TEST_CHARACTER],
+    characterChatRequired: false
+  });
+  await page.goto('/');
+  await page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"] .assignment-open-action').click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+
+  await page.locator('#character-toggle').click();
+  await expect(page.locator('.character-card', { hasText: 'Ada' })).toBeVisible();
+  await expect(page.locator('.character-card', { hasText: 'Bram' })).toHaveCount(0);
+  await expect(page.locator('#character-reveal-note')).toContainText('1 more character appears later in the book');
+
+  await page.locator('#character-reveal-toggle').click();
+  await expect(page.locator('.character-card', { hasText: 'Bram' })).toBeVisible();
+  await expect(page.locator('#character-reveal-toggle')).toHaveText('Only show characters I\u2019ve met');
+
+  await page.locator('.character-card', { hasText: 'Bram' }).click();
+  await page.locator('#character-chat-btn').click();
+  await page.locator('#chat-input').fill('What did you think of the ending?');
+  await page.locator('#chat-input').press('Enter');
+  await expect.poll(() => (state.chatSends || []).length).toBeGreaterThan(0);
+  expect(state.chatSends[0].context.chapterIndex).toBe(2);
+  expect(state.chatSends[0].context.chapterId).toBe('chapter-3');
+  expect(state.chatSends[0].context.paragraphIndex).toBeGreaterThan(1000);
+  await page.locator('#character-chat-close').click();
+
+  // The choice is remembered for this book.
+  expect(await page.evaluate(() => localStorage.getItem('reader_charactersRevealAll_book-1'))).toBe('true');
+});
+
+test('character chat downloads as a plain-text file a student can upload', async ({ page }) => {
+  await installApiMocks(page, { characterChatRequired: false });
+  await page.goto('/');
+  await page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"] .assignment-open-action').click();
+  await page.locator('#character-toggle').click();
+  await page.locator('.character-card', { hasText: TEST_CHARACTER.name }).click();
+  await page.locator('#character-chat-btn').click();
+  await expect(page.locator('#chat-messages')).toContainText('I am Ada.');
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#character-chat-download').click()
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^character-chat_bl-047-assignment-book_ada_\d{4}-\d{2}-\d{2}\.txt$/);
+  const fs = require('fs');
+  const text = fs.readFileSync(await download.path(), 'utf8').replace(/^\uFEFF/, '');
+  expect(text).toContain('Character: Ada');
+  expect(text).toContain('You: Tell me about yourself.');
+  expect(text).toContain('Ada: I am Ada.');
+  expect(text).not.toContain('**');
 });
