@@ -128,13 +128,15 @@
         return `character-chat_${bookSlug}_${characterSlug}_${day}.txt`;
     }
 
-    function downloadTextFile(filename, content, mimeType) {
+    /**
+     * Saves text as a file. {@code byteOrderMark} prefixes a UTF-8 BOM, which makes Word and older
+     * Notepad read the file as UTF-8 so curly quotes and dashes don't turn into garbage characters.
+     */
+    function downloadTextFile(filename, content, options = {}) {
         const safeName = asText(filename) || 'download.txt';
-        const type = mimeType || 'text/plain;charset=utf-8';
+        const type = options.mimeType || 'text/plain;charset=utf-8';
         const text = content == null ? '' : String(content);
-        // A byte-order mark makes Word and older Notepad read the file as UTF-8, so the curly
-        // quotes and dashes in character replies don't turn into garbage characters.
-        const blob = new Blob([type.startsWith('text/plain') ? '\uFEFF' + text : text], { type });
+        const blob = new Blob([options.byteOrderMark ? '\uFEFF' + text : text], { type });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;

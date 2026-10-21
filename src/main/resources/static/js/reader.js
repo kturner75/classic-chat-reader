@@ -10115,7 +10115,7 @@
                 fetch(`/api/characters/book/${state.currentBook.id}/up-to?chapterIndex=${chapterIndex}&paragraphIndex=${paragraphIndex}`),
                 fetch(`/api/characters/book/${state.currentBook.id}`)
             ]);
-            const upToCharacters = await upToResponse.json();
+            const upToCharacters = upToResponse.ok ? await upToResponse.json() : [];
             const allCharacters = allResponse.ok ? await allResponse.json() : [];
             let mergedCharacters = upToCharacters;
 
@@ -10165,18 +10165,31 @@
     }
 
     const END_OF_CHAPTER_PARAGRAPH = 100000;
+    const characterRevealAllByBook = new Map();
+    const CHARACTER_REVEAL_SPOILER_NOTE = 'Finished the book? Show everyone, and characters will talk about the whole story (spoilers).';
 
     function characterRevealStorageKey(bookId) {
         return STORAGE_KEYS.CHARACTERS_REVEAL_ALL_PREFIX + bookId;
     }
 
-    /** Whether this reader chose to see the whole cast of this book, spoilers included. */
+    /**
+     * Whether this reader chose to see the whole cast of this book, spoilers included. The one
+     * source of truth for the list, the chat position and the download label: an in-memory record
+     * per book (so the choice holds even when storage is blocked), falling back to storage.
+     */
     function isCharacterRevealAll(bookId) {
-        try {
-            return localStorage.getItem(characterRevealStorageKey(bookId)) === 'true';
-        } catch (error) {
-            return false;
+        if (!bookId) return false;
+        if (characterRevealAllByBook.has(bookId)) {
+            return characterRevealAllByBook.get(bookId);
         }
+        let saved = false;
+        try {
+            saved = localStorage.getItem(characterRevealStorageKey(bookId)) === 'true';
+        } catch (error) {
+            saved = false;
+        }
+        characterRevealAllByBook.set(bookId, saved);
+        return saved;
     }
 
     function setCharacterRevealAll(bookId, revealAll) {
@@ -10187,9 +10200,9 @@
                 localStorage.removeItem(characterRevealStorageKey(bookId));
             }
         } catch (error) {
-            // Private mode or blocked storage: the choice just lasts for this visit.
+            // Private mode or blocked storage: the in-memory record keeps it for this visit.
         }
-        state.characterBrowserRevealAll = revealAll;
+        characterRevealAllByBook.set(bookId, revealAll);
     }
 
     /** Shows the met-so-far list or the whole cast, and the bar that switches between them. */
@@ -10197,10 +10210,7 @@
         const bookId = state.currentBook?.id;
         const met = state.characterBrowserMet || [];
         const all = state.characterBrowserAll || met;
-        const revealAll = bookId
-            ? (state.characterBrowserRevealAll === true || isCharacterRevealAll(bookId))
-            : false;
-        state.characterBrowserRevealAll = revealAll;
+        const revealAll = isCharacterRevealAll(bookId);
         state.characters = revealAll ? all : met;
 
         const laterCount = Math.max(0, all.length - met.length);
@@ -10220,8 +10230,8 @@
             elements.characterRevealNote.textContent = laterCount === 0
                 ? 'Finished the book? Let characters talk about the whole story (spoilers).'
                 : laterCount === 1
-                ? '1 more character appears later in the book. Finished the book? Show everyone, and characters will talk about the whole story (spoilers).'
-                : `${laterCount} more characters appear later in the book. Finished the book? Show everyone, and characters will talk about the whole story (spoilers).`;
+                ? `1 more character appears later in the book. ${CHARACTER_REVEAL_SPOILER_NOTE}`
+                : `${laterCount} more characters appear later in the book. ${CHARACTER_REVEAL_SPOILER_NOTE}`;
             elements.characterRevealToggle.textContent = laterCount === 0 ? 'I\u2019ve finished the book' : 'Show all characters';
         }
     }
@@ -10249,7 +10259,7 @@
     function toggleCharacterRevealAll() {
         const bookId = state.currentBook?.id;
         if (!bookId) return;
-        setCharacterRevealAll(bookId, !state.characterBrowserRevealAll);
+        setCharacterRevealAll(bookId, !isCharacterRevealAll(bookId));
         state.characterBrowserFocusIndex = 0;
         applyCharacterBrowserScope();
         renderCharacterList();
@@ -10560,10 +10570,10 @@
             characterName,
             exportedAt
         });
-        characterChatExportHelpers.downloadTextFile(filename, transcript);
+        characterChatExportHelpers.downloadTextFile(filename, transcript, { byteOrderMark: true });
         showAppToast({
             title: 'Conversation downloaded',
-            message: 'Open the Markdown file for class show-and-tell.',
+            message: 'Saved as a text file you can upload for class.',
             autoDismissMs: 5000
         });
     }
@@ -10973,14 +10983,15 @@
 
     async function connectVoiceCall() {
         let data;
+        const callPosition = characterChatReaderPosition();
         try {
             const response = await fetch(`/api/characters/${state.chatCharacterId}/call-session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversationHistory: state.chatHistory.slice(-10),
-                    readerChapterIndex: characterChatReaderPosition().chapterIndex,
-                    readerParagraphIndex: characterChatReaderPosition().paragraphIndex
+                    readerChapterIndex: callPosition.chapterIndex,
+                    readerParagraphIndex: callPosition.paragraphIndex
                 })
             });
             if (!response.ok) {

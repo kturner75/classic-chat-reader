@@ -129,7 +129,29 @@ async function installApiMocks(page, options = {}) {
         }
       });
     }
-    if (method === 'GET' && path === '/api/library') return json(route, 200, [book]);
+    if (method === 'GET' && path === '/api/library') {
+      return json(route, 200, options.otherBook ? [book, options.otherBook] : [book]);
+    }
+    // A second library book, so tests can switch books without reloading.
+    const otherBook = options.otherBook;
+    if (otherBook && method === 'GET' && path.startsWith(`/api/library/${otherBook.id}/chapters/`)) {
+      const chapterId = path.split('/').pop();
+      return json(route, 200, { chapterId, paragraphs: [{ content: `The complete text of ${chapterId}.` }] });
+    }
+    if (otherBook && method === 'GET'
+        && (path === `/api/library/${otherBook.id}/annotations` || path === `/api/library/${otherBook.id}/bookmarks`)) {
+      return json(route, 200, []);
+    }
+    if (otherBook && method === 'GET'
+        && (path === `/api/recaps/book/${otherBook.id}/status` || path === `/api/quizzes/book/${otherBook.id}/status`)) {
+      return json(route, 200, { enabled: false, available: false, chatEnabled: false });
+    }
+    if (otherBook && method === 'GET' && path === `/api/characters/book/${otherBook.id}/up-to`) {
+      return json(route, 200, options.otherBookUpToCharacters || []);
+    }
+    if (otherBook && method === 'GET' && path === `/api/characters/book/${otherBook.id}`) {
+      return json(route, 200, options.otherBookCharacters || []);
+    }
     if (method === 'GET' && path === '/api/import/popular') return json(route, 200, []);
     if (method === 'GET' && path === '/api/features') return json(route, 200, { speedReadingEnabled: false });
     if (method === 'GET' && path === '/api/auth/status') {
@@ -202,9 +224,6 @@ async function installApiMocks(page, options = {}) {
     if (method === 'GET' && path === `/api/characters/book/${book.id}/new-since`) {
       return json(route, 200, []);
     }
-    if (method === 'GET' && path.startsWith('/api/account/chats/characters/') && path !== `/api/account/chats/characters/${character.id}`) {
-      return json(route, 200, { session: null, messages: [] });
-    }
     if (method === 'POST' && /^\/api\/account\/chats\/characters\/[^/]+\/messages$/.test(path)) {
       state.chatSends = state.chatSends || [];
       state.chatSends.push(request.postDataJSON());
@@ -218,6 +237,10 @@ async function installApiMocks(page, options = {}) {
           { messageId: 'message-2', role: 'CHARACTER', content: 'I am Ada.' }
         ]
       });
+    }
+    // Any other character has no saved conversation yet.
+    if (method === 'GET' && path.startsWith('/api/account/chats/characters/')) {
+      return json(route, 200, { session: null, messages: [] });
     }
     if (method === 'POST' && path === '/api/quizzes/assignment/assignment-1/grade') {
       quizAttemptsUsed += 1;
@@ -1420,4 +1443,45 @@ test('character chat downloads as a plain-text file a student can upload', async
   expect(text).toContain('You: Tell me about yourself.');
   expect(text).toContain('Ada: I am Ada.');
   expect(text).not.toContain('**');
+});
+
+test('revealing the whole cast in one book does not reveal another book', async ({ page }) => {
+  const laterCharacter = {
+    ...TEST_CHARACTER, id: 'character-later', name: 'Bram',
+    firstChapterId: 'chapter-3', firstChapterTitle: 'Chapter Three', firstChapterIndex: 2
+  };
+  const otherBook = {
+    id: 'book-2',
+    title: 'Second Library Book',
+    author: 'Casey Reader',
+    chapters: [{ id: 'b2-chapter-1', title: 'Opening' }, { id: 'b2-chapter-2', title: 'Ending' }],
+    ttsEnabled: false,
+    illustrationEnabled: false,
+    characterEnabled: true
+  };
+  const earlyOther = { ...TEST_CHARACTER, id: 'b2-early', name: 'Cora', firstChapterId: 'b2-chapter-1', firstChapterIndex: 0 };
+  const lateOther = { ...TEST_CHARACTER, id: 'b2-late', name: 'Dex', firstChapterId: 'b2-chapter-2', firstChapterIndex: 1 };
+  await installApiMocks(page, {
+    book: MULTI_CHAPTER_BOOK,
+    characters: [TEST_CHARACTER, laterCharacter],
+    upToCharacters: [TEST_CHARACTER],
+    characterChatRequired: false,
+    otherBook,
+    otherBookCharacters: [earlyOther, lateOther],
+    otherBookUpToCharacters: [earlyOther]
+  });
+  await page.goto('/');
+  await page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"] .assignment-open-action').click();
+  await page.locator('#character-toggle').click();
+  await page.locator('#character-reveal-toggle').click();
+  await expect(page.locator('.character-card', { hasText: 'Bram' })).toBeVisible();
+  await page.locator('#character-browser-close').click();
+
+  await page.locator('#back-to-library').click();
+  await page.locator('.book-item[data-book-id="book-2"]').first().click();
+  await expect(page.locator('#reader-view')).toBeVisible();
+  await page.locator('#character-toggle').click();
+  await expect(page.locator('.character-card', { hasText: 'Cora' })).toBeVisible();
+  await expect(page.locator('.character-card', { hasText: 'Dex' })).toHaveCount(0);
+  await expect(page.locator('#character-reveal-toggle')).toHaveText('Show all characters');
 });

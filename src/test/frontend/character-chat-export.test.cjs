@@ -40,7 +40,8 @@ test('formatCharacterChatTranscript builds a plain-text transcript a student can
     assert.match(text, /^Character conversation \(Classic Chat Reader\)\n/);
     assert.match(text, /\nBook: Pride and Prejudice \(Austen, Jane\)\n/);
     assert.match(text, /\nCharacter: Elizabeth Bennet\n/);
-    assert.match(text, /\nDate: July 17, 2026 at 12:05 PM\n|\nDate: July 17, 2026, 12:05 PM\n/);
+    // Node's ICU data decides between "July 17, 2026 at 12:05 PM" and "July 17, 2026, 12:05 PM".
+    assert.match(text, /\nDate: July 17, 2026(?: at|,) 12:05 PM\n/);
     assert.match(text, /\nReader position: Chapter I\.\n/);
     assert.match(text, /\nYou: What do you think of Mr\. Darcy\?\n/);
     assert.match(text, /\nElizabeth Bennet: He is proud, to be sure\.\n/);
