@@ -1,5 +1,6 @@
 package com.classicchatreader.service;
 
+import com.classicchatreader.entity.BookCoverEntity;
 import com.classicchatreader.entity.BookEntity;
 import com.classicchatreader.entity.ChapterEntity;
 import com.classicchatreader.entity.ParagraphEntity;
@@ -12,6 +13,7 @@ import com.classicchatreader.repository.ChapterAnalysisRepository;
 import com.classicchatreader.repository.ChapterQuizRepository;
 import com.classicchatreader.repository.ChapterRecapRepository;
 import com.classicchatreader.repository.ChapterRepository;
+import com.classicchatreader.repository.ChapterTitle;
 import com.classicchatreader.repository.CharacterRepository;
 import com.classicchatreader.repository.IllustrationRepository;
 import com.classicchatreader.repository.QuizAttemptRepository;
@@ -74,9 +76,25 @@ public class BookStorageService {
         this.curatedCatalogService = curatedCatalogService;
     }
 
+    /**
+     * The whole library in three queries (books, chapter titles, covers). Loading chapters and covers
+     * per book cost two round trips each, which is ~18s for 91 books against a cross-region database.
+     */
+    @Transactional(readOnly = true)
     public List<Book> getAllBooks() {
-        return bookRepository.findAll().stream()
-            .map(this::toBookDto)
+        List<BookEntity> books = bookRepository.findAll();
+        Map<String, List<Book.Chapter>> chaptersByBook = chapterRepository.findAllChapterTitles().stream()
+            .collect(Collectors.groupingBy(
+                ChapterTitle::bookId,
+                Collectors.mapping(ch -> new Book.Chapter(ch.id(), ch.title()), Collectors.toList())));
+        Map<String, BookCoverEntity> coversByBook = bookCoverRepository.findAll().stream()
+            .filter(cover -> cover.getBook() != null)
+            .collect(Collectors.toMap(cover -> cover.getBook().getId(), cover -> cover, (first, second) -> first));
+        return books.stream()
+            .map(book -> toBookDto(
+                book,
+                chaptersByBook.getOrDefault(book.getId(), List.of()),
+                Optional.ofNullable(coversByBook.get(book.getId()))))
             .toList();
     }
 
@@ -304,13 +322,16 @@ public class BookStorageService {
         List<Book.Chapter> chapters = entity.getChapters().stream()
             .map(ch -> new Book.Chapter(ch.getId(), ch.getTitle()))
             .toList();
+        return toBookDto(entity, chapters, bookCoverRepository.findByBookId(entity.getId()));
+    }
 
+    private Book toBookDto(BookEntity entity, List<Book.Chapter> chapters, Optional<BookCoverEntity> cover) {
         return new Book(
             entity.getId(),
             entity.getTitle(),
             entity.getAuthor(),
             entity.getDescription(),
-            resolveCoverUrl(entity),
+            resolveCoverUrl(entity, cover),
             chapters,
             isTtsEnabled(entity),
             Boolean.TRUE.equals(entity.getIllustrationEnabled()),
@@ -356,8 +377,8 @@ public class BookStorageService {
         return curatedCatalogService.isCuratedGutenbergSource(entity.getSource(), entity.getSourceId());
     }
 
-    private String resolveCoverUrl(BookEntity entity) {
-        return bookCoverRepository.findByBookId(entity.getId())
+    private String resolveCoverUrl(BookEntity entity, Optional<BookCoverEntity> storedCover) {
+        return storedCover
                 .filter(cover -> cover.getImageFilename() != null && !cover.getImageFilename().isBlank())
                 .map(cover -> buildCoverUrl(entity.getId(), cover.getCompletedAt()))
                 .orElse(entity.getCoverUrl());
