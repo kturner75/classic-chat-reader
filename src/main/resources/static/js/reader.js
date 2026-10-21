@@ -455,6 +455,9 @@
         characterBrowserClose: document.getElementById('character-browser-close'),
         characterListView: document.getElementById('character-list-view'),
         characterListEmpty: document.getElementById('character-list-empty'),
+        characterReveal: document.getElementById('character-reveal'),
+        characterRevealNote: document.getElementById('character-reveal-note'),
+        characterRevealToggle: document.getElementById('character-reveal-toggle'),
         characterList: document.getElementById('character-list'),
         characterDetailView: document.getElementById('character-detail-view'),
         characterBackBtn: document.getElementById('character-back-btn'),
@@ -567,6 +570,7 @@
         RECAP_OPTOUT_PREFIX: 'reader_recapOptOut_',
         RECAP_CHAT_PREFIX: 'reader_recapChat_',
         DISCOVERED_CHARACTERS_PREFIX: 'reader_discoveredCharacters_',
+        CHARACTERS_REVEAL_ALL_PREFIX: 'reader_charactersRevealAll_',
         DISCOVERED_CHARACTER_DETAILS_PREFIX: 'reader_discoveredCharacterDetails_'
     };
 
@@ -751,7 +755,7 @@
         : null;
     const characterChatExportHelpers = (typeof globalThis !== 'undefined'
         && globalThis.CharacterChatExport
-        && typeof globalThis.CharacterChatExport.formatCharacterChatMarkdown === 'function'
+        && typeof globalThis.CharacterChatExport.formatCharacterChatTranscript === 'function'
         && typeof globalThis.CharacterChatExport.downloadTextFile === 'function')
         ? globalThis.CharacterChatExport
         : null;
@@ -10101,15 +10105,18 @@
         state.characterBrowserOpen = true;
         state.characterBrowserFocusIndex = 0;
 
-        // Load characters up to current reading position
+        // Characters met so far (up to the reading position, plus any discovered earlier), and the
+        // whole cast so a reader who finished the book elsewhere can reveal the rest.
         const chapterIndex = state.currentChapterIndex;
         const paragraphIndex = state.currentParagraphIndex;
 
         try {
-            const response = await fetch(
-                `/api/characters/book/${state.currentBook.id}/up-to?chapterIndex=${chapterIndex}&paragraphIndex=${paragraphIndex}`
-            );
-            const upToCharacters = await response.json();
+            const [upToResponse, allResponse] = await Promise.all([
+                fetch(`/api/characters/book/${state.currentBook.id}/up-to?chapterIndex=${chapterIndex}&paragraphIndex=${paragraphIndex}`),
+                fetch(`/api/characters/book/${state.currentBook.id}`)
+            ]);
+            const upToCharacters = upToResponse.ok ? await upToResponse.json() : [];
+            const allCharacters = allResponse.ok ? await allResponse.json() : [];
             let mergedCharacters = upToCharacters;
 
             if (state.discoveredCharacterIds.size > 0) {
@@ -10119,8 +10126,6 @@
                 let discoveredCharacters = cachedDiscovered;
 
                 if (missingIds.length > 0) {
-                    const allResponse = await fetch(`/api/characters/book/${state.currentBook.id}`);
-                    const allCharacters = await allResponse.json();
                     const missingCharacters = allCharacters.filter(c => missingIds.includes(c.id));
                     missingCharacters.forEach(recordDiscoveredCharacter);
                     saveDiscoveredCharacterDetails();
@@ -10130,11 +10135,14 @@
                 mergedCharacters = mergeCharacterLists(upToCharacters, discoveredCharacters);
             }
 
-            state.characters = sortCharacters(mergedCharacters);
+            state.characterBrowserMet = sortCharacters(mergedCharacters);
+            state.characterBrowserAll = sortCharacters(mergeCharacterLists(mergedCharacters, allCharacters));
         } catch (error) {
             console.error('Failed to load characters:', error);
-            state.characters = [];
+            state.characterBrowserMet = [];
+            state.characterBrowserAll = [];
         }
+        applyCharacterBrowserScope();
 
         showCharacterListView();
         elements.characterBrowserModal.classList.remove('hidden');
@@ -10154,6 +10162,107 @@
             }
         }
         focusCharacterBrowser();
+    }
+
+    const END_OF_CHAPTER_PARAGRAPH = 100000;
+    const characterRevealAllByBook = new Map();
+    const CHARACTER_REVEAL_SPOILER_NOTE = 'Finished the book? Show everyone, and characters will talk about the whole story (spoilers).';
+
+    function characterRevealStorageKey(bookId) {
+        return STORAGE_KEYS.CHARACTERS_REVEAL_ALL_PREFIX + bookId;
+    }
+
+    /**
+     * Whether this reader chose to see the whole cast of this book, spoilers included. The one
+     * source of truth for the list, the chat position and the download label: an in-memory record
+     * per book (so the choice holds even when storage is blocked), falling back to storage.
+     */
+    function isCharacterRevealAll(bookId) {
+        if (!bookId) return false;
+        if (characterRevealAllByBook.has(bookId)) {
+            return characterRevealAllByBook.get(bookId);
+        }
+        let saved = false;
+        try {
+            saved = localStorage.getItem(characterRevealStorageKey(bookId)) === 'true';
+        } catch (error) {
+            saved = false;
+        }
+        characterRevealAllByBook.set(bookId, saved);
+        return saved;
+    }
+
+    function setCharacterRevealAll(bookId, revealAll) {
+        try {
+            if (revealAll) {
+                localStorage.setItem(characterRevealStorageKey(bookId), 'true');
+            } else {
+                localStorage.removeItem(characterRevealStorageKey(bookId));
+            }
+        } catch (error) {
+            // Private mode or blocked storage: the in-memory record keeps it for this visit.
+        }
+        characterRevealAllByBook.set(bookId, revealAll);
+    }
+
+    /** Shows the met-so-far list or the whole cast, and the bar that switches between them. */
+    function applyCharacterBrowserScope() {
+        const bookId = state.currentBook?.id;
+        const met = state.characterBrowserMet || [];
+        const all = state.characterBrowserAll || met;
+        const revealAll = isCharacterRevealAll(bookId);
+        state.characters = revealAll ? all : met;
+
+        const laterCount = Math.max(0, all.length - met.length);
+        const chapterCount = (state.chapters || []).length;
+        const beforeLastChapter = chapterCount > 0 && state.currentChapterIndex < chapterCount - 1;
+        const bar = elements.characterReveal;
+        if (!bar) return;
+        if (!revealAll && laterCount === 0 && !beforeLastChapter) {
+            bar.classList.add('hidden');
+            return;
+        }
+        bar.classList.remove('hidden');
+        if (revealAll) {
+            elements.characterRevealNote.textContent = 'Showing every character in the book. They can talk about the whole story, so expect spoilers.';
+            elements.characterRevealToggle.textContent = 'Only show characters I\u2019ve met';
+        } else {
+            elements.characterRevealNote.textContent = laterCount === 0
+                ? 'Finished the book? Let characters talk about the whole story (spoilers).'
+                : laterCount === 1
+                ? `1 more character appears later in the book. ${CHARACTER_REVEAL_SPOILER_NOTE}`
+                : `${laterCount} more characters appear later in the book. ${CHARACTER_REVEAL_SPOILER_NOTE}`;
+            elements.characterRevealToggle.textContent = laterCount === 0 ? 'I\u2019ve finished the book' : 'Show all characters';
+        }
+    }
+
+    /**
+     * Where characters think the reader is. They only discuss events up to this point, so a reader
+     * who chose to see the whole cast (they finished the book, perhaps on paper) is placed at the
+     * end of the last chapter instead of wherever they happen to be in the app.
+     */
+    function characterChatReaderPosition() {
+        const bookId = state.currentBook?.id;
+        const chapters = state.chapters || [];
+        if (bookId && chapters.length > 0 && isCharacterRevealAll(bookId)) {
+            const lastIndex = chapters.length - 1;
+            // Past any real paragraph of the last chapter: the server only requires it be non-negative.
+            return { chapter: chapters[lastIndex], chapterIndex: lastIndex, paragraphIndex: END_OF_CHAPTER_PARAGRAPH };
+        }
+        return {
+            chapter: chapters[state.currentChapterIndex],
+            chapterIndex: state.currentChapterIndex,
+            paragraphIndex: state.currentParagraphIndex
+        };
+    }
+
+    function toggleCharacterRevealAll() {
+        const bookId = state.currentBook?.id;
+        if (!bookId) return;
+        setCharacterRevealAll(bookId, !isCharacterRevealAll(bookId));
+        state.characterBrowserFocusIndex = 0;
+        applyCharacterBrowserScope();
+        renderCharacterList();
     }
 
     function openCharacterBrowserToCharacter(characterId) {
@@ -10441,12 +10550,14 @@
         const chapter = Array.isArray(state.chapters)
             ? state.chapters[state.currentChapterIndex]
             : null;
-        const chapterLabel = chapter?.title
-            || (Number.isInteger(state.currentChapterIndex)
-                ? `Chapter ${state.currentChapterIndex + 1}`
-                : '');
+        const chapterLabel = (state.currentBook?.id && isCharacterRevealAll(state.currentBook.id))
+            ? 'Finished the book'
+            : (chapter?.title
+                || (Number.isInteger(state.currentChapterIndex)
+                    ? `Chapter ${state.currentChapterIndex + 1}`
+                    : ''));
         const exportedAt = new Date();
-        const markdown = characterChatExportHelpers.formatCharacterChatMarkdown({
+        const transcript = characterChatExportHelpers.formatCharacterChatTranscript({
             bookTitle,
             bookAuthor,
             characterName,
@@ -10459,10 +10570,10 @@
             characterName,
             exportedAt
         });
-        characterChatExportHelpers.downloadTextFile(filename, markdown, 'text/markdown;charset=utf-8');
+        characterChatExportHelpers.downloadTextFile(filename, transcript, { byteOrderMark: true });
         showAppToast({
             title: 'Conversation downloaded',
-            message: 'Open the Markdown file for class show-and-tell.',
+            message: 'Saved as a text file you can upload for class.',
             autoDismissMs: 5000
         });
     }
@@ -10537,12 +10648,12 @@
         elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 
         try {
-            const chapter = state.chapters[state.currentChapterIndex];
+            const position = characterChatReaderPosition();
             const exchange = await characterChatClient.send(characterId, message, {
-                chapterId: chapter?.id || null,
-                chapterIndex: state.currentChapterIndex,
-                chapterTitle: chapter?.title || '',
-                paragraphIndex: state.currentParagraphIndex
+                chapterId: position.chapter?.id || null,
+                chapterIndex: position.chapterIndex,
+                chapterTitle: position.chapter?.title || '',
+                paragraphIndex: position.paragraphIndex
             }, requestId);
             if (sendSequence !== state.chatLoadSequence || state.chatCharacterId !== characterId) return;
             state.chatSessionId = exchange.sessionId || state.chatSessionId;
@@ -10872,14 +10983,15 @@
 
     async function connectVoiceCall() {
         let data;
+        const callPosition = characterChatReaderPosition();
         try {
             const response = await fetch(`/api/characters/${state.chatCharacterId}/call-session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversationHistory: state.chatHistory.slice(-10),
-                    readerChapterIndex: state.currentChapterIndex,
-                    readerParagraphIndex: state.currentParagraphIndex
+                    readerChapterIndex: callPosition.chapterIndex,
+                    readerParagraphIndex: callPosition.paragraphIndex
                 })
             });
             if (!response.ok) {
@@ -12271,6 +12383,7 @@
         if (elements.characterBrowserModal) {
             elements.characterBrowserModal.querySelector('.character-modal-backdrop')?.addEventListener('click', closeCharacterBrowser);
         }
+        elements.characterRevealToggle?.addEventListener('click', toggleCharacterRevealAll);
         if (elements.characterBackBtn) {
             elements.characterBackBtn.addEventListener('click', showCharacterListView);
         }
