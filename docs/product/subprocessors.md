@@ -8,12 +8,31 @@ notice wording come from counsel or the partner school (BL-043.11).
 Vendor terms below were checked against the vendors' public pages on **2026-09-23**. Re-check them
 before relying on this page for a school agreement.
 
-## Current decision: enrolled students get no AI chat
+## Current decision (2026-10-21): hold lifted, students chat on the subscription
+
+The pilot has no school funding, and the owner will not pay for a pay-per-token xAI API account,
+so the conditions under "Lifting the hold" below were **not** met. To let the Comp 2 pilot students
+(Northanger Abbey) use character chat and voice, the owner chose on 2026-10-21 to lift the hold
+anyway and run student AI on the **SuperGrok subscription**:
+
+- Production sets `CLASSROOM_STUDENT_AI_COVERED=true`, so enrolled students get character chat,
+  voice calls and recap chat. Reading Buddy stays off (`reading-buddy.enabled=false`).
+- `XAI_API_KEY` is commented out on production (same day), so every xAI call uses the subscription
+  OAuth token and nothing falls back to a billed key. When the subscription token fails or its
+  allotment runs out, AI features error out instead.
+- What this means: student chat text and voice audio reach xAI under the subscription's terms, which
+  the API's no-training, 30-day-retention and DPA terms do not clearly cover (see "Vendor terms").
+  No DPA is in place, and there is no school-side agreement (BL-043.11). Tell the pilot teacher.
+- BL-043.10 (character chat and voice trust client-sent history) is still open.
+- To put the hold back: remove `CLASSROOM_STUDENT_AI_COVERED` from `app.env` and restart. Enrolled
+  students then lose chat and voice again, as described next.
+
+## How the hold works
 
 Production calls xAI with a **SuperGrok subscription OAuth token** (`ai.xai.oauth.*`), not a
 pay-per-token API account. xAI's no-training, 30-day-retention and DPA terms are written for the
-API and business services. Subscription traffic is not clearly covered by them, and a paid API
-account is not funded yet. Until one is, **no student content goes to an AI provider**:
+API and business services, and subscription traffic is not clearly covered by them. With the hold
+on, **no student content goes to an AI provider**:
 
 - `classroom.ferpa.student-ai-covered` (env `CLASSROOM_STUDENT_AI_COVERED`, default **false**).
 - While it is false, any signed-in user with an `ACTIVE` enrollment in an `ACTIVE` term of a live
@@ -41,7 +60,8 @@ their account or class, so it is not an education record.
 
 ### Lifting the hold
 
-Only set `CLASSROOM_STUDENT_AI_COVERED=true` once **all** of these are true:
+The intended bar for setting `CLASSROOM_STUDENT_AI_COVERED=true` (not met by the 2026-10-21
+decision above) is that **all** of these are true:
 
 1. A pay-per-token **xAI API account** is funded, and production sends student traffic with its API
    key. Remove the OAuth refresh token from production (`XAI_OAUTH_REFRESH_TOKEN` unset, or
@@ -55,7 +75,7 @@ Only set `CLASSROOM_STUDENT_AI_COVERED=true` once **all** of these are true:
 
 | Vendor | What it receives | Student content? | In production |
 | --- | --- | --- | --- |
-| **xAI** (Grok API) | Character chat, recap chat, Reading Buddy messages and memory summaries; live microphone audio during voice calls (the browser connects straight to xAI with a short-lived token); book text for read-aloud, character and image generation | **Yes**: chat text and voice audio | Chat and voice **on**, held for enrolled students. Reading Buddy off (`reading-buddy.enabled=false`). Read-aloud and generation are cache-only (`tts.cache-only`, `generation.cache-only`), so no calls |
+| **xAI** (Grok API) | Character chat, recap chat, Reading Buddy messages and memory summaries; live microphone audio during voice calls (the browser connects straight to xAI with a short-lived token); book text for read-aloud, character and image generation | **Yes**: chat text and voice audio | Chat and voice **on** for everyone, enrolled students included (hold lifted 2026-10-21), on the SuperGrok subscription only. Reading Buddy off (`reading-buddy.enabled=false`). Read-aloud generates audio live (`TTS_CACHE_ONLY=false` on production); image and other generation is cache-only (`generation.cache-only`) |
 | **OpenAI** | Same chat and reasoning prompts, when configured as the provider (`ai.chat.provider=openai` / `ai.reasoning.provider=openai`) | Yes, if selected | **Not used**: both providers default to `xai` |
 | **DigitalOcean** | App server, managed PostgreSQL (every account and classroom record), Spaces CDN (public book covers, portraits, illustrations only) | **Yes**: stores all education records | Yes |
 | **Google** | Google sign-in (email, name, Google account id) when enabled; Google Fonts CSS and font files, which the browser fetches (IP address and user agent) | No education records | Sign-in only if `ACCOUNT_AUTH_GOOGLE_ENABLED`; fonts on every page |
@@ -96,7 +116,8 @@ Checked in code on 2026-09-23 (`OpenAiLlmProvider`, `XaiLlmProvider`, `Character
 
 ## Follow-ups
 
-- BL-043.10: server-authoritative character chat history, before lifting the hold.
+- BL-043.10: server-authoritative character chat history. Meant to land before lifting the hold;
+  still open now that the hold is lifted.
 - BL-043.11: privacy / FERPA notice that links this subprocessor list for the pilot.
 - BL-043.9: keep provider error bodies (which can echo prompts) out of logs.
 - Self-host EB Garamond to stop sending every reader's IP address to Google Fonts (optional).
