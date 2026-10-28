@@ -109,23 +109,26 @@
         return 'Whole book';
     }
 
-    function isWholeBookCompleteSignal(activity) {
-        return Boolean(activity?.completed) || toFiniteNumber(activity?.maxProgressRatio, 0) >= 0.999;
-    }
-
     function isReadingCompleteForAssignment(assignment, activity) {
         if (!activity) {
             return false;
         }
 
-        const indexes = assignmentChapterIndexes(assignment);
-        // Whole-book assignments: only a finished book counts.
-        if (indexes.length === 0) {
-            return isWholeBookCompleteSignal(activity);
-        }
-
         if (!hasBookActivity(activity)) {
             return false;
+        }
+
+        let indexes = assignmentChapterIndexes(assignment);
+        // Whole-book assignments are a range over every chapter. The book-level
+        // completed / maxProgress 1 flag is not enough: it is set by jumping to the
+        // last page, by reading done before the assignment existed, or leaks from a
+        // stub chapterCount, and showed "Reading done" on first open (BL-084).
+        if (indexes.length === 0) {
+            const chapterCount = clampInteger(activity.chapterCount, 0, Number.MAX_SAFE_INTEGER);
+            if (chapterCount < 1) {
+                return false;
+            }
+            indexes = Array.from({ length: chapterCount }, (_, index) => index);
         }
 
         const completed = uniqueCompletedChapterIndexes(activity.completedChapterIndexes);
