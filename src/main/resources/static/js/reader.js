@@ -755,8 +755,7 @@
         : null;
     const characterChatExportHelpers = (typeof globalThis !== 'undefined'
         && globalThis.CharacterChatExport
-        && typeof globalThis.CharacterChatExport.formatCharacterChatTranscript === 'function'
-        && typeof globalThis.CharacterChatExport.downloadTextFile === 'function')
+        && typeof globalThis.CharacterChatExport.downloadCharacterChatPdf === 'function')
         ? globalThis.CharacterChatExport
         : null;
     const characterChatSyncHelpers = (typeof globalThis !== 'undefined'
@@ -10557,7 +10556,7 @@
                     ? `Chapter ${state.currentChapterIndex + 1}`
                     : ''));
         const exportedAt = new Date();
-        const transcript = characterChatExportHelpers.formatCharacterChatTranscript({
+        characterChatExportHelpers.downloadCharacterChatPdf({
             bookTitle,
             bookAuthor,
             characterName,
@@ -10565,15 +10564,9 @@
             exportedAt,
             messages: state.chatHistory
         });
-        const filename = characterChatExportHelpers.buildCharacterChatFilename({
-            bookTitle,
-            characterName,
-            exportedAt
-        });
-        characterChatExportHelpers.downloadTextFile(filename, transcript, { byteOrderMark: true });
         showAppToast({
             title: 'Conversation downloaded',
-            message: 'Saved as a text file you can upload for class.',
+            message: 'Saved as a PDF you can upload for class.',
             autoDismissMs: 5000
         });
     }

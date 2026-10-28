@@ -167,6 +167,15 @@ test('signed-in landing shelf opens full history, filters, loads more, and resum
   await expect(page.locator('#my-chat-scroll-jump')).toBeVisible();
   await expect(page.locator('#my-chat-messages')).toContainText('First impressions can be misleading.');
 
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#my-chat-download').click()
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^character-chat_pride-and-prejudice_elizabeth-bennet_\d{4}-\d{2}-\d{2}\.pdf$/);
+  const pdf = require('fs').readFileSync(await download.path()).toString('latin1');
+  expect(pdf.startsWith('%PDF-')).toBe(true);
+  expect(pdf).toContain(`<${Buffer.from('First impressions can be misleading.', 'latin1').toString('hex')}`);
+
   await page.locator('#my-chat-composer').fill('Do you remember me?');
   await page.locator('#my-chat-composer').press('Enter');
   await expect(page.locator('#my-chat-messages')).toContainText('I remember this conversation.');

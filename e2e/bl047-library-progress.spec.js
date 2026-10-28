@@ -1424,7 +1424,7 @@ test('a reader who finished the book can reveal later characters and chat about 
   expect(await page.evaluate(() => localStorage.getItem('reader_charactersRevealAll_book-1'))).toBe('true');
 });
 
-test('character chat downloads as a plain-text file a student can upload', async ({ page }) => {
+test('character chat downloads as a PDF a student can upload', async ({ page }) => {
   await installApiMocks(page, { characterChatRequired: false });
   await page.goto('/');
   await page.locator('#classroom-assignments-list [data-assignment-id="assignment-1"] .assignment-open-action').click();
@@ -1437,13 +1437,19 @@ test('character chat downloads as a plain-text file a student can upload', async
     page.waitForEvent('download'),
     page.locator('#character-chat-download').click()
   ]);
-  expect(download.suggestedFilename()).toMatch(/^character-chat_bl-047-assignment-book_ada_\d{4}-\d{2}-\d{2}\.txt$/);
+  expect(download.suggestedFilename()).toMatch(/^character-chat_bl-047-assignment-book_ada_\d{4}-\d{2}-\d{2}\.pdf$/);
   const fs = require('fs');
-  const text = fs.readFileSync(await download.path(), 'utf8').replace(/^\uFEFF/, '');
-  expect(text).toContain('Character: Ada');
-  expect(text).toContain('You: Tell me about yourself.');
-  expect(text).toContain('Ada: I am Ada.');
-  expect(text).not.toContain('**');
+  const pdf = fs.readFileSync(await download.path()).toString('latin1');
+  expect(pdf.startsWith('%PDF-')).toBe(true);
+  // Text is drawn with the built-in Times fonts as hex strings: decode them to check what a reader selects.
+  const text = [...pdf.matchAll(/<([0-9a-f]*)> Tj/g)]
+    .map(([, hex]) => Buffer.from(hex, 'hex').toString('latin1'))
+    .join('|');
+  expect(text).toContain('Book: |BL-047 Assignment Book');
+  expect(text).toContain('Character: |Ada');
+  expect(text).toContain('You: |Tell me about yourself.');
+  expect(text).toContain('Ada: |I am Ada.');
+  await expect(page.locator('.app-toast').last()).toContainText('PDF');
 });
 
 test('revealing the whole cast in one book does not reveal another book', async ({ page }) => {
