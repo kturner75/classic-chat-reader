@@ -239,7 +239,7 @@ test('character chat requirement blocks complete until local chat started', () =
     assert.equal(done.summaryLabel, '2/2 complete');
 });
 
-test('whole-book assignment only completes when book is finished', () => {
+test('whole-book assignment completes only when every chapter is finished', () => {
     const mid = buildAssignmentProgressSnapshot({
         assignment: {
             chapterIndex: null,

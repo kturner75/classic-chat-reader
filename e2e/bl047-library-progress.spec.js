@@ -868,6 +868,7 @@ test('paragraph and chapter shortcuts persist after dismissing Open wrap-up', as
         progressRatio: 1,
         maxProgressRatio: 1,
         completed: true,
+        completedChapterIndexes: [0, 1, 2],
         lastReadAt: '2026-08-12T12:00:00Z'
       }
     }));
