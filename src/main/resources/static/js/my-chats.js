@@ -1366,9 +1366,7 @@
                 messages: detail.messages,
                 exportedAt: new Date()
             };
-            const transcript = globalThis.CharacterChatExport.formatCharacterChatTranscript(options);
-            const filename = globalThis.CharacterChatExport.buildCharacterChatFilename(options);
-            globalThis.CharacterChatExport.downloadTextFile(filename, transcript, { byteOrderMark: true });
+            globalThis.CharacterChatExport.downloadCharacterChatPdf(options);
         });
         void loadVoiceStatus();
         void loadConversation();
