@@ -239,7 +239,7 @@ test('character chat requirement blocks complete until local chat started', () =
     assert.equal(done.summaryLabel, '2/2 complete');
 });
 
-test('whole-book assignment only completes when book is finished', () => {
+test('whole-book assignment completes only when every chapter is finished', () => {
     const mid = buildAssignmentProgressSnapshot({
         assignment: {
             chapterIndex: null,
@@ -248,8 +248,10 @@ test('whole-book assignment only completes when book is finished', () => {
             characterChatRequired: false
         },
         activity: {
+            chapterCount: 31,
             lastChapterIndex: 10,
-            maxProgressRatio: 0.4
+            maxProgressRatio: 0.4,
+            completedChapterIndexes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         }
     });
     assert.equal(mid.statusClass, 'in-progress');
@@ -262,12 +264,80 @@ test('whole-book assignment only completes when book is finished', () => {
             quizStatus: 'NOT_REQUIRED'
         },
         activity: {
+            chapterCount: 3,
+            lastChapterIndex: 2,
+            lastPage: 4,
+            totalPages: 5,
             completed: true,
-            maxProgressRatio: 1
+            maxProgressRatio: 1,
+            completedChapterIndexes: [0, 1, 2]
         }
     });
     assert.equal(finished.statusClass, 'completed');
     assert.equal(finished.readingComplete, true);
+});
+
+test('whole-book assignment is not reading-done from a book-complete flag alone (BL-084)', () => {
+    const assignment = {
+        chapters: [],
+        quizRequired: false,
+        quizStatus: 'NOT_REQUIRED',
+        characterChatRequired: true
+    };
+    // Paged ahead to the end of Northanger Abbey before the assignment existed,
+    // then resumed at Chapter 1: completed / 100% is set but few chapters were read.
+    const skimmedToEnd = {
+        chapterCount: 31,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 9,
+        maxProgressRatio: 1,
+        progressRatio: 1 / 31 / 9,
+        completed: true,
+        completedChapterIndexes: [0, 30],
+        lastReadAt: '2026-10-27T20:00:00.000Z'
+    };
+    assert.equal(isReadingCompleteForAssignment(assignment, skimmedToEnd), false);
+    const snapshot = buildAssignmentProgressSnapshot({ assignment, activity: skimmedToEnd });
+    assert.equal(snapshot.readingComplete, false);
+    assert.equal(snapshot.statusClass, 'in-progress');
+
+    // Leaked flag with no per-chapter data and resume on Chapter 1.
+    assert.equal(isReadingCompleteForAssignment(assignment, {
+        chapterCount: 31,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 9,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-10-27T20:00:00.000Z'
+    }), false);
+
+    // Fresh student who has only opened the book.
+    assert.equal(isReadingCompleteForAssignment(assignment, {
+        chapterCount: 31,
+        lastChapterIndex: 0,
+        lastPage: 0,
+        totalPages: 9,
+        maxProgressRatio: 1 / 31 / 9,
+        progressRatio: 1 / 31 / 9,
+        completed: false,
+        completedChapterIndexes: [],
+        lastOpenedAt: '2026-10-28T14:00:00.000Z'
+    }), false);
+});
+
+test('whole-book assignment completes on the last page of the book without per-chapter data', () => {
+    // Older activity rows predate completedChapterIndexes; fall back to position.
+    assert.equal(isReadingCompleteForAssignment({ chapters: [] }, {
+        chapterCount: 31,
+        lastChapterIndex: 30,
+        lastPage: 8,
+        totalPages: 9,
+        maxProgressRatio: 1,
+        completed: true,
+        lastReadAt: '2026-10-27T20:00:00.000Z'
+    }), true);
 });
 
 test('assignment reading stays complete after student resumes an earlier chapter', () => {
