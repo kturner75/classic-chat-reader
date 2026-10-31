@@ -45,7 +45,7 @@ public class LlmProviderConfig {
     @Value("${ai.reasoning.openai.base-url:https://api.openai.com/v1}")
     private String reasoningOpenAiBaseUrl;
 
-    @Value("${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}")
+    @Value("${ai.reasoning.openai.api-key:${CCR_OPENAI_API_KEY:}}")
     private String reasoningOpenAiApiKey;
 
     @Value("${ai.reasoning.openai.model:gpt-5.5}")
@@ -73,7 +73,7 @@ public class LlmProviderConfig {
     @Value("${recap.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
     private String recapReasoningOpenAiBaseUrl;
 
-    @Value("${recap.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}}")
+    @Value("${recap.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${CCR_OPENAI_API_KEY:}}}")
     private String recapReasoningOpenAiApiKey;
 
     @Value("${recap.reasoning.openai.model:${ai.reasoning.openai.model:gpt-5.5}}")
@@ -101,7 +101,7 @@ public class LlmProviderConfig {
     @Value("${quiz.reasoning.openai.base-url:${ai.reasoning.openai.base-url:https://api.openai.com/v1}}")
     private String quizReasoningOpenAiBaseUrl;
 
-    @Value("${quiz.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${OPENAI_API_KEY:}}}")
+    @Value("${quiz.reasoning.openai.api-key:${ai.reasoning.openai.api-key:${CCR_OPENAI_API_KEY:}}}")
     private String quizReasoningOpenAiApiKey;
 
     @Value("${quiz.reasoning.openai.model:${ai.reasoning.openai.model:gpt-5.5}}")
@@ -132,7 +132,7 @@ public class LlmProviderConfig {
     @Value("${ai.chat.openai.base-url:https://api.openai.com/v1}")
     private String chatOpenAiBaseUrl;
 
-    @Value("${ai.chat.openai.api-key:${OPENAI_API_KEY:}}")
+    @Value("${ai.chat.openai.api-key:${CCR_OPENAI_API_KEY:}}")
     private String chatOpenAiApiKey;
 
     @Value("${ai.chat.openai.model:gpt-5.5}")
