@@ -24,6 +24,9 @@ public class OpenAiLlmProvider implements LlmProvider {
     private final int timeoutSeconds;
     private final String apiKey;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    // Set after the model rejects custom temperature/top_p once, so later calls skip the
+    // doomed first request instead of paying a failed round trip on every chat turn.
+    private volatile boolean samplingParamsUnsupported;
 
     public OpenAiLlmProvider(String baseUrl, String apiKey, String model, int timeoutSeconds) {
         this(apiKey, model, timeoutSeconds, WebClient.builder()
@@ -47,10 +50,11 @@ public class OpenAiLlmProvider implements LlmProvider {
         requestBody.put("messages", List.of(
                 Map.of("role", "user", "content", prompt)
         ));
-        requestBody.put("temperature", options.temperature());
-
-        if (options.topP() != null) {
-            requestBody.put("top_p", options.topP());
+        if (!samplingParamsUnsupported) {
+            requestBody.put("temperature", options.temperature());
+            if (options.topP() != null) {
+                requestBody.put("top_p", options.topP());
+            }
         }
         if (options.maxTokens() != null) {
             requestBody.put("max_completion_tokens", options.maxTokens());
@@ -67,6 +71,7 @@ public class OpenAiLlmProvider implements LlmProvider {
             if (unsupportedParam != null && requestBody.containsKey(unsupportedParam)) {
                 log.warn("event=openai_unsupported_sampling_param model={} param={} retrying_without_it",
                         model, unsupportedParam);
+                samplingParamsUnsupported = true;
                 Map<String, Object> retryBody = new HashMap<>(requestBody);
                 retryBody.remove("temperature");
                 retryBody.remove("top_p");

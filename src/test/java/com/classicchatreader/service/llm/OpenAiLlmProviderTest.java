@@ -126,6 +126,49 @@ class OpenAiLlmProviderTest {
     }
 
     @Test
+    void stopsSendingSamplingParamsAfterModelRejectsThem() throws Exception {
+        AtomicInteger callCount = new AtomicInteger();
+        AtomicReference<JsonNode> thirdRequest = new AtomicReference<>();
+        startServer(exchange -> {
+            int call = callCount.incrementAndGet();
+            JsonNode request = objectMapper.readTree(exchange.getRequestBody());
+            if (call == 1) {
+                byte[] body = """
+                        {"error":{"message":"Unsupported value","type":"invalid_request_error","param":"temperature","code":"unsupported_value"}}
+                        """.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(400, body.length);
+                exchange.getResponseBody().write(body);
+                return;
+            }
+            if (call == 3) {
+                thirdRequest.set(request);
+            }
+            byte[] body = """
+                    {"choices":[{"message":{"content":"Answer."}}]}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+        });
+
+        OpenAiLlmProvider provider = new OpenAiLlmProvider(
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                "test-key",
+                "gpt-5.4-mini",
+                5
+        );
+
+        assertEquals("Answer.", provider.generate("First turn.", LlmOptions.withTemperatureAndTopP(0.8, 0.9)));
+        String generated = provider.generate("Second turn.", LlmOptions.withTemperatureAndTopP(0.8, 0.9));
+
+        assertEquals("Answer.", generated);
+        assertEquals(3, callCount.get(), "second turn should succeed on its first request");
+        assertFalse(thirdRequest.get().has("temperature"));
+        assertFalse(thirdRequest.get().has("top_p"));
+    }
+
+    @Test
     void doesNotRetryOnUnrelatedBadRequest() throws Exception {
         AtomicInteger callCount = new AtomicInteger();
         startServer(exchange -> {

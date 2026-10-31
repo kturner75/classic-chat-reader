@@ -49,7 +49,7 @@ public class BookCoverImageGeneratorService {
     @Value("${book-cover.openai.base-url:https://api.openai.com/v1}")
     private String openaiBaseUrl;
 
-    @Value("${book-cover.openai.api-key:${OPENAI_API_KEY:}}")
+    @Value("${book-cover.openai.api-key:${CCR_OPENAI_API_KEY:}}")
     private String openaiApiKey;
 
     @Value("${book-cover.openai.model:gpt-image-1}")

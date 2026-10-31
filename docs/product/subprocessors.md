@@ -8,7 +8,28 @@ notice wording come from counsel or the partner school (BL-043.11).
 Vendor terms below were checked against the vendors' public pages on **2026-09-23**. Re-check them
 before relying on this page for a school agreement.
 
-## Current decision (2026-10-21): hold lifted, students chat on the subscription
+## Current decision (2026-10-31): student chat on the OpenAI API, voice calls off
+
+The pilot teacher can't use CCR with students until the FERPA gaps close. The subscription path
+below was the biggest one, so on 2026-10-31 the owner moved student AI off it:
+
+- **Chat goes to the OpenAI API.** Production defaults `ai.chat.provider` to `openai` and the model
+  to `gpt-5.4-mini` (`application-prod.properties`). The owner funds the account personally:
+  $50 prepaid, auto-recharge off, so spending stops at the balance. This covers character chat,
+  recap chat and Reading Buddy (still off). With no `CCR_OPENAI_API_KEY`, chat reports unavailable
+  and does not fall back to xAI.
+- **OpenAI org data controls** (set by the owner): API call logging disabled, and every "share with
+  OpenAI" option (feedback, evals and fine-tuning, inputs and outputs) disabled. Chat Completions
+  calls are not stored unless `store=true` is sent, and the app never sends it. Abuse-monitoring
+  retention (up to 30 days) still applies; Zero Data Retention needs OpenAI's approval.
+- **Voice calls are off.** They only run on xAI realtime and would still stream student audio to
+  the subscription. Production keeps `VOICE_CALL_ENABLED` unset (default false), which hides the call
+  button and refuses `POST /api/characters/{id}/call-session` for everyone.
+- `CLASSROOM_STUDENT_AI_COVERED=true` stays, so enrolled students get text chat.
+- Still to do: accept OpenAI's DPA for the account, the school-side agreement and notice
+  (BL-043.11), and BL-043.10.
+
+## Earlier decision (2026-10-21, superseded): hold lifted, students chat on the subscription
 
 The pilot has no school funding, and the owner will not pay for a pay-per-token xAI API account,
 so the conditions under "Lifting the hold" below were **not** met. To let the Comp 2 pilot students
@@ -75,14 +96,15 @@ decision above) is that **all** of these are true:
 
 | Vendor | What it receives | Student content? | In production |
 | --- | --- | --- | --- |
-| **xAI** (Grok API) | Character chat, recap chat, Reading Buddy messages and memory summaries; live microphone audio during voice calls (the browser connects straight to xAI with a short-lived token); book text for read-aloud, character and image generation | **Yes**: chat text and voice audio | Chat and voice **on** for everyone, enrolled students included (hold lifted 2026-10-21), on the SuperGrok subscription only. Reading Buddy off (`reading-buddy.enabled=false`). Read-aloud generates audio live (`TTS_CACHE_ONLY=false` on production); image and other generation is cache-only (`generation.cache-only`) |
-| **OpenAI** | Same chat and reasoning prompts, when configured as the provider (`ai.chat.provider=openai` / `ai.reasoning.provider=openai`) | Yes, if selected | **Not used**: both providers default to `xai` |
+| **xAI** (Grok API) | Live microphone audio during voice calls (the browser connects straight to xAI with a short-lived token); chat prompts when `ai.chat.provider=xai`; book text for read-aloud, character and image generation; teacher quiz authoring | Only if voice calls or xAI chat are turned on | Since 2026-10-31: **no student content**. Voice calls off, chat on OpenAI. Read-aloud generates audio live (`TTS_CACHE_ONLY=false` on production); image and other generation is cache-only (`generation.cache-only`). Reasoning stays on xAI |
+| **OpenAI** (API) | Character chat, recap chat, Reading Buddy messages and memory summaries (`ai.chat.provider=openai`) | **Yes**: chat text | Since 2026-10-31: chat for everyone, enrolled students included, on `gpt-5.4-mini`. Reading Buddy off |
 | **DigitalOcean** | App server, managed PostgreSQL (every account and classroom record), Spaces CDN (public book covers, portraits, illustrations only) | **Yes**: stores all education records | Yes |
 | **Google** | Google sign-in (email, name, Google account id) when enabled; Google Fonts CSS and font files, which the browser fetches (IP address and user agent) | No education records | Sign-in only if `ACCOUNT_AUTH_GOOGLE_ENABLED`; fonts on every page |
+| **Resend** | Password-reset emails (recipient address and the reset link), `TransactionalEmailSender` | Email address only | Yes, since #199 |
 | Ollama | Local model server | n/a (no third party) | Not used |
 
-No analytics, error-tracking or email vendors are in the app (checked 2026-09-23: no Sentry,
-analytics SDK, or mail sender in `pom.xml`, server code or static JS).
+No analytics or error-tracking vendors are in the app (checked 2026-09-23: no Sentry or analytics
+SDK in `pom.xml`, server code or static JS). Resend was added later for password reset.
 
 ### Vendor terms (as published, 2026-09-23)
 

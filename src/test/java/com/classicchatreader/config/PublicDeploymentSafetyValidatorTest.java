@@ -133,6 +133,14 @@ class PublicDeploymentSafetyValidatorTest {
     }
 
     @Test
+    void prodProperties_keepStudentAiOffXaiSubscription() throws Exception {
+        Properties properties = loadClasspathProperties("/application-prod.properties");
+        assertEquals("${AI_CHAT_PROVIDER:openai}", properties.getProperty("ai.chat.provider"));
+        assertEquals("${AI_CHAT_OPENAI_MODEL:gpt-5.4-mini}", properties.getProperty("ai.chat.openai.model"));
+        assertEquals("${VOICE_CALL_ENABLED:false}", properties.getProperty("voice.call.enabled"));
+    }
+
+    @Test
     void mariadbProperties_pinPublicModeAndSecureCookies() throws Exception {
         Properties properties = loadClasspathProperties("/application-mariadb.properties");
         assertEquals("public", properties.getProperty("deployment.mode"));
