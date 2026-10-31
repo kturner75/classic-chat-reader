@@ -159,7 +159,7 @@ class OpenAiLlmProviderTest {
                 5
         );
 
-        provider.generate("First turn.", LlmOptions.withTemperatureAndTopP(0.8, 0.9));
+        assertEquals("Answer.", provider.generate("First turn.", LlmOptions.withTemperatureAndTopP(0.8, 0.9)));
         String generated = provider.generate("Second turn.", LlmOptions.withTemperatureAndTopP(0.8, 0.9));
 
         assertEquals("Answer.", generated);
